@@ -1,0 +1,631 @@
+{
+  "contract_name": "AchievementNFT",
+  "contract_address": "0x8798dc478eCc00aba0Bda196580b24f3A928F161",
+  "tx_hash": "0x2ae9ed6a9ccf1f88c98f94eec70c5613f2623c0788ab6250c46a03b6bd011be0",
+  "owner": "0x2D9644Fd40BABD64797884e0cb56F34cc063De71",
+  "marketplace_operator": "0x2D9644Fd40BABD64797884e0cb56F34cc063De71",
+  "chain_id": 42220,
+  "network": "Celo Mainnet",
+  "block_number": 63379004,
+  "gas_used": 1478291,
+  "compiler_version": "v0.8.21+commit.d9974bed",
+  "optimization": true,
+  "optimization_runs": 200,
+  "source_code": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.21;\n\ncontract AchievementNFT {\n    string public name = \"GoodMarket Achievement\";\n    string public symbol = \"GMA\";\n\n    address public owner;\n    address public marketplaceOperator;\n    uint256 public totalSupply;\n\n    struct TokenData {\n        address tokenOwner;\n        string quizId;\n        uint8 score;\n        uint8 total;\n        string quizName;\n        uint256 mintedAt;\n        string tokenURI;\n    }\n\n    mapping(uint256 => TokenData) private _tokens;\n    mapping(address => uint256[]) private _ownerTokens;\n    mapping(uint256 => uint256) private _ownerTokenIndex;\n    mapping(uint256 => address) private _tokenApprovals;\n    mapping(address => mapping(address => bool)) private _operatorApprovals;\n\n    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);\n    event Approval(address indexed tokenOwner, address indexed approved, uint256 indexed tokenId);\n    event ApprovalForAll(address indexed tokenOwner, address indexed operator, bool approved);\n    event NFTMinted(address indexed to, uint256 indexed tokenId, string quizId, uint8 score, uint8 total, string quizName);\n    event NFTTransferred(address indexed from, address indexed to, uint256 indexed tokenId);\n\n    modifier onlyOwner() {\n        require(msg.sender == owner, \"Not owner\");\n        _;\n    }\n\n    modifier onlyMinter() {\n        require(msg.sender == owner || msg.sender == marketplaceOperator, \"Not authorized\");\n        _;\n    }\n\n    constructor(address _marketplaceOperator) {\n        owner = msg.sender;\n        marketplaceOperator = _marketplaceOperator;\n    }\n\n    function supportsInterface(bytes4 interfaceId) public pure returns (bool) {\n        return interfaceId == 0x80ac58cd ||\n               interfaceId == 0x5b5e139f ||\n               interfaceId == 0x01ffc9a7;\n    }\n\n    function balanceOf(address _owner) public view returns (uint256) {\n        require(_owner != address(0), \"Zero address\");\n        return _ownerTokens[_owner].length;\n    }\n\n    function ownerOf(uint256 tokenId) public view returns (address) {\n        address tokenOwner = _tokens[tokenId].tokenOwner;\n        require(tokenOwner != address(0), \"Token does not exist\");\n        return tokenOwner;\n    }\n\n    function tokenURI(uint256 tokenId) public view returns (string memory) {\n        require(_tokens[tokenId].tokenOwner != address(0), \"Token does not exist\");\n        return _tokens[tokenId].tokenURI;\n    }\n\n    function isApprovedForAll(address _owner, address operator) public view returns (bool) {\n        if (operator == marketplaceOperator) return true;\n        if (operator == owner) return true;\n        return _operatorApprovals[_owner][operator];\n    }\n\n    function getApproved(uint256 tokenId) public view returns (address) {\n        require(_tokens[tokenId].tokenOwner != address(0), \"Token does not exist\");\n        return _tokenApprovals[tokenId];\n    }\n\n    function approve(address to, uint256 tokenId) public {\n        address tokenOwner = ownerOf(tokenId);\n        require(msg.sender == tokenOwner || isApprovedForAll(tokenOwner, msg.sender), \"Not authorized\");\n        _tokenApprovals[tokenId] = to;\n        emit Approval(tokenOwner, to, tokenId);\n    }\n\n    function setApprovalForAll(address operator, bool approved) public {\n        _operatorApprovals[msg.sender][operator] = approved;\n        emit ApprovalForAll(msg.sender, operator, approved);\n    }\n\n    function _isApprovedOrOwner(address spender, uint256 tokenId) internal view returns (bool) {\n        address tokenOwner = ownerOf(tokenId);\n        return (spender == tokenOwner ||\n                getApproved(tokenId) == spender ||\n                isApprovedForAll(tokenOwner, spender));\n    }\n\n    function _transfer(address from, address to, uint256 tokenId) internal {\n        require(_tokens[tokenId].tokenOwner == from, \"Owner mismatch\");\n        require(to != address(0), \"Cannot transfer to zero address\");\n\n        delete _tokenApprovals[tokenId];\n\n        uint256[] storage fromTokens = _ownerTokens[from];\n        uint256 idx = _ownerTokenIndex[tokenId];\n        uint256 lastIdx = fromTokens.length - 1;\n        if (idx != lastIdx) {\n            uint256 lastTokenId = fromTokens[lastIdx];\n            fromTokens[idx] = lastTokenId;\n            _ownerTokenIndex[lastTokenId] = idx;\n        }\n        fromTokens.pop();\n\n        _ownerTokenIndex[tokenId] = _ownerTokens[to].length;\n        _ownerTokens[to].push(tokenId);\n        _tokens[tokenId].tokenOwner = to;\n\n        emit Transfer(from, to, tokenId);\n        emit NFTTransferred(from, to, tokenId);\n    }\n\n    function transferFrom(address from, address to, uint256 tokenId) public {\n        require(_isApprovedOrOwner(msg.sender, tokenId), \"Not authorized\");\n        _transfer(from, to, tokenId);\n    }\n\n    function safeTransferFrom(address from, address to, uint256 tokenId) public {\n        transferFrom(from, to, tokenId);\n    }\n\n    function safeTransferFrom(address from, address to, uint256 tokenId, bytes memory) public {\n        transferFrom(from, to, tokenId);\n    }\n\n    function mint(\n        address to,\n        string memory quizId,\n        uint8 score,\n        uint8 total,\n        string memory quizName,\n        string memory _tokenURI\n    ) public onlyMinter returns (uint256) {\n        require(to != address(0), \"Cannot mint to zero address\");\n\n        totalSupply++;\n        uint256 tokenId = totalSupply;\n\n        _tokens[tokenId] = TokenData({\n            tokenOwner: to,\n            quizId: quizId,\n            score: score,\n            total: total,\n            quizName: quizName,\n            mintedAt: block.timestamp,\n            tokenURI: _tokenURI\n        });\n\n        _ownerTokenIndex[tokenId] = _ownerTokens[to].length;\n        _ownerTokens[to].push(tokenId);\n\n        emit Transfer(address(0), to, tokenId);\n        emit NFTMinted(to, tokenId, quizId, score, total, quizName);\n\n        return tokenId;\n    }\n\n    function transferByOperator(address from, address to, uint256 tokenId) public {\n        require(msg.sender == marketplaceOperator || msg.sender == owner, \"Not operator\");\n        require(to != address(0), \"Cannot transfer to zero address\");\n        _transfer(from, to, tokenId);\n    }\n\n    function getTokenData(uint256 tokenId) public view returns (\n        address tokenOwner,\n        string memory quizId,\n        uint8 score,\n        uint8 total,\n        string memory quizName,\n        uint256 mintedAt,\n        string memory uri\n    ) {\n        TokenData memory t = _tokens[tokenId];\n        require(t.tokenOwner != address(0), \"Token does not exist\");\n        return (t.tokenOwner, t.quizId, t.score, t.total, t.quizName, t.mintedAt, t.tokenURI);\n    }\n\n    function getOwnerTokens(address _owner) public view returns (uint256[] memory) {\n        return _ownerTokens[_owner];\n    }\n\n    function setMarketplaceOperator(address newOperator) public onlyOwner {\n        marketplaceOperator = newOperator;\n    }\n\n    function setTokenURI(uint256 tokenId, string memory _tokenURI) public onlyOwner {\n        require(_tokens[tokenId].tokenOwner != address(0), \"Token does not exist\");\n        _tokens[tokenId].tokenURI = _tokenURI;\n    }\n}\n",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_marketplaceOperator",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenOwner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "approved",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "Approval",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenOwner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "operator",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "approved",
+          "type": "bool"
+        }
+      ],
+      "name": "ApprovalForAll",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "quizId",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "score",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "total",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "quizName",
+          "type": "string"
+        }
+      ],
+      "name": "NFTMinted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "NFTTransferred",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "Transfer",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "approve",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_owner",
+          "type": "address"
+        }
+      ],
+      "name": "balanceOf",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "getApproved",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_owner",
+          "type": "address"
+        }
+      ],
+      "name": "getOwnerTokens",
+      "outputs": [
+        {
+          "internalType": "uint256[]",
+          "name": "",
+          "type": "uint256[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "getTokenData",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "tokenOwner",
+          "type": "address"
+        },
+        {
+          "internalType": "string",
+          "name": "quizId",
+          "type": "string"
+        },
+        {
+          "internalType": "uint8",
+          "name": "score",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint8",
+          "name": "total",
+          "type": "uint8"
+        },
+        {
+          "internalType": "string",
+          "name": "quizName",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "mintedAt",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "uri",
+          "type": "string"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_owner",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "operator",
+          "type": "address"
+        }
+      ],
+      "name": "isApprovedForAll",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "marketplaceOperator",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "string",
+          "name": "quizId",
+          "type": "string"
+        },
+        {
+          "internalType": "uint8",
+          "name": "score",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint8",
+          "name": "total",
+          "type": "uint8"
+        },
+        {
+          "internalType": "string",
+          "name": "quizName",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "_tokenURI",
+          "type": "string"
+        }
+      ],
+      "name": "mint",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "name",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "owner",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "ownerOf",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "safeTransferFrom",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "",
+          "type": "bytes"
+        }
+      ],
+      "name": "safeTransferFrom",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "operator",
+          "type": "address"
+        },
+        {
+          "internalType": "bool",
+          "name": "approved",
+          "type": "bool"
+        }
+      ],
+      "name": "setApprovalForAll",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newOperator",
+          "type": "address"
+        }
+      ],
+      "name": "setMarketplaceOperator",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "_tokenURI",
+          "type": "string"
+        }
+      ],
+      "name": "setTokenURI",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes4",
+          "name": "interfaceId",
+          "type": "bytes4"
+        }
+      ],
+      "name": "supportsInterface",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "symbol",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "tokenURI",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "totalSupply",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "transferByOperator",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "transferFrom",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ]
+}
