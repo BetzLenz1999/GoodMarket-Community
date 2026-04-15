@@ -1,0 +1,351 @@
+
+<!-- This is the main page of the application -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reloadly Integration</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .container {
+            margin-top: 20px;
+        }
+        .card {
+            margin-bottom: 20px;
+        }
+        .card-header {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        .btn {
+            margin-bottom: 10px;
+        }
+        #reloadly-results small {
+            display: block;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mb-4">🚀 Reloadly API Integration Demo</h1>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Account Balance</h2>
+            </div>
+            <div class="card-body">
+                <button class="btn btn-primary" onclick="getAccountBalance()">Get Balance</button>
+                <div id="balance-result" class="mt-3"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Countries</h2>
+            </div>
+            <div class="card-body">
+                <button class="btn btn-info" onclick="loadCountries()">List Countries</button>
+                <div id="countries-result" class="mt-3"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Operators</h2>
+            </div>
+            <div class="card-body">
+                <label for="countryCodeInput" class="form-label">Enter Country Code (e.g., PH, US, GB):</label>
+                <input type="text" class="form-control mb-2" id="countryCodeInput" placeholder="e.g., PH">
+                <button class="btn btn-success" onclick="loadOperators()">List Operators by Country</button>
+                <div id="operators-result" class="mt-3"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Products</h2>
+            </div>
+            <div class="card-body">
+                <label for="operatorIdInput" class="form-label">Enter Operator ID:</label>
+                <input type="number" class="form-control mb-2" id="operatorIdInput" placeholder="e.g., 1001">
+                <button class="btn btn-warning" onclick="loadProducts()">List Products by Operator</button>
+                <div id="products-result" class="mt-3"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Operators with Products</h2>
+            </div>
+            <div class="card-body">
+                <label for="countryCodeProductsInput" class="form-label">Enter Country Code (e.g., PH, US, GB):</label>
+                <input type="text" class="form-control mb-2" id="countryCodeProductsInput" placeholder="e.g., PH">
+                <button class="btn btn-secondary" onclick="loadOperatorsWithProducts()">List Operators & Products by Country</button>
+                <div id="operators-with-products-result" class="mt-3"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Phone Validation</h2>
+            </div>
+            <div class="card-body">
+                <label for="phoneNumberInput" class="form-label">Enter Phone Number (with country code):</label>
+                <input type="text" class="form-control mb-2" id="phoneNumberInput" placeholder="e.g., +15105551212">
+                <button class="btn btn-info" onclick="validatePhoneNumber()">Validate Phone Number</button>
+                <div id="phone-validation-result" class="mt-3"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Reloadly API Test Section -->
+    <div class="container mt-4">
+        <div class="card">
+            <div class="card-header">
+                <h3>🌍 Reloadly API Integration</h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <button class="btn btn-primary btn-block" onclick="testReloadlyAPI()">
+                            🧪 Test Reloadly Integration
+                        </button>
+                        <button class="btn btn-info btn-block mt-2" onclick="loadCountries()">
+                            🌍 Load Countries
+                        </button>
+                        <button class="btn btn-success btn-block mt-2" onclick="loadPHOperators()">
+                            📡 Load PH Operators
+                        </button>
+                    </div>
+                    <div class="col-md-6">
+                        <div id="reloadly-results" class="mt-2">
+                            <small class="text-muted">Click buttons to test API integration</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global error handler for unhandled promise rejections
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error('Unhandled promise rejection:', event.reason);
+            // Prevent the default browser behavior
+            event.preventDefault();
+        });
+
+        let currentWallet = null;
+
+        function refreshPage() {
+            location.reload();
+        }
+
+        // Helper function to display results
+        function displayResult(elementId, data, successMessage, errorMessage) {
+            const resultDiv = document.getElementById(elementId);
+            if (data.success) {
+                resultDiv.innerHTML = `<div class="alert alert-success">${successMessage}</div><pre>${JSON.stringify(data, null, 2)}</pre>`;
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-danger">${errorMessage}: ${data.error || 'Unknown error'}</div>`;
+            }
+        }
+
+        // Account Balance
+        async function getAccountBalance() {
+            const resultDiv = document.getElementById('balance-result');
+            resultDiv.innerHTML = '<div class="text-info">Fetching balance...</div>';
+            try {
+                const response = await fetch('/goodmarket/api/account/balance');
+                const data = await response.json();
+                displayResult('balance-result', data, 'Account Balance:', 'Failed to get balance');
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Load Countries
+        async function loadCountries() {
+            const resultDiv = document.getElementById('countries-result');
+            resultDiv.innerHTML = '<div class="text-info">Loading countries...</div>';
+            try {
+                const response = await fetch('/goodmarket/api/countries');
+                const data = await response.json();
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">Found ${data.count} countries</div>
+                        <div class="row">
+                            ${data.countries.slice(0, 20).map(country => 
+                                `<div class="col-md-3 mb-2">
+                                    <button class="btn btn-outline-primary btn-sm" onclick="loadOperators('${country.isoName}')">
+                                        ${country.name} (${country.isoName})
+                                    </button>
+                                </div>`
+                            ).join('')}
+                        </div>
+                        ${data.count > 20 ? `<small class="text-muted">Showing first 20 of ${data.count} countries</small>` : ''}
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Load Operators
+        async function loadOperators(countryCode) {
+            if (!countryCode) {
+                countryCode = document.getElementById('countryCodeInput').value.trim().toUpperCase();
+            }
+            if (!countryCode) {
+                alert('Please enter a country code (e.g., PH, US, GB)');
+                return;
+            }
+
+            const resultDiv = document.getElementById('operators-result');
+            resultDiv.innerHTML = `<div class="text-info">Loading operators for ${countryCode}...</div>`;
+
+            try {
+                const response = await fetch(`/goodmarket/api/operators/${countryCode}`);
+                const data = await response.json();
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">Found ${data.count} operators for ${countryCode}</div>
+                        <div class="row">
+                            ${data.operators.slice(0, 10).map(operator => 
+                                `<div class="col-md-6 mb-2">
+                                    <div class="card">
+                                        <div class="card-body p-2">
+                                            <h6 class="card-title mb-1">${operator.name}</h6>
+                                            <small class="text-muted">ID: ${operator.id}</small>
+                                            <br>
+                                            <button class="btn btn-sm btn-primary mt-1" onclick="loadProducts(${operator.id})">
+                                                View Products
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>`
+                            ).join('')}
+                        </div>
+                        ${data.count > 10 ? `<small class="text-muted">Showing first 10 of ${data.count} operators</small>` : ''}
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Load Products
+        async function loadProducts(operatorId) {
+            const resultDiv = document.getElementById('operators-result');
+            resultDiv.innerHTML = `<div class="text-info">Loading products for operator ${operatorId}...</div>`;
+
+            try {
+                const response = await fetch(`/goodmarket/api/products/${operatorId}`);
+                const data = await response.json();
+                if (data.success) {
+                    const products = data.products;
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">Found ${data.count} products for operator ${operatorId}</div>
+                        <div class="row">
+                            ${products.slice(0, 12).map(product => 
+                                `<div class="col-md-4 mb-2">
+                                    <div class="card">
+                                        <div class="card-body p-2">
+                                            <h6 class="card-title mb-1">${product.name}</h6>
+                                            <p class="card-text mb-1">
+                                                <strong>${product.amount} ${product.currency}</strong>
+                                            </p>
+                                            <small class="text-muted">${product.description}</small>
+                                            <br>
+                                            <span class="badge badge-${product.productType === 'data' ? 'info' : 'success'} mt-1">
+                                                ${product.productType}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>`
+                            ).join('')}
+                        </div>
+                        ${data.count > 12 ? `<small class="text-muted">Showing first 12 of ${data.count} products</small>` : ''}
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Test Reloadly API Integration
+        async function testReloadlyAPI() {
+            const resultDiv = document.getElementById('reloadly-results');
+            resultDiv.innerHTML = '<div class="text-info">Testing Reloadly API integration...</div>';
+
+            try {
+                const response = await fetch('/goodmarket/test-reloadly');
+                const data = await response.json();
+                if (data.success) {
+                    const test = data.integration_test;
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">✅ Reloadly Integration Test Results</div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Authentication: ${test.authentication === 'working' ? '✅' : '❌'}</h6>
+                                <p>Countries Available: <strong>${test.countries_count}</strong></p>
+                                <p>PH Operators: <strong>${test.ph_operators_count}</strong></p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Account Balance</h6>
+                                <p>${test.account_balance.balance} ${test.account_balance.currencyCode}</p>
+                            </div>
+                        </div>
+                        <details>
+                            <summary>Sample Countries</summary>
+                            <pre>${JSON.stringify(test.sample_countries, null, 2)}</pre>
+                        </details>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="alert alert-danger">❌ Integration Test Failed: ${data.error}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Load PH Operators specifically
+        async function loadPHOperators() {
+            loadOperators('PH');
+        }
+
+        // Validate Phone Number
+        async function validatePhoneNumber() {
+            const phoneNumber = document.getElementById('phoneNumberInput').value.trim();
+            if (!phoneNumber) {
+                alert('Please enter a phone number');
+                return;
+            }
+
+            const resultDiv = document.getElementById('phone-validation-result');
+            resultDiv.innerHTML = '<div class="text-info">Validating phone number...</div>';
+
+            // This would need a backend endpoint for phone validation
+            resultDiv.innerHTML = `
+                <div class="alert alert-info">
+                    Phone validation would be implemented with backend endpoint
+                    <br><strong>Input:</strong> ${phoneNumber}
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
