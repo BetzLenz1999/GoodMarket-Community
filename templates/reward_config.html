@@ -1,0 +1,109 @@
+{% extends "admin_layout.html" %}
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">💰 Reward Configuration</h1>
+    <p style="color: rgba(241, 245, 249, 0.7);">Manage reward amounts for social media tasks</p>
+</div>
+
+<div class="content-box">
+    <h2>Current Reward Settings</h2>
+    <div id="reward-config-status">
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading reward configuration...</p>
+        </div>
+    </div>
+    
+    <div id="reward-config-controls" style="display: none;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 1rem;">
+            <!-- Twitter Card -->
+            <div style="padding: 1.5rem; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 12px;">
+                <h3 style="color: #3b82f6; display: flex; align-items: center; gap: 0.5rem;">
+                    <span>🐦</span> Twitter Task
+                </h3>
+                <div style="margin: 1rem 0;">
+                    <label class="form-label">Reward Amount (G$)</label>
+                    <input type="number" id="reward-twitter_task" class="form-control" min="10" max="10000">
+                </div>
+                <button class="btn btn-primary w-100" onclick="updateReward('twitter_task')">💾 Update Twitter Reward</button>
+            </div>
+
+            <!-- Telegram Card -->
+            <div style="padding: 1.5rem; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(0, 172, 238, 0.3); border-radius: 12px;">
+                <h3 style="color: #00acee; display: flex; align-items: center; gap: 0.5rem;">
+                    <span>📱</span> Telegram Task
+                </h3>
+                <div style="margin: 1rem 0;">
+                    <label class="form-label">Reward Amount (G$)</label>
+                    <input type="number" id="reward-telegram_task" class="form-control" min="10" max="10000">
+                </div>
+                <button class="btn btn-primary w-100" onclick="updateReward('telegram_task')" style="background: linear-gradient(135deg, #6366f1, #a855f7);">💾 Update Telegram Reward</button>
+            </div>
+
+            <!-- Facebook Card -->
+            <div style="padding: 1.5rem; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(24, 119, 242, 0.3); border-radius: 12px;">
+                <h3 style="color: #1877f2; display: flex; align-items: center; gap: 0.5rem;">
+                    <span>📘</span> Facebook Task
+                </h3>
+                <div style="margin: 1rem 0;">
+                    <label class="form-label">Reward Amount (G$)</label>
+                    <input type="number" id="reward-facebook_task" class="form-control" min="10" max="10000">
+                </div>
+                <button class="btn btn-primary w-100" onclick="updateReward('facebook_task')" style="background: #1877f2;">💾 Update Facebook Reward</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', loadRewardConfig);
+
+    async function loadRewardConfig() {
+        const statusDiv = document.getElementById('reward-config-status');
+        const controlsDiv = document.getElementById('reward-config-controls');
+        
+        try {
+            const response = await fetch('/api/admin/reward-config');
+            const data = await response.json();
+            
+            if (data.success) {
+                data.rewards.forEach(reward => {
+                    const input = document.getElementById(`reward-${reward.task_type}`);
+                    if (input) input.value = reward.reward_amount;
+                });
+                statusDiv.style.display = 'none';
+                controlsDiv.style.display = 'block';
+            } else {
+                statusDiv.innerHTML = `<p style="color: #ef4444;">❌ Error: ${data.error}</p>`;
+            }
+        } catch (error) {
+            statusDiv.innerHTML = `<p style="color: #ef4444;">❌ Connection error</p>`;
+        }
+    }
+
+    async function updateReward(taskType) {
+        const amount = document.getElementById(`reward-${taskType}`).value;
+        if (!amount || amount < 10) {
+            alert('⚠️ Minimum 10 G$');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/admin/reward-config', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ task_type: taskType, reward_amount: amount })
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert('✅ Reward updated!');
+                loadRewardConfig();
+            } else {
+                alert('❌ ' + data.error);
+            }
+        } catch (error) {
+            alert('❌ Error updating reward');
+        }
+    }
+</script>
+{% endblock %}
