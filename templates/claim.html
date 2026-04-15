@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claim G$ - GoodMarket</title>
+    <meta name="theme-color" content="#7c3aed">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0B0F2A 0%, #130D35 50%, #1A103D 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+        .claim-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 28px;
+            padding: 2.5rem 2rem;
+            max-width: 420px;
+            width: 100%;
+            backdrop-filter: blur(8px);
+            text-align: center;
+        }
+        .logo-link { font-size: 1.1rem; font-weight: 800; color: #7c3aed; text-decoration: none; margin-bottom: 1.75rem; display: block; }
+        .gift-icon { font-size: 3.5rem; margin-bottom: 1rem; display: block; }
+        .card-title { font-size: 1.6rem; font-weight: 800; color: #fff; letter-spacing: -0.5px; margin-bottom: 0.4rem; }
+        .card-subtitle { color: rgba(255,255,255,0.5); font-size: 0.9rem; margin-bottom: 2rem; }
+        .amount-display {
+            background: linear-gradient(135deg, rgba(124,58,237,0.2), rgba(168,85,247,0.15));
+            border: 1px solid rgba(124,58,237,0.35);
+            border-radius: 18px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .amount-label { font-size: 0.7rem; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem; }
+        .amount-value { font-size: 2.2rem; font-weight: 800; color: #fff; letter-spacing: -1px; }
+        .amount-token { font-size: 1rem; color: #a78bfa; font-weight: 600; }
+        .loading-amount { font-size: 0.9rem; color: rgba(255,255,255,0.4); }
+        .claim-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #7c3aed, #5b21b6);
+            border: none; border-radius: 16px; color: #fff;
+            font-size: 1rem; font-weight: 700; padding: 1rem;
+            cursor: pointer; font-family: inherit; transition: all 0.2s;
+        }
+        .claim-btn:hover:not(:disabled) { background: linear-gradient(135deg, #6d28d9, #4c1d95); transform: translateY(-1px); box-shadow: 0 8px 25px rgba(124,58,237,0.35); }
+        .claim-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .alert { border-radius: 12px; padding: 0.85rem 1rem; font-size: 0.85rem; font-weight: 500; margin-top: 1rem; display: none; text-align: left; }
+        .alert.show { display: block; }
+        .alert-error { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+        .alert-success { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
+        .alert-info { background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3); color: #93c5fd; }
+        .alert-warning { background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.25); color: #fde68a; }
+        .spinner-inline { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .footer-note { font-size: 0.75rem; color: rgba(255,255,255,0.3); margin-top: 1.5rem; line-height: 1.5; }
+        .footer-note a { color: #a78bfa; text-decoration: none; }
+        .footer-note a:hover { text-decoration: underline; }
+        .error-state { display: none; }
+        .error-state.show { display: block; }
+    </style>
+</head>
+<body>
+    <div class="claim-card">
+        <a href="/" class="logo-link">💰 GoodMarket</a>
+
+        <span class="gift-icon">🎁</span>
+        <h1 class="card-title">You have G$!</h1>
+        <p class="card-subtitle">Someone sent you GoodDollar tokens via a payment link.</p>
+
+        <div class="amount-display" id="amountDisplay">
+            <div class="amount-label">Amount to claim</div>
+            <div class="loading-amount"><span class="spinner-inline"></span> Loading...</div>
+        </div>
+
+        <div class="error-state" id="errorState">
+            <div class="alert alert-warning show" id="errorMsg"></div>
+        </div>
+
+        <button class="claim-btn" id="claimBtn" onclick="claimPayment()" disabled>
+            <span class="spinner-inline"></span> Loading...
+        </button>
+
+        <div class="alert" id="claimAlert"></div>
+
+        <p class="footer-note">
+            Powered by the GoodDollar OneTimePayments contract on Celo.<br>
+            <a href="/dashboard">Go to GoodMarket Dashboard →</a>
+        </p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+    <script>
+        const CELO_CHAIN_ID = 42220;
+        const CELO_RPC = "https://forno.celo.org";
+        const GD_ADDRESS = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A";
+        const OTP_ADDRESS = "0xB27D247f5C2a61D2Cb6b6E67FEE51d839447e97d";
+        const GD_DECIMALS = 18;
+        const GD_DISPLAY_DECIMALS = 2;
+
+        const OTP_ABI = [
+            "function payments(address) view returns (bool hasPayment, uint256 paymentAmount, address paymentSender)",
+            "function withdraw(address paymentId, bytes memory signature) public",
+            "function hasPayment(address paymentId) view returns (bool)"
+        ];
+
+        let paymentPrivKey = null;
+        let paymentWallet = null;
+        let paymentAmount = null;
+
+        window.addEventListener("load", initClaim);
+
+        async function initClaim() {
+            const hash = window.location.hash.slice(1); // remove leading #
+            if (!hash || hash.length < 60) {
+                showError("❌ Invalid payment link. The link may be broken or already claimed.");
+                return;
+            }
+
+            try {
+                paymentPrivKey = hash.startsWith("0x") ? hash : "0x" + hash;
+                paymentWallet = new ethers.Wallet(paymentPrivKey);
+
+                const provider = new ethers.JsonRpcProvider(CELO_RPC);
+                const otp = new ethers.Contract(OTP_ADDRESS, OTP_ABI, provider);
+                const payment = await otp.payments(paymentWallet.address);
+
+                if (!payment.hasPayment) {
+                    showError("❌ This payment link has already been claimed or cancelled.");
+                    return;
+                }
+
+                paymentAmount = payment.paymentAmount;
+                const humanAmount = parseFloat(ethers.formatUnits(paymentAmount, GD_DECIMALS)).toFixed(GD_DISPLAY_DECIMALS);
+
+                document.getElementById("amountDisplay").innerHTML = `
+                    <div class="amount-label">Amount to claim</div>
+                    <div class="amount-value">${humanAmount} <span class="amount-token">G$</span></div>
+                `;
+
+                const btn = document.getElementById("claimBtn");
+                btn.disabled = false;
+                btn.textContent = `Claim ${humanAmount} G$`;
+
+            } catch(e) {
+                console.error(e);
+                showError("❌ Could not load payment details. Please check the link or try again.");
+            }
+        }
+
+        function showError(msg) {
+            document.getElementById("errorMsg").textContent = msg;
+            document.getElementById("errorState").classList.add("show");
+            document.getElementById("amountDisplay").innerHTML = `<div class="amount-label">Amount to claim</div><div class="loading-amount" style="color:#fca5a5">Unavailable</div>`;
+            const btn = document.getElementById("claimBtn");
+            btn.disabled = true;
+            btn.textContent = "Unavailable";
+        }
+
+        function showAlert(type, html) {
+            const el = document.getElementById("claimAlert");
+            el.className = `alert ${type} show`;
+            el.innerHTML = html;
+        }
+        function clearAlert() {
+            const el = document.getElementById("claimAlert");
+            el.className = "alert";
+            el.innerHTML = "";
+        }
+
+        async function claimPayment() {
+            if (!paymentWallet || !paymentAmount) return;
+            if (!window.ethereum) {
+                showAlert("alert-error", "⚠️ No Web3 wallet detected. Please open this page in MetaMask, MiniPay, or a Celo-compatible wallet.");
+                return;
+            }
+            clearAlert();
+
+            const btn = document.getElementById("claimBtn");
+            try {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-inline"></span> Connecting wallet...';
+                await window.ethereum.request({ method: "eth_requestAccounts" });
+
+                const chainIdHex = await window.ethereum.request({ method: "eth_chainId" });
+                if (parseInt(chainIdHex, 16) !== CELO_CHAIN_ID) {
+                    try {
+                        await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x" + CELO_CHAIN_ID.toString(16) }] });
+                    } catch {
+                        await window.ethereum.request({ method: "wallet_addEthereumChain", params: [{ chainId: "0x" + CELO_CHAIN_ID.toString(16), chainName: "Celo Mainnet", nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 }, rpcUrls: ["https://forno.celo.org"], blockExplorerUrls: ["https://celoscan.io"] }] });
+                    }
+                }
+
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const signer = await provider.getSigner();
+                const receiverAddr = await signer.getAddress();
+
+                // Check payment still exists
+                btn.innerHTML = '<span class="spinner-inline"></span> Verifying payment...';
+                const otpCheck = new ethers.Contract(OTP_ADDRESS, OTP_ABI, provider);
+                const stillActive = await otpCheck.hasPayment(paymentWallet.address);
+                if (!stillActive) {
+                    showAlert("alert-error", "❌ This payment has already been claimed or cancelled.");
+                    btn.disabled = true;
+                    btn.textContent = "Already Claimed";
+                    return;
+                }
+
+                // Sign the receiver's address with the payment private key
+                // signerOfAddress(msg.sender, signature) → recovers from keccak256(receiverAddr)
+                btn.innerHTML = '<span class="spinner-inline"></span> Signing...';
+                const messageHash = ethers.keccak256(ethers.solidityPacked(['address'], [receiverAddr]));
+                const signature = await paymentWallet.signMessage(ethers.getBytes(messageHash));
+
+                // Call withdraw
+                btn.innerHTML = '<span class="spinner-inline"></span> Confirm in wallet...';
+                showAlert("alert-info", '<span class="spinner-inline"></span> Confirm the claim transaction in your wallet.');
+                const otpSigner = new ethers.Contract(OTP_ADDRESS, OTP_ABI, signer);
+                const tx = await otpSigner.withdraw(paymentWallet.address, signature);
+
+                btn.innerHTML = '<span class="spinner-inline"></span> Waiting for confirmation...';
+                showAlert("alert-info", '<span class="spinner-inline"></span> Transaction submitted. Waiting for confirmation on Celo...');
+                const receipt = await tx.wait();
+
+                const humanAmount = parseFloat(ethers.formatUnits(paymentAmount, GD_DECIMALS)).toFixed(GD_DISPLAY_DECIMALS);
+                const explorerUrl = `https://celoscan.io/tx/${receipt.hash}`;
+                showAlert("alert-success",
+                    `✅ Successfully claimed <strong>${humanAmount} G$</strong> to your wallet! ` +
+                    `<a href="${explorerUrl}" target="_blank" style="color:#86efac;text-decoration:underline;">View on CeloScan ↗</a>`
+                );
+                btn.disabled = true;
+                btn.textContent = "✅ Claimed!";
+
+                // Clear hash so the link can't be reused accidentally
+                history.replaceState(null, "", window.location.pathname);
+
+            } catch(err) {
+                console.error(err);
+                const msg = err?.reason || err?.shortMessage || err?.message || "Unknown error";
+                if (msg.includes("user rejected") || msg.includes("ACTION_REJECTED")) {
+                    showAlert("alert-error", "❌ Transaction cancelled.");
+                } else {
+                    showAlert("alert-error", `❌ Claim failed: ${msg.substring(0, 150)}`);
+                }
+                const humanAmount = paymentAmount ? parseFloat(ethers.formatUnits(paymentAmount, GD_DECIMALS)).toFixed(GD_DISPLAY_DECIMALS) : "?";
+                btn.disabled = false;
+                btn.textContent = `Claim ${humanAmount} G$`;
+            }
+        }
+    </script>
+</body>
+</html>
