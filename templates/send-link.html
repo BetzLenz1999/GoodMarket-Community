@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Send via Link - GoodMarket</title>
+    <meta name="theme-color" content="#7c3aed">
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #0B0F2A 0%, #130D35 50%, #1A103D 100%); color: #e2e8f0; min-height: 100vh; }
+
+        .navbar { background: rgba(11,15,42,0.92); border-bottom: 1px solid rgba(255,255,255,0.07); padding: 0 1.5rem; position: sticky; top: 0; z-index: 100; backdrop-filter: blur(20px); }
+        .nav-container { max-width: 1300px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; height: 56px; gap: 0.75rem; }
+        .logo { font-size: 1.2rem; font-weight: 800; color: #7c3aed; text-decoration: none; flex-shrink: 0; }
+        .nav-links { display: flex; gap: 0.1rem; align-items: center; }
+        .nav-links a { color: rgba(255,255,255,0.55); text-decoration: none; font-weight: 500; font-size: 0.875rem; padding: 0.4rem 0.65rem; border-radius: 8px; transition: color 0.2s, background 0.2s; }
+        .nav-links a:hover { color: #a78bfa; background: rgba(124,58,237,0.1); }
+        .nav-links a.active { color: #fff; background: rgba(124,58,237,0.18); font-weight: 600; }
+        .wallet-tag { background: rgba(124,58,237,0.12); border: 1px solid rgba(124,58,237,0.28); border-radius: 20px; padding: 0.28rem 0.8rem; font-weight: 600; font-family: 'Courier New', monospace; font-size: 0.8rem; color: #a78bfa; white-space: nowrap; flex-shrink: 0; }
+        .logout-btn { background: rgba(239,68,68,0.1) !important; border: 1px solid rgba(239,68,68,0.25) !important; color: #f87171 !important; border-radius: 20px !important; }
+
+        .container { max-width: 520px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+        .page-header { text-align: center; margin-bottom: 2rem; }
+        .page-title { font-size: 2rem; font-weight: 800; color: #fff; letter-spacing: -1px; margin-bottom: 0.4rem; }
+        .page-subtitle { color: rgba(255,255,255,0.5); font-size: 0.95rem; }
+
+        .card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.09); border-radius: 24px; padding: 1.75rem; backdrop-filter: blur(8px); margin-bottom: 1rem; }
+        .section-label { font-size: 0.75rem; font-weight: 600; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.6rem; }
+
+        .amount-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 1rem 1.1rem; margin-bottom: 1rem; transition: border-color 0.2s; }
+        .amount-box:focus-within { border-color: rgba(124,58,237,0.5); }
+        .amount-row { display: flex; align-items: center; gap: 0.75rem; }
+        .token-badge { display: flex; align-items: center; gap: 8px; background: rgba(124,58,237,0.2); border: 1px solid rgba(124,58,237,0.4); border-radius: 12px; padding: 0.5rem 0.85rem; font-weight: 700; font-size: 0.95rem; white-space: nowrap; flex-shrink: 0; }
+        .token-icon-gd { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg,#7c3aed,#5b21b6); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 800; }
+        .amount-input { flex: 1; background: none; border: none; outline: none; color: #fff; font-size: 1.4rem; font-weight: 700; font-family: inherit; text-align: right; min-width: 0; }
+        .amount-input::placeholder { color: rgba(255,255,255,0.2); }
+        .balance-row { display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; font-size: 0.78rem; color: rgba(255,255,255,0.4); }
+        .max-btn { background: rgba(124,58,237,0.2); border: 1px solid rgba(124,58,237,0.35); border-radius: 6px; color: #a78bfa; font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; cursor: pointer; font-family: inherit; }
+
+        .action-btn { width: 100%; background: linear-gradient(135deg, #7c3aed, #5b21b6); border: none; border-radius: 16px; color: #fff; font-size: 1rem; font-weight: 700; padding: 1rem; cursor: pointer; font-family: inherit; transition: all 0.2s; margin-top: 0.5rem; }
+        .action-btn:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 8px 25px rgba(124,58,237,0.35); }
+        .action-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .alert { border-radius: 12px; padding: 0.85rem 1rem; font-size: 0.85rem; font-weight: 500; margin-top: 1rem; display: none; }
+        .alert.show { display: block; }
+        .alert-error { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+        .alert-success { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
+        .alert-info { background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3); color: #93c5fd; }
+
+        /* Generated link box */
+        .link-result { display: none; margin-top: 1.25rem; border: 1.5px solid rgba(34,197,94,0.35); border-radius: 18px; background: rgba(34,197,94,0.07); padding: 1.25rem; animation: fadeIn 0.3s ease; }
+        .link-result.show { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+        .link-result-title { font-size: 0.82rem; font-weight: 700; color: #86efac; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.4rem; }
+        .link-box { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 0.75rem 1rem; font-family: 'Courier New', monospace; font-size: 0.7rem; color: #c4b5fd; word-break: break-all; line-height: 1.5; margin-bottom: 0.85rem; user-select: all; }
+        .link-actions { display: flex; gap: 0.5rem; }
+        .link-btn { flex: 1; background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); border-radius: 12px; color: #86efac; font-size: 0.82rem; font-weight: 700; padding: 0.6rem 0.75rem; cursor: pointer; font-family: inherit; transition: background 0.15s; text-align: center; }
+        .link-btn:hover { background: rgba(34,197,94,0.25); }
+        .link-btn-share { background: rgba(124,58,237,0.15); border-color: rgba(124,58,237,0.3); color: #c4b5fd; }
+        .link-btn-share:hover { background: rgba(124,58,237,0.25); }
+        .link-warning { font-size: 0.73rem; color: rgba(255,165,0,0.8); margin-top: 0.6rem; line-height: 1.5; }
+
+        /* Spinner */
+        .spinner-inline { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* History */
+        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .history-title { font-size: 1rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 0.5rem; }
+        .history-count { background: rgba(124,58,237,0.2); border: 1px solid rgba(124,58,237,0.3); border-radius: 20px; color: #a78bfa; font-size: 0.72rem; font-weight: 700; padding: 0.15rem 0.6rem; }
+        .history-empty { text-align: center; color: rgba(255,255,255,0.3); font-size: 0.85rem; padding: 2rem 0; }
+
+        .payment-item { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.09); border-radius: 18px; padding: 1rem 1.1rem; margin-bottom: 0.75rem; transition: border-color 0.2s; }
+        .payment-item.status-active { border-color: rgba(124,58,237,0.3); }
+        .payment-item.status-claimed { border-color: rgba(34,197,94,0.2); opacity: 0.75; }
+        .payment-item.status-cancelled { border-color: rgba(255,255,255,0.06); opacity: 0.55; }
+
+        .payment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .payment-amount { font-size: 1.1rem; font-weight: 800; color: #fff; }
+        .payment-status { font-size: 0.68rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .status-active .payment-status { background: rgba(124,58,237,0.2); color: #a78bfa; border: 1px solid rgba(124,58,237,0.35); }
+        .status-claimed .payment-status { background: rgba(34,197,94,0.15); color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+        .status-cancelled .payment-status { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.35); border: 1px solid rgba(255,255,255,0.1); }
+
+        .payment-meta { font-size: 0.72rem; color: rgba(255,255,255,0.35); margin-bottom: 0.7rem; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+        .celoscan-link { color: #a78bfa; text-decoration: none; font-size: 0.7rem; }
+        .celoscan-link:hover { text-decoration: underline; }
+
+        .payment-link-row { background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 0.55rem 0.75rem; font-family: 'Courier New', monospace; font-size: 0.65rem; color: #c4b5fd; word-break: break-all; margin-bottom: 0.65rem; line-height: 1.5; }
+
+        .payment-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+        .pay-btn { flex: 1; min-width: 80px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; color: rgba(255,255,255,0.75); font-size: 0.75rem; font-weight: 600; padding: 0.45rem 0.5rem; cursor: pointer; font-family: inherit; transition: background 0.15s; text-align: center; white-space: nowrap; }
+        .pay-btn:hover:not(:disabled) { background: rgba(255,255,255,0.13); }
+        .pay-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .pay-btn-danger { border-color: rgba(239,68,68,0.3); color: #fca5a5; }
+        .pay-btn-danger:hover:not(:disabled) { background: rgba(239,68,68,0.12); }
+
+        .info-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; padding: 1.1rem 1.25rem; font-size: 0.82rem; color: rgba(255,255,255,0.5); line-height: 1.6; margin-bottom: 1rem; }
+        .info-card-title { font-size: 0.75rem; font-weight: 600; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.6rem; }
+        .step-item { display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.35rem 0; }
+        .step-num { width: 20px; height: 20px; border-radius: 50%; background: rgba(124,58,237,0.3); border: 1px solid rgba(124,58,237,0.5); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 800; color: #a78bfa; flex-shrink: 0; margin-top: 1px; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/dashboard" class="logo">💰 GoodMarket</a>
+            <div class="nav-links">
+                <a href="/overview">Overview</a>
+                <a href="/dashboard">Dashboard</a>
+                {% if wallet_visible %}<a href="/wallet">Wallet</a>{% endif %}
+                <a href="/send-link" class="active">Send</a>
+                <a href="/profile">Profile</a>
+                {% if wallet and wallet != 'None' %}
+                <div class="wallet-tag">{{ wallet[:6] }}...{{ wallet[-4:] }}</div>
+                {% endif %}
+                <a href="/logout" class="logout-btn">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1 class="page-title">🔗 Send via Link</h1>
+            <p class="page-subtitle">Send G$ to anyone — no wallet address needed</p>
+        </div>
+
+        <!-- How it works -->
+        <div class="info-card">
+            <div class="info-card-title">How it works</div>
+            <div class="step-item"><div class="step-num">1</div><span>Enter amount, click <strong style="color:#e2e8f0">Generate Link</strong>, confirm transaction in your wallet.</span></div>
+            <div class="step-item"><div class="step-num">2</div><span>Copy the link that appears and share it via Telegram, SMS, or any chat.</span></div>
+            <div class="step-item"><div class="step-num">3</div><span>Receiver opens the link, connects wallet, and claims the G$ with one click.</span></div>
+            <div class="step-item"><div class="step-num">4</div><span>If unclaimed, cancel anytime from the history below to get your G$ back.</span></div>
+        </div>
+
+        <!-- Send Form -->
+        <div class="card">
+            <div class="section-label">Amount to send</div>
+            <div class="amount-box">
+                <div class="amount-row">
+                    <div class="token-badge">
+                        <div class="token-icon-gd">G$</div>
+                        G$
+                    </div>
+                    <input type="number" class="amount-input" id="amountInput" placeholder="0.00" min="0" step="any" oninput="onAmountChange()">
+                </div>
+                <div class="balance-row">
+                    <span>Wallet balance: <span id="gdBalance">Loading...</span></span>
+                    <button class="max-btn" onclick="setMax()">MAX</button>
+                </div>
+            </div>
+            <button class="action-btn" id="sendBtn" onclick="startSend()" disabled>Enter an amount</button>
+
+            <!-- Generated link (shown right after send) -->
+            <div class="link-result" id="linkResult">
+                <div class="link-result-title">✅ Payment link created!</div>
+                <div class="link-box" id="generatedLink"></div>
+                <div class="link-actions">
+                    <button class="link-btn" onclick="copyGeneratedLink()">📋 Copy Link</button>
+                    <button class="link-btn link-btn-share" onclick="shareGeneratedLink()">🔗 Share</button>
+                </div>
+                <div class="link-warning">⚠️ Save this link now! It's also saved in your history below and in your account database.</div>
+            </div>
+
+            <div class="alert" id="sendAlert"></div>
+        </div>
+
+        <!-- Payment History -->
+        <div>
+            <div class="history-header">
+                <div class="history-title">📋 Payment History <span class="history-count" id="historyCount" style="display:none"></span></div>
+            </div>
+            <div id="historyList"></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+    <script>
+        const CELO_CHAIN_ID = 42220;
+        const CELO_RPC      = "https://forno.celo.org";
+        const GD_ADDRESS    = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A";
+        const OTP_ADDRESS   = "0xB27D247f5C2a61D2Cb6b6E67FEE51d839447e97d";
+        const GD_DECIMALS   = 18;
+        const LS_KEY        = "goodmarket_sent_payments";
+
+        // Handles EIP-5749 multi-wallet: prefer MetaMask over Brave Wallet
+        function _getEthProvider() {
+            if (!window.ethereum) return null;
+            if (window.ethereum.providers && window.ethereum.providers.length) {
+                const mm = window.ethereum.providers.find(p => p.isMetaMask && !p.isBraveWallet);
+                if (mm) return mm;
+                return window.ethereum.providers[0];
+            }
+            return window.ethereum;
+        }
+
+        const GD_ABI  = ["function balanceOf(address) view returns (uint256)", "function transferAndCall(address,uint256,bytes) returns (bool)"];
+        const OTP_ABI = ["function hasPayment(address) view returns (bool)", "function cancel(address) public"];
+
+        let gdBalanceNum = 0;
+        let currentLinkUrl = "";
+
+        // ── LocalStorage helpers ───────────────────────────────────────────────
+        function lsLoad()  { try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; } catch { return []; } }
+        function lsSave(d) { localStorage.setItem(LS_KEY, JSON.stringify(d)); }
+        function lsAdd(entry) { const d = lsLoad(); d.unshift(entry); lsSave(d); }
+        function lsUpdateStatus(paymentId, status) { const d = lsLoad(); const i = d.find(p => p.paymentId === paymentId); if (i) { i.status = status; lsSave(d); } }
+
+        // ── API helpers ────────────────────────────────────────────────────────
+        async function apiSave(entry) {
+            try {
+                const r = await fetch('/api/payment-links', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ paymentId: entry.paymentId, amount: entry.amount, txHash: entry.txHash || '' })
+                });
+                return (await r.json()).success;
+            } catch { return false; }
+        }
+        async function apiList() {
+            try {
+                const r = await fetch('/api/payment-links');
+                const d = await r.json();
+                return d.success ? d.payments : null;
+            } catch { return null; }
+        }
+        async function apiUpdateStatus(paymentId, status) {
+            try {
+                await fetch(`/api/payment-links/${paymentId}`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ status })
+                });
+            } catch { /* ignore */ }
+        }
+
+        // ── Merge DB + localStorage ────────────────────────────────────────────
+        async function loadAllPayments() {
+            const dbItems = await apiList();
+            const lsItems = lsLoad();
+
+            if (!dbItems) return lsItems; // DB unavailable, use localStorage only
+
+            // Build merged list: DB is source of truth, fill in privateKey from localStorage
+            const lsMap = {};
+            lsItems.forEach(p => lsMap[p.paymentId] = p);
+
+            const merged = dbItems.map(p => ({
+                paymentId:  p.payment_id,
+                amount:     p.amount,
+                txHash:     p.tx_hash,
+                status:     p.status,
+                timestamp:  new Date(p.created_at).getTime(),
+                privateKey: lsMap[p.payment_id]?.privateKey || null  // may be null — fetched on demand
+            }));
+
+            // Also show localStorage-only items not in DB (old/offline entries)
+            const dbIds = new Set(dbItems.map(p => p.payment_id));
+            lsItems.forEach(p => { if (!dbIds.has(p.paymentId)) merged.push(p); });
+
+            merged.sort((a, b) => b.timestamp - a.timestamp);
+            return merged;
+        }
+
+        // ── Init ──────────────────────────────────────────────────────────────
+        window.addEventListener("load", async () => {
+            await loadBalance();
+            await renderHistory();
+        });
+
+        // ── Balance ───────────────────────────────────────────────────────────
+        async function loadBalance() {
+            try {
+                let addr = null;
+                const ep = _getEthProvider();
+                if (ep) {
+                    const acc = await ep.request({ method: "eth_accounts" });
+                    if (acc?.length) addr = acc[0];
+                }
+                if (addr) {
+                    const p = new ethers.JsonRpcProvider(CELO_RPC);
+                    const gd = new ethers.Contract(GD_ADDRESS, ["function balanceOf(address) view returns (uint256)"], p);
+                    gdBalanceNum = parseFloat(ethers.formatUnits(await gd.balanceOf(addr), GD_DECIMALS));
+                } else {
+                    const r = await fetch('/api/gooddollar-balance');
+                    if (r.ok) { const d = await r.json(); if (d.success) gdBalanceNum = parseFloat(d.balance) || 0; }
+                }
+                document.getElementById("gdBalance").textContent = gdBalanceNum.toFixed(2) + " G$";
+            } catch(e) { document.getElementById("gdBalance").textContent = "— G$"; }
+        }
+
+        // ── Amount input ──────────────────────────────────────────────────────
+        function onAmountChange() {
+            const val = parseFloat(document.getElementById("amountInput").value);
+            const btn = document.getElementById("sendBtn");
+            if (!val || val <= 0) { btn.disabled = true; btn.textContent = "Enter an amount"; }
+            else { btn.disabled = false; btn.textContent = `Generate Link → ${val} G$`; }
+            clearAlert(); hideLink();
+        }
+        function setMax() {
+            const max = Math.floor(gdBalanceNum * 100) / 100;
+            document.getElementById("amountInput").value = max > 0 ? max.toFixed(2) : "";
+            onAmountChange();
+        }
+
+        // ── Alert helpers ─────────────────────────────────────────────────────
+        function showAlert(type, html) { const el = document.getElementById("sendAlert"); el.className = `alert ${type} show`; el.innerHTML = html; }
+        function clearAlert() { const el = document.getElementById("sendAlert"); el.className = "alert"; el.innerHTML = ""; }
+        function setBtnState(label, disabled) { const b = document.getElementById("sendBtn"); b.disabled = disabled; b.innerHTML = label; }
+        function hideLink() { document.getElementById("linkResult").classList.remove("show"); }
+        function showLink(url) {
+            currentLinkUrl = url;
+            document.getElementById("generatedLink").textContent = url;
+            document.getElementById("linkResult").classList.add("show");
+            document.getElementById("linkResult").scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        function copyGeneratedLink() {
+            navigator.clipboard.writeText(currentLinkUrl).then(() => {
+                const btn = document.querySelector('.link-btn');
+                const orig = btn.textContent;
+                btn.textContent = "✅ Copied!";
+                setTimeout(() => btn.textContent = orig, 2000);
+            });
+        }
+        function shareGeneratedLink() {
+            if (navigator.share) { navigator.share({ title: "Claim your G$!", text: "Someone sent you GoodDollar tokens!", url: currentLinkUrl }); }
+            else { navigator.clipboard.writeText(currentLinkUrl); alert("Link copied! Share it with anyone."); }
+        }
+
+        // ── Send ──────────────────────────────────────────────────────────────
+        async function startSend() {
+            const rawVal = document.getElementById("amountInput").value.trim();
+            if (!rawVal || parseFloat(rawVal) <= 0) { showAlert("alert-error", "Please enter a valid amount."); return; }
+            const ep = _getEthProvider();
+            if (!ep) { showAlert("alert-error", "⚠️ No Web3 wallet detected. Open in MetaMask, MiniPay, or a Celo-compatible wallet."); return; }
+            clearAlert(); hideLink();
+
+            try {
+                setBtnState('<span class="spinner-inline"></span> Connecting wallet...', true);
+                await ep.request({ method: "eth_requestAccounts" });
+
+                const chainIdHex = await ep.request({ method: "eth_chainId" });
+                if (parseInt(chainIdHex, 16) !== CELO_CHAIN_ID) {
+                    try { await ep.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x" + CELO_CHAIN_ID.toString(16) }] }); }
+                    catch { await ep.request({ method: "wallet_addEthereumChain", params: [{ chainId: "0x" + CELO_CHAIN_ID.toString(16), chainName: "Celo Mainnet", nativeCurrency: { name:"CELO", symbol:"CELO", decimals:18 }, rpcUrls: ["https://forno.celo.org"], blockExplorerUrls: ["https://celoscan.io"] }] }); }
+                }
+
+                const provider   = new ethers.BrowserProvider(ep);
+                const signer     = await provider.getSigner();
+                const userAddr   = await signer.getAddress();
+                const amountWei  = ethers.parseUnits(rawVal, GD_DECIMALS);
+
+                setBtnState('<span class="spinner-inline"></span> Checking balance...', true);
+                const gdRead   = new ethers.Contract(GD_ADDRESS, ["function balanceOf(address) view returns (uint256)"], provider);
+                const onChainBal = await gdRead.balanceOf(userAddr);
+                if (onChainBal < amountWei) {
+                    const b = parseFloat(ethers.formatUnits(onChainBal, GD_DECIMALS)).toFixed(2);
+                    showAlert("alert-error", `❌ Insufficient balance. Your wallet has <strong>${b} G$</strong>.`);
+                    setBtnState(`Generate Link → ${rawVal} G$`, false);
+                    return;
+                }
+
+                const paymentWallet = ethers.Wallet.createRandom();
+                const paymentId     = paymentWallet.address;
+                const privateKey    = paymentWallet.privateKey;
+                const data          = ethers.AbiCoder.defaultAbiCoder().encode(['address'], [paymentId]);
+
+                setBtnState('<span class="spinner-inline"></span> Confirm in wallet...', true);
+                showAlert("alert-info", '<span class="spinner-inline"></span> Confirm the transaction in your wallet to lock G$ in escrow.');
+
+                const gdSigner = new ethers.Contract(GD_ADDRESS, GD_ABI, signer);
+                const tx = await gdSigner.transferAndCall(OTP_ADDRESS, amountWei, data);
+
+                setBtnState('<span class="spinner-inline"></span> Waiting for confirmation...', true);
+                showAlert("alert-info", '<span class="spinner-inline"></span> Transaction submitted. Waiting for Celo network...');
+                const receipt = await tx.wait();
+
+                const entry = { paymentId, privateKey, amount: rawVal, txHash: receipt.hash, timestamp: Date.now(), status: "active" };
+
+                // Save to both localStorage AND database
+                lsAdd(entry);
+                apiSave(entry); // fire and forget
+
+                const claimUrl = `${window.location.origin}/claim#${privateKey}`;
+                clearAlert();
+                showLink(claimUrl);
+                setBtnState("Generate Link", false);
+                document.getElementById("amountInput").value = "";
+                onAmountChange();
+                await loadBalance();
+                await renderHistory();
+
+            } catch(err) {
+                console.error(err);
+                const msg = err?.reason || err?.shortMessage || err?.message || "Unknown error";
+                if (msg.includes("user rejected") || msg.includes("ACTION_REJECTED")) {
+                    showAlert("alert-error", "❌ Transaction cancelled.");
+                } else {
+                    showAlert("alert-error", `❌ Error: ${msg.substring(0, 150)}`);
+                }
+                const val = document.getElementById("amountInput").value;
+                setBtnState(val && parseFloat(val) > 0 ? `Generate Link → ${val} G$` : "Enter an amount", !val || parseFloat(val) <= 0);
+            }
+        }
+
+        // ── History rendering ─────────────────────────────────────────────────
+        async function renderHistory() {
+            const list = await loadAllPayments();
+            const container = document.getElementById("historyList");
+            const countEl   = document.getElementById("historyCount");
+
+            if (list.length === 0) {
+                container.innerHTML = `<div class="history-empty">No payment links yet.<br>Send your first one above!</div>`;
+                countEl.style.display = 'none';
+                return;
+            }
+            countEl.textContent  = list.length;
+            countEl.style.display = '';
+            container.innerHTML  = list.map(p => buildItemHTML(p)).join('');
+
+            // Check on-chain status for active payments in background
+            const provider = new ethers.JsonRpcProvider(CELO_RPC);
+            const otp = new ethers.Contract(OTP_ADDRESS, OTP_ABI, provider);
+            for (const p of list) {
+                if (p.status === "active") {
+                    try {
+                        const still = await otp.hasPayment(p.paymentId);
+                        if (!still) {
+                            lsUpdateStatus(p.paymentId, "claimed");
+                            apiUpdateStatus(p.paymentId, "claimed");
+                            p.status = "claimed";
+                            const el = document.getElementById(`pay-${p.paymentId}`);
+                            if (el) el.outerHTML = buildItemHTML(p);
+                        }
+                    } catch(e) { /* ignore */ }
+                }
+            }
+        }
+
+        function buildItemHTML(p) {
+            const claimUrl = p.privateKey ? `${window.location.origin}/claim#${p.privateKey}` : null;
+            const date  = new Date(p.timestamp).toLocaleString();
+            const label = { active: "🟣 Active", claimed: "✅ Claimed", cancelled: "❌ Cancelled" }[p.status] || p.status;
+            const isActive = p.status === "active";
+            const txLink = p.txHash ? `<a href="https://celoscan.io/tx/${p.txHash}" target="_blank" class="celoscan-link">View tx ↗</a>` : '';
+
+            const linkSection = isActive && claimUrl ? `<div class="payment-link-row">${claimUrl}</div>` : 
+                                isActive && !claimUrl ? `<div class="payment-link-row" style="color:rgba(255,200,0,0.7)">⚠️ Claim link only available in the browser where this payment was created.</div>` : '';
+
+            const actions = isActive ? `
+                ${claimUrl ? `<button class="pay-btn" onclick="copyText('${claimUrl}', this)">📋 Copy</button>` : ''}
+                ${claimUrl ? `<button class="pay-btn" onclick="shareText('${claimUrl}')">🔗 Share</button>` : ''}
+                <button class="pay-btn pay-btn-danger" onclick="cancelPayment('${p.paymentId}', this)">❌ Refund</button>
+            ` : `<span style="font-size:0.75rem; color:rgba(255,255,255,0.3)">${p.status === 'claimed' ? '✅ Successfully claimed by receiver' : '❌ Cancelled — G$ returned to your wallet'}</span>`;
+
+            return `
+                <div class="payment-item status-${p.status}" id="pay-${p.paymentId}">
+                    <div class="payment-header">
+                        <div class="payment-amount">${parseFloat(p.amount).toFixed(2)} G$</div>
+                        <div class="payment-status">${label}</div>
+                    </div>
+                    <div class="payment-meta">${date} &nbsp; ${txLink}</div>
+                    ${linkSection}
+                    <div class="payment-actions">${actions}</div>
+                </div>`;
+        }
+
+        function copyText(text, btn) {
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = btn.textContent;
+                btn.textContent = "✅ Copied!";
+                setTimeout(() => btn.textContent = orig, 2000);
+            });
+        }
+        function shareText(url) {
+            if (navigator.share) { navigator.share({ title: "Claim your G$!", text: "Someone sent you GoodDollar tokens!", url }); }
+            else { navigator.clipboard.writeText(url); alert("Link copied! Share it with anyone."); }
+        }
+
+        async function cancelPayment(paymentId, btn) {
+            const ep = _getEthProvider();
+            if (!ep) { alert("No wallet detected."); return; }
+            if (!confirm("Cancel this payment and refund G$ to your wallet?")) return;
+            btn.disabled = true; btn.textContent = "Cancelling...";
+            try {
+                const provider  = new ethers.BrowserProvider(ep);
+                const signer    = await provider.getSigner();
+                const otpSigner = new ethers.Contract(OTP_ADDRESS, OTP_ABI, signer);
+                const tx = await otpSigner.cancel(paymentId);
+                btn.textContent = "Waiting...";
+                await tx.wait();
+                lsUpdateStatus(paymentId, "cancelled");
+                apiUpdateStatus(paymentId, "cancelled");
+                await loadBalance();
+                await renderHistory();
+            } catch(err) {
+                btn.disabled = false; btn.textContent = "❌ Refund";
+                const msg = err?.reason || err?.message || "";
+                if (!msg.includes("user rejected") && !msg.includes("ACTION_REJECTED")) alert(`Cancel failed: ${msg.substring(0, 100)}`);
+            }
+        }
+    </script>
+</body>
+</html>
