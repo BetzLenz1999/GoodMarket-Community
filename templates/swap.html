@@ -1,0 +1,1462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swap - GoodMarket</title>
+    <meta name="theme-color" content="#7c3aed">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="GoodMarket">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0B0F2A 0%, #130D35 50%, #1A103D 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+
+        /* ── Navbar ── */
+        .navbar {
+            background: rgba(11, 15, 42, 0.92);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            padding: 0 1.5rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            box-shadow: 0 1px 24px rgba(0,0,0,0.35);
+        }
+        .nav-container {
+            max-width: 1300px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 56px;
+            gap: 0.75rem;
+        }
+        .logo { font-size: 1.2rem; font-weight: 800; color: #7c3aed; text-decoration: none; letter-spacing: -0.5px; white-space: nowrap; flex-shrink: 0; }
+        .nav-links { display: flex; gap: 0.1rem; align-items: center; flex-wrap: nowrap; overflow: hidden; }
+        .nav-links a { color: rgba(255,255,255,0.55); text-decoration: none; font-weight: 500; font-size: 0.875rem; white-space: nowrap; padding: 0.4rem 0.65rem; border-radius: 8px; transition: color 0.2s, background 0.2s; }
+        .nav-links a:hover { color: #a78bfa; background: rgba(124,58,237,0.1); }
+        .nav-links a.active { color: #fff; background: rgba(124,58,237,0.18); font-weight: 600; }
+        .nav-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.12); margin: 0 0.4rem; flex-shrink: 0; }
+        .wallet-tag {
+            background: rgba(124,58,237,0.12);
+            border: 1px solid rgba(124,58,237,0.28);
+            border-radius: 20px;
+            padding: 0.28rem 0.8rem;
+            font-weight: 600;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8rem;
+            color: #a78bfa;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .logout-btn {
+            background: rgba(239,68,68,0.1) !important;
+            border: 1px solid rgba(239,68,68,0.25) !important;
+            color: #f87171 !important;
+            padding: 0.28rem 0.85rem !important;
+            border-radius: 20px !important;
+            font-size: 0.85rem !important;
+            white-space: nowrap !important;
+            flex-shrink: 0;
+            transition: background 0.2s, color 0.2s !important;
+        }
+        .logout-btn:hover { background: rgba(239,68,68,0.2) !important; color: #fca5a5 !important; }
+        @media (max-width: 768px) {
+            .navbar { padding: 0 0.75rem; }
+            .nav-container { height: auto; padding: 0.5rem 0; flex-wrap: wrap; gap: 0.3rem; }
+            .nav-links { flex-wrap: wrap; gap: 0.15rem; justify-content: flex-end; overflow: visible; }
+            .nav-links a { font-size: 0.78rem; padding: 0.28rem 0.5rem; }
+            .nav-sep { display: none; }
+            .wallet-tag { font-size: 0.75rem; padding: 0.22rem 0.6rem; }
+        }
+
+        /* ── Layout ── */
+        .container {
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 2rem 1.25rem 4rem;
+        }
+
+        .page-header { text-align: center; margin-bottom: 2rem; }
+        .page-title { font-size: 2rem; font-weight: 800; color: #fff; letter-spacing: -1px; margin-bottom: 0.4rem; }
+        .page-subtitle { color: rgba(255,255,255,0.5); font-size: 0.95rem; }
+
+        /* ── Swap Card ── */
+        .swap-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 24px;
+            padding: 1.75rem;
+            backdrop-filter: blur(8px);
+        }
+
+        /* ── Network badge ── */
+        .network-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(53,168,105,0.15);
+            border: 1px solid rgba(53,168,105,0.3);
+            border-radius: 20px;
+            padding: 0.25rem 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #4ade80;
+            margin-bottom: 1.5rem;
+        }
+        .network-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%,100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ── Token Input Box ── */
+        .token-box {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 1rem 1.1rem;
+            margin-bottom: 0.5rem;
+            transition: border-color 0.2s;
+        }
+        .token-box:focus-within {
+            border-color: rgba(124,58,237,0.5);
+        }
+        .token-box-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: rgba(255,255,255,0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 0.6rem;
+        }
+        .token-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .token-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            padding: 0.5rem 0.85rem;
+            font-weight: 700;
+            font-size: 0.95rem;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .token-icon {
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.7rem;
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+        .token-icon.gd { background: linear-gradient(135deg,#7c3aed,#5b21b6); }
+        .token-icon.celo { background: linear-gradient(135deg,#35a869,#1e7f52); }
+        .token-icon.cusd { background: linear-gradient(135deg,#f59e0b,#b45309); }
+        .token-icon.usdt { background: linear-gradient(135deg,#26a17b,#1a7a5e); }
+
+        .token-selector {
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .token-selector:hover { background: rgba(255,255,255,0.13); }
+        .token-chevron { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-left: 2px; }
+
+        /* ── Token Picker Modal ── */
+        .token-picker-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.65);
+            z-index: 999;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(4px);
+        }
+        .token-picker-overlay.open { display: flex; }
+        .token-picker-modal {
+            background: #130D35;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 20px;
+            padding: 1.5rem;
+            width: 320px;
+            max-width: calc(100vw - 2rem);
+        }
+        .token-picker-title {
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: rgba(255,255,255,0.4);
+            margin-bottom: 1rem;
+        }
+        .token-picker-list { display: flex; flex-direction: column; gap: 0.5rem; }
+        .token-picker-item {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            padding: 0.85rem 1rem;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.04);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .token-picker-item:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.15); }
+        .token-picker-item.selected { border-color: rgba(124,58,237,0.5); background: rgba(124,58,237,0.1); }
+        .token-picker-item.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+        .token-picker-icon { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 800; flex-shrink: 0; }
+        .token-picker-info { flex: 1; }
+        .token-picker-symbol { font-weight: 700; font-size: 0.95rem; color: #fff; }
+        .token-picker-name { font-size: 0.75rem; color: rgba(255,255,255,0.4); margin-top: 1px; }
+        .token-picker-close {
+            display: block;
+            width: 100%;
+            margin-top: 1rem;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            color: rgba(255,255,255,0.5);
+            font-size: 0.88rem;
+            font-weight: 600;
+            padding: 0.65rem;
+            cursor: pointer;
+            font-family: inherit;
+            transition: background 0.15s;
+        }
+        .token-picker-close:hover { background: rgba(255,255,255,0.1); }
+
+        .amount-input {
+            flex: 1;
+            background: none;
+            border: none;
+            outline: none;
+            color: #fff;
+            font-size: 1.4rem;
+            font-weight: 700;
+            font-family: inherit;
+            text-align: right;
+            min-width: 0;
+        }
+        .amount-input::placeholder { color: rgba(255,255,255,0.2); }
+
+        .token-balance {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 0.5rem;
+            font-size: 0.78rem;
+            color: rgba(255,255,255,0.4);
+        }
+        .max-btn {
+            background: rgba(124,58,237,0.2);
+            border: 1px solid rgba(124,58,237,0.35);
+            border-radius: 6px;
+            color: #a78bfa;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.15rem 0.5rem;
+            cursor: pointer;
+            font-family: inherit;
+            transition: background 0.2s;
+        }
+        .max-btn:hover { background: rgba(124,58,237,0.35); }
+
+        /* ── Swap Direction Button ── */
+        .swap-direction-wrap {
+            display: flex;
+            justify-content: center;
+            margin: 0.25rem 0;
+            position: relative;
+            z-index: 1;
+        }
+        .swap-direction-btn {
+            background: rgba(124,58,237,0.2);
+            border: 2px solid rgba(124,58,237,0.4);
+            border-radius: 50%;
+            width: 40px; height: 40px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: #a78bfa;
+            transition: all 0.2s;
+        }
+        .swap-direction-btn:hover {
+            background: rgba(124,58,237,0.35);
+            border-color: #7c3aed;
+            transform: rotate(180deg);
+        }
+
+        /* ── Quote info ── */
+        .quote-box {
+            background: rgba(124,58,237,0.08);
+            border: 1px solid rgba(124,58,237,0.2);
+            border-radius: 12px;
+            padding: 0.85rem 1rem;
+            margin: 1rem 0;
+            font-size: 0.82rem;
+        }
+        .quote-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.2rem 0;
+            color: rgba(255,255,255,0.6);
+        }
+        .quote-row strong { color: #e2e8f0; }
+        .quote-box.loading { opacity: 0.6; }
+        .quote-box.hidden { display: none; }
+
+        /* ── Slippage ── */
+        .slippage-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0.75rem 0;
+            font-size: 0.82rem;
+            color: rgba(255,255,255,0.5);
+        }
+        .slippage-options {
+            display: flex;
+            gap: 0.35rem;
+            margin-left: auto;
+        }
+        .slippage-btn {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 8px;
+            color: rgba(255,255,255,0.6);
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.2rem 0.55rem;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.15s;
+        }
+        .slippage-btn.active {
+            background: rgba(124,58,237,0.25);
+            border-color: #7c3aed;
+            color: #a78bfa;
+        }
+
+        /* ── Swap Button ── */
+        .swap-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #7c3aed, #5b21b6);
+            border: none;
+            border-radius: 16px;
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 700;
+            padding: 1rem;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+            margin-top: 0.5rem;
+            letter-spacing: 0.02em;
+        }
+        .swap-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, #6d28d9, #4c1d95);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 25px rgba(124,58,237,0.35);
+        }
+        .swap-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ── Alert ── */
+        .alert {
+            border-radius: 12px;
+            padding: 0.85rem 1rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-top: 1rem;
+            display: none;
+        }
+        .alert.show { display: block; }
+        .alert-error { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+        .alert-success { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
+        .alert-info { background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3); color: #93c5fd; }
+
+        /* ── Spinner ── */
+        .spinner-inline {
+            display: inline-block;
+            width: 14px; height: 14px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Info card ── */
+        .info-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 16px;
+            padding: 1.1rem 1.25rem;
+            margin-top: 1.25rem;
+            font-size: 0.82rem;
+            color: rgba(255,255,255,0.5);
+            line-height: 1.6;
+        }
+        .info-card-title {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: rgba(255,255,255,0.35);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 0.5rem;
+        }
+        .info-link {
+            color: #a78bfa;
+            text-decoration: none;
+        }
+        .info-link:hover { text-decoration: underline; }
+
+        /* ── Smart routing tip ── */
+        .route-tip {
+            background: linear-gradient(135deg, rgba(251,191,36,0.08), rgba(245,158,11,0.04));
+            border: 1px solid rgba(251,191,36,0.28);
+            border-radius: 14px;
+            padding: 0.95rem 1.1rem;
+            margin-top: 1.1rem;
+            font-size: 0.82rem;
+            color: rgba(255,255,255,0.75);
+            line-height: 1.6;
+            display: none;
+        }
+        .route-tip.show { display: block; }
+        .route-tip-title {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #fbbf24;
+            margin-bottom: 0.4rem;
+        }
+        .route-tip-steps {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin: 0.5rem 0 0.4rem;
+        }
+        .route-step-badge {
+            background: rgba(251,191,36,0.12);
+            border: 1px solid rgba(251,191,36,0.25);
+            border-radius: 20px;
+            padding: 0.2rem 0.65rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #fde68a;
+            white-space: nowrap;
+        }
+        .route-step-arrow {
+            color: rgba(251,191,36,0.45);
+            font-size: 0.85rem;
+        }
+        .route-tip-note {
+            font-size: 0.77rem;
+            color: rgba(255,255,255,0.4);
+            margin-top: 0.3rem;
+        }
+
+        /* ── No wallet warning ── */
+        .warn-box {
+            background: rgba(251,191,36,0.1);
+            border: 1px solid rgba(251,191,36,0.25);
+            border-radius: 12px;
+            padding: 0.85rem 1rem;
+            font-size: 0.84rem;
+            color: #fde68a;
+            margin-top: 1rem;
+        }
+
+        /* ── Approval step indicator ── */
+        .step-indicator {
+            display: flex;
+            gap: 0.5rem;
+            margin: 0.75rem 0;
+        }
+        .step {
+            flex: 1;
+            background: rgba(255,255,255,0.06);
+            border-radius: 8px;
+            padding: 0.5rem;
+            text-align: center;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: rgba(255,255,255,0.35);
+            transition: all 0.3s;
+        }
+        .step.active {
+            background: rgba(124,58,237,0.2);
+            color: #a78bfa;
+            border: 1px solid rgba(124,58,237,0.35);
+        }
+        .step.done {
+            background: rgba(34,197,94,0.1);
+            color: #86efac;
+            border: 1px solid rgba(34,197,94,0.3);
+        }
+        .step-indicators { display: none; }
+        .step-indicators.show { display: flex; }
+
+        @media(max-width: 480px) {
+            .container { padding: 1.5rem 1rem 4rem; }
+            .swap-card { padding: 1.25rem; }
+            .amount-input { font-size: 1.15rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/dashboard" class="logo">💰 GoodMarket</a>
+            <div class="nav-links">
+                <a href="/overview">Overview</a>
+                <a href="/dashboard">Dashboard</a>
+                {% if wallet_visible %}<a href="/wallet">Wallet</a>{% endif %}
+                {% if savings_visible %}<a href="/savings">Savings</a>{% endif %}
+                <a href="/profile">Profile</a>
+                <div class="nav-sep"></div>
+                {% if wallet and wallet != 'None' %}
+                <div class="wallet-tag">{{ wallet[:6] }}...{{ wallet[-4:] }}</div>
+                {% endif %}
+                <a href="/logout" class="logout-btn">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+
+        <!-- Header -->
+        <div class="page-header">
+            <h1 class="page-title">🔄 Swap</h1>
+            <p class="page-subtitle">Swap G$, CELO, cUSD and USDT via Uniswap V3 on Celo</p>
+        </div>
+
+        <!-- Swap Card -->
+        <div class="swap-card">
+
+            <div class="network-badge">
+                <span class="network-dot"></span>
+                Celo Mainnet · Uniswap V3
+            </div>
+
+            <!-- From -->
+            <div class="token-box">
+                <div class="token-box-label">You pay</div>
+                <div class="token-row">
+                    <div class="token-selector" id="fromTokenSelector" onclick="openTokenPicker('from')">
+                        <div class="token-icon gd" id="fromTokenIcon">G$</div>
+                        <span id="fromTokenSymbol">G$</span>
+                        <span class="token-chevron">▾</span>
+                    </div>
+                    <input
+                        type="number"
+                        class="amount-input"
+                        id="amountIn"
+                        placeholder="0.0"
+                        min="0"
+                        step="any"
+                        oninput="onAmountChange()"
+                    >
+                </div>
+                <div class="token-balance">
+                    <span>Balance: <span id="fromBalance">—</span></span>
+                    <button class="max-btn" onclick="setMax()">MAX</button>
+                </div>
+            </div>
+
+            <!-- Swap Direction -->
+            <div class="swap-direction-wrap">
+                <button class="swap-direction-btn" onclick="flipTokens()" title="Flip swap direction">⇅</button>
+            </div>
+
+            <!-- To -->
+            <div class="token-box">
+                <div class="token-box-label">You receive (estimated)</div>
+                <div class="token-row">
+                    <div class="token-selector" id="toTokenSelector" onclick="openTokenPicker('to')">
+                        <div class="token-icon celo" id="toTokenIcon">CE</div>
+                        <span id="toTokenSymbol">CELO</span>
+                        <span class="token-chevron">▾</span>
+                    </div>
+                    <input
+                        type="text"
+                        class="amount-input"
+                        id="amountOut"
+                        placeholder="—"
+                        readonly
+                        style="cursor:default;"
+                    >
+                </div>
+                <div class="token-balance">
+                    <span>Balance: <span id="toBalance">—</span></span>
+                </div>
+            </div>
+
+            <!-- Slippage -->
+            <div class="slippage-row">
+                <span>Slippage tolerance</span>
+                <div class="slippage-options">
+                    <button class="slippage-btn" onclick="setSlippage(0.5, this)">0.5%</button>
+                    <button class="slippage-btn active" onclick="setSlippage(1, this)">1%</button>
+                    <button class="slippage-btn" onclick="setSlippage(2, this)">2%</button>
+                </div>
+            </div>
+
+            <!-- Quote Box -->
+            <div class="quote-box hidden" id="quoteBox">
+                <div class="quote-row">
+                    <span>Rate</span>
+                    <strong id="quoteRate">—</strong>
+                </div>
+                <div class="quote-row">
+                    <span>Minimum received</span>
+                    <strong id="quoteMinOut">—</strong>
+                </div>
+                <div class="quote-row">
+                    <span>Price impact</span>
+                    <strong id="quotePriceImpact">—</strong>
+                </div>
+                <div class="quote-row">
+                    <span>Pool fee</span>
+                    <strong id="quotePoolFee">—</strong>
+                </div>
+            </div>
+
+            <!-- Step indicators (shown during swap) -->
+            <div class="step-indicators" id="stepIndicators">
+                <div class="step" id="step1">1. Approve</div>
+                <div class="step" id="step2">2. Swap</div>
+            </div>
+
+            <!-- Swap Button -->
+            <button class="swap-btn" id="swapBtn" onclick="startSwap()" disabled>
+                Enter an amount
+            </button>
+
+            <!-- Alert -->
+            <div class="alert" id="swapAlert"></div>
+
+        </div>
+
+        <!-- Smart Routing Tip -->
+        <div class="route-tip" id="routeTip">
+            <div class="route-tip-title">💡 Better Rate Suggestion</div>
+            <div id="routeTipBody"></div>
+        </div>
+
+        <!-- Info -->
+        <div class="info-card">
+            <div class="info-card-title">How it works</div>
+            Swaps are executed on-chain via <strong style="color:#e2e8f0;">Uniswap V3</strong> on the Celo network.
+            You need a Web3 wallet (MetaMask, MiniPay, or any Celo-compatible wallet) to confirm the transaction.
+            Make sure you have enough CELO for gas fees.
+            <br><br>
+            <a class="info-link" href="https://app.uniswap.org/#/swap?chain=celo" target="_blank" rel="noopener">
+                Also available on Uniswap ↗
+            </a>
+        </div>
+
+    </div>
+
+    <!-- Token Picker Modal -->
+    <div class="token-picker-overlay" id="tokenPickerOverlay" onclick="closeTokenPickerOnOverlay(event)">
+        <div class="token-picker-modal">
+            <div class="token-picker-title" id="tokenPickerTitle">Select token</div>
+            <div class="token-picker-list" id="tokenPickerList"></div>
+            <button class="token-picker-close" onclick="closeTokenPicker()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- ethers.js v6 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+    <script>
+        // ─── Constants ────────────────────────────────────────────────────────────
+        const WALLET_ADDRESS = "{{ wallet }}";
+        const CELO_CHAIN_ID  = 42220;
+        window.isCustodialMode = {{ (login_method in ['custodial', 'turnkey']) | tojson }};
+        const LOGIN_METHOD = '{{ login_method }}';
+        const CELO_RPC       = "https://forno.celo.org";
+
+        // Handles EIP-5749 multi-wallet: prefer MetaMask over Brave Wallet
+        function _getEthProvider() {
+            if (!window.ethereum) return null;
+            if (window.ethereum.providers && window.ethereum.providers.length) {
+                const mm = window.ethereum.providers.find(p => p.isMetaMask && !p.isBraveWallet);
+                if (mm) return mm;
+                return window.ethereum.providers[0];
+            }
+            return window.ethereum;
+        }
+
+        // Token addresses on Celo mainnet
+        const TOKENS = {
+            GD: {
+                symbol: "G$",
+                name: "GoodDollar",
+                address: "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A",
+                decimals: 18,        // actual on-chain ERC20 decimals
+                displayDecimals: 2,  // how many places to show in UI
+                iconClass: "gd",
+                iconText: "G$",
+                color: "#7c3aed"
+            },
+            CELO: {
+                symbol: "CELO",
+                name: "Celo",
+                address: "0x471EcE3750Da237f93B8E339c536989b8978a438",
+                decimals: 18,
+                displayDecimals: 4,
+                iconClass: "celo",
+                iconText: "CE",
+                color: "#35a869"
+            },
+            CUSD: {
+                symbol: "cUSD",
+                name: "Celo Dollar",
+                address: "0x765DE816845861e75A25fCA122bb6898B8B1282a",
+                decimals: 18,
+                displayDecimals: 4,
+                iconClass: "cusd",
+                iconText: "$",
+                color: "#f59e0b"
+            },
+            USDT: {
+                symbol: "USDT",
+                name: "Tether USD",
+                address: "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e",
+                decimals: 6,
+                displayDecimals: 4,
+                iconClass: "usdt",
+                iconText: "₮",
+                color: "#26a17b"
+            }
+        };
+
+        // Uniswap V3 on Celo
+        const UNISWAP_ROUTER   = "0x5615CDAb10dc425a742d643d949a7F474C01abc4";
+        const UNISWAP_QUOTER   = "0x82825d0554fA07f7FC52Ab63c961F330fdEFa8E8";
+        const FEE_TIERS        = [10000, 3000, 500]; // G$/CELO pool is 1% (10000), try it first
+
+        // Minimal ABIs
+        const ERC20_ABI = [
+            "function balanceOf(address owner) view returns (uint256)",
+            "function allowance(address owner, address spender) view returns (uint256)",
+            "function approve(address spender, uint256 amount) returns (bool)",
+            "function decimals() view returns (uint8)"
+        ];
+
+        const QUOTER_ABI = [
+            "function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96) params) returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)",
+            "function quoteExactInput(bytes path, uint256 amountIn) returns (uint256 amountOut, uint160[] sqrtPriceX96AfterList, uint32[] initializedTicksCrossedList, uint256 gasEstimate)"
+        ];
+
+        const ROUTER_ABI = [
+            "function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)",
+            "function exactInput((bytes path, address recipient, uint256 amountIn, uint256 amountOutMinimum) params) payable returns (uint256 amountOut)"
+        ];
+
+        // Encode a Uniswap V3 multi-hop path: [addr0, addr1, addr2, ...] with [fee01, fee12, ...]
+        function encodePath(tokenAddresses, fees) {
+            let encoded = tokenAddresses[0].toLowerCase().replace('0x', '');
+            for (let i = 0; i < fees.length; i++) {
+                encoded += fees[i].toString(16).padStart(6, '0');
+                encoded += tokenAddresses[i + 1].toLowerCase().replace('0x', '');
+            }
+            return '0x' + encoded;
+        }
+
+        // ─── State ────────────────────────────────────────────────────────────────
+        let fromToken       = "GD";
+        let toToken         = "CELO";
+        let slippage        = 1.0;   // default 1% — 0.5% causes "Too little received" on multi-hop routes
+        let currentQuote    = null;
+        let quoteTimer      = null;
+        let gdBalanceNum    = 0;    // human-readable float  e.g. 7513.72
+        let celoBalanceNum  = 0;    // human-readable float  e.g. 0.0290
+        let cusdBalanceNum  = 0;    // human-readable float  e.g. 1.23
+        let usdtBalanceNum  = 0;    // human-readable float  e.g. 1.23
+        let tokenPickerTarget = null; // "from" or "to"
+
+        // ─── Init ─────────────────────────────────────────────────────────────────
+        window.addEventListener("load", async () => {
+            await loadBalances();
+            updateUI();
+        });
+
+        // ─── UI Helpers ───────────────────────────────────────────────────────────
+        // Route tip configurations: key = "FROM_TO"
+        const ROUTE_TIPS = {
+            "GD_CELO": {
+                body: `The direct <strong>G$ → CELO</strong> pool has limited liquidity on Uniswap — you'll often get a poor rate. For better value, swap in two steps:`,
+                steps: ["G$", "cUSD", "CELO"],
+                note: "Do G$ → cUSD first, then cUSD → CELO in a second swap. You get a much better rate this way."
+            },
+            "GD_USDT": {
+                body: `For better rates, avoid going directly from <strong>G$ → USDT</strong>. Swap in steps instead:`,
+                steps: ["G$", "cUSD", "USDT"],
+                note: "Swap G$ → cUSD first, then cUSD → USDT. Stablecoin pools have deeper liquidity."
+            },
+            "CELO_GD": {
+                body: `The <strong>CELO → G$</strong> direct pool has limited liquidity. Better route:`,
+                steps: ["CELO", "cUSD", "G$"],
+                note: "Swap CELO → cUSD first, then cUSD → G$ for a better rate."
+            },
+            "USDT_GD": {
+                body: `For better rates swapping <strong>USDT → G$</strong>, use an intermediate step:`,
+                steps: ["USDT", "CELO", "G$"],
+                note: "Swap USDT → CELO first, then CELO → G$. Or try USDT → cUSD → G$."
+            },
+            "CELO_USDT": {
+                body: `<strong>CELO → USDT</strong> tip: If you see a poor rate, you can also try routing through cUSD:`,
+                steps: ["CELO", "cUSD", "USDT"],
+                note: "CELO → cUSD → USDT often gives a slightly better rate than the direct pool."
+            },
+            "USDT_CELO": {
+                body: `<strong>USDT → CELO</strong> tip: Routing through cUSD may improve your rate:`,
+                steps: ["USDT", "cUSD", "CELO"],
+                note: "USDT → cUSD → CELO may give a better rate than the direct pool."
+            }
+        };
+
+        function updateRouteTip() {
+            const tipEl  = document.getElementById("routeTip");
+            const bodyEl = document.getElementById("routeTipBody");
+            const key    = `${fromToken}_${toToken}`;
+            const tip    = ROUTE_TIPS[key];
+
+            if (!tip) {
+                tipEl.classList.remove("show");
+                return;
+            }
+
+            const stepsHtml = tip.steps.map((s, i) =>
+                `<span class="route-step-badge">${s}</span>` +
+                (i < tip.steps.length - 1 ? `<span class="route-step-arrow">→</span>` : "")
+            ).join("");
+
+            bodyEl.innerHTML = `
+                <div>${tip.body}</div>
+                <div class="route-tip-steps">${stepsHtml}</div>
+                <div class="route-tip-note">${tip.note}</div>
+            `;
+            tipEl.classList.add("show");
+        }
+
+        function updateUI() {
+            const from = TOKENS[fromToken];
+            const to   = TOKENS[toToken];
+
+            document.getElementById("fromTokenIcon").className   = `token-icon ${from.iconClass}`;
+            document.getElementById("fromTokenIcon").textContent = from.iconText;
+            document.getElementById("fromTokenSymbol").textContent = from.symbol;
+            document.getElementById("fromTokenSelector").style.borderColor = `${from.color}55`;
+
+            document.getElementById("toTokenIcon").className   = `token-icon ${to.iconClass}`;
+            document.getElementById("toTokenIcon").textContent = to.iconText;
+            document.getElementById("toTokenSymbol").textContent = to.symbol;
+            document.getElementById("toTokenSelector").style.borderColor = `${to.color}55`;
+
+            displayBalances();
+            updateRouteTip();
+        }
+
+        function floorToFixed(num, dp) {
+            // Always truncate (floor) instead of round so displayed balance never exceeds actual balance
+            const factor = Math.pow(10, dp);
+            return (Math.floor(num * factor) / factor).toFixed(dp);
+        }
+
+        function getBalanceFor(tokenKey) {
+            if (tokenKey === "GD")   return gdBalanceNum;
+            if (tokenKey === "CELO") return celoBalanceNum;
+            if (tokenKey === "CUSD") return cusdBalanceNum;
+            if (tokenKey === "USDT") return usdtBalanceNum;
+            return 0;
+        }
+
+        function displayBalances() {
+            const fromNum = getBalanceFor(fromToken);
+            const toNum   = getBalanceFor(toToken);
+            const fromDp  = TOKENS[fromToken].displayDecimals;
+            const toDp    = TOKENS[toToken].displayDecimals;
+
+            document.getElementById("fromBalance").textContent = `${floorToFixed(fromNum, fromDp)} ${TOKENS[fromToken].symbol}`;
+            document.getElementById("toBalance").textContent   = `${floorToFixed(toNum, toDp)} ${TOKENS[toToken].symbol}`;
+        }
+
+        function setSlippage(val, btn) {
+            slippage = val;
+            document.querySelectorAll(".slippage-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            if (currentQuote) showQuote(currentQuote);
+        }
+
+        function flipTokens() {
+            [fromToken, toToken] = [toToken, fromToken];
+            document.getElementById("amountIn").value = "";
+            document.getElementById("amountOut").value = "";
+            currentQuote = null;
+            document.getElementById("quoteBox").classList.add("hidden");
+            updateUI();
+            setSwapBtnState("enter");
+            clearAlert();
+        }
+
+        // ─── Token Picker ─────────────────────────────────────────────────────────
+        function openTokenPicker(target) {
+            tokenPickerTarget = target;
+            const currentKey = target === "from" ? fromToken : toToken;
+            const otherKey   = target === "from" ? toToken   : fromToken;
+
+            document.getElementById("tokenPickerTitle").textContent =
+                target === "from" ? "Select token to pay" : "Select token to receive";
+
+            const list = document.getElementById("tokenPickerList");
+            list.innerHTML = "";
+
+            for (const [key, token] of Object.entries(TOKENS)) {
+                const isSelected = key === currentKey;
+                const isDisabled = key === otherKey;
+                const div = document.createElement("div");
+                div.className = `token-picker-item${isSelected ? " selected" : ""}${isDisabled ? " disabled" : ""}`;
+                div.innerHTML = `
+                    <div class="token-picker-icon token-icon ${token.iconClass}">${token.iconText}</div>
+                    <div class="token-picker-info">
+                        <div class="token-picker-symbol">${token.symbol}</div>
+                        <div class="token-picker-name">${token.name}</div>
+                    </div>
+                `;
+                if (!isDisabled) {
+                    div.onclick = () => selectToken(key);
+                }
+                list.appendChild(div);
+            }
+
+            document.getElementById("tokenPickerOverlay").classList.add("open");
+        }
+
+        function selectToken(key) {
+            if (tokenPickerTarget === "from") {
+                fromToken = key;
+            } else {
+                toToken = key;
+            }
+            closeTokenPicker();
+            document.getElementById("amountIn").value = "";
+            document.getElementById("amountOut").value = "";
+            currentQuote = null;
+            document.getElementById("quoteBox").classList.add("hidden");
+            updateUI();
+            setSwapBtnState("enter");
+            clearAlert();
+        }
+
+        function closeTokenPicker() {
+            document.getElementById("tokenPickerOverlay").classList.remove("open");
+            tokenPickerTarget = null;
+        }
+
+        function closeTokenPickerOnOverlay(event) {
+            if (event.target === document.getElementById("tokenPickerOverlay")) {
+                closeTokenPicker();
+            }
+        }
+
+        function setMax() {
+            let maxHuman = getBalanceFor(fromToken);
+            if (fromToken === "CELO") maxHuman = Math.max(0, maxHuman - 0.01); // reserve gas
+            const dp = TOKENS[fromToken].displayDecimals;
+            // Use floor (truncate) instead of round so MAX never exceeds the actual balance
+            const factor = Math.pow(10, dp);
+            const maxTruncated = Math.floor(maxHuman * factor) / factor;
+            document.getElementById("amountIn").value = maxTruncated > 0 ? maxTruncated.toFixed(dp) : "";
+            onAmountChange();
+        }
+
+        function setSwapBtnState(state, label) {
+            const btn = document.getElementById("swapBtn");
+            switch (state) {
+                case "enter":
+                    btn.disabled = true;
+                    btn.innerHTML = "Enter an amount";
+                    break;
+                case "ready":
+                    btn.disabled = false;
+                    btn.innerHTML = `Swap ${TOKENS[fromToken].symbol} → ${TOKENS[toToken].symbol}`;
+                    break;
+                case "loading":
+                    btn.disabled = true;
+                    btn.innerHTML = `<span class="spinner-inline"></span> ${label || "Processing..."}`;
+                    break;
+                case "no-wallet":
+                    btn.disabled = true;
+                    btn.innerHTML = "⚠️ No wallet detected";
+                    break;
+                case "no-pool":
+                    btn.disabled = true;
+                    btn.innerHTML = "No liquidity pool found";
+                    break;
+            }
+        }
+
+        function showAlert(type, html) {
+            const el = document.getElementById("swapAlert");
+            el.className = `alert ${type} show`;
+            el.innerHTML = html;
+        }
+
+        function clearAlert() {
+            const el = document.getElementById("swapAlert");
+            el.className = "alert";
+            el.innerHTML = "";
+        }
+
+        // ─── Load Balances ────────────────────────────────────────────────────────
+        // For server-side (custodial/Turnkey) mode the swap is signed from the
+        // backend wallet – always load balances from the backend API in that case
+        // so that gas-buffer checks use the correct wallet's balance.
+        // For MetaMask-only mode, read directly from the connected wallet.
+        async function loadBalances() {
+            try {
+                if (window.isCustodialMode) {
+                    // Server-side signing: use backend wallet balance
+                    const res = await fetch('/api/wallet/balances');
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.success) {
+                            if (data.gd   && data.gd.success)   gdBalanceNum   = parseFloat(data.gd.balance)   || 0;
+                            if (data.celo && data.celo.success) celoBalanceNum = parseFloat(data.celo.balance) || 0;
+                            if (data.cusd && data.cusd.success) cusdBalanceNum = parseFloat(data.cusd.balance) || 0;
+                            if (data.usdt && data.usdt.success) usdtBalanceNum = parseFloat(data.usdt.balance) || 0;
+                        }
+                    }
+                    displayBalances();
+                    return;
+                }
+
+                // MetaMask-only mode
+                const provider = new ethers.JsonRpcProvider(CELO_RPC);
+                let userAddr = null;
+                const _ep = _getEthProvider();
+                if (_ep) {
+                    const accounts = await _ep.request({ method: "eth_accounts" });
+                    if (accounts && accounts.length > 0) userAddr = accounts[0];
+                }
+                if (!userAddr) {
+                    const res = await fetch('/api/wallet/balances');
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.success) {
+                            if (data.gd   && data.gd.success)   gdBalanceNum   = parseFloat(data.gd.balance)   || 0;
+                            if (data.celo && data.celo.success) celoBalanceNum = parseFloat(data.celo.balance) || 0;
+                            if (data.cusd && data.cusd.success) cusdBalanceNum = parseFloat(data.cusd.balance) || 0;
+                            if (data.usdt && data.usdt.success) usdtBalanceNum = parseFloat(data.usdt.balance) || 0;
+                        }
+                    }
+                    displayBalances();
+                    return;
+                }
+
+                const gdContract = new ethers.Contract(TOKENS.GD.address, [
+                    "function balanceOf(address) view returns (uint256)"
+                ], provider);
+                const cusdContract = new ethers.Contract(TOKENS.CUSD.address, [
+                    "function balanceOf(address) view returns (uint256)"
+                ], provider);
+                const usdtContract = new ethers.Contract(TOKENS.USDT.address, [
+                    "function balanceOf(address) view returns (uint256)"
+                ], provider);
+                const [gdRaw, celoNative, cusdRaw, usdtRaw] = await Promise.all([
+                    gdContract.balanceOf(userAddr),
+                    provider.getBalance(userAddr),
+                    cusdContract.balanceOf(userAddr),
+                    usdtContract.balanceOf(userAddr)
+                ]);
+                gdBalanceNum   = parseFloat(ethers.formatUnits(gdRaw,      TOKENS.GD.decimals));
+                celoBalanceNum = parseFloat(ethers.formatUnits(celoNative,  TOKENS.CELO.decimals));
+                cusdBalanceNum = parseFloat(ethers.formatUnits(cusdRaw,     TOKENS.CUSD.decimals));
+                usdtBalanceNum = parseFloat(ethers.formatUnits(usdtRaw,     TOKENS.USDT.decimals));
+                displayBalances();
+            } catch (e) {
+                console.error("loadBalances error:", e);
+            }
+        }
+
+        // ─── Amount Change → fetch quote ───────────────────────────────────────────
+        function onAmountChange() {
+            clearTimeout(quoteTimer);
+            currentQuote = null;
+            document.getElementById("quoteBox").classList.add("hidden");
+            document.getElementById("amountOut").value = "";
+            clearAlert();
+
+            const raw = document.getElementById("amountIn").value.trim();
+            if (!raw || parseFloat(raw) <= 0) {
+                setSwapBtnState("enter");
+                return;
+            }
+
+            setSwapBtnState("loading", "Getting quote...");
+            quoteTimer = setTimeout(fetchQuote, 600);
+        }
+
+        // ─── Fetch Quote from Quoter V2 (single-hop + multi-hop) ─────────────────
+        async function fetchQuote() {
+            const raw = document.getElementById("amountIn").value.trim();
+            if (!raw || parseFloat(raw) <= 0) { setSwapBtnState("enter"); return; }
+
+            const from    = TOKENS[fromToken];
+            const to      = TOKENS[toToken];
+            const amountIn = ethers.parseUnits(raw, from.decimals);
+
+            try {
+                const provider = new ethers.JsonRpcProvider(CELO_RPC);
+                const quoter   = new ethers.Contract(UNISWAP_QUOTER, QUOTER_ABI, provider);
+
+                let bestQuote    = null;
+                let bestFee      = null;
+                let bestPath     = null;
+                let bestIsMulti  = false;
+                let bestMidToken = null;
+
+                // ── Build all quote attempts (single-hop + multi-hop) ──────────────
+                const attempts = [];
+
+                // Single-hop: try every fee tier
+                for (const fee of FEE_TIERS) {
+                    attempts.push(
+                        quoter.quoteExactInputSingle.staticCall({
+                            tokenIn:           from.address,
+                            tokenOut:          to.address,
+                            amountIn:          amountIn,
+                            fee:               fee,
+                            sqrtPriceLimitX96: 0n
+                        }).then(([amountOut]) => ({ amountOut, fee, path: null, isMulti: false, midToken: null }))
+                          .catch(() => null)
+                    );
+                }
+
+                // Multi-hop: route through cUSD and USDT as intermediates
+                const INTERMEDIATES = ['CUSD', 'USDT'];
+                const HOP_FEES = [10000, 3000, 500];
+                for (const midKey of INTERMEDIATES) {
+                    if (midKey === fromToken || midKey === toToken) continue;
+                    const mid = TOKENS[midKey];
+                    for (const fee1 of HOP_FEES) {
+                        for (const fee2 of HOP_FEES) {
+                            const path = encodePath(
+                                [from.address, mid.address, to.address],
+                                [fee1, fee2]
+                            );
+                            attempts.push(
+                                quoter.quoteExactInput.staticCall(path, amountIn)
+                                    .then(([amountOut]) => ({ amountOut, fee: fee1, path, isMulti: true, midToken: midKey }))
+                                    .catch(() => null)
+                            );
+                        }
+                    }
+                }
+
+                // Run all attempts in parallel for speed
+                const results = await Promise.all(attempts);
+
+                for (const r of results) {
+                    if (!r) continue;
+                    if (bestQuote === null || r.amountOut > bestQuote) {
+                        bestQuote    = r.amountOut;
+                        bestFee      = r.fee;
+                        bestPath     = r.path;
+                        bestIsMulti  = r.isMulti;
+                        bestMidToken = r.midToken;
+                    }
+                }
+
+                if (bestQuote === null) {
+                    setSwapBtnState("no-pool");
+                    showAlert("alert-error", "❌ No liquidity pool found for this pair on Uniswap V3 (Celo). Try a different amount or check back later.");
+                    return;
+                }
+
+                currentQuote = {
+                    amountIn,
+                    amountOut: bestQuote,
+                    fee:       bestFee,
+                    path:      bestPath,
+                    isMulti:   bestIsMulti,
+                    midToken:  bestMidToken,
+                    fromToken,
+                    toToken
+                };
+
+                showQuote(currentQuote);
+
+                if (_getEthProvider()) {
+                    setSwapBtnState("ready");
+                } else {
+                    setSwapBtnState("no-wallet");
+                }
+
+            } catch (e) {
+                console.error("fetchQuote error:", e);
+                showAlert("alert-error", "❌ Could not fetch quote. Check your connection and try again.");
+                setSwapBtnState("enter");
+            }
+        }
+
+        // For multi-hop routes the price can shift more during approval+execution;
+        // enforce a 2 % floor so we don't get "Too little received" reverts.
+        function effectiveSlippage(quote) {
+            return (quote && quote.isMulti) ? Math.max(slippage, 2.0) : slippage;
+        }
+
+        function showQuote(quote) {
+            const from     = TOKENS[quote.fromToken];
+            const to       = TOKENS[quote.toToken];
+            const inHuman  = parseFloat(ethers.formatUnits(quote.amountIn,  from.decimals));
+            const outHuman = parseFloat(ethers.formatUnits(quote.amountOut, to.decimals));
+
+            const effSlip  = effectiveSlippage(quote);
+            const minOut      = quote.amountOut * BigInt(Math.floor((1 - effSlip / 100) * 10000)) / 10000n;
+            const minOutHuman = parseFloat(ethers.formatUnits(minOut, to.decimals));
+
+            document.getElementById("amountOut").value = outHuman.toFixed(to.displayDecimals);
+            document.getElementById("quoteRate").textContent =
+                `1 ${from.symbol} ≈ ${(outHuman / inHuman).toFixed(to.displayDecimals)} ${to.symbol}`;
+            document.getElementById("quoteMinOut").textContent =
+                `${minOutHuman.toFixed(to.displayDecimals)} ${to.symbol}`;
+            document.getElementById("quotePriceImpact").textContent = "< 1%";
+            if (quote.isMulti && quote.midToken) {
+                const midSym = TOKENS[quote.midToken].symbol;
+                document.getElementById("quotePoolFee").textContent =
+                    `Multi-hop via ${midSym} (best route)` + (effSlip > slippage ? ` · ${effSlip}% slip applied` : '');
+            } else {
+                document.getElementById("quotePoolFee").textContent = `${quote.fee / 10000}%`;
+            }
+            document.getElementById("quoteBox").classList.remove("hidden");
+        }
+
+        // ─── Execute Swap ──────────────────────────────────────────────────────────
+        async function startSwap() {
+            if (!currentQuote) { showAlert("alert-error", "Please enter an amount first."); return; }
+
+            clearAlert();
+            const from  = TOKENS[fromToken];
+            const to    = TOKENS[toToken];
+            const stepIndicators = document.getElementById("stepIndicators");
+            const step1 = document.getElementById("step1");
+            const step2 = document.getElementById("step2");
+
+            // ── Custodial mode: server-side approve + swap ──
+            if (window.isCustodialMode) {
+                try {
+                    // On Celo, CELO is both the native gas token AND an ERC-20 sharing
+                    // the same balance. Gas is deducted from the native balance BEFORE
+                    // the ERC-20 transferFrom check runs, so if amountIn is too close to
+                    // the total balance the pool's safeTransferFrom will see insufficient
+                    // funds and revert with STF. Reserve 0.01 CELO (1e16 wei) for gas.
+                    const GAS_BUFFER_CELO = 10_000_000_000_000_000n; // 0.01 CELO in wei (covers 300k gas @ 33 gwei)
+                    let amountIn = currentQuote.amountIn;
+                    if (fromToken === "CELO") {
+                        // Parse balance string precisely to avoid floating-point errors
+                        const celoBalStr = String(celoBalanceNum);
+                        const dotIdx = celoBalStr.indexOf('.');
+                        const intPart = dotIdx === -1 ? celoBalStr : celoBalStr.slice(0, dotIdx);
+                        const rawFrac = dotIdx === -1 ? '' : celoBalStr.slice(dotIdx + 1);
+                        const fracPart = rawFrac.padEnd(18, '0').slice(0, 18);
+                        const celoWei = BigInt(intPart) * 1_000_000_000_000_000_000n + BigInt(fracPart);
+                        const maxSafe = celoWei > GAS_BUFFER_CELO ? celoWei - GAS_BUFFER_CELO : 0n;
+                        console.log(`[swap-celo-guard] celoBalanceNum=${celoBalanceNum} celoWei=${celoWei} maxSafe=${maxSafe} amountIn=${amountIn}`);
+                        if (amountIn > maxSafe) {
+                            if (maxSafe <= 0n) {
+                                showAlert("alert-error", "❌ Insufficient CELO — need at least 0.01 CELO for gas fees.");
+                                setSwapBtnState("ready");
+                                return;
+                            }
+                            amountIn = maxSafe;
+                            showAlert("alert-info", `ℹ️ Swap amount reduced slightly to reserve 0.01 CELO for gas fees.`);
+                        }
+                    }
+                    const effSlip     = effectiveSlippage(currentQuote);
+                    const slippageBps = BigInt(Math.floor(effSlip * 100));
+
+                    // Step 1: Approve (use 2× amountIn so we don't need to re-approve
+                    // for small balance fluctuations)
+                    stepIndicators.className = "step-indicators show";
+                    step1.className = "step active";
+                    step2.className = "step";
+                    setSwapBtnState("loading", "Approving token...");
+                    const modeLabel = LOGIN_METHOD === 'turnkey' ? 'Turnkey' : 'server-side';
+                    showAlert("alert-info", `<span class="spinner-inline"></span> Step 1/2 — Approving ${from.symbol} for Uniswap (${modeLabel})…`);
+
+                    const approveIface = new ethers.Interface(ERC20_ABI);
+                    const approveData = approveIface.encodeFunctionData("approve", [UNISWAP_ROUTER, amountIn * 2n]);
+                    const approveRes = await fetch('/api/server/sign-tx', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ to: from.address, data: approveData, value: '0x0', chain_id: CELO_CHAIN_ID, wait_receipt: true })
+                    });
+                    const approveData2 = await approveRes.json();
+                    if (!approveData2.success) {
+                        const approveErrMsg = approveData2.error || 'Approval failed';
+                        const approveTxLink = approveData2.tx_hash
+                            ? ` <a href="https://celoscan.io/tx/${approveData2.tx_hash}" target="_blank" rel="noopener" style="color:#f87171;text-decoration:underline;">View on CeloScan ↗</a>`
+                            : '';
+                        throw new Error(`Approval reverted: ${approveErrMsg}${approveTxLink}`);
+                    }
+                    step1.className = "step done";
+
+                    // ── Re-fetch quote after approval to get a fresh amountOutMin ──
+                    // The approval tx takes ~3 s on Celo. Price can move during that
+                    // window; using the original quote's output as amountOutMin will
+                    // cause "Too little received" reverts if it moved even slightly.
+                    let freshAmountOut = currentQuote.amountOut;
+                    try {
+                        const freshProvider = new ethers.JsonRpcProvider(CELO_RPC);
+                        const freshQuoter = new ethers.Contract(UNISWAP_QUOTER, QUOTER_ABI, freshProvider);
+                        if (currentQuote.isMulti && currentQuote.path) {
+                            const [newOut] = await freshQuoter.quoteExactInput.staticCall(currentQuote.path, amountIn);
+                            freshAmountOut = newOut;
+                        } else {
+                            const [newOut] = await freshQuoter.quoteExactInputSingle.staticCall({
+                                tokenIn: from.address,
+                                tokenOut: to.address,
+                                amountIn: amountIn,
+                                fee: currentQuote.fee,
+                                sqrtPriceLimitX96: 0n
+                            });
+                            freshAmountOut = newOut;
+                        }
+                        console.log(`[swap] re-quote: oldOut=${currentQuote.amountOut} freshOut=${freshAmountOut}`);
+                    } catch (reQuoteErr) {
+                        console.warn('[swap] re-quote failed, using original quote output:', reQuoteErr.message);
+                    }
+                    const amountOutMin = freshAmountOut * (10000n - slippageBps) / 10000n;
+
+                    // ── Verify on-chain allowance + balance before swap ────────────
+                    const diagProvider = new ethers.JsonRpcProvider(CELO_RPC);
+                    const diagToken = new ethers.Contract(from.address, [
+                        "function allowance(address,address) view returns (uint256)",
+                        "function balanceOf(address) view returns (uint256)"
+                    ], diagProvider);
+                    const [onChainAllowance, onChainBalance] = await Promise.all([
+                        diagToken.allowance(WALLET_ADDRESS, UNISWAP_ROUTER),
+                        diagToken.balanceOf(WALLET_ADDRESS)
+                    ]);
+                    console.log(`[swap] wallet=${WALLET_ADDRESS} balance=${onChainBalance} allowance=${onChainAllowance} amountIn=${amountIn} amountOutMin=${amountOutMin}`);
+                    if (onChainAllowance < amountIn) {
+                        throw new Error(`Allowance too low: ${onChainAllowance} < ${amountIn}. Approval may not have been confirmed yet.`);
+                    }
+                    if (onChainBalance < amountIn) {
+                        const balHuman  = parseFloat(ethers.formatUnits(onChainBalance, from.decimals)).toFixed(from.displayDecimals);
+                        const needHuman = parseFloat(ethers.formatUnits(amountIn,       from.decimals)).toFixed(from.displayDecimals);
+                        throw new Error(`Insufficient ${from.symbol} balance: have ${balHuman}, need ${needHuman}. Please swap a smaller amount.`);
+                    }
+                    // ──────────────────────────────────────────────────────────────
+
+                    // Step 2: Swap
+                    step2.className = "step active";
+                    setSwapBtnState("loading", "Executing swap...");
+                    showAlert("alert-info", `<span class="spinner-inline"></span> Step 2/2 — Executing swap (${modeLabel})…`);
+
+                    const routerIface = new ethers.Interface(ROUTER_ABI);
+                    let swapData;
+                    if (currentQuote.isMulti && currentQuote.path) {
+                        swapData = routerIface.encodeFunctionData("exactInput", [{
+                            path: currentQuote.path,
+                            recipient: WALLET_ADDRESS,
+                            amountIn: amountIn,
+                            amountOutMinimum: amountOutMin
+                        }]);
+                    } else {
+                        swapData = routerIface.encodeFunctionData("exactInputSingle", [{
+                            tokenIn: from.address,
+                            tokenOut: to.address,
+                            fee: currentQuote.fee,
+                            recipient: WALLET_ADDRESS,
+                            amountIn: amountIn,
+                            amountOutMinimum: amountOutMin,
+                            sqrtPriceLimitX96: 0n
+                        }]);
+                    }
+                    const swapRes = await fetch('/api/server/sign-tx', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ to: UNISWAP_ROUTER, data: swapData, value: '0x0', chain_id: CELO_CHAIN_ID, wait_receipt: true })
+                    });
+                    const swapResult = await swapRes.json();
+                    if (!swapResult.success) {
+                        const errMsg = swapResult.error || 'Swap failed';
+                        const txLink = swapResult.tx_hash
+                            ? ` <a href="https://celoscan.io/tx/${swapResult.tx_hash}" target="_blank" rel="noopener" style="color:#f87171;text-decoration:underline;">View on CeloScan ↗</a>`
+                            : '';
+                        stepIndicators.className = "step-indicators";
+                        showAlert("alert-error", `❌ Swap reverted on-chain: ${errMsg.substring(0,150)}${txLink}`);
+                        if (currentQuote) setSwapBtnState("ready");
+                        else setSwapBtnState("enter");
+                        return;
+                    }
+                    step2.className = "step done";
+
+                    const outHuman = parseFloat(ethers.formatUnits(currentQuote.amountOut, to.decimals));
+                    const inHuman  = parseFloat(ethers.formatUnits(amountIn, from.decimals));
+                    showAlert("alert-success",
+                        `✅ Swap submitted! ${inHuman.toFixed(from.displayDecimals)} ${from.symbol} → ≈${outHuman.toFixed(to.displayDecimals)} ${to.symbol}. ` +
+                        `<a href="https://celoscan.io/tx/${swapResult.tx_hash}" target="_blank" rel="noopener" style="color:#86efac;text-decoration:underline;">View on CeloScan ↗</a>`
+                    );
+                    document.getElementById("amountIn").value  = "";
+                    document.getElementById("amountOut").value = "";
+                    currentQuote = null;
+                    document.getElementById("quoteBox").classList.add("hidden");
+                    setSwapBtnState("enter");
+                    stepIndicators.className = "step-indicators";
+                    await loadBalances();
+                } catch (err) {
+                    stepIndicators.className = "step-indicators";
+                    const msg = err?.message || "Unknown error";
+                    showAlert("alert-error", `❌ Swap failed: ${msg.substring(0, 150)}`);
+                    if (currentQuote) setSwapBtnState("ready");
+                    else setSwapBtnState("enter");
+                }
+                return;
+            }
+
+            showAlert("alert-error", "⚠️ Turnkey wallet required. Please login using a Turnkey wallet to use Swap.");
+            if (currentQuote) setSwapBtnState("ready");
+            else setSwapBtnState("enter");
+        }
+    </script>
+</body>
+</html>
