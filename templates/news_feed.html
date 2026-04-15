@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoodDollar News Feed</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg,
+                #0f172a 0%,
+                #1e293b 25%,
+                #334155 50%,
+                #1e293b 75%,
+                #0f172a 100%
+            );
+            background-size: 400% 400%;
+            animation: gradientBackground 10s ease infinite;
+            min-height: 100vh;
+            color: white;
+            zoom: 0.90;
+        }
+
+        @keyframes gradientBackground {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .navbar {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .nav-brand {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1);
+            background-size: 300% 300%;
+            animation: gradientText 3s ease infinite;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        @keyframes gradientText {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover, .nav-link.active {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .main-content {
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .page-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .page-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            background: linear-gradient(45deg, #4facfe, #00f2fe);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .page-subtitle {
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 2rem;
+        }
+
+        .news-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 3rem;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .stat-icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 0.3rem;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .news-filters {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .filter-label {
+            font-weight: 600;
+            color: white;
+            margin-right: 1rem;
+        }
+
+        .filter-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+
+        .filter-btn:hover, .filter-btn.active {
+            background: linear-gradient(45deg, #4facfe, #00f2fe);
+            border-color: transparent;
+            transform: translateY(-1px);
+        }
+
+        .featured-section {
+            margin-bottom: 3rem;
+        }
+
+        .section-title {
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .featured-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+        }
+
+        .featured-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.05) 100%);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px;
+            padding: 2rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .featured-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #feca57);
+            background-size: 300% 300%;
+            animation: gradientBorder 3s ease infinite;
+        }
+
+        @keyframes gradientBorder {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .featured-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .news-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .news-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .news-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.2);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .news-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .news-category {
+            background: linear-gradient(45deg, #4facfe, #00f2fe);
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .news-time {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.9rem;
+        }
+
+        .news-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 1.2rem;
+            line-height: 1.5;
+            letter-spacing: 0.2px;
+        }
+
+        .news-content {
+            color: rgba(255, 255, 255, 0.9);
+            line-height: 1.9;
+            margin-bottom: 1.5rem;
+            letter-spacing: 0.3px;
+            word-spacing: 1px;
+        }
+
+        .news-content p {
+            margin-bottom: 1rem;
+        }
+
+        .news-content br {
+            display: block;
+            content: "";
+            margin-top: 0.8rem;
+        }
+
+        .news-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .news-author {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9rem;
+        }
+
+        .priority-high {
+            border-left: 4px solid #ff6b6b;
+        }
+
+        .priority-medium {
+            border-left: 4px solid #feca57;
+        }
+
+        .priority-low {
+            border-left: 4px solid #4ecdc4;
+        }
+
+        .load-more {
+            text-align: center;
+            margin-top: 2rem;
+        }
+
+        .load-more-btn {
+            background: linear-gradient(45deg, #4facfe, #00f2fe);
+            border: none;
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .load-more-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(79, 172, 254, 0.4);
+        }
+
+        .load-more-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .wallet-info {
+            color: white;
+            font-size: 0.9rem;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+        }
+
+
+        @media (max-width: 768px) {
+            body {
+                zoom: 0.95;
+            }
+
+            .navbar {
+                padding: 1rem;
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .main-content {
+                padding: 1rem;
+            }
+
+            .page-title {
+                font-size: 2rem;
+            }
+
+            .news-stats {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            }
+
+            .featured-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .news-filters {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .news-header {
+                flex-direction: column;
+                gap: 0.5rem;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/overview" class="logo">📰 GoodDollar News</a>
+            <div class="nav-links">
+                <a href="/overview" class="nav-link">Overview</a>
+                {% if wallet and wallet != 'None' %}
+                <a href="/dashboard" class="nav-link">Dashboard</a>
+                <a href="/news" class="nav-link active">News Feed</a>
+                <a href="/logout" class="nav-link">Logout</a>
+                <div class="wallet-info">
+                    {{ wallet[:6] }}...{{ wallet[-4:] }}
+                </div>
+                {% else %}
+                <a href="/news" class="nav-link active">News Feed</a>
+                <a href="/" class="nav-link" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 0.5rem 1.5rem; border-radius: 8px;">Login</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="page-header">
+            <h1 class="page-title">📰 GoodDollar News Feed</h1>
+            <p class="page-subtitle">Stay updated with the latest GoodDollar ecosystem news, announcements, and community updates</p>
+        </div>
+
+        <!-- News Statistics -->
+        <div class="news-stats">
+            <div class="stat-card">
+                <div class="stat-icon">📰</div>
+                <div class="stat-value" id="totalArticles">{{ news_stats.total_articles }}</div>
+                <div class="stat-label">Total Articles</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">⭐</div>
+                <div class="stat-value" id="featuredArticles">{{ news_stats.featured_articles }}</div>
+                <div class="stat-label">Featured News</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📝</div>
+                <div class="stat-value" id="categories">{{ news_stats.categories_count }}</div>
+                <div class="stat-label">Categories</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🕒</div>
+                <div class="stat-value" id="recentArticles">{{ news_stats.recent_articles }}</div>
+                <div class="stat-label">Recent (24h)</div>
+            </div>
+        </div>
+
+        <!-- News Filters -->
+        <div class="news-filters">
+            <div class="filter-label">📂 Filter by category:</div>
+            <button class="filter-btn active" onclick="filterNews('all')">All News</button>
+            {% for category_key, category_display in categories.items() %}
+            <button class="filter-btn" onclick="filterNews('{{ category_key }}')">{{ category_display }}</button>
+            {% endfor %}
+        </div>
+
+        <!-- Featured News Section -->
+        {% if featured_news %}
+        <div class="featured-section">
+            <h2 class="section-title">⭐ Featured News</h2>
+            <div class="featured-grid" id="featuredGrid">
+                {% for article in featured_news %}
+                <div class="featured-card {{ article.priority_class }}">
+                    <div class="news-header">
+                        <div class="news-category">{{ article.category_display }}</div>
+                        <div class="news-time">{{ article.time_ago }}</div>
+                    </div>
+                    <h3 class="news-title">{{ article.title }}</h3>
+                    {% if article.has_image and article.image_url %}
+                    <div style="margin: 1rem 0; text-align: center;">
+                        <img src="{{ article.image_url }}" alt="{{ article.title }}" style="width: 100%; max-height: 400px; object-fit: cover; border-radius: 12px; cursor: pointer; display: block; margin: 0 auto;" onclick="window.open('{{ article.image_url }}', '_blank')" onerror="console.error('❌ Failed to load news image:', this.src); this.parentElement.remove();">
+                    </div>
+                    {% endif %}
+                    <p class="news-content" style="color: rgba(255, 255, 255, 0.85);">{{ article.excerpt }}</p>
+                    <div class="news-footer">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div class="news-author">By {{ article.author }}</div>
+                            <div style="display: flex; align-items: center; gap: 0.3rem; color: rgba(255, 255, 255, 0.6); font-size: 0.85rem;">
+                                <span>👁️</span>
+                                <span>{{ article.view_count|default(0) }} views</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <a href="/news/article/{{ article.id }}" style="background: linear-gradient(45deg, #4facfe, #00f2fe); color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                📰 Read Full Article
+                            </a>
+                            {% if article.url and article.url != 'None' and article.url != '' %}
+                            <a href="{{ article.url }}" target="_blank" style="background: linear-gradient(45deg, #6366f1, #a855f7); color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                🔗 External Link
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Recent News Section -->
+        <div class="news-section">
+            <h2 class="section-title">🕒 Recent News</h2>
+            <div class="news-list" id="newsList">
+                {% for article in recent_news %}
+                <div class="news-card {{ article.priority_class }}" data-category="{{ article.category }}">
+                    <div class="news-header">
+                        <div class="news-category">{{ article.category_display }}</div>
+                        <div class="news-time">{{ article.time_ago }}</div>
+                    </div>
+                    <h3 class="news-title">{{ article.title }}</h3>
+                    {% if article.image_url and article.image_url != 'None' and article.image_url != '' %}
+                    <div style="margin: 1rem 0; text-align: center;">
+                        <img src="{{ article.image_url }}" alt="{{ article.title }}" style="width: 100%; max-height: 400px; object-fit: cover; border-radius: 12px; cursor: pointer; display: block; margin: 0 auto;" onclick="window.open('{{ article.image_url }}', '_blank')" onerror="console.error('❌ Image failed to load:', this.src); this.parentElement.remove();">
+                    </div>
+                    {% endif %}
+                    <p class="news-content">{{ article.content | safe }}</p>
+                    <div class="news-footer">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div class="news-author">By {{ article.author }}</div>
+                            <div style="display: flex; align-items: center; gap: 0.3rem; color: rgba(255, 255, 255, 0.6); font-size: 0.85rem;">
+                                <span>👁️</span>
+                                <span>{{ article.view_count|default(0) }} views</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <a href="/news/article/{{ article.id }}" style="background: linear-gradient(45deg, #4facfe, #00f2fe); color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                📰 Read Full Article
+                            </a>
+                            {% if article.url and article.url != 'None' and article.url != '' %}
+                            <a href="{{ article.url }}" target="_blank" style="background: linear-gradient(45deg, #6366f1, #a855f7); color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                🔗 External Link
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Load More Button -->
+            <div class="load-more">
+                <button class="load-more-btn" id="loadMoreBtn" onclick="loadMoreNews()">
+                    Load More News
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let currentFilter = 'all';
+        let currentPage = 1;
+        let isLoading = false;
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔗 Making links clickable in news content...');
+
+            // Make links clickable in all existing news content
+            document.querySelectorAll('.news-content').forEach(function(contentElement) {
+                const originalContent = contentElement.innerHTML;
+                const clickableContent = makeLinksClickable(originalContent);
+                contentElement.innerHTML = clickableContent;
+                console.log('✅ Processed content for article');
+            });
+
+            // Auto-refresh news every 5 minutes
+            setInterval(refreshNewsStats, 5 * 60 * 1000);
+        });
+
+        function filterNews(category) {
+            currentFilter = category;
+            currentPage = 1;
+
+            // Update filter buttons
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // Load filtered news
+            loadNewsWithFilter(category);
+        }
+
+        async function loadNewsWithFilter(category) {
+            try {
+                isLoading = true;
+                updateLoadingState(true);
+
+                const params = new URLSearchParams({
+                    limit: 20,
+                    page: 1
+                });
+
+                if (category !== 'all') {
+                    params.append('category', category);
+                }
+
+                const response = await fetch(`/api/news-feed?${params}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    displayNews(data.news);
+
+                    // Update featured news if showing all
+                    if (category === 'all') {
+                        updateFeaturedNews(data.featured_news);
+                    }
+                } else {
+                    showError('Failed to load filtered news');
+                }
+
+            } catch (error) {
+                console.error('Filter news error:', error);
+                showError('Network error while filtering news');
+            } finally {
+                isLoading = false;
+                updateLoadingState(false);
+            }
+        }
+
+        async function loadMoreNews() {
+            if (isLoading) return;
+
+            try {
+                isLoading = true;
+                updateLoadingState(true);
+
+                currentPage += 1;
+
+                const params = new URLSearchParams({
+                    limit: 10,
+                    page: currentPage
+                });
+
+                if (currentFilter !== 'all') {
+                    params.append('category', currentFilter);
+                }
+
+                const response = await fetch(`/api/news-feed?${params}`);
+                const data = await response.json();
+
+                if (data.success && data.news.length > 0) {
+                    appendNews(data.news);
+                } else {
+                    // No more news to load
+                    const loadMoreBtn = document.getElementById('loadMoreBtn');
+                    loadMoreBtn.textContent = 'No more news';
+                    loadMoreBtn.disabled = true;
+                }
+
+            } catch (error) {
+                console.error('Load more news error:', error);
+                showError('Failed to load more news');
+            } finally {
+                isLoading = false;
+                updateLoadingState(false);
+            }
+        }
+
+        function displayNews(newsArray) {
+            const newsList = document.getElementById('newsList');
+
+            if (!newsArray || newsArray.length === 0) {
+                newsList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">📭</div>
+                        <div>No news articles found for this category</div>
+                    </div>
+                `;
+                return;
+            }
+
+            newsList.innerHTML = newsArray.map(article => createNewsCardHTML(article)).join('');
+
+            // Reset load more button
+            const loadMoreBtn = document.getElementById('loadMoreBtn');
+            loadMoreBtn.textContent = 'Load More News';
+            loadMoreBtn.disabled = false;
+        }
+
+        function appendNews(newsArray) {
+            const newsList = document.getElementById('newsList');
+            const newsHTML = newsArray.map(article => createNewsCardHTML(article)).join('');
+            newsList.insertAdjacentHTML('beforeend', newsHTML);
+        }
+
+        function makeLinksClickable(text) {
+            if (!text) return '';
+
+            // Skip if already has anchor tags
+            if (text.includes('<a href=')) {
+                return text;
+            }
+
+            // Make URLs clickable - more comprehensive regex
+            const urlRegex = /(https?:\/\/[^\s<>"]+|www\.[^\s<>"]+)/gi;
+            return text.replace(urlRegex, function(url) {
+                const href = url.startsWith('http') ? url : 'https://' + url;
+                return '<a href="' + href + '" target="_blank" rel="noopener noreferrer" style="color: #4facfe; text-decoration: underline; font-weight: 500; word-break: break-word;">' + url + '</a>';
+            });
+        }
+
+        function createNewsCardHTML(article) {
+            // Process content: convert line breaks to HTML, then make links clickable
+            let content = article.content || '';
+            content = content.replace(/\n/g, '<br>'); // Convert line breaks
+            content = makeLinksClickable(content); // Make URLs clickable
+
+            // Better image URL validation
+            const hasValidImage = article.has_image && article.image_url &&
+                                  article.image_url !== 'null' &&
+                                  article.image_url !== 'None' &&
+                                  article.image_url !== '' &&
+                                  article.image_url.toLowerCase() !== 'none';
+
+            console.log('📰 Creating card for:', article.title, 'has_image:', article.has_image, 'image_url:', article.image_url);
+
+            return `
+                <div class="news-card ${article.priority_class}" data-category="${article.category}">
+                    <div class="news-header">
+                        <div class="news-category">${article.category_display}</div>
+                        <div class="news-time">${article.time_ago}</div>
+                    </div>
+                    <h3 class="news-title">${article.title}</h3>
+                    ${hasValidImage ? `
+                    <div style="margin: 1rem 0; text-align: center;">
+                        <img src="${article.image_url}" alt="${article.title}" style="width: 100%; max-height: 400px; object-fit: cover; border-radius: 12px; cursor: pointer; display: block; margin: 0 auto;" onclick="window.open('${article.image_url}', '_blank')" onerror="console.error('❌ News image failed to load:', this.src); this.parentElement.remove();">
+                    </div>
+                    ` : ''}
+                    <p class="news-content">${content}</p>
+                    <div class="news-footer">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div class="news-author">By ${article.author}</div>
+                            <div style="display: flex; align-items: center; gap: 0.3rem; color: rgba(255, 255, 255, 0.6); font-size: 0.85rem;">
+                                <span>👁️</span>
+                                <span>${article.view_count || 0} views</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <a href="/news/article/${article.id}" style="background: linear-gradient(45deg, #4facfe, #00f2fe); color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                📰 Read Full Article
+                            </a>
+                            ${article.url && article.url !== 'None' && article.url !== '' ? `
+                            <a href="${article.url}" target="_blank" style="background: linear-gradient(45deg, #6366f1, #a855f7); color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                🔗 External Link
+                            </a>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateFeaturedNews(featuredNews) {
+            if (!featuredNews) return;
+
+            const featuredGrid = document.getElementById('featuredGrid');
+            if (featuredGrid && featuredNews.length > 0) {
+                featuredGrid.innerHTML = featuredNews.map(article => {
+                    // Process content: convert line breaks to HTML, then make links clickable
+                    let content = article.content || '';
+                    content = content.replace(/\n/g, '<br>'); // Convert line breaks
+                    content = makeLinksClickable(content); // Make URLs clickable
+
+                    return `
+                    <div class="featured-card ${article.priority_class}">
+                        <div class="news-header">
+                            <div class="news-category">${article.category_display}</div>
+                            <div class="news-time">${article.time_ago}</div>
+                        </div>
+                        <h3 class="news-title">${article.title}</h3>
+                        ${article.image_url && article.image_url !== 'null' && article.image_url !== 'None' && article.image_url !== '' && article.image_url.toLowerCase() !== 'none' ? `
+                        <div style="margin: 1rem 0; text-align: center;">
+                            <img src="${article.image_url}" alt="${article.title}" style="width: 100%; max-height: 400px; object-fit: cover; border-radius: 12px; cursor: pointer; display: block; margin: 0 auto;" onclick="window.open('${article.image_url}', '_blank')" onerror="console.error('❌ Featured image failed to load:', this.src); this.parentElement.remove();">
+                        </div>
+                        ` : ''}
+                        <p class="news-content" style="color: rgba(255, 255, 255, 0.85);"> ${article.excerpt} </p>
+                        <div class="news-footer">
+                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                <div class="news-author">By ${article.author}</div>
+                                <div style="display: flex; align-items: center; gap: 0.3rem; color: rgba(255, 255, 255, 0.6); font-size: 0.85rem;">
+                                    <span>👁️</span>
+                                    <span>${article.view_count || 0} views</span>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <a href="/news/article/${article.id}" style="background: linear-gradient(45deg, #4facfe, #00f2fe); color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                    📰 Read Full Article
+                                </a>
+                                ${article.url && article.url !== 'None' && article.url !== '' ? `
+                                <a href="${article.url}" target="_blank" style="background: linear-gradient(45deg, #6366f1, #a855f7); color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                    🔗 External Link
+                                </a>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                }).join('');
+            }
+        }
+
+        async function refreshNewsStats() {
+            try {
+                const response = await fetch('/api/news-feed/featured');
+                const data = await response.json();
+
+                if (data.success && data.stats) {
+                    document.getElementById('totalArticles').textContent = data.stats.total_articles;
+                    document.getElementById('featuredArticles').textContent = data.stats.featured_articles;
+                    document.getElementById('recentArticles').textContent = data.stats.recent_articles;
+                }
+
+            } catch (error) {
+                console.error('Failed to refresh news stats:', error);
+            }
+        }
+
+        function updateLoadingState(loading) {
+            const loadMoreBtn = document.getElementById('loadMoreBtn');
+
+            if (loading) {
+                loadMoreBtn.textContent = 'Loading...';
+                loadMoreBtn.disabled = true;
+            } else {
+                if (!loadMoreBtn.disabled) {
+                    loadMoreBtn.textContent = 'Load More News';
+                }
+            }
+        }
+
+        function showError(message) {
+            // Simple error display - could be enhanced with a toast system
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: linear-gradient(45deg, #ff6b6b, #ff5252);
+                color: white;
+                padding: 1rem 1.5rem;
+                border-radius: 12px;
+                z-index: 1000;
+                box-shadow: 0 10px 30px rgba(255, 107, 107, 0.3);
+            `;
+            errorDiv.textContent = `❌ ${message}`;
+
+            document.body.appendChild(errorDiv);
+
+            setTimeout(() => {
+                errorDiv.remove();
+            }, 5000);
+        }
+
+        // Add some visual effects on card hover
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.news-card') || e.target.closest('.featured-card')) {
+                const card = e.target.closest('.news-card') || e.target.closest('.featured-card');
+
+                // Create ripple effect
+                const ripple = document.createElement('div');
+                const rect = card.getBoundingClientRect();
+                const size = Math.max(rect.width, rect.height);
+
+                ripple.style.cssText = `
+                    position: absolute;
+                    width: ${size}px;
+                    height: ${size}px;
+                    background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+                    border-radius: 50%;
+                    transform: scale(0);
+                    animation: ripple 0.6s ease-out;
+                    pointer-events: none;
+                    left: ${e.clientX - rect.left - size / 2}px;
+                    top: ${e.clientY - rect.top - size / 2}px;
+                `;
+
+                card.style.position = 'relative';
+                card.appendChild(ripple);
+
+                setTimeout(() => ripple.remove(), 600);
+            }
+        });
+
+        // Add CSS for ripple animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes ripple {
+                to {
+                    transform: scale(2);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>
