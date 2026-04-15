@@ -1,0 +1,1687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>GoodMarket</title>
+    <meta name="theme-color" content="#050510">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #050510;
+            --bg2: #0a0a1e;
+            --card: rgba(255,255,255,0.04);
+            --card-border: rgba(255,255,255,0.08);
+            --blue: #00b4ff;
+            --blue-dim: rgba(0,180,255,0.15);
+            --blue-glow: rgba(0,180,255,0.4);
+            --green: #00e676;
+            --green-dim: rgba(0,230,118,0.12);
+            --red: #ff5252;
+            --text: #e8eaf6;
+            --text-dim: rgba(232,234,246,0.55);
+            --text-muted: rgba(232,234,246,0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            max-width: 480px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        /* ── Top Bar ── */
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.25rem 0.75rem;
+            position: sticky;
+            top: 0;
+            background: var(--bg);
+            z-index: 50;
+        }
+        .top-bar-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.3px;
+        }
+        .icon-btn {
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255,255,255,0.07);
+            color: var(--text-dim);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: background 0.2s;
+        }
+        .icon-btn:hover { background: rgba(255,255,255,0.12); }
+
+        /* ── Balance Card ── */
+        .balance-card {
+            margin: 0.5rem 1.25rem 1.25rem;
+            background: linear-gradient(145deg, #0d1b35 0%, #091226 100%);
+            border: 1px solid rgba(0,180,255,0.35);
+            border-radius: 20px;
+            padding: 1.25rem 1.4rem;
+            box-shadow: 0 0 30px rgba(0,180,255,0.12), inset 0 1px 0 rgba(0,180,255,0.15);
+            position: relative;
+            overflow: hidden;
+        }
+        .balance-card::before {
+            content: '';
+            position: absolute;
+            top: -40px; right: -40px;
+            width: 120px; height: 120px;
+            background: radial-gradient(circle, rgba(0,180,255,0.18) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        .balance-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.85rem;
+        }
+        .wallet-identity {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+        }
+        .wallet-avatar {
+            width: 38px; height: 38px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #0066cc, #00aaff);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.1rem;
+            flex-shrink: 0;
+            box-shadow: 0 2px 10px rgba(0,180,255,0.3);
+        }
+        .wallet-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+        .wallet-addr {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            font-family: monospace;
+        }
+        .copy-btn {
+            width: 36px; height: 36px;
+            border-radius: 10px;
+            background: rgba(0,180,255,0.15);
+            border: 1px solid rgba(0,180,255,0.3);
+            color: var(--blue);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .copy-btn:hover { background: rgba(0,180,255,0.25); }
+        .balance-amount {
+            font-size: 2.5rem;
+            font-weight: 900;
+            color: var(--blue);
+            letter-spacing: -1.5px;
+            line-height: 1;
+            margin-bottom: 0.25rem;
+        }
+        .balance-sub {
+            font-size: 0.78rem;
+            color: var(--text-dim);
+        }
+
+        /* ── Action Buttons ── */
+        .action-row {
+            display: flex;
+            gap: 0.5rem;
+            padding: 0 1.25rem;
+            overflow-x: auto;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            margin-bottom: 1.5rem;
+        }
+        .action-row::-webkit-scrollbar { display: none; }
+        .action-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.45rem;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+        .action-circle {
+            width: 58px; height: 58px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.35rem;
+            transition: all 0.2s;
+        }
+        .action-item:hover .action-circle {
+            background: rgba(0,180,255,0.12);
+            border-color: rgba(0,180,255,0.35);
+        }
+        .action-circle.claim-circle {
+            background: rgba(0,180,255,0.1);
+            border-color: rgba(0,180,255,0.3);
+        }
+        .action-label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            white-space: nowrap;
+        }
+
+        /* ── Tabs ── */
+        .tab-bar {
+            display: flex;
+            margin: 0 1.25rem 1rem;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+        }
+        .tab {
+            flex: 1;
+            text-align: center;
+            padding: 0.6rem 0;
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            background: none;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+        }
+        .tab.active {
+            color: #fff;
+            border-bottom-color: var(--blue);
+        }
+
+        /* ── Token List ── */
+        .token-list { padding: 0 1.25rem; }
+        .token-item {
+            display: flex;
+            align-items: center;
+            gap: 0.9rem;
+            padding: 0.85rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .token-item:last-child { border-bottom: none; }
+        .token-icon {
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.3rem;
+            flex-shrink: 0;
+            position: relative;
+        }
+        .token-icon img {
+            width: 100%; height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .token-meta { flex: 1; min-width: 0; }
+        .token-symbol {
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: #fff;
+        }
+        .token-name {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+        .token-balance { text-align: right; }
+        .token-amount {
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: #fff;
+        }
+        .token-usd {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        /* ── Transaction History ── */
+        .tx-list { padding: 0 1.25rem; }
+        .tx-item {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            padding: 0.85rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .tx-item:last-child { border-bottom: none; }
+        .tx-icon-circle {
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+        .tx-icon-circle.sent            { background: rgba(255,82,82,0.15); color: #ff5252; }
+        .tx-icon-circle.received        { background: rgba(0,230,118,0.12); color: #00e676; }
+        .tx-icon-circle.claim           { background: rgba(99,102,241,0.18); color: #818cf8; }
+        .tx-icon-circle.swap            { background: rgba(6,182,212,0.15);  color: #22d3ee; }
+        .tx-icon-circle.savings_deposit { background: rgba(251,191,36,0.15); color: #fbbf24; }
+        .tx-icon-circle.savings_withdraw{ background: rgba(251,146,60,0.15); color: #fb923c; }
+        .tx-meta { flex: 1; min-width: 0; }
+        .tx-dir {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #fff;
+        }
+        .tx-badge {
+            display: inline-block;
+            font-size: 0.6rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            padding: 1px 6px;
+            border-radius: 4px;
+            margin-left: 5px;
+            vertical-align: middle;
+        }
+        .tx-badge.claim            { background: rgba(99,102,241,0.25); color: #a5b4fc; }
+        .tx-badge.swap             { background: rgba(6,182,212,0.2);   color: #67e8f9; }
+        .tx-badge.savings_deposit  { background: rgba(251,191,36,0.2);  color: #fde68a; }
+        .tx-badge.savings_withdraw { background: rgba(251,146,60,0.2);  color: #fed7aa; }
+        .tx-badge.xdc-net          { background: rgba(22,158,214,0.2);  color: #5bc8e8; }
+        .tx-addr {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            font-family: monospace;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .tx-time { font-size: 0.7rem; color: var(--text-muted); }
+        .tx-right { text-align: right; }
+        .tx-amount {
+            font-size: 0.88rem;
+            font-weight: 700;
+        }
+        .tx-amount.sent             { color: var(--red); }
+        .tx-amount.received         { color: var(--green); }
+        .tx-amount.claim            { color: #818cf8; }
+        .tx-amount.swap             { color: #22d3ee; }
+        .tx-amount.savings_deposit  { color: #fbbf24; }
+        .tx-amount.savings_withdraw { color: #fb923c; }
+        .tx-hash-link {
+            font-size: 0.68rem;
+            color: var(--blue);
+            text-decoration: none;
+            display: block;
+        }
+
+        /* ── Bottom padding ── */
+        .page-bottom { height: 5rem; }
+
+        /* ── Modals ── */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 200;
+            display: none;
+            align-items: flex-end;
+            justify-content: center;
+            backdrop-filter: blur(4px);
+        }
+        .modal-overlay.open { display: flex; }
+        .modal-sheet {
+            background: #0d1424;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 24px 24px 0 0;
+            padding: 1.5rem 1.5rem 2.5rem;
+            width: 100%;
+            max-width: 480px;
+            max-height: 90vh;
+            overflow-y: auto;
+            animation: slideUp 0.3s ease;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .modal-handle {
+            width: 40px; height: 4px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+            margin: 0 auto 1.25rem;
+        }
+        .modal-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 1.25rem;
+            text-align: center;
+        }
+
+        /* ── Form elements ── */
+        .form-group { margin-bottom: 1rem; }
+        .form-label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            margin-bottom: 0.4rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .form-input {
+            width: 100%;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 0.8rem 1rem;
+            color: #e8eaf6;
+            font-size: 0.95rem;
+            font-family: inherit;
+            outline: none;
+            transition: border 0.2s;
+        }
+        .form-input:focus { border-color: rgba(0,180,255,0.5); }
+        .form-input::placeholder { color: rgba(255,255,255,0.2); }
+        .amount-row { display: flex; gap: 0.5rem; }
+        .amount-row .form-input { flex: 1; }
+        .max-btn {
+            background: rgba(0,180,255,0.15);
+            border: 1px solid rgba(0,180,255,0.3);
+            color: var(--blue);
+            border-radius: 10px;
+            padding: 0 1rem;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        /* Token selector */
+        .token-selector {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .token-chip {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 0.35rem 0.9rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .token-chip.active {
+            background: rgba(0,180,255,0.15);
+            border-color: rgba(0,180,255,0.4);
+            color: var(--blue);
+        }
+
+        /* Receive address display */
+        .address-box {
+            background: rgba(0,180,255,0.06);
+            border: 1px solid rgba(0,180,255,0.2);
+            border-radius: 14px;
+            padding: 1rem 1.25rem;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+        .address-full {
+            font-family: monospace;
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            word-break: break-all;
+            line-height: 1.6;
+        }
+        .address-short {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--blue);
+            letter-spacing: -0.3px;
+        }
+
+        /* Primary action button */
+        .btn-primary {
+            width: 100%;
+            background: linear-gradient(135deg, #0088cc, #0055aa);
+            color: #fff;
+            border: none;
+            border-radius: 14px;
+            padding: 0.95rem;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.25s;
+            margin-top: 0.5rem;
+            font-family: inherit;
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,136,204,0.4); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-secondary {
+            width: 100%;
+            background: rgba(255,255,255,0.06);
+            color: var(--text-dim);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 14px;
+            padding: 0.8rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 0.5rem;
+            font-family: inherit;
+        }
+        .btn-danger {
+            background: rgba(255,82,82,0.12);
+            border: 1px solid rgba(255,82,82,0.3);
+            color: #ff7070;
+        }
+
+        /* Claim section */
+        .claim-status {
+            text-align: center;
+            font-size: 0.82rem;
+            color: var(--text-dim);
+            margin-top: 0.75rem;
+            min-height: 1.2em;
+        }
+        .ubi-pool-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            background: rgba(0,0,0,0.25);
+            border: 1px solid rgba(0,180,255,0.15);
+            border-radius: 10px;
+            padding: 0.55rem 1rem;
+            margin-bottom: 1rem;
+        }
+        .ubi-pool-label { font-size: 0.72rem; color: var(--text-muted); }
+        .ubi-pool-value { font-size: 0.9rem; font-weight: 700; color: var(--blue); }
+        .countdown-box {
+            display: none;
+            text-align: center;
+            background: rgba(0,0,0,0.25);
+            border-radius: 12px;
+            padding: 0.75rem;
+            margin-top: 0.75rem;
+        }
+        .countdown-label { font-size: 0.68rem; color: var(--text-muted); margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        .countdown-display {
+            font-size: 1.6rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            background: linear-gradient(90deg, var(--blue), #00e676);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-variant-numeric: tabular-nums;
+        }
+        .countdown-note { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.2rem; }
+
+        /* Private key warning */
+        .pk-warning {
+            background: rgba(255,82,82,0.08);
+            border: 1px solid rgba(255,82,82,0.25);
+            border-radius: 12px;
+            padding: 0.85rem 1rem;
+            font-size: 0.82rem;
+            color: #ff9090;
+            margin-bottom: 1rem;
+            line-height: 1.5;
+        }
+        .pk-warning strong { color: var(--red); }
+        .pk-box {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 0.9rem 1rem;
+            font-family: monospace;
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            word-break: break-all;
+            line-height: 1.6;
+            margin-bottom: 1rem;
+            display: none;
+        }
+
+        /* Alert */
+        .alert {
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-top: 0.75rem;
+            display: none;
+            line-height: 1.4;
+        }
+        .alert.show { display: block; }
+        .alert-success { background: rgba(0,230,118,0.1); border: 1px solid rgba(0,230,118,0.25); color: #00e676; }
+        .alert-error   { background: rgba(255,82,82,0.1); border: 1px solid rgba(255,82,82,0.25); color: #ff7070; }
+        .alert-info    { background: rgba(0,180,255,0.1); border: 1px solid rgba(0,180,255,0.25); color: var(--blue); }
+
+        /* Spinner */
+        .spinner {
+            display: inline-block;
+            width: 14px; height: 14px;
+            border: 2px solid rgba(255,255,255,0.25);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            color: var(--text-muted);
+            padding: 2.5rem 0;
+            font-size: 0.88rem;
+        }
+
+        /* Savings card */
+        .savings-card {
+            margin: 0 1.25rem 1rem;
+            background: linear-gradient(135deg, rgba(0,230,118,0.08) 0%, rgba(0,180,255,0.06) 100%);
+            border: 1px solid rgba(0,230,118,0.2);
+            border-radius: 16px;
+            padding: 1.1rem 1.25rem;
+        }
+        .savings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .savings-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: rgba(0,230,118,0.85);
+        }
+        .savings-value {
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: var(--green);
+        }
+        .savings-sub {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            margin-top: 0.2rem;
+        }
+        .savings-btn {
+            background: rgba(0,230,118,0.15);
+            border: 1px solid rgba(0,230,118,0.3);
+            border-radius: 20px;
+            padding: 0.35rem 1rem;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: var(--green);
+            cursor: pointer;
+        }
+
+        /* Section label */
+        .section-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 0.75rem 1.25rem 0.4rem;
+        }
+
+        @media (min-width: 481px) {
+            body { border-left: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <button class="icon-btn" onclick="openModal('settingsModal')" title="Settings">⚙️</button>
+        <div class="top-bar-title">GoodMarket</div>
+        <div style="display:flex;gap:0.3rem;align-items:center;">
+            <a href="/dashboard" class="icon-btn" title="Dashboard" style="text-decoration:none;font-size:1rem;">📊</a>
+            <a href="/overview" class="icon-btn" title="Overview" style="text-decoration:none;font-size:1rem;">🏠</a>
+        </div>
+    </div>
+
+    <!-- Balance Card -->
+    <div class="balance-card">
+        <div class="balance-card-header">
+            <div class="wallet-identity">
+                <div class="wallet-avatar">💎</div>
+                <div>
+                    <div class="wallet-name">My Wallet</div>
+                    <div class="wallet-addr" id="walletAddrShort">{{ wallet[:6] }}...{{ wallet[-4:] }}</div>
+                </div>
+            </div>
+            <button class="copy-btn" onclick="copyAddress()" title="Copy address">⧉</button>
+        </div>
+        <div class="balance-amount" id="totalBalanceUSD">$—</div>
+        <div class="balance-sub">Total Balance · Celo Network</div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="action-row">
+        <div class="action-item" onclick="openModal('claimModal');">
+            <div class="action-circle claim-circle">
+                <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="16" r="16" fill="rgba(0,180,255,0.2)"/>
+                    <text x="16" y="21" text-anchor="middle" font-size="14" fill="#00b4ff" font-weight="900" font-family="Inter,sans-serif">G$</text>
+                </svg>
+            </div>
+            <span class="action-label">Claim</span>
+        </div>
+        <div class="action-item" onclick="openModal('sendModal')">
+            <div class="action-circle">↑</div>
+            <span class="action-label">Send</span>
+        </div>
+        <div class="action-item" onclick="openModal('receiveModal')">
+            <div class="action-circle">↓</div>
+            <span class="action-label">Receive</span>
+        </div>
+        <div class="action-item" onclick="window.location.href='/swap'">
+            <div class="action-circle">⇌</div>
+            <span class="action-label">Swap</span>
+        </div>
+        <div class="action-item" onclick="window.location.href='/savings'">
+            <div class="action-circle">🏦</div>
+            <span class="action-label">Savings</span>
+        </div>
+        <div class="action-item" onclick="window.location.href='/dashboard'">
+            <div class="action-circle">📊</div>
+            <span class="action-label">Dashboard</span>
+        </div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+        <button class="tab active" id="tabCrypto" onclick="switchTab('crypto')">Crypto</button>
+        <button class="tab" id="tabActivity" onclick="switchTab('activity')">Transactions</button>
+    </div>
+
+    <!-- Crypto Tab -->
+    <div id="cryptoPanel">
+        <div class="section-label">Supported Tokens · Celo Network</div>
+        <div class="token-list">
+            <div class="token-item">
+                <div class="token-icon" style="background:rgba(0,180,255,0.12);">
+                    <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="22" fill="#0a2040"/><text x="22" y="28" text-anchor="middle" font-size="13" fill="#00b4ff" font-weight="900" font-family="Inter,sans-serif">G$</text></svg>
+                </div>
+                <div class="token-meta">
+                    <div class="token-symbol">G$</div>
+                    <div class="token-name">GoodDollar</div>
+                </div>
+                <div class="token-balance">
+                    <div class="token-amount" id="gdBal">—</div>
+                    <div class="token-usd" id="gdBalUSD">Loading...</div>
+                </div>
+            </div>
+            <div class="token-item">
+                <div class="token-icon" style="background:rgba(53,168,105,0.12);">
+                    <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="22" fill="#0a2018"/><text x="22" y="28" text-anchor="middle" font-size="11" fill="#35a869" font-weight="900" font-family="Inter,sans-serif">CELO</text></svg>
+                </div>
+                <div class="token-meta">
+                    <div class="token-symbol">CELO</div>
+                    <div class="token-name">Celo</div>
+                </div>
+                <div class="token-balance">
+                    <div class="token-amount" id="celoBal">—</div>
+                    <div class="token-usd" id="celoBalUSD">For gas fees</div>
+                </div>
+            </div>
+            <div class="token-item">
+                <div class="token-icon" style="background:rgba(37,99,235,0.12);">
+                    <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="22" fill="#0a1030"/><text x="22" y="28" text-anchor="middle" font-size="10" fill="#60a5fa" font-weight="900" font-family="Inter,sans-serif">cUSD</text></svg>
+                </div>
+                <div class="token-meta">
+                    <div class="token-symbol">cUSD</div>
+                    <div class="token-name">Celo Dollar</div>
+                </div>
+                <div class="token-balance">
+                    <div class="token-amount" id="cusdBal">—</div>
+                    <div class="token-usd" id="cusdBalUSD">Stablecoin</div>
+                </div>
+            </div>
+            <div class="token-item">
+                <div class="token-icon" style="background:rgba(38,161,123,0.12);">
+                    <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="22" fill="#0a201a"/><text x="22" y="28" text-anchor="middle" font-size="10" fill="#26a17b" font-weight="900" font-family="Inter,sans-serif">USDT</text></svg>
+                </div>
+                <div class="token-meta">
+                    <div class="token-symbol">USDT</div>
+                    <div class="token-name">Tether USD</div>
+                </div>
+                <div class="token-balance">
+                    <div class="token-amount" id="usdtBal">—</div>
+                    <div class="token-usd" id="usdtBalUSD">Stablecoin</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- XDC Network Section -->
+        <div class="section-label" style="margin-top:1rem;">Supported Tokens · XDC Network</div>
+        <div class="token-list">
+            <div class="token-item">
+                <div class="token-icon" style="background:rgba(0,180,255,0.12);">
+                    <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="22" fill="#0a2040"/><text x="22" y="28" text-anchor="middle" font-size="12" fill="#00b4ff" font-weight="900" font-family="Inter,sans-serif">G$</text></svg>
+                </div>
+                <div class="token-meta">
+                    <div class="token-symbol">XDC G$</div>
+                    <div class="token-name">GoodDollar on XDC</div>
+                </div>
+                <div class="token-balance">
+                    <div class="token-amount" id="xdcGdBal">—</div>
+                    <div class="token-usd" id="xdcGdBalSub">Loading...</div>
+                </div>
+            </div>
+            <div class="token-item">
+                <div class="token-icon" style="background:rgba(22,158,214,0.12);">
+                    <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="22" fill="#071828"/><text x="22" y="28" text-anchor="middle" font-size="11" fill="#169ed6" font-weight="900" font-family="Inter,sans-serif">XDC</text></svg>
+                </div>
+                <div class="token-meta">
+                    <div class="token-symbol">XDC</div>
+                    <div class="token-name">XDC Network</div>
+                </div>
+                <div class="token-balance">
+                    <div class="token-amount" id="xdcBal">—</div>
+                    <div class="token-usd" id="xdcBalSub">For gas fees</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Tab -->
+    <div id="activityPanel" style="display:none;">
+        <div class="section-label" style="display:flex;justify-content:space-between;align-items:center;padding-right:1.25rem;">
+            <span>Transaction History</span>
+            <button onclick="loadHistory(true)" style="background:none;border:none;color:var(--blue);font-size:0.78rem;cursor:pointer;font-weight:600;">↻ Refresh</button>
+        </div>
+        <ul class="tx-list" id="txList" style="list-style:none;">
+            <li class="empty-state"><span class="spinner"></span> Loading...</li>
+        </ul>
+    </div>
+
+    <div class="page-bottom"></div>
+
+    <!-- ─── Modals ─── -->
+
+    <!-- Claim Modal -->
+    <div class="modal-overlay" id="claimModal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="modal-title">🪙 Claim Daily G$</div>
+
+            <div class="ubi-pool-row">
+                <span class="ubi-pool-label">UBI Pool Balance</span>
+                <span class="ubi-pool-value" id="ubiPoolBalance">Loading...</span>
+            </div>
+
+            <button id="ubiClaimBtn" onclick="doUbiClaim()" class="btn-primary">
+                <span id="ubiClaimIcon">⏳</span>
+                <span id="ubiClaimLabel">Checking…</span>
+            </button>
+
+            <div class="claim-status" id="ubiClaimStatus"></div>
+
+            <!-- Shown when already-claimed but FV may have expired -->
+            <div id="ubiReVerifyHint" style="display:none;margin-top:0.6rem;padding:0.55rem 0.85rem;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);border-radius:10px;text-align:center;">
+                <div style="font-size:0.78rem;color:#c4b5fd;margin-bottom:0.35rem;">Haven't claimed yet? Your Face Verification may have expired.</div>
+                <button onclick="window._triggerReVerify()" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);border:none;color:#fff;font-size:0.78rem;font-weight:600;padding:0.35rem 0.9rem;border-radius:8px;cursor:pointer;">🪪 Re-verify Face ID</button>
+            </div>
+
+            <div class="countdown-box" id="ubiCountdownBox">
+                <div class="countdown-label">Next Claim Opens In</div>
+                <div class="countdown-display" id="ubiCountdownDisplay">--:--:--</div>
+                <div class="countdown-note">Resets at <strong>12:00 UTC</strong> · 8:00 PM Philippine Time</div>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:center;gap:1rem;margin-top:1rem;flex-wrap:wrap;">
+                <div style="font-size:0.68rem;color:var(--text-muted);">⛽ Gas-free on Celo</div>
+                <div style="font-size:0.68rem;color:var(--text-muted);">🔒 Secured by GoodDollar</div>
+                <div style="font-size:0.68rem;color:var(--text-muted);">⏰ Claimable daily</div>
+            </div>
+
+            <!-- XDC Claim link -->
+            <div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:1.1rem;padding-top:0.9rem;text-align:center;">
+                <a href="/xdc-wallet" style="display:inline-flex;align-items:center;gap:0.4rem;color:#a78bfa;font-size:0.82rem;font-weight:600;text-decoration:none;">
+                    <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="7" fill="rgba(124,58,237,0.25)"/><text x="7" y="10.5" text-anchor="middle" font-size="6.5" fill="#a78bfa" font-weight="900" font-family="Inter,sans-serif">XDC</text></svg>
+                    Claim G$ on XDC Network →
+                </a>
+            </div>
+
+            <button class="btn-secondary" onclick="closeModal('claimModal')">Close</button>
+        </div>
+    </div>
+
+    <!-- Send Modal -->
+    <div class="modal-overlay" id="sendModal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="modal-title">↑ Send Tokens</div>
+
+            <div class="token-selector" id="tokenSelector">
+                <button class="token-chip active" onclick="selectToken('GD', this)">G$</button>
+                <button class="token-chip" onclick="selectToken('CUSD', this)">cUSD</button>
+                <button class="token-chip" onclick="selectToken('USDT', this)">USDT</button>
+                <button class="token-chip" onclick="selectToken('CELO', this)">CELO</button>
+                <button class="token-chip" onclick="selectToken('XDC_GD', this)">XDC G$</button>
+                <button class="token-chip" onclick="selectToken('XDC', this)">XDC</button>
+            </div>
+            <div id="xdcSendNote" style="display:none;font-size:0.75rem;color:rgba(22,158,214,0.8);background:rgba(22,158,214,0.08);border:1px solid rgba(22,158,214,0.2);border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.5rem;">
+                🔷 Sending on XDC Network — use a <strong>0x</strong> or <strong>xdc</strong> address
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Recipient Address</label>
+                <input class="form-input" id="sendTo" type="text" placeholder="0x..." autocomplete="off" spellcheck="false">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Amount (<span id="sendTokenLabel">G$</span>)</label>
+                <div class="amount-row">
+                    <input class="form-input" id="sendAmount" type="number" min="0" step="any" placeholder="0.00">
+                    <button class="max-btn" onclick="setMaxSend()">MAX</button>
+                </div>
+            </div>
+            <button class="btn-primary" id="sendBtn" onclick="doSend()">Send G$</button>
+            <div class="alert" id="sendAlert"></div>
+            <button class="btn-secondary" onclick="closeModal('sendModal')">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Receive Modal -->
+    <div class="modal-overlay" id="receiveModal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="modal-title">↓ Receive</div>
+
+            <p style="text-align:center;font-size:0.85rem;color:var(--text-dim);margin-bottom:1rem;">
+                This address works on both <strong>Celo</strong> and <strong>XDC Network</strong>. Share it to receive any supported token.
+            </p>
+
+            <div class="address-box">
+                <div class="address-short">{{ wallet[:6] }}...{{ wallet[-4:] }}</div>
+                <div class="address-full" style="margin-top:0.5rem;">{{ wallet }}</div>
+            </div>
+
+            <button class="btn-primary" onclick="copyAddressFromModal()">⧉ Copy Address</button>
+            <div class="alert" id="receiveAlert"></div>
+            <button class="btn-secondary" onclick="closeModal('receiveModal')">Close</button>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="modal-title">⚙️ Settings</div>
+
+            <div style="margin-bottom:1.25rem;">
+                <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Wallet Address</div>
+                <div style="font-family:monospace;font-size:0.8rem;color:var(--text-dim);background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:0.75rem;word-break:break-all;line-height:1.6;">{{ wallet }}</div>
+            </div>
+
+            {% if login_method == 'custodial' %}
+            <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Private Key</div>
+
+            <div class="pk-warning">
+                ⚠️ <strong>Never share your private key with anyone.</strong><br>
+                Anyone with this key has full access to your wallet and all its funds. GoodMarket staff will never ask for your private key.
+            </div>
+
+            <div class="pk-box" id="pkDisplay"></div>
+
+            <button class="btn-primary btn-danger" id="showPkBtn" onclick="revealPrivateKey()" style="background:rgba(255,82,82,0.12);border:1px solid rgba(255,82,82,0.3);color:#ff7070;">
+                👁 Show Private Key
+            </button>
+            <div class="alert" id="pkAlert"></div>
+            {% else %}
+            <div style="background:rgba(0,180,255,0.07);border:1px solid rgba(0,180,255,0.2);border-radius:12px;padding:0.9rem 1rem;font-size:0.85rem;color:var(--text-dim);margin-bottom:1rem;">
+                ℹ️ Private key export is only available for custodial wallets created in GoodMarket.
+            </div>
+            {% endif %}
+
+            <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.07);">
+                <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Login Method</div>
+                <div style="font-size:0.88rem;color:#fff;">{{ login_method | replace('_', ' ') | title }}</div>
+            </div>
+
+            <div style="margin-top:1rem;display:flex;gap:0.75rem;">
+                <a href="/overview" class="btn-secondary" style="flex:1;text-align:center;text-decoration:none;display:block;padding:0.8rem;border-radius:14px;background:rgba(255,255,255,0.06);color:var(--text-dim);font-size:0.9rem;font-weight:600;border:1px solid rgba(255,255,255,0.12);">Overview</a>
+                <a href="/logout" class="btn-secondary btn-danger" style="flex:1;text-align:center;text-decoration:none;display:block;padding:0.8rem;border-radius:14px;background:rgba(255,82,82,0.08);color:#ff7070;font-size:0.9rem;font-weight:600;border:1px solid rgba(255,82,82,0.2);">Logout</a>
+            </div>
+
+            <button class="btn-secondary" style="margin-top:0.5rem;" onclick="closeModal('settingsModal')">Close</button>
+        </div>
+    </div>
+
+    <!-- lz-string for GoodDollar FV link generation -->
+    <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+
+    <script>
+    const WALLET = "{{ wallet }}";
+    window.isCustodialMode = {{ (login_method in ['custodial', 'turnkey']) | tojson }};
+
+    // ── Token state ──────────────────────────────────────────
+    let gdBal = 0, celoBal = 0, cusdBal = 0, usdtBal = 0;
+    let xdcBal = 0, xdcGdBal = 0;
+    let selectedToken = 'GD';
+
+    // ── Helpers ──────────────────────────────────────────────
+    function _getEthProvider() {
+        if (!window.ethereum) return null;
+        if (window.ethereum.providers && window.ethereum.providers.length) {
+            const mm = window.ethereum.providers.find(p => p.isMetaMask && !p.isBraveWallet);
+            return mm || window.ethereum.providers[0];
+        }
+        return window.ethereum;
+    }
+    function isMobile() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
+    function fmt(n, decimals=4) {
+        if (n === undefined || n === null) return '—';
+        return Number(n).toLocaleString('en', { minimumFractionDigits: 0, maximumFractionDigits: decimals });
+    }
+
+    // ── Modal ────────────────────────────────────────────────
+    function openModal(id) {
+        document.getElementById(id).classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('open');
+        document.body.style.overflow = '';
+    }
+    document.querySelectorAll('.modal-overlay').forEach(el => {
+        el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+    });
+
+    // ── Copy address ─────────────────────────────────────────
+    function copyAddress() {
+        navigator.clipboard.writeText(WALLET).then(() => {
+            const btn = document.querySelector('.copy-btn');
+            btn.textContent = '✓';
+            setTimeout(() => { btn.textContent = '⧉'; }, 1800);
+        }).catch(() => {});
+    }
+    function copyAddressFromModal() {
+        navigator.clipboard.writeText(WALLET).then(() => {
+            showAlert('receiveAlert', 'alert-success', '✅ Address copied to clipboard!');
+        }).catch(() => {
+            showAlert('receiveAlert', 'alert-info', WALLET);
+        });
+    }
+
+    // ── Tab switching ────────────────────────────────────────
+    function switchTab(tab) {
+        document.getElementById('cryptoPanel').style.display = tab === 'crypto' ? '' : 'none';
+        document.getElementById('activityPanel').style.display = tab === 'activity' ? '' : 'none';
+        document.getElementById('tabCrypto').classList.toggle('active', tab === 'crypto');
+        document.getElementById('tabActivity').classList.toggle('active', tab === 'activity');
+        if (tab === 'activity') loadHistory();
+    }
+
+    // ── Load Balances ────────────────────────────────────────
+    async function loadBalances() {
+        try {
+            const res = await fetch('/api/wallet/balances');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data.success) return;
+
+            if (data.gd && data.gd.success) {
+                gdBal = data.gd.balance || 0;
+                document.getElementById('gdBal').textContent = fmt(gdBal, 4) + ' G$';
+                document.getElementById('gdBalUSD').textContent = data.gd.usd_formatted || 'GoodDollar';
+            } else {
+                document.getElementById('gdBal').textContent = '0 G$';
+                document.getElementById('gdBalUSD').textContent = 'GoodDollar';
+            }
+
+            if (data.celo && data.celo.success) {
+                celoBal = data.celo.balance || 0;
+                document.getElementById('celoBal').textContent = fmt(celoBal, 4) + ' CELO';
+            } else {
+                document.getElementById('celoBal').textContent = '0 CELO';
+            }
+
+            if (data.cusd && data.cusd.success) {
+                cusdBal = data.cusd.balance || 0;
+                document.getElementById('cusdBal').textContent = fmt(cusdBal, 4) + ' cUSD';
+                document.getElementById('cusdBalUSD').textContent = '$' + fmt(cusdBal, 2);
+            } else {
+                document.getElementById('cusdBal').textContent = '0 cUSD';
+            }
+
+            if (data.usdt && data.usdt.success) {
+                usdtBal = data.usdt.balance || 0;
+                document.getElementById('usdtBal').textContent = fmt(usdtBal, 4) + ' USDT';
+                document.getElementById('usdtBalUSD').textContent = '$' + fmt(usdtBal, 2);
+            } else {
+                document.getElementById('usdtBal').textContent = '0 USDT';
+            }
+
+            // Approximate total in USD (includes G$ if price is available)
+            const gdUSD = (data.gd && data.gd.usd_value) ? Number(data.gd.usd_value) : 0;
+            const totalUSD = (cusdBal || 0) + (usdtBal || 0) + (celoBal || 0) * 0.75 + gdUSD;
+            document.getElementById('totalBalanceUSD').textContent =
+                totalUSD > 0 ? '$' + fmt(totalUSD, 2) : '$0.00';
+
+        } catch (e) {
+            document.getElementById('gdBal').textContent = 'Error';
+        }
+
+        // Also fetch XDC balances in parallel (non-blocking)
+        loadXdcBalances();
+    }
+
+    async function loadXdcBalances() {
+        try {
+            const [xdcRes, gdRes] = await Promise.all([
+                fetch('/api/xdc/balances'),
+                fetch('/api/xdc/gd-info'),
+            ]);
+            const xdcData = await xdcRes.json();
+            const gdData  = await gdRes.json();
+
+            if (xdcData.success && xdcData.xdc && xdcData.xdc.success) {
+                xdcBal = xdcData.xdc.balance || 0;
+                document.getElementById('xdcBal').textContent = fmt(xdcBal, 4) + ' XDC';
+                document.getElementById('xdcBalSub').textContent = 'For gas fees';
+            } else {
+                document.getElementById('xdcBal').textContent = '0 XDC';
+            }
+
+            if (gdData.success && gdData.gd_balance && gdData.gd_balance.success) {
+                xdcGdBal = gdData.gd_balance.balance || 0;
+                document.getElementById('xdcGdBal').textContent = fmt(xdcGdBal, 4) + ' G$';
+                document.getElementById('xdcGdBalSub').textContent = 'GoodDollar on XDC';
+            } else {
+                document.getElementById('xdcGdBal').textContent = '0 G$';
+                document.getElementById('xdcGdBalSub').textContent = 'GoodDollar on XDC';
+            }
+        } catch (e) {
+            document.getElementById('xdcBal').textContent = '—';
+            document.getElementById('xdcGdBal').textContent = '—';
+        }
+    }
+
+    // ── Load History ─────────────────────────────────────────
+    async function loadHistory(force = false) {
+        const list = document.getElementById('txList');
+        list.innerHTML = '<li class="empty-state"><span class="spinner"></span> Loading transactions...</li>';
+        try {
+            const url = '/api/wallet/transaction-history?limit=100' + (force ? '&force=1' : '');
+            const res  = await fetch(url);
+            const data = await res.json();
+            if (!data.success || !data.transactions || !data.transactions.length) {
+                list.innerHTML = '<li class="empty-state">No transactions found in the last 7 days.</li>';
+                return;
+            }
+            list.innerHTML = '';
+
+            // Config per transaction type
+            const TYPE_CFG = {
+                claim:            { icon: '🪙', amtClass: 'claim',            badge: 'CLAIM'    },
+                swap:             { icon: '🔄', amtClass: 'swap',             badge: 'SWAP'     },
+                savings_deposit:  { icon: '🏦', amtClass: 'savings_deposit',  badge: 'SAVINGS'  },
+                savings_withdraw: { icon: '🏦', amtClass: 'savings_withdraw', badge: 'WITHDRAW' },
+                transfer_sent:    { icon: '↑',  amtClass: 'sent',             badge: null       },
+                transfer_received:{ icon: '↓',  amtClass: 'received',         badge: null       },
+            };
+
+            data.transactions.forEach(tx => {
+                const type = tx.tx_type || 'transfer_received';
+                const cfg  = TYPE_CFG[type] || TYPE_CFG.transfer_received;
+
+                // Sign: show + for inflows, − for outflows
+                const isInflow = (type === 'claim' || type === 'savings_withdraw' ||
+                                  type === 'transfer_received' ||
+                                  (type === 'swap' && tx.direction === 'received'));
+                const sign = isInflow ? '+' : '−';
+                const amtClass = type === 'swap'
+                    ? (isInflow ? 'received' : 'sent')
+                    : cfg.amtClass;
+
+                // Counterpart address display
+                const isSent = (tx.direction === 'sent');
+                const counterpart = isSent ? tx.to : tx.from;
+                const shortAddr = counterpart
+                    ? counterpart.slice(0, 8) + '…' + counterpart.slice(-6)
+                    : '—';
+
+                const typeBadge = cfg.badge
+                    ? `<span class="tx-badge ${type}">${cfg.badge}</span>`
+                    : '';
+                const networkBadge = tx.network === 'xdc'
+                    ? `<span class="tx-badge xdc-net">XDC</span>`
+                    : '';
+
+                // XDC API returns a Unix timestamp string; convert it to readable
+                let timeDisplay = tx.timestamp || '';
+                if (tx.network === 'xdc' && /^\d+$/.test(String(timeDisplay))) {
+                    const d = new Date(parseInt(timeDisplay) * 1000);
+                    const diff = Math.floor((Date.now() - d) / 1000);
+                    if (diff < 60) timeDisplay = diff + 's ago';
+                    else if (diff < 3600) timeDisplay = Math.floor(diff/60) + 'm ago';
+                    else if (diff < 86400) timeDisplay = Math.floor(diff/3600) + 'h ago';
+                    else timeDisplay = Math.floor(diff/86400) + 'd ago';
+                } else if (!timeDisplay && tx.block) {
+                    timeDisplay = 'Block #' + tx.block;
+                }
+
+                const li = document.createElement('li');
+                li.className = 'tx-item';
+                li.innerHTML = `
+                    <div class="tx-icon-circle ${type}">${cfg.icon}</div>
+                    <div class="tx-meta">
+                        <div class="tx-dir">${tx.label}${typeBadge}${networkBadge}</div>
+                        <div class="tx-addr">${isSent ? 'To: ' : 'From: '}${shortAddr}</div>
+                        <div class="tx-time">${timeDisplay}</div>
+                    </div>
+                    <div class="tx-right">
+                        <div class="tx-amount ${amtClass}">${sign}${tx.amount_formatted}</div>
+                        ${tx.tx_hash ? `<a class="tx-hash-link" href="${tx.explorer_url}" target="_blank" rel="noopener">View ↗</a>` : ''}
+                    </div>
+                `;
+                list.appendChild(li);
+            });
+        } catch (e) {
+            list.innerHTML = '<li class="empty-state">Failed to load transactions.</li>';
+        }
+    }
+
+    // ── Send ─────────────────────────────────────────────────
+    function selectToken(token, btn) {
+        selectedToken = token;
+        document.querySelectorAll('.token-chip').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        const isXdc = token === 'XDC' || token === 'XDC_GD';
+        const label = token === 'GD' ? 'G$' : (token === 'XDC_GD' ? 'XDC G$' : token);
+        document.getElementById('sendTokenLabel').textContent = label;
+        document.getElementById('sendBtn').textContent = `Send ${label}`;
+        document.getElementById('xdcSendNote').style.display = isXdc ? '' : 'none';
+        document.getElementById('sendTo').placeholder = isXdc ? '0x... or xdc...' : '0x...';
+    }
+
+    function setMaxSend() {
+        const vals = {
+            GD: gdBal, CUSD: cusdBal, USDT: usdtBal,
+            CELO: Math.max(0, celoBal - 0.001),
+            XDC: Math.max(0, xdcBal - 0.01),
+            XDC_GD: xdcGdBal,
+        };
+        const v = vals[selectedToken] || 0;
+        document.getElementById('sendAmount').value = v > 0 ? v.toFixed(6) : '';
+    }
+
+    function showAlert(id, cls, html) {
+        const el = document.getElementById(id);
+        el.className = `alert ${cls} show`;
+        el.innerHTML = html;
+    }
+    function clearAlert(id) {
+        const el = document.getElementById(id);
+        el.className = 'alert';
+        el.innerHTML = '';
+    }
+
+    async function doSend() {
+        clearAlert('sendAlert');
+        const toAddrRaw = document.getElementById('sendTo').value.trim();
+        const amount = document.getElementById('sendAmount').value.trim();
+        const btn = document.getElementById('sendBtn');
+        const isXdcToken = selectedToken === 'XDC' || selectedToken === 'XDC_GD';
+
+        // Accept both 0x... and xdc... addresses; convert xdc prefix to 0x for validation
+        let toAddr = toAddrRaw;
+        if (toAddrRaw.toLowerCase().startsWith('xdc') && toAddrRaw.length === 43) {
+            toAddr = '0x' + toAddrRaw.slice(3);
+        }
+
+        if (!toAddr || !toAddr.startsWith('0x') || toAddr.length !== 42) {
+            const hint = isXdcToken ? '(0x... or xdc...)' : '(0x...)';
+            showAlert('sendAlert', 'alert-error', `❌ Enter a valid address ${hint}`);
+            return;
+        }
+        if (!amount || parseFloat(amount) <= 0) {
+            showAlert('sendAlert', 'alert-error', '❌ Enter a valid amount');
+            return;
+        }
+        if (toAddr.toLowerCase() === WALLET.toLowerCase()) {
+            showAlert('sendAlert', 'alert-error', '❌ Cannot send to your own address');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Sending…';
+
+        try {
+            const prepEndpoint = isXdcToken ? '/api/xdc/prepare-send' : '/api/wallet/prepare-send';
+            const prepRes = await fetch(prepEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: selectedToken, to: toAddr, amount })
+            });
+            const txData = await prepRes.json();
+            if (!txData.success) {
+                showAlert('sendAlert', 'alert-error', '❌ ' + (txData.error || 'Failed to prepare transaction'));
+                return;
+            }
+
+            if (!window.isCustodialMode) {
+                showAlert('sendAlert', 'alert-error', '❌ Custodial or Turnkey wallet required to send.');
+                return;
+            }
+            const custRes = await fetch('/api/server/sign-tx', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ to: txData.to, data: txData.data, value: txData.value || '0x0', chain_id: txData.chain_id })
+            });
+            const custData = await custRes.json();
+            if (!custData.success) throw new Error(custData.error || 'Signing failed');
+            let txHash = custData.tx_hash;
+
+            const explorerUrl = isXdcToken
+                ? `https://xdcscan.io/tx/${txHash}`
+                : `https://explorer.celo.org/mainnet/tx/${txHash}`;
+            showAlert('sendAlert', 'alert-success',
+                `✅ Transaction sent! <a style="color:var(--blue);" href="${explorerUrl}" target="_blank" rel="noopener">View ↗</a>`);
+            document.getElementById('sendTo').value = '';
+            document.getElementById('sendAmount').value = '';
+            setTimeout(() => isXdcToken ? loadXdcBalances() : loadBalances(), 3000);
+
+        } catch (err) {
+            let msg = err.message || 'Transaction failed';
+            if (err.code === 4001) msg = 'Transaction rejected.';
+            showAlert('sendAlert', 'alert-error', '❌ ' + msg);
+        } finally {
+            btn.disabled = false;
+            const label = selectedToken === 'GD' ? 'G$' : (selectedToken === 'XDC_GD' ? 'XDC G$' : selectedToken);
+            btn.textContent = `Send ${label}`;
+        }
+    }
+
+    // ── Private Key Export ───────────────────────────────────
+    let pkRevealed = false;
+    async function revealPrivateKey() {
+        if (pkRevealed) {
+            document.getElementById('pkDisplay').style.display = 'none';
+            document.getElementById('showPkBtn').textContent = '👁 Show Private Key';
+            pkRevealed = false;
+            return;
+        }
+        const btn = document.getElementById('showPkBtn');
+        btn.disabled = true;
+        btn.textContent = 'Loading…';
+        clearAlert('pkAlert');
+        try {
+            const res = await fetch('/api/wallet/export-key', { method: 'POST' });
+            let data;
+            try {
+                data = await res.json();
+            } catch (parseErr) {
+                const raw = await res.text().catch(() => '(no body)');
+                showAlert('pkAlert', 'alert-error', `❌ Server error (${res.status}): ${raw.slice(0,120)}`);
+                return;
+            }
+            if (!data.success) {
+                showAlert('pkAlert', 'alert-error', '❌ ' + (data.error || 'Could not retrieve key'));
+                return;
+            }
+            const pkBox = document.getElementById('pkDisplay');
+            pkBox.textContent = data.private_key;
+            pkBox.style.display = 'block';
+            btn.textContent = '🙈 Hide Private Key';
+            pkRevealed = true;
+        } catch (e) {
+            showAlert('pkAlert', 'alert-error', '❌ ' + (e.message || 'Network error retrieving key'));
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // ── UBI Claim ─────────────────────────────────────────────
+    (function() {
+        const UBI_CONTRACT  = '0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1';
+        const CLAIM_DATA    = '0x4e71d92d';
+        const SESSION_WALLET = WALLET.toLowerCase();
+        let claimed = false;
+        let needsVerification = false;
+        let _countdownInterval = null;
+
+        const btn    = document.getElementById('ubiClaimBtn');
+        const label  = document.getElementById('ubiClaimLabel');
+        const icon   = document.getElementById('ubiClaimIcon');
+        const status = document.getElementById('ubiClaimStatus');
+
+        function setStatus(msg, color) {
+            status.innerHTML = msg;
+            status.style.color = color || 'var(--text-dim)';
+        }
+
+        function getNextResetMs() {
+            const now = new Date();
+            const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0, 0));
+            if (now >= next) next.setUTCDate(next.getUTCDate() + 1);
+            return next.getTime() - now.getTime();
+        }
+
+        function formatCountdown(ms) {
+            if (ms <= 0) return '00:00:00';
+            const totalSec = Math.floor(ms / 1000);
+            const h = Math.floor(totalSec / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+        }
+
+        function startCountdown() {
+            const box = document.getElementById('ubiCountdownBox');
+            const display = document.getElementById('ubiCountdownDisplay');
+            box.style.display = 'block';
+            if (_countdownInterval) clearInterval(_countdownInterval);
+            function tick() {
+                const remaining = getNextResetMs();
+                display.textContent = formatCountdown(remaining);
+                if (remaining <= 0) {
+                    clearInterval(_countdownInterval);
+                    setStatus('🎉 Claim window is now open! Refresh to claim.', 'var(--green)');
+                }
+            }
+            tick();
+            _countdownInterval = setInterval(tick, 1000);
+        }
+
+        function _hideReVerifyHint() {
+            const rv = document.getElementById('ubiReVerifyHint');
+            if (rv) rv.style.display = 'none';
+        }
+
+        function applyEntitlementData(d) {
+            const needsVerify = d.success && (d.reason === 'not_verified' || d.reason === 're_verification_needed');
+            const isReverify  = d.reason === 're_verification_needed';
+            if (needsVerify) {
+                _hideReVerifyHint();
+                needsVerification = true;
+                btn.style.background = 'linear-gradient(135deg,#7c3aed,#6d28d9)';
+                icon.textContent = '🪪';
+                label.textContent = isReverify ? 'Re-verify Face ID to Claim' : 'Verify Face ID to Claim';
+                btn.disabled = false;
+                setStatus(
+                    isReverify
+                        ? 'Your Face Verification has expired. Re-verify to continue claiming G$.'
+                        : 'Your wallet needs face verification before claiming G$',
+                    '#a78bfa'
+                );
+                window._celoCanClaim = false;
+            } else if (d.success && d.can_claim) {
+                _hideReVerifyHint();
+                needsVerification = false;
+                label.textContent = 'Claim ' + d.entitlement_formatted + ' G$';
+                icon.textContent = '🪙';
+                btn.style.background = '';
+                btn.disabled = false;
+                setStatus('Ready to claim!', 'var(--green)');
+                window._celoCanClaim = true;
+            } else if (d.success && !d.can_claim) {
+                _hideReVerifyHint();
+                needsVerification = false;
+                label.textContent = 'Already Claimed Today';
+                icon.textContent = '✅';
+                btn.disabled = true;
+                setStatus('Come back tomorrow for your next claim.');
+                startCountdown();
+                window._celoCanClaim = false;
+            } else {
+                needsVerification = false;
+                label.textContent = 'Claim G$';
+                icon.textContent = '🪙';
+                btn.disabled = false;
+                setStatus(d.error ? 'Could not fetch amount' : '');
+                window._celoCanClaim = false;
+            }
+        }
+
+        // Expose re-verify trigger so the "Re-verify" button can call it from global scope
+        window._triggerReVerify = function() {
+            needsVerification = true;
+            btn.disabled = false;
+            icon.textContent = '🪪';
+            label.textContent = 'Re-verify Face ID to Claim';
+            btn.style.background = 'linear-gradient(135deg,#7c3aed,#6d28d9)';
+            setStatus('Tap the button above to start face re-verification.', '#a78bfa');
+            const rv = document.getElementById('ubiReVerifyHint');
+            if (rv) rv.style.display = 'none';
+        };
+
+        function fetchEntitlement() {
+            // Always force-bypass the backend cache on the first check.
+            // Stale cache (up to 3 min) caused "Already Claimed Today" to appear for
+            // wallets whose face-verification status had just changed.
+            fetch('/api/ubi-entitlement?force=1')
+                .then(r => r.json())
+                .then(d => {
+                    // Guard: if the session wallet changed (user switched wallets),
+                    // the returned wallet won't match this page's WALLET variable.
+                    // Reload so the page re-renders with the correct session wallet.
+                    if (d.wallet && d.wallet !== WALLET.toLowerCase()) {
+                        window.location.reload();
+                        return;
+                    }
+                    applyEntitlementData(d);
+                })
+                .catch(() => { label.textContent = 'Claim G$'; icon.textContent = '🪙'; btn.disabled = false; });
+        }
+
+        // Load UBI pool balance
+        fetch('/api/ubi-pool-balance').then(r => r.json()).then(d => {
+            const el = document.getElementById('ubiPoolBalance');
+            if (el) el.textContent = d.balance_formatted || '—';
+        }).catch(() => { const el = document.getElementById('ubiPoolBalance'); if (el) el.textContent = '—'; });
+
+        function pollReceipt(txHash, attempts) {
+            if (attempts <= 0) {
+                btn.disabled = false; label.textContent = 'Claim G$'; icon.textContent = '🪙';
+                setStatus('Timed out. Check explorer for: ' + txHash.slice(0,12) + '…', '#fbbf24');
+                return;
+            }
+            setTimeout(function() {
+                fetch('/api/tx-receipt/' + txHash).then(r => r.json()).then(d => {
+                    if (!d.found) {
+                        setStatus('Waiting for confirmation… (' + (21 - attempts) + '/20)', 'var(--text-dim)');
+                        pollReceipt(txHash, attempts - 1);
+                    } else if (d.status === 'success') {
+                        claimed = true;
+                        label.textContent = 'Claimed!';
+                        icon.textContent = '✅';
+                        btn.disabled = true;
+                        setStatus('Success! G$ sent to your wallet.', 'var(--green)');
+                        startCountdown();
+                        setTimeout(() => loadBalances(), 4000);
+                    } else {
+                        btn.disabled = false; label.textContent = 'Claim G$'; icon.textContent = '🪙';
+                        setStatus('Transaction failed. You may have already claimed today.', 'var(--red)');
+                    }
+                }).catch(() => pollReceipt(txHash, attempts - 1));
+            }, 3000);
+        }
+
+        function startFV() {
+            if (!window._fvGenerateLink) {
+                setStatus('Wallet library loading — please wait a moment and try again.', '#fbbf24');
+                return;
+            }
+            btn.disabled = true;
+            icon.textContent = '⏳';
+            label.textContent = 'Preparing verification…';
+            setStatus('Please approve the signature request in your wallet.', '#a78bfa');
+            window._fvGenerateLink(WALLET)
+                .then(link => { window.location.href = link; })
+                .catch(err => {
+                    btn.disabled = false;
+                    icon.textContent = '🪪';
+                    label.textContent = 'Verify Face ID to Claim';
+                    const code = err && err.code;
+                    if (code === 4001 || code === 5000) setStatus('Signature cancelled.', 'var(--red)');
+                    else setStatus('Error: ' + ((err && err.message) || 'Could not start verification'), 'var(--red)');
+                });
+        }
+
+        async function ensureGasAndClaim() {
+            btn.disabled = true;
+            label.textContent = 'Checking gas…';
+            icon.textContent = '⛽';
+            setStatus('Checking CELO balance for gas…', 'var(--text-dim)');
+
+            try {
+                const faucetRes = await fetch('/api/gas-faucet', { method: 'POST' });
+                const faucetData = await faucetRes.json();
+
+                if (!faucetData.success && faucetData.error) {
+                    // faucet hard-failed (network error, etc.) — still try claiming
+                    setStatus('⚠️ Gas check failed, attempting claim anyway…', '#fbbf24');
+                } else if (faucetData.topped_up) {
+                    label.textContent = 'Getting gas…';
+                    setStatus(`⛽ Got ${faucetData.amount_celo} CELO for gas! Waiting for confirmation…`, '#34d399');
+                    // Wait a few seconds for the top-up tx to propagate before submitting the claim
+                    await new Promise(resolve => setTimeout(resolve, 6000));
+                }
+                // else: balance was already OK, proceed immediately
+            } catch (e) {
+                // Network error on faucet call — try claiming anyway
+                setStatus('⚠️ Gas check failed, attempting claim anyway…', '#fbbf24');
+            }
+
+            // Now submit the actual UBI claim
+            label.textContent = 'Claiming…';
+            icon.textContent = '⏳';
+            setStatus('Signing and submitting claim via Turnkey…', 'var(--text-dim)');
+            fetch('/api/server/sign-tx', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ to: UBI_CONTRACT, data: CLAIM_DATA, value: '0x0', chain_id: 42220 })
+            }).then(r => r.json()).then(d => {
+                if (!d.success) throw new Error(d.error || 'Claim failed');
+                label.textContent = 'Confirming…';
+                setStatus('Transaction sent! Waiting for confirmation…', 'var(--text-dim)');
+                pollReceipt(d.tx_hash, 20);
+            }).catch(err => {
+                btn.disabled = false;
+                label.textContent = 'Claim G$';
+                icon.textContent = '🪙';
+                setStatus('Error: ' + (err.message || 'Claim failed'), 'var(--red)');
+            });
+        }
+
+        window.doUbiClaim = function() {
+            if (claimed || btn.disabled) return;
+            if (needsVerification) { startFV(); return; }
+
+            if (!window.isCustodialMode) {
+                setStatus('⚠️ Turnkey wallet required. Please login using a Turnkey wallet to claim.', '#fbbf24');
+                return;
+            }
+
+            ensureGasAndClaim();
+        };
+
+        // Handle FV callback query params
+        (function() {
+            const p = new URLSearchParams(window.location.search);
+            if (p.get('fv_pending') === '1') {
+                openModal('claimModal');
+                setStatus('✅ Face verification submitted! Re-checking your eligibility…', '#facc15');
+                history.replaceState(null, '', window.location.pathname);
+            } else if (p.get('fv_failed') === '1') {
+                openModal('claimModal');
+                const r = p.get('reason') || '';
+                setStatus('Face verification not completed' + (r ? ' (' + r + ')' : '') + '. Please try again.', 'var(--red)');
+                history.replaceState(null, '', window.location.pathname);
+            }
+        })();
+
+        // Init
+        if (btn) { btn.disabled = true; label.textContent = 'Checking…'; icon.textContent = '⏳'; }
+        fetchEntitlement();
+    })();
+
+    // ── FV Link Generator (mirrors ClaimSDK.generateFVLink from @gooddollar/web3sdk-v2) ─────
+    const LOGIN_METHOD = '{{ login_method }}';
+    window._fvGenerateLink = null;
+    (function() {
+        if (typeof LZString === 'undefined') return;
+
+        // Exact constant from GoodDollar SDK source (FV_IDENTIFIER_MSG2)
+        const FV_IDENTIFIER_MSG2 =
+            'Sign this message to request verifying your account <account> and to create your own secret unique identifier for your anonymized record.\n' +
+            'You can use this identifier in the future to delete this anonymized record.\n' +
+            'WARNING: do not sign this message unless you trust the website/application requesting this signature.';
+
+        function buildFVLink(address, fvSig) {
+            const callbackUrl = window.location.origin +
+                '/wallet?fv_pending=1&wallet=' + encodeURIComponent(address.toLowerCase()) + '&src=goodmarket';
+            const params = {
+                account:   address.toLowerCase(),
+                fvsig:     fvSig,
+                firstname: 'GoodMarket',
+                chain:     42220,
+                rdu:       callbackUrl
+            };
+            const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(params));
+            return 'https://goodid.gooddollar.org?lz=' + compressed;
+        }
+
+        async function signServerSide(address) {
+            // Use address as-is (checksummed) in the message — GoodID verifies against checksummed form.
+            // Matches ethers.js signer.getAddress() behaviour in the SDK's getFvSig().
+            const msg = FV_IDENTIFIER_MSG2.replace('<account>', address);
+            const endpoint = (LOGIN_METHOD === 'turnkey') ? '/api/turnkey/sign-msg' : '/api/custodial/sign-msg';
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: msg })
+            });
+            const data = await res.json();
+            if (!data.signature) throw new Error(data.error || 'Signing failed');
+            // Ensure 0x prefix — GoodID requires it to ecrecover the signer
+            const sig = data.signature;
+            return sig.startsWith('0x') ? sig : '0x' + sig;
+        }
+
+        window._fvGenerateLink = async function(address) {
+            const sig = await signServerSide(address);
+            return buildFVLink(address, sig);
+        };
+
+        console.log('✅ FV SDK helper ready');
+    })();
+
+    // ── Init ──────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+        loadBalances();
+    });
+    </script>
+</body>
+</html>
