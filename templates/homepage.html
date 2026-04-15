@@ -1,0 +1,2651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoodMarket - Learn & Earn with Web3</title>
+    <!-- Telegram Mini App SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#7c3aed">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="GoodMarket">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0B0F2A 0%, #130D35 50%, #1A103D 100%);
+            color: #e2e8f0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            width: 100vw;
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+            position: relative;
+        }
+
+        /* Fixed network canvas background */
+        #networkCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* Radial center glow */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90vw;
+            height: 70vh;
+            background: radial-gradient(ellipse at center,
+                rgba(109, 40, 217, 0.07) 0%,
+                rgba(59, 130, 246, 0.05) 40%,
+                transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* All content above canvas */
+        .header, section, div, nav, footer {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        .header {
+            background: rgba(11, 15, 42, 0.85);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+            padding: 0.65rem 1.5rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 1px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .header-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.5rem;
+            width: 100%;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #7c3aed;
+            text-decoration: none;
+            letter-spacing: -0.5px;
+            white-space: nowrap;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .nav-links a {
+            color: rgba(255, 255, 255, 0.6);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            transition: color 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .nav-links a:hover {
+            color: #a78bfa;
+        }
+
+        .nav-links a.active {
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .connect-wallet-btn {
+            background: #7c3aed;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: 0 4px 6px rgba(124, 58, 237, 0.2);
+        }
+
+        .connect-wallet-btn:hover {
+            background: #6d28d9;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(124, 58, 237, 0.3);
+        }
+
+        .wallet-icon {
+            font-size: 1.2rem;
+        }
+
+        /* Hero Section */
+        .hero-section {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0.6rem 2rem 0.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .hero-content {
+            max-width: 780px;
+            text-align: center;
+        }
+
+        .hero-title {
+            font-size: 1.6rem;
+            font-weight: 800;
+            line-height: 1.15;
+            margin-bottom: 0.3rem;
+            color: #ffffff;
+            letter-spacing: -0.5px;
+        }
+
+        .hero-title .highlight {
+            color: #a78bfa;
+            text-shadow: 0 0 30px rgba(167, 139, 250, 0.4);
+        }
+
+        .hero-description {
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.55);
+            line-height: 1.45;
+            margin: 0 auto 0.4rem;
+            max-width: 560px;
+        }
+
+        .hero-disclaimer {
+            font-size: 1rem;
+            color: rgba(255, 220, 100, 0.95);
+            margin-bottom: 0.6rem;
+            font-style: italic;
+            font-weight: 700;
+            background: rgba(255, 180, 0, 0.1);
+            border: 1px solid rgba(255, 200, 50, 0.3);
+            border-radius: 8px;
+            padding: 0.45rem 0.9rem;
+            display: inline-block;
+            animation: disclaimerPulse 3s ease-in-out infinite;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .btn-primary {
+            background: #7c3aed;
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: 0 4px 6px rgba(124, 58, 237, 0.2);
+            text-decoration: none;
+        }
+
+        .btn-primary:hover {
+            background: #6d28d9;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(124, 58, 237, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 0.45rem 1.2rem;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            backdrop-filter: blur(8px);
+        }
+
+        .btn-secondary:hover {
+            border-color: rgba(167, 139, 250, 0.5);
+            color: #a78bfa;
+            background: rgba(124, 58, 237, 0.1);
+            transform: translateY(-2px);
+        }
+
+        /* Section Tab Navigation */
+        @keyframes tabEntrance {
+            0%   { opacity: 0; transform: translateY(16px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes tabGlow {
+            0%, 100% { text-shadow: 0 0 0px transparent; }
+            50%       { text-shadow: 0 0 18px rgba(124, 58, 237, 0.45); }
+        }
+
+        @keyframes disclaimerPulse {
+            0%, 100% { color: rgba(255,255,255,0.75); text-shadow: none; }
+            50%       { color: rgba(167, 139, 250, 1); text-shadow: 0 0 14px rgba(167, 139, 250, 0.6); }
+        }
+
+        .submenu-wrapper {
+            background: rgba(11, 15, 42, 0.95);
+            border: 1px solid rgba(124, 58, 237, 0.25);
+            border-radius: 14px;
+            max-width: 700px;
+            margin: 0 auto 1.5rem auto;
+            padding: 1rem 1.25rem;
+            box-shadow: 0 8px 32px rgba(124, 58, 237, 0.18);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            animation: submenuDrop 0.25s ease;
+        }
+
+        @keyframes submenuDrop {
+            from { opacity: 0; transform: translateY(-12px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .submenu-label {
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: rgba(167, 139, 250, 0.7);
+            margin-bottom: 0.65rem;
+            padding-left: 0.25rem;
+        }
+
+        .submenu-nav {
+            flex-direction: column;
+            gap: 0.35rem !important;
+        }
+
+        .submenu-nav .section-tab {
+            border-bottom: none !important;
+            border-radius: 9px;
+            text-align: left;
+            padding: 0.7rem 1rem;
+            opacity: 1 !important;
+            animation: none !important;
+        }
+
+        .submenu-nav .section-tab.active {
+            background: rgba(124, 58, 237, 0.18);
+            color: #a78bfa;
+        }
+
+        .main-menu-btn {
+            position: relative;
+        }
+
+        .section-nav {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .section-nav::-webkit-scrollbar { display: none; }
+
+        .section-tab {
+            background: none;
+            border: none;
+            border-bottom: 4px solid transparent;
+            padding: 0.6rem 1.25rem;
+            font-size: 0.95rem;
+            font-weight: 800;
+            color: rgba(255, 255, 255, 0.4);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: color 0.25s ease, background 0.25s ease, border-color 0.25s ease, transform 0.2s ease;
+            font-family: 'Inter', sans-serif;
+            letter-spacing: -0.3px;
+            opacity: 0;
+            animation: tabEntrance 0.5s ease forwards;
+        }
+
+        .section-tab:nth-child(1) { animation-delay: 0.05s; }
+        .section-tab:nth-child(2) { animation-delay: 0.15s; }
+        .section-tab:nth-child(3) { animation-delay: 0.25s; }
+
+        .section-tab:hover {
+            color: #a78bfa;
+            background: rgba(124, 58, 237, 0.08);
+            transform: translateY(-2px);
+        }
+
+        .section-tab.active {
+            color: #a78bfa;
+            border-bottom-color: #7c3aed;
+            animation: tabEntrance 0.5s ease forwards, tabGlow 2.5s ease-in-out infinite;
+        }
+
+        /* Section Panels */
+        .section-panel {
+            display: none;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1rem 2rem 1.5rem;
+            animation: fadePanel 0.25s ease;
+        }
+
+        .section-panel.active {
+            display: block;
+        }
+
+        @keyframes fadePanel {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Panel Titles */
+        .panel-title {
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: #ffffff;
+            margin-bottom: 0.25rem;
+            text-align: left;
+        }
+
+        .panel-subtitle {
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 1rem;
+            text-align: left;
+            max-width: none;
+        }
+
+        /* Earn Cards Grid */
+        .earn-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1rem;
+        }
+
+        .earn-card {
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            padding: 1.1rem;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.3s ease;
+            backdrop-filter: blur(8px);
+        }
+
+        .earn-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 32px rgba(124, 58, 237, 0.18);
+            border-color: rgba(124, 58, 237, 0.3);
+            background: rgba(124, 58, 237, 0.06);
+        }
+
+        .earn-card-icon { font-size: 1.75rem; margin-bottom: 0.4rem; }
+        .earn-card-title { font-size: 1.2rem; font-weight: 700; color: #ffffff; margin-bottom: 0.4rem; }
+        .earn-card-badge {
+            display: inline-block;
+            padding: 0.3rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+        }
+        .earn-card-desc { font-size: 0.9rem; color: #6b7280; line-height: 1.6; margin: 0 0 0.75rem; text-align: left; }
+        .earn-card-list { list-style: none; padding: 0; margin: 0; }
+        .earn-card-list li {
+            font-size: 0.88rem;
+            color: #6b7280;
+            padding: 0.2rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .earn-card-list li strong { font-weight: 700; }
+        .earn-card-note { font-size: 0.8rem; color: #9ca3af; margin-top: 0.75rem; }
+
+        /* Features Section */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .feature-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.1rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f3f4f6;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(124, 58, 237, 0.1);
+            border-color: #ede9fe;
+        }
+
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .feature-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            color: #1f2937;
+        }
+
+        .feature-description {
+            color: #6b7280;
+            line-height: 1.6;
+            font-size: 0.9rem;
+        }
+
+        /* Developer Cards */
+        .dev-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .dev-card {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem 1.5rem;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.07);
+            border: 1px solid #f3f4f6;
+            transition: all 0.3s ease;
+        }
+
+        .dev-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(124,58,237,0.12);
+            border-color: #ede9fe;
+        }
+
+        .dev-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid #7c3aed;
+            box-shadow: 0 4px 8px rgba(124,58,237,0.25);
+            margin-bottom: 1rem;
+        }
+
+        .dev-name { font-size: 1.05rem; font-weight: 700; color: #1f2937; margin-bottom: 0.25rem; }
+        .dev-role { font-size: 0.85rem; color: #7c3aed; font-weight: 600; }
+
+        /* Community links in Developers tab */
+        .community-bar {
+            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            border-radius: 16px;
+            padding: 2rem;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1.5rem;
+        }
+
+        .community-bar-text h3 { font-size: 1.2rem; font-weight: 700; color: white; margin-bottom: 0.25rem; }
+        .community-bar-text p  { font-size: 0.9rem; color: rgba(255,255,255,0.8); margin: 0; text-align: left; }
+
+        .community-links { display: flex; gap: 1rem; flex-wrap: wrap; }
+
+        .community-link {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            text-decoration: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+
+        .community-link:hover { background: rgba(255,255,255,0.28); }
+
+        @media (max-width: 768px) {
+            .section-tab { padding: 0.75rem 1rem; font-size: 0.95rem; }
+            .section-panel { padding: 1.5rem 1rem; }
+            .panel-title { font-size: 1.35rem; }
+            .community-bar { flex-direction: column; text-align: center; }
+            .community-bar-text p { text-align: center; }
+            .community-links { justify-content: center; }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            body {
+                font-size: 16px;
+            }
+
+            .header {
+                padding: 0.75rem 0.5rem;
+            }
+
+            .header-container {
+                gap: 0.5rem;
+                flex-wrap: nowrap;
+            }
+
+            .logo {
+                font-size: 1.1rem;
+                flex-shrink: 0;
+            }
+
+            .nav-links {
+                gap: 0.4rem;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+                max-width: calc(100vw - 120px);
+            }
+
+            .nav-links a {
+                font-size: 0.85rem;
+                padding: 0.25rem 0.4rem;
+                white-space: nowrap;
+            }
+
+            .connect-wallet-btn {
+                padding: 0.5rem 0.85rem;
+                font-size: 0.85rem;
+                white-space: nowrap;
+            }
+
+            .wallet-icon {
+                font-size: 1rem;
+            }
+
+            .hero-section {
+                padding: 0.5rem 1rem 0.4rem;
+                min-height: auto;
+            }
+
+            .hero-content {
+                width: 100%;
+            }
+
+            .hero-title {
+                font-size: 1.3rem;
+                margin-bottom: 0.2rem;
+                line-height: 1.2;
+                letter-spacing: -0.5px;
+            }
+
+            .hero-description {
+                font-size: 0.82rem;
+                margin-bottom: 0.2rem;
+                line-height: 1.4;
+            }
+
+            .hero-disclaimer {
+                font-size: 0.88rem;
+                margin-bottom: 0.4rem;
+                padding: 0.35rem 0.7rem;
+            }
+
+            .hero-buttons {
+                flex-direction: column;
+                gap: 0.35rem;
+            }
+
+            .btn-primary, .btn-secondary {
+                width: 100%;
+                justify-content: center;
+                padding: 0.6rem 1.25rem;
+                font-size: 0.9rem;
+            }
+
+            .features-section {
+                padding: 2rem 1rem;
+                margin-top: 1.5rem;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+                gap: 1.25rem;
+            }
+
+            .feature-card {
+                padding: 1.5rem;
+            }
+
+            .feature-icon {
+                font-size: 2.5rem;
+            }
+
+            .feature-title {
+                font-size: 1.35rem;
+            }
+
+            h2 {
+                font-size: 1.75rem;
+            }
+
+            p {
+                font-size: 1rem;
+            }
+
+            section {
+                padding: 2rem 1rem !important;
+            }
+
+            section > div {
+                padding: 1.5rem !important;
+            }
+
+            section h2 {
+                font-size: 1.75rem !important;
+            }
+
+            section p {
+                font-size: 1rem !important;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                font-size: 15px;
+            }
+
+            .header {
+                padding: 0.7rem 0.5rem;
+            }
+
+            .logo {
+                font-size: 1rem;
+            }
+
+            .nav-links {
+                gap: 0.35rem;
+                max-width: calc(100vw - 110px);
+            }
+
+            .nav-links a {
+                font-size: 0.8rem;
+                padding: 0.25rem 0.35rem;
+            }
+
+            .connect-wallet-btn {
+                padding: 0.45rem 0.7rem;
+                font-size: 0.8rem;
+            }
+
+            .wallet-icon {
+                font-size: 0.9rem;
+            }
+
+            .hero-section {
+                padding: 0.5rem 1rem 0.4rem;
+            }
+
+            .hero-title {
+                font-size: 1.25rem;
+                letter-spacing: -0.5px;
+            }
+
+            .hero-description {
+                font-size: 0.8rem;
+            }
+
+            .btn-primary, .btn-secondary {
+                padding: 0.5rem 1rem;
+                font-size: 0.85rem;
+            }
+
+            .features-section {
+                padding: 1.75rem 1rem;
+            }
+
+            h2 {
+                font-size: 1.5rem;
+            }
+
+            p {
+                font-size: 0.95rem;
+            }
+
+            section {
+                padding: 1.75rem 1rem !important;
+            }
+
+            section > div {
+                padding: 1.25rem !important;
+            }
+        }
+
+        @media (max-width: 375px) {
+            .logo {
+                font-size: 0.9rem;
+            }
+
+            .nav-links a {
+                font-size: 0.7rem;
+            }
+
+            .connect-wallet-btn {
+                padding: 0.35rem 0.55rem;
+                font-size: 0.7rem;
+            }
+
+            .hero-title {
+                font-size: 1.2rem;
+            }
+
+            .hero-description {
+                font-size: 0.8rem;
+            }
+        }
+
+        /* Wallet Modal */
+        .wallet-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(6px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .wallet-modal.active {
+            display: flex;
+        }
+
+        .wallet-modal-content {
+            background: white;
+            border-radius: 24px;
+            padding: 2rem;
+            max-width: 480px;
+            width: 100%;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
+            animation: modalIn 0.25s ease;
+        }
+
+        @keyframes modalIn {
+            from { opacity: 0; transform: translateY(16px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1.75rem;
+        }
+
+        .modal-header-inner {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .modal-title {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: #1f2937;
+            margin: 0;
+        }
+
+        .modal-subtitle {
+            font-size: 0.9rem;
+            color: #6b7280;
+            margin: 0;
+        }
+
+        .close-modal {
+            background: #f3f4f6;
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            font-size: 1.1rem;
+            cursor: pointer;
+            color: #6b7280;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: background 0.2s;
+        }
+
+        .close-modal:hover {
+            background: #e5e7eb;
+            color: #1f2937;
+        }
+
+        /* Option cards shown first */
+        .wallet-options {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .wallet-option-card {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1.25rem 1.5rem;
+            border-radius: 16px;
+            border: 2px solid #e5e7eb;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            background: white;
+            text-align: left;
+            width: 100%;
+        }
+
+        .wallet-option-card:hover {
+            border-color: #7c3aed;
+            box-shadow: 0 4px 16px rgba(124, 58, 237, 0.12);
+            transform: translateY(-2px);
+        }
+
+        .wallet-option-card.primary {
+            background: linear-gradient(135deg, #10b981, #059669);
+            border-color: transparent;
+            color: white;
+        }
+
+        .wallet-option-card.primary:hover {
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.35);
+            border-color: transparent;
+        }
+
+        /* Blue card — Connect a Wallet */
+        .wallet-option-card.wc-option {
+            background: linear-gradient(135deg, #1d6fe8, #1a56db);
+            border-color: transparent;
+            color: white;
+        }
+
+        .wallet-option-card.wc-option:hover {
+            background: linear-gradient(135deg, #1a56db, #1447c0);
+            box-shadow: 0 8px 24px rgba(29, 111, 232, 0.45);
+            border-color: transparent;
+            transform: translateY(-2px);
+        }
+
+        /* Purple card — Login Manually */
+        .wallet-option-card.manual-option {
+            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            border-color: transparent;
+            color: white;
+        }
+
+        .wallet-option-card.manual-option:hover {
+            background: linear-gradient(135deg, #6d28d9, #5b21b6);
+            box-shadow: 0 8px 24px rgba(124, 58, 237, 0.45);
+            border-color: transparent;
+            transform: translateY(-2px);
+        }
+
+        .option-icon {
+            font-size: 2rem;
+            flex-shrink: 0;
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.18);
+        }
+
+        .wallet-option-card:not(.primary):not(.wc-option):not(.manual-option) .option-icon {
+            background: #f3f0ff;
+        }
+
+        .option-text .option-title {
+            font-size: 1.15rem;
+            font-weight: 800;
+            margin-bottom: 0.25rem;
+            color: white;
+            letter-spacing: -0.01em;
+        }
+
+        .wallet-option-card:not(.primary):not(.wc-option):not(.manual-option) .option-text .option-title {
+            color: #1f2937;
+        }
+
+        .option-text .option-desc {
+            font-size: 0.83rem;
+            opacity: 0.85;
+            margin: 0;
+            color: rgba(255,255,255,0.9);
+        }
+
+        .wallet-option-card .option-text .option-desc {
+            color: #374151;
+        }
+
+        .option-arrow {
+            margin-left: auto;
+            font-size: 1.1rem;
+            opacity: 0.6;
+            flex-shrink: 0;
+        }
+
+        /* Wallet input form (hidden by default) */
+        .wallet-form {
+            display: none;
+        }
+
+        .wallet-form.visible {
+            display: block;
+        }
+
+        .back-btn {
+            background: none;
+            border: none;
+            color: #7c3aed;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 0;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .back-btn:hover {
+            color: #6d28d9;
+        }
+
+        .wallet-input-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .wallet-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #1f2937;
+            font-size: 0.95rem;
+        }
+
+        .wallet-input {
+            width: 100%;
+            padding: 0.9rem 1rem;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .wallet-input:focus {
+            outline: none;
+            border-color: #7c3aed;
+            box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+        }
+
+        .connect-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            color: white;
+            border: none;
+            padding: 1rem;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 1.05rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
+        }
+
+        .connect-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(124, 58, 237, 0.35);
+        }
+
+        .connect-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status-message {
+            margin-top: 1rem;
+            padding: 0.9rem 1rem;
+            border-radius: 12px;
+            display: none;
+            font-size: 0.9rem;
+        }
+
+        .status-message.error {
+            background: #fee2e2;
+            color: #dc2626;
+            display: block;
+        }
+
+        .status-message.success {
+            background: #dcfce7;
+            color: #16a34a;
+            display: block;
+        }
+
+        .status-message.info {
+            background: rgba(251,191,36,0.12);
+            color: #d97706;
+            border: 1px solid rgba(251,191,36,0.3);
+            display: block;
+        }
+
+        /* Responsive Styles for Section Titles and Descriptions */
+        h2 {
+            text-align: center;
+            font-size: 1.75rem;
+            font-weight: 800;
+            color: #1f2937;
+            margin-bottom: 1rem;
+        }
+
+        @media (min-width: 768px) {
+            h2 {
+                font-size: 3rem;
+            }
+        }
+
+        p {
+            text-align: center;
+            font-size: 1rem;
+            color: #6b7280;
+            max-width: 700px;
+            margin: 0 auto 2rem;
+        }
+
+        @media (min-width: 768px) {
+            p {
+                font-size: 1.25rem;
+                margin: 0 auto 3rem;
+            }
+        }
+
+        @keyframes gradientBackground {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; }
+        }
+
+        /* ── YouTube Video Carousel ── */
+        .video-carousel-section {
+            padding: 2.5rem 1rem 1.5rem;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .video-carousel-title {
+            text-align: center;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: rgba(241,245,249,0.95);
+            margin-bottom: 1.25rem;
+            letter-spacing: 0.01em;
+        }
+        .video-carousel-title span {
+            color: #a78bfa;
+        }
+        .video-carousel-wrapper {
+            position: relative;
+            overflow: hidden;
+            border-radius: 16px;
+        }
+        .video-carousel-track {
+            display: flex;
+            transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            will-change: transform;
+        }
+        .video-carousel-slide {
+            flex: 0 0 100%;
+            min-width: 0;
+        }
+        .video-iframe-wrapper {
+            position: relative;
+            padding-bottom: 56.25%;
+            height: 0;
+            background: #0f0f0f;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .video-iframe-wrapper iframe {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            border: none;
+        }
+        .video-carousel-nav {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .carousel-btn {
+            background: rgba(167,139,250,0.2);
+            border: 1px solid rgba(167,139,250,0.4);
+            color: #a78bfa;
+            border-radius: 50%;
+            width: 40px; height: 40px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex; align-items: center; justify-content: center;
+            line-height: 1;
+        }
+        .carousel-btn:hover { background: rgba(167,139,250,0.35); }
+        .carousel-btn:disabled { opacity: 0.3; cursor: default; }
+        .carousel-dots {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .carousel-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: rgba(167,139,250,0.3);
+            cursor: pointer;
+            transition: background 0.2s, transform 0.2s;
+        }
+        .carousel-dot.active {
+            background: #a78bfa;
+            transform: scale(1.3);
+        }
+        .video-title-label {
+            text-align: center;
+            color: rgba(241,245,249,0.6);
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+            min-height: 1.2em;
+        }
+        @media (max-width: 600px) {
+            .video-carousel-section { padding: 1.5rem 0.5rem 1rem; }
+            .carousel-btn { width: 34px; height: 34px; font-size: 1rem; }
+        }
+
+        /* ── Skeleton Loaders ── */
+        .hp-skeleton-box {
+            background: rgba(255,255,255,0.04);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        .hp-skeleton-shimmer {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg,
+                rgba(255,255,255,0) 0%,
+                rgba(255,255,255,0.06) 50%,
+                rgba(255,255,255,0) 100%);
+            background-size: 200% 100%;
+            animation: hpShimmer 1.6s infinite linear;
+        }
+        @keyframes hpShimmer {
+            0%   { background-position: -200% 0; }
+            100% { background-position:  200% 0; }
+        }
+
+        /* ── Sponsor Certificate Carousel ── */
+        .cert-carousel-section {
+            padding: 2rem 1rem 1.5rem;
+            max-width: 960px;
+            margin: 0 auto;
+        }
+        .cert-carousel-title {
+            text-align: center;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: rgba(241,245,249,0.95);
+            margin-bottom: 1.25rem;
+            letter-spacing: 0.01em;
+        }
+        .cert-carousel-title span { color: #34d399; }
+        .cert-carousel-outer {
+            position: relative;
+            overflow: hidden;
+            border-radius: 16px;
+            cursor: grab;
+            user-select: none;
+        }
+        .cert-carousel-outer:active { cursor: grabbing; }
+        .cert-carousel-track {
+            display: flex;
+            transition: transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            will-change: transform;
+        }
+        .cert-slide {
+            flex: 0 0 100%;
+            min-width: 0;
+            position: relative;
+        }
+        .cert-slide img {
+            width: 100%;
+            display: block;
+            border-radius: 14px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+            object-fit: contain;
+            background: #0f172a;
+        }
+        .cert-slide-caption {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.72) 0%, transparent 100%);
+            border-radius: 0 0 14px 14px;
+            padding: 1.5rem 1rem 0.9rem;
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            pointer-events: none;
+        }
+        .cert-caption-name {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #fff;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 70%;
+        }
+        .cert-caption-amount {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #34d399;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+            white-space: nowrap;
+        }
+        .cert-carousel-dots {
+            display: flex;
+            justify-content: center;
+            gap: 0.45rem;
+            margin-top: 0.9rem;
+        }
+        .cert-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: rgba(52,211,153,0.3);
+            cursor: pointer;
+            transition: background 0.2s, transform 0.2s;
+        }
+        .cert-dot.active {
+            background: #34d399;
+            transform: scale(1.35);
+        }
+        @media (max-width: 600px) {
+            .cert-carousel-section { padding: 1.25rem 0.5rem 1rem; }
+            .cert-caption-name { font-size: 0.88rem; }
+            .cert-caption-amount { font-size: 0.82rem; }
+        }
+
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-container">
+            <a href="/" class="logo">GoodMarket</a>
+            <nav class="nav-links">
+                <a href="/overview" class="active">Overview</a>
+                <a href="/news">News</a>
+                <div style="display: flex; gap: 0.35rem; align-items: center; font-size: 0.75rem;">
+                    <a href="https://t.me/GoodDollarX" target="_blank" style="text-decoration: none;" title="Join our Telegram">💬</a>
+                    <a href="https://twitter.com/gooddollarorg" target="_blank" style="text-decoration: none;" title="Follow @gooddollarorg">🐦</a>
+                    <a href="https://twitter.com/GoodDollarTeam" target="_blank" style="text-decoration: none;" title="Follow @GoodDollarTeam">🐦</a>
+                </div>
+                <button class="connect-wallet-btn" onclick="openWalletModal()">
+                    <span class="wallet-icon">🚀</span>
+                    <span>Get Started</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero-section" id="overview">
+        <div class="hero-content">
+            <h1 class="hero-title">
+                Learn & Earn with<br>
+                <span class="highlight">GoodMarket</span>
+            </h1>
+            <p class="hero-description">
+                Earn G$ cryptocurrency rewards by completing social tasks, quizzes, games, and community stories — no experience needed.
+            </p>
+            <p class="hero-disclaimer">
+                ⚠️ GoodMarket is a community initiative &mdash; not an official product of GoodDollar.
+            </p>
+            <div class="hero-buttons">
+                <button class="btn-secondary main-menu-btn" onclick="toggleMainMenu()">☰ Main Menu</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Menu Submenu — appears directly below hero when Main Menu is clicked -->
+    <div class="submenu-wrapper" id="main-menu-submenu" style="display:none;">
+        <div class="submenu-label">Select a section:</div>
+        <nav class="section-nav submenu-nav">
+            <button class="section-tab" id="tab-what-is" onclick="showSection('what-is')">💰 What is GoodMarket?</button>
+            <button class="section-tab" id="tab-learn-earn" onclick="showSection('learn-earn')">🎓 Learn &amp; Earn</button>
+            <button class="section-tab" id="tab-daily-tasks" onclick="showSection('daily-tasks')">📱 Daily Social Tasks</button>
+            <button class="section-tab" id="tab-minigames" onclick="showSection('minigames')">🎮 Play &amp; Earn</button>
+            <button class="section-tab" id="tab-community-stories" onclick="showSection('community-stories')">🌟 Community Stories</button>
+            <button class="section-tab" id="tab-referral" onclick="showSection('referral')">🔗 Referral Program</button>
+            <button class="section-tab" id="tab-ubi-tracker" onclick="showSection('ubi-tracker')">📊 UBI Tracker</button>
+            <button class="section-tab" id="tab-why-choose" onclick="showSection('why-choose')">⭐ Why Choose GoodMarket?</button>
+            <button class="section-tab" id="tab-developers" onclick="showSection('developers')">👨‍💻 Meet our Developers</button>
+        </nav>
+    </div>
+
+    <!-- Panel: What is GoodMarket? — shows directly below submenu tabs -->
+    <div class="section-panel" id="panel-what-is">
+        <h2 class="panel-title">💰 Multiple Ways to Earn G$</h2>
+        <p class="panel-subtitle">GoodMarket lets you earn GoodDollar tokens by completing easy tasks — no experience needed.</p>
+        <div class="earn-grid">
+            <div class="earn-card">
+                <div class="earn-card-icon">🌟</div>
+                <div class="earn-card-title">Community Stories</div>
+                <span class="earn-card-badge" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:white;">Every 26th of the Month</span>
+                <p class="earn-card-desc">Share your GoodDollar story on Twitter/X and earn big rewards each month.</p>
+                <ul class="earn-card-list">
+                    <li>🟣 <strong style="color:#7c3aed;">2,000 G$</strong> — Text post</li>
+                    <li>🟣 <strong style="color:#7c3aed;">5,000 G$</strong> — Video post (30s+)</li>
+                </ul>
+                <p class="earn-card-note">📅 Opens 26th–30th each month at 12:00 AM UTC</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">📱</div>
+                <div class="earn-card-title">Daily Tasks</div>
+                <span class="earn-card-badge" style="background:linear-gradient(135deg,#10b981,#059669);color:white;">Available Every Day</span>
+                <p class="earn-card-desc">Complete simple social media tasks daily across Telegram, Twitter/X, and Facebook.</p>
+                <ul class="earn-card-list">
+                    <li>🟢 <strong style="color:#10b981;">100 G$</strong> — Telegram tasks</li>
+                    <li>🟢 <strong style="color:#10b981;">100 G$</strong> — Twitter/X tasks</li>
+                    <li>🟢 <strong style="color:#10b981;">100 G$</strong> — Facebook tasks</li>
+                </ul>
+                <p class="earn-card-note">⏰ New tasks reset every 24 hours</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">🎓</div>
+                <div class="earn-card-title">Learn & Earn Quizzes</div>
+                <span class="earn-card-badge" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:white;">Daily Quizzes</span>
+                <p class="earn-card-desc">Test your knowledge about GoodDollar and blockchain technology and get rewarded.</p>
+                <ul class="earn-card-list">
+                    <li>🟡 <strong style="color:#f59e0b;">200 G$</strong> — Per correct answer</li>
+                    <li>🟡 <strong style="color:#f59e0b;">2,000 G$</strong> — Maximum per quiz</li>
+                </ul>
+                <p class="earn-card-note">📚 One quiz available every 24 hours</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel: Learn & Earn -->
+    <div class="section-panel" id="panel-learn-earn">
+        <h2 class="panel-title">🎓 Learn &amp; Earn</h2>
+        <p class="panel-subtitle">Answer quiz questions about GoodDollar &amp; blockchain and get rewarded with G$ tokens instantly on-chain.</p>
+        <div class="earn-grid">
+            <div class="earn-card">
+                <div class="earn-card-icon">❓</div>
+                <div class="earn-card-title">How It Works</div>
+                <p class="earn-card-desc">Each quiz has <strong>10 questions</strong> about GoodDollar, blockchain, and financial inclusion. You have <strong>20 seconds</strong> to answer each question. The faster and more accurately you answer, the more G$ you earn.</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">💰</div>
+                <div class="earn-card-title">Rewards</div>
+                <ul class="earn-card-list">
+                    <li>🟡 <strong style="color:#f59e0b;">200 G$</strong> per correct answer</li>
+                    <li>🟡 <strong style="color:#f59e0b;">2,000 G$</strong> maximum per quiz</li>
+                    <li>🟡 Rewards sent directly to your wallet</li>
+                </ul>
+                <p class="earn-card-note">📚 Cooldown: 5 days after each successful quiz</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">🏆</div>
+                <div class="earn-card-title">Achievement Cards</div>
+                <p class="earn-card-desc">Score high enough and you'll earn collectible <strong>Achievement Cards</strong> based on your quiz performance. These cards can be traded or kept as proof of your knowledge.</p>
+                <p class="earn-card-note">🎯 Requires UBI verification to participate</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel: Daily Social Tasks -->
+    <div class="section-panel" id="panel-daily-tasks">
+        <h2 class="panel-title">📱 Daily Social Tasks</h2>
+        <p class="panel-subtitle">Spread the word about GoodDollar on social media and earn G$ rewards every day.</p>
+        <div class="earn-grid">
+            <div class="earn-card">
+                <div class="earn-card-icon">🐦</div>
+                <div class="earn-card-title">Twitter / X Tasks</div>
+                <p class="earn-card-desc">Post about GoodDollar on Twitter/X — share a tweet, retweet, or tag the community. Submit your post link in GoodMarket to claim your reward.</p>
+                <ul class="earn-card-list">
+                    <li>🟢 <strong style="color:#10b981;">100 G$</strong> per completed task</li>
+                    <li>🟢 Resets every 24 hours</li>
+                </ul>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">💬</div>
+                <div class="earn-card-title">Telegram Tasks</div>
+                <p class="earn-card-desc">Engage in the GoodDollar Telegram community. Post a message in an approved group or channel mentioning GoodDollar, then submit your message link to earn.</p>
+                <ul class="earn-card-list">
+                    <li>🟢 <strong style="color:#10b981;">100 G$</strong> per completed task</li>
+                    <li>🟢 Shared cooldown with Twitter task</li>
+                </ul>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">📘</div>
+                <div class="earn-card-title">Facebook Tasks</div>
+                <p class="earn-card-desc">Share GoodDollar content on Facebook — post in groups, share updates, or tag friends. Submit your Facebook post link to claim your daily G$ reward.</p>
+                <ul class="earn-card-list">
+                    <li>🟢 <strong style="color:#10b981;">100 G$</strong> per completed task</li>
+                    <li>🟢 New task available every day</li>
+                </ul>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">⚙️</div>
+                <div class="earn-card-title">How Verification Works</div>
+                <p class="earn-card-desc">After submitting your social task link, our team reviews your submission. Approved tasks are rewarded with G$ sent directly to your wallet. Keep your posts genuine and on-topic.</p>
+                <p class="earn-card-note">⏰ Tasks reset every 24 hours. Completing one platform task uses your daily slot.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel: Play & Earn (Minigames) -->
+    <div class="section-panel" id="panel-minigames">
+        <h2 class="panel-title">🎮 Play &amp; Earn — Minigames</h2>
+        <p class="panel-subtitle">Have fun and win G$ tokens through skill-based and prediction games. Accumulate winnings and withdraw to your wallet.</p>
+        <div class="earn-grid">
+            <div class="earn-card">
+                <div class="earn-card-icon">📈</div>
+                <div class="earn-card-title">Crash Game</div>
+                <p class="earn-card-desc">A multiplier game where a rocket climbs higher and higher. <strong>Cash out before it crashes</strong> to lock in your multiplied winnings. Wait too long and lose it all. Timing and nerve are key!</p>
+                <p class="earn-card-note">🚀 The earlier you cash out, the safer — but the higher the risk, the bigger the reward.</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">🔤</div>
+                <div class="earn-card-title">Jumble Words</div>
+                <p class="earn-card-desc">Unscramble words related to GoodDollar, blockchain, and Web3. Each correct answer earns you virtual tokens. Challenge your vocabulary while learning about the ecosystem.</p>
+                <ul class="earn-card-list">
+                    <li>🟣 Up to <strong style="color:#7c3aed;">10 wins</strong> per day</li>
+                    <li>🟣 Words get harder as you progress</li>
+                </ul>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">🔮</div>
+                <div class="earn-card-title">Price Prediction</div>
+                <p class="earn-card-desc">Predict whether crypto prices (BTC, ETH, and more) will go <strong>UP ⬆️ or DOWN ⬇️</strong> over a chosen timeframe — 5 minutes, 15 minutes, or 1 hour. Get it right and win virtual tokens.</p>
+                <p class="earn-card-note">📊 Uses live market data. Predict wisely!</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">💸</div>
+                <div class="earn-card-title">Withdrawals</div>
+                <p class="earn-card-desc">All game winnings accumulate as virtual tokens in your GoodMarket balance. Once you reach the <strong>minimum withdrawal threshold</strong>, you can convert them to real G$ tokens sent on-chain to your wallet.</p>
+                <p class="earn-card-note">✅ Withdrawals require UBI verification.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel: Community Stories -->
+    <div class="section-panel" id="panel-community-stories">
+        <h2 class="panel-title">🌟 Community Stories</h2>
+        <p class="panel-subtitle">Share your GoodDollar journey with the world and earn big monthly rewards for your story.</p>
+        <div class="earn-grid">
+            <div class="earn-card">
+                <div class="earn-card-icon">📖</div>
+                <div class="earn-card-title">What is a Community Story?</div>
+                <p class="earn-card-desc">A Community Story is your personal experience with GoodDollar — how it has helped you, what you've learned, or how you use it in your daily life. Share it on Twitter/X for the world to see.</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">🗓️</div>
+                <div class="earn-card-title">When to Submit</div>
+                <p class="earn-card-desc">Community Stories opens once a month, from the <strong>26th to the 30th</strong> at 12:00 AM UTC. Make sure to submit your story during this window to be eligible for rewards.</p>
+                <p class="earn-card-note">📅 Mark your calendar — the window is only 4 days!</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">🏅</div>
+                <div class="earn-card-title">Reward Tiers</div>
+                <ul class="earn-card-list">
+                    <li>🟣 <strong style="color:#7c3aed;">2,000 G$</strong> — Text post with your story</li>
+                    <li>🟣 <strong style="color:#7c3aed;">5,000 G$</strong> — Video post (30 seconds or longer)</li>
+                    <li>🟣 Screenshots and selfies with the app qualify</li>
+                </ul>
+                <p class="earn-card-note">✅ Rewards are sent after admin review and approval.</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">📸</div>
+                <div class="earn-card-title">How to Submit</div>
+                <p class="earn-card-desc">Post your GoodDollar story on Twitter/X, then come to GoodMarket during the open window, paste your post link or upload a screenshot, and our team will review and approve it for your G$ reward.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel: Referral Program -->
+    <div class="section-panel" id="panel-referral">
+        <h2 class="panel-title">🔗 Referral Program</h2>
+        <p class="panel-subtitle">Invite friends to GoodMarket and both of you earn G$ rewards when they join and get verified.</p>
+        <div class="earn-grid">
+            <div class="earn-card">
+                <div class="earn-card-icon">📨</div>
+                <div class="earn-card-title">How to Refer</div>
+                <p class="earn-card-desc">Every GoodMarket user gets a unique referral link. Share it with friends, family, or on social media. When someone signs up using your link, you're automatically linked as their referrer.</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">💰</div>
+                <div class="earn-card-title">Referral Rewards</div>
+                <ul class="earn-card-list">
+                    <li>🟢 <strong style="color:#10b981;">1,000 G$</strong> — You (the referrer) earn</li>
+                    <li>🟢 <strong style="color:#10b981;">500 G$</strong> — Your friend (referee) earns</li>
+                    <li>🟢 No limit on how many friends you can refer</li>
+                </ul>
+                <p class="earn-card-note">🎯 Rewards are disbursed after the referee completes UBI verification.</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">✅</div>
+                <div class="earn-card-title">Requirements</div>
+                <p class="earn-card-desc">Your referred friend must connect their Web3 wallet and complete <strong>UBI verification</strong> (a recent GoodDollar claim on the Celo network). Once verified, both rewards are sent automatically.</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">📊</div>
+                <div class="earn-card-title">Track Your Referrals</div>
+                <p class="earn-card-desc">Log into GoodMarket and check your <strong>Referral Dashboard</strong> to see how many friends you've referred, how many have verified, and your total referral earnings so far.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel: UBI Tracker -->
+    <div class="section-panel" id="panel-ubi-tracker">
+        <h2 class="panel-title">📊 UBI Tracker</h2>
+        <p class="panel-subtitle">Analyze any GoodDollar wallet's UBI history, claim patterns, and Ecosystem Coverage — all in one tool.</p>
+        <div class="earn-grid">
+            <div class="earn-card">
+                <div class="earn-card-icon">🔍</div>
+                <div class="earn-card-title">What is UBI Tracker?</div>
+                <p class="earn-card-desc">The UBI Tracker is a powerful analytics tool that lets you look up any GoodDollar wallet address and see its complete <strong>Universal Basic Income (UBI)</strong> claim history on the Celo blockchain.</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">📈</div>
+                <div class="earn-card-title">What You Can See</div>
+                <ul class="earn-card-list">
+                    <li>🟡 Total G$ claimed over time</li>
+                    <li>🟡 Claim frequency and patterns</li>
+                    <li>🟡 First and last claim dates</li>
+                    <li>🟡 Ecosystem Coverage score</li>
+                    <li>🟡 On-chain transaction history</li>
+                </ul>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">🌍</div>
+                <div class="earn-card-title">Ecosystem Coverage</div>
+                <p class="earn-card-desc"><strong>Ecosystem Coverage</strong> measures how actively a wallet engages with the GoodDollar ecosystem — including UBI claims, marketplace activity, and community participation. A higher score shows deeper involvement.</p>
+            </div>
+            <div class="earn-card">
+                <div class="earn-card-icon">🛡️</div>
+                <div class="earn-card-title">Why It Matters</div>
+                <p class="earn-card-desc">UBI verification is required for most GoodMarket features. The UBI Tracker helps you confirm your eligibility, understand your claim history, and see how you compare in the GoodDollar community.</p>
+                <p class="earn-card-note">🔓 Available to all users — no login required to look up a wallet.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel: Why Choose GoodMarket? -->
+    <div class="section-panel" id="panel-why-choose">
+        <h2 class="panel-title">⭐ Why Choose GoodMarket?</h2>
+        <p class="panel-subtitle">Everything you need to grow your G$ earnings — all in one place.</p>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🎓</div>
+                <h3 class="feature-title">Learn & Earn</h3>
+                <p class="feature-description">Complete daily educational quizzes about GoodDollar and blockchain. Earn up to 2,000 G$ per quiz with instant on-chain rewards.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🎮</div>
+                <h3 class="feature-title">Mini Games</h3>
+                <p class="feature-description">Play exciting mini-games like the Crash game and Garden farming game. Win G$ while having fun every day.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📱</div>
+                <h3 class="feature-title">Daily Tasks</h3>
+                <p class="feature-description">Earn G$ daily by completing simple social media tasks on Telegram, Twitter/X, and Facebook. Quick and easy.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🌟</div>
+                <h3 class="feature-title">Community Stories</h3>
+                <p class="feature-description">Share your GoodDollar journey on Twitter/X every month and earn up to 5,000 G$ for video posts.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3 class="feature-title">Secure & Transparent</h3>
+                <p class="feature-description">All rewards are sent directly to your wallet on the Celo blockchain. No middlemen, no delays — fully on-chain.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🌍</div>
+                <h3 class="feature-title">Built for Everyone</h3>
+                <p class="feature-description">GoodMarket is part of the GoodDollar ecosystem — designed to give everyone access to universal basic income.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel: Meet our Developers -->
+    <div class="section-panel" id="panel-developers">
+        <h2 class="panel-title">👨‍💻 Meet our Developers</h2>
+        <p class="panel-subtitle">The team behind GoodMarket.</p>
+        <div class="dev-grid" id="developerGrid">
+            <div class="dev-card" style="opacity:0.35;">
+                <div style="width:80px;height:80px;border-radius:50%;background:#e5e7eb;margin:0 auto 1rem;"></div>
+                <div class="dev-name">Loading...</div>
+            </div>
+        </div>
+        <div class="community-bar">
+            <div class="community-bar-text">
+                <h3>📱 Join Our Community</h3>
+                <p>Connect with GoodDollar members worldwide</p>
+            </div>
+            <div class="community-links">
+                <a href="https://t.me/GoodDollarX" target="_blank" rel="noopener noreferrer" class="community-link">💬 Telegram</a>
+                <a href="https://twitter.com/gooddollarorg" target="_blank" rel="noopener noreferrer" class="community-link">🐦 @gooddollarorg</a>
+                <a href="https://twitter.com/GoodDollarTeam" target="_blank" rel="noopener noreferrer" class="community-link">🐦 @GoodDollarTeam</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Community Stories from Twitter -->
+    <div id="community-tweets-section" style="display:none; max-width:600px; margin:0 auto; padding:2rem 1rem 1.5rem;">
+        <div style="text-align:center; margin-bottom:1.25rem;">
+            <div style="font-size:1.25rem; font-weight:700; color:rgba(241,245,249,0.95); letter-spacing:0.01em;">
+                🌟 Community Stories from <span style="color:#a78bfa;">Twitter/X</span>
+            </div>
+            <div style="font-size:0.88rem; color:rgba(241,245,249,0.5); margin-top:0.4rem;">Real stories from our GoodDollar community members</div>
+        </div>
+        <div id="community-tweets-loading" style="text-align:center; padding:2rem; color:rgba(241,245,249,0.5);">Loading tweets...</div>
+        <!-- Carousel wrapper -->
+        <div id="community-tweets-carousel" style="display:none; position:relative;">
+            <!-- Slides viewport -->
+            <div id="ct-viewport" style="overflow:hidden; border-radius:16px; position:relative;">
+                <div id="ct-track" style="display:flex; transition:transform 0.45s cubic-bezier(0.25,0.46,0.45,0.94); will-change:transform;"></div>
+            </div>
+            <!-- Prev / Next buttons -->
+            <button id="ct-prev" onclick="ctMove(-1)" style="position:absolute; left:-18px; top:50%; transform:translateY(-50%); background:rgba(124,58,237,0.75); border:none; color:#fff; border-radius:50%; width:36px; height:36px; font-size:1.1rem; cursor:pointer; z-index:5; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(4px);">‹</button>
+            <button id="ct-next" onclick="ctMove(1)"  style="position:absolute; right:-18px; top:50%; transform:translateY(-50%); background:rgba(124,58,237,0.75); border:none; color:#fff; border-radius:50%; width:36px; height:36px; font-size:1.1rem; cursor:pointer; z-index:5; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(4px);">›</button>
+            <!-- Dots -->
+            <div id="ct-dots" style="display:flex; justify-content:center; gap:0.45rem; margin-top:0.85rem;"></div>
+        </div>
+    </div>
+
+    <!-- Sponsor Certificate Carousel -->
+    <div id="cert-carousel-section" class="cert-carousel-section">
+        <div class="cert-carousel-title">🤝 Our <span>Community Sponsors</span></div>
+        <!-- Skeleton loader shown while certs load -->
+        <div id="certCarouselSkeleton" class="hp-skeleton-box" style="width:100%;padding-bottom:38%;border-radius:16px;position:relative;">
+            <div class="hp-skeleton-shimmer"></div>
+        </div>
+        <!-- Real carousel (hidden until certs load) -->
+        <div id="certCarouselInner" style="display:none;">
+            <div class="cert-carousel-outer" id="certCarouselOuter">
+                <div class="cert-carousel-track" id="certCarouselTrack"></div>
+            </div>
+            <div class="cert-carousel-dots" id="certCarouselDots"></div>
+        </div>
+    </div>
+
+
+
+
+
+
+
+    <!-- YouTube Video Carousel -->
+    <div id="video-carousel-section" class="video-carousel-section">
+        <div class="video-carousel-title">GoodDollar <span>Community Stories</span></div>
+        <!-- Skeleton loader shown while videos load -->
+        <div id="videoCarouselSkeleton" class="hp-skeleton-box" style="width:100%;padding-bottom:56.25%;border-radius:16px;position:relative;">
+            <div class="hp-skeleton-shimmer"></div>
+        </div>
+        <!-- Real carousel (hidden until videos load) -->
+        <div id="videoCarouselInner" style="display:none;">
+            <div class="video-carousel-wrapper">
+                <div class="video-carousel-track" id="videoCarouselTrack"></div>
+            </div>
+            <p class="video-title-label" id="videoTitleLabel"></p>
+            <div class="video-carousel-nav">
+                <button class="carousel-btn" id="carouselPrev" onclick="carouselMove(-1)" disabled>&#8592;</button>
+                <div class="carousel-dots" id="carouselDots"></div>
+                <button class="carousel-btn" id="carouselNext" onclick="carouselMove(1)">&#8594;</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wallet Modal -->
+    <div class="wallet-modal" id="walletModal">
+        <div class="wallet-modal-content">
+            <div class="modal-header">
+                <div class="modal-header-inner">
+                    <h2 class="modal-title">Get Started with GoodMarket</h2>
+                    <p class="modal-subtitle">Choose how you want to join</p>
+                </div>
+                <button class="close-modal" onclick="closeWalletModal()">×</button>
+            </div>
+
+            <!-- Options: Two Turnkey-based login paths -->
+            <div class="wallet-options" id="walletOptions">
+
+                <!-- Important Reminder Banner -->
+                <div style="background: #fffbeb; border: 1.5px solid #f59e0b; border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 0.3rem; text-align:left;">
+                    <div style="font-weight:700; color:#b45309; font-size:0.88rem; margin-bottom:0.45rem;">⚠️ Important — Please Read Before Choosing</div>
+                    <div style="font-size:0.8rem; color:#374151; line-height:1.65;">
+                        <div style="margin-bottom:0.45rem;">✅ <strong style="color:#059669;">Brand new to GoodDollar?</strong> — Go ahead and <em>Create New GoodDollar Wallet</em>.</div>
+                        <div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; padding:0.5rem 0.7rem;">
+                            🚫 <strong style="color:#dc2626;">Already use GoodDapp, MiniPay, or any GoodDollar claiming app?</strong><br>
+                            <span style="font-size:0.78rem; color:#4b5563;">
+                                <strong>Do NOT create a new wallet.</strong> GoodMarket, MiniPay, and GoodDapp all share the same wallet system — creating a new wallet gives you a different address and you may lose access to your existing G$ balance. Instead, choose <strong style="color:#b45309;">Import Existing Wallet</strong> and enter your private key.
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Option 1: Create New Wallet -->
+                <button class="wallet-option-card" onclick="showCreateWalletForm()" style="border-color: rgba(16,185,129,0.45); background: linear-gradient(135deg, rgba(16,185,129,0.09), rgba(5,150,105,0.05));">
+                    <div class="option-icon">🆕</div>
+                    <div class="option-text">
+                        <div class="option-title" style="color:#10b981;">Create New GoodDollar Wallet</div>
+                        <p class="option-desc">Brand new to GoodDollar? We'll create a free Celo wallet for you automatically</p>
+                    </div>
+                    <span class="option-arrow" style="color:#10b981;">→</span>
+                </button>
+
+                <!-- Option 2: Import Existing Wallet (Private Key) -->
+                <button class="wallet-option-card" onclick="showPrivateKeyForm()" style="border-color: rgba(251,191,36,0.4); background: linear-gradient(135deg, rgba(251,191,36,0.06), rgba(245,158,11,0.04));">
+                    <div class="option-icon">🔑</div>
+                    <div class="option-text">
+                        <div class="option-title" style="color:#fbbf24;">Import Existing Wallet</div>
+                        <p class="option-desc">Already use GoodDapp, MiniPay, or GoodDollar? Import using your existing private key</p>
+                    </div>
+                    <span class="option-arrow" style="color:#fbbf24;">→</span>
+                </button>
+
+                <div style="text-align:center; padding-top: 0.25rem;">
+                    <a href="https://t.me/GoodDollarX" target="_blank" rel="noopener noreferrer" style="color:#7c3aed; font-size:0.82rem; text-decoration:none;">
+                        💬 Join our Telegram community t.me/GoodDollarX ↗
+                    </a>
+                </div>
+            </div>
+
+            <!-- Create New Wallet Form -->
+            <div class="wallet-form" id="createWalletForm">
+                <button class="back-btn" onclick="showWalletOptions()">← Back</button>
+
+                <div style="background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.06)); border: 1px solid rgba(16,185,129,0.35); border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 1.2rem;">
+                    <div style="font-weight:700; color:#10b981; font-size:0.9rem; margin-bottom:0.4rem;">🆕 Create Your GoodDollar Wallet</div>
+                    <div style="font-size:0.82rem; color:#1f2937; line-height:1.6;">
+                        We'll create a new Celo wallet for you. Your wallet address will be ready in seconds — no app or seed phrase needed to get started.
+                    </div>
+                </div>
+
+                <div class="wallet-input-group">
+                    <label class="wallet-label" for="createReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
+                    <input
+                        type="text"
+                        id="createReferralCode"
+                        class="wallet-input"
+                        placeholder="Enter referral code if you have one"
+                        autocomplete="off"
+                    />
+                </div>
+
+                <button class="connect-btn" onclick="createTurnkeyWallet()" style="background: linear-gradient(135deg, #059669, #047857);">
+                    <span id="createWalletBtnText">Create My Wallet</span>
+                </button>
+
+                <div id="createWalletStatus" class="status-message"></div>
+            </div>
+
+            <!-- Import Existing Wallet Form (Private Key, hidden by default) -->
+            <div class="wallet-form" id="privateKeyForm">
+                <button class="back-btn" onclick="showWalletOptions()">← Back</button>
+
+                <div style="background: linear-gradient(135deg, rgba(251,191,36,0.1), rgba(245,158,11,0.06)); border: 1px solid rgba(251,191,36,0.35); border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 1rem;">
+                    <div style="font-weight:700; color:#fbbf24; font-size:0.9rem; margin-bottom:0.4rem;">🔑 Import Existing Wallet</div>
+                    <div style="font-size:0.82rem; color:#1f2937; line-height:1.6;">
+                        Already have a GoodDollar wallet? Import your private key — it stays encrypted in your session only, never written to the database.
+                    </div>
+                </div>
+
+                <div class="wallet-input-group">
+                    <label class="wallet-label" for="privateKeyInput">Private Key</label>
+                    <input
+                        type="password"
+                        id="privateKeyInput"
+                        class="wallet-input"
+                        placeholder="0x... (64 hex chars)"
+                        autocomplete="off"
+                        autocorrect="off"
+                        spellcheck="false"
+                    />
+                    <div style="font-size:0.75rem; color:rgba(255,255,255,0.4); margin-top:0.35rem;">
+                        Export your private key from your GoodDollar wallet app's Security settings
+                    </div>
+                </div>
+
+                <div class="wallet-input-group">
+                    <label class="wallet-label" for="pkReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
+                    <input
+                        type="text"
+                        id="pkReferralCode"
+                        class="wallet-input"
+                        placeholder="Enter referral code if you have one"
+                        autocomplete="off"
+                    />
+                </div>
+
+                <button class="connect-btn" onclick="loginWithPrivateKey()" style="background: linear-gradient(135deg, #d97706, #b45309);">
+                    <span id="pkConnectBtnText">Import Key &amp; Login</span>
+                </button>
+
+                <div id="pkStatusMessage" class="status-message"></div>
+
+                <div style="margin-top: 1rem; text-align:center; font-size:0.8rem; color:rgba(255,255,255,0.45);">
+                    Don't have a GoodDollar wallet yet? <a href="#" onclick="showCreateWalletForm();return false;" style="color:#10b981; text-decoration:none;">Create one for free →</a>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Check if user should return to community stories after login
+        window.addEventListener('load', function() {
+            const returnToCommunityStories = sessionStorage.getItem('return_to_community_stories');
+            if (returnToCommunityStories === 'true') {
+                console.log('🔍 Setting return_to_community_stories flag from sessionStorage');
+                fetch('/api/set-return-flag', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({return_to: 'community_stories'})
+                }).then(response => {
+                    console.log('✅ Return flag set successfully');
+                }).catch(err => console.error('❌ Flag set error:', err));
+            }
+        });
+
+        function toggleMainMenu() {
+            const submenu = document.getElementById('main-menu-submenu');
+            const btn = document.querySelector('.main-menu-btn');
+            if (submenu.style.display === 'none' || submenu.style.display === '') {
+                submenu.style.display = 'block';
+                btn.textContent = '✕ Close Menu';
+            } else {
+                submenu.style.display = 'none';
+                btn.innerHTML = '☰ Main Menu';
+                document.querySelectorAll('.section-panel').forEach(p => p.classList.remove('active'));
+                document.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
+            }
+        }
+
+        function showSection(name) {
+            document.querySelectorAll('.section-panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
+            const panel = document.getElementById('panel-' + name);
+            const tab   = document.getElementById('tab-' + name);
+            if (panel) panel.classList.add('active');
+            if (tab)   tab.classList.add('active');
+            const submenu = document.getElementById('main-menu-submenu');
+            submenu.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function openWalletModal() {
+            showWalletOptions();
+            document.getElementById('walletModal').classList.add('active');
+        }
+
+        function closeWalletModal() {
+            document.getElementById('walletModal').classList.remove('active');
+        }
+
+        function showWalletOptions() {
+            document.getElementById('walletOptions').style.display = 'flex';
+            ['createWalletForm', 'privateKeyForm'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('visible');
+            });
+        }
+
+        function showCreateWalletForm() {
+            document.getElementById('walletOptions').style.display = 'none';
+            document.getElementById('privateKeyForm').classList.remove('visible');
+            const f = document.getElementById('createWalletForm');
+            if (f) f.classList.add('visible');
+        }
+
+        function showPrivateKeyForm() {
+            document.getElementById('walletOptions').style.display = 'none';
+            document.getElementById('createWalletForm').classList.remove('visible');
+            const pkForm = document.getElementById('privateKeyForm');
+            if (pkForm) {
+                pkForm.classList.add('visible');
+                setTimeout(() => { document.getElementById('privateKeyInput').focus(); }, 100);
+            }
+        }
+
+        async function createTurnkeyWallet() {
+            const statusDiv = document.getElementById('createWalletStatus');
+            const btnText = document.getElementById('createWalletBtnText');
+            const btn = btnText ? btnText.closest('button') : null;
+            const referral = (document.getElementById('createReferralCode') || {}).value || '';
+
+            if (btn) btn.disabled = true;
+            btnText.textContent = 'Creating wallet…';
+            statusDiv.className = 'status-message info';
+            statusDiv.textContent = '⏳ Setting up your GoodDollar wallet on Celo. This may take up to 30 seconds…';
+
+            try {
+                const resp = await fetch('/api/turnkey/create-wallet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ referral_code: referral || null })
+                });
+                const data = await resp.json();
+
+                if (data.status === 'success' && data.wallet) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✅ Wallet created: ${data.wallet.slice(0,8)}…${data.wallet.slice(-4)} — Redirecting…`;
+                    setTimeout(() => { window.location.href = '/wallet'; }, 1500);
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = data.message || 'Wallet creation failed. Please try again.';
+                    if (btn) btn.disabled = false;
+                    btnText.textContent = 'Create My Wallet';
+                }
+            } catch (err) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = 'Network error. Please try again.';
+                if (btn) btn.disabled = false;
+                btnText.textContent = 'Create My Wallet';
+            }
+        }
+
+        async function loginWithPrivateKey() {
+            const pk = document.getElementById('privateKeyInput').value.trim();
+            const referral = document.getElementById('pkReferralCode').value.trim();
+            const statusDiv = document.getElementById('pkStatusMessage');
+            const btnText = document.getElementById('pkConnectBtnText');
+
+            if (!pk) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = 'Please enter your private key.';
+                return;
+            }
+            const cleanPk = pk.startsWith('0x') ? pk : '0x' + pk;
+            if (!/^0x[0-9a-fA-F]{64}$/.test(cleanPk)) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = 'Invalid private key — must be 64 hex characters.';
+                return;
+            }
+
+            btnText.textContent = 'Importing key securely…';
+            statusDiv.className = 'status-message info';
+            statusDiv.textContent = '🔒 Encrypting and securing your key. This may take up to 30 seconds…';
+
+            try {
+                const resp = await fetch('/api/turnkey/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ private_key: cleanPk, referral_code: referral || null })
+                });
+                const data = await resp.json();
+
+                if (resp.ok && data.success) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✅ Logged in! Redirecting…';
+                    document.getElementById('privateKeyInput').value = '';
+                    setTimeout(() => { window.location.href = data.redirect_to || '/wallet'; }, 1200);
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = data.error || 'Login failed. Please try again.';
+                    btnText.textContent = 'Import Key & Login';
+                }
+            } catch (err) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = 'Network error. Please try again.';
+                btnText.textContent = 'Import Key & Login';
+            }
+        }
+
+        function showXDCForm() {
+            document.getElementById('walletOptions').style.display = 'none';
+            document.getElementById('walletForm').classList.remove('visible');
+            const xdcForm = document.getElementById('xdcWalletForm');
+            if (xdcForm) {
+                xdcForm.classList.add('visible');
+                setTimeout(() => { document.getElementById('xdcAddress').focus(); }, 100);
+            }
+        }
+
+        async function connectXDCWallet() {
+            const raw = document.getElementById('xdcAddress').value.trim();
+            const statusDiv = document.getElementById('xdcStatusMessage');
+            const btnText = document.getElementById('xdcConnectBtnText');
+            const connectBtn = btnText ? btnText.closest('button') : null;
+
+            function showXDCSt(msg, type) {
+                statusDiv.className = 'status-message ' + type;
+                statusDiv.textContent = msg;
+                statusDiv.style.display = 'block';
+            }
+
+            if (!raw) {
+                showXDCSt('Please enter your XDC wallet address', 'error');
+                return;
+            }
+
+            let addr = raw;
+            if (raw.toLowerCase().startsWith('xdc')) addr = '0x' + raw.slice(3);
+
+            if (!addr.startsWith('0x') || addr.length !== 42) {
+                showXDCSt('Invalid XDC address. Use 0x... or xdc... format.', 'error');
+                return;
+            }
+
+            if (btnText) btnText.textContent = 'Connecting...';
+            if (connectBtn) connectBtn.disabled = true;
+            showXDCSt('⏳ Connecting XDC wallet...', '');
+
+            try {
+                const response = await fetch('/verify-ubi', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        wallet: addr,
+                        referral_code: null,
+                        timestamp: new Date().toISOString(),
+                        user_agent: navigator.userAgent,
+                        track_analytics: true,
+                        network: 'xdc'
+                    })
+                });
+                const data = await response.json();
+
+                if (data.status === 'success' || data.success) {
+                    sessionStorage.setItem('wallet', data.wallet || addr);
+                    sessionStorage.setItem('verified', 'true');
+                    sessionStorage.setItem('network', 'xdc');
+                    showXDCSt('✅ XDC wallet connected! Redirecting...', 'success');
+                    setTimeout(() => { window.location.href = '/xdc-wallet'; }, 1400);
+                } else {
+                    throw new Error(data.message || 'Connection failed');
+                }
+            } catch (err) {
+                if (btnText) btnText.textContent = 'Connect XDC Wallet';
+                if (connectBtn) connectBtn.disabled = false;
+                showXDCSt('❌ ' + (err.message || 'Connection failed. Please try again.'), 'error');
+            }
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('walletModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeWalletModal();
+            }
+        });
+
+        // Load developer profiles
+        async function loadDeveloperProfile() {
+            try {
+                const response = await fetch('/api/developer-profile');
+                const data = await response.json();
+
+                if (data.success && data.profiles && data.profiles.length > 0) {
+                    const grid = document.getElementById('developerGrid');
+                    grid.innerHTML = '';
+
+                    data.profiles.forEach(profile => {
+                        const profileCard = document.createElement('div');
+                        profileCard.style.cssText = 'background: linear-gradient(135deg, #f3f4f6, #e5e7eb); border-radius: 16px; padding: 1.5rem; text-align: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); transition: transform 0.3s ease;';
+                        profileCard.onmouseover = function() { this.style.transform = 'translateY(-5px)'; };
+                        profileCard.onmouseout = function() { this.style.transform = 'translateY(0)'; };
+
+                        profileCard.innerHTML = `
+                            <div style="display: inline-block; position: relative; margin-bottom: 1rem;">
+                                <img src="${profile.image_url}" alt="${profile.name}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid #7c3aed; box-shadow: 0 4px 8px rgba(124, 58, 237, 0.3);">
+                            </div>
+                            <h3 style="font-size: 1.1rem; font-weight: 700; color: #1f2937; margin-bottom: 0.5rem;">${profile.name}</h3>
+                            <p style="font-size: 0.9rem; color: #6b7280; font-weight: 500;">${profile.position}</p>
+                        `;
+
+                        grid.appendChild(profileCard);
+                    });
+
+                    // panel-developers is shown via showSection(), no legacy display toggle needed
+                }
+            } catch (error) {
+                console.error('Error loading developer profiles:', error);
+            }
+        }
+
+        // Load profiles on page load
+        window.addEventListener('load', loadDeveloperProfile);
+
+        // ── YouTube Video Carousel ──
+        let carouselVideos = [];
+        let carouselIndex = 0;
+        let carouselTouchStartX = 0;
+        let carouselTouchStartY = 0;
+
+        async function loadHomepageVideos() {
+            try {
+                const response = await fetch('/api/youtube-videos');
+                const data = await response.json();
+                if (!data.success || !data.videos || data.videos.length === 0) {
+                    const sk = document.getElementById('videoCarouselSkeleton');
+                    if (sk) sk.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#6b7280;font-size:0.9rem;">🎬 Community videos coming soon!</div>';
+                    return;
+                }
+
+                carouselVideos = data.videos;
+                const track = document.getElementById('videoCarouselTrack');
+                const dotsContainer = document.getElementById('carouselDots');
+
+                // Build slides
+                track.innerHTML = carouselVideos.map((v, i) => `
+                    <div class="video-carousel-slide">
+                        <div class="video-iframe-wrapper">
+                            <iframe
+                                src="${v.embed_url}?rel=0&modestbranding=1"
+                                title="${v.title || 'GoodMarket Video'}"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowfullscreen
+                                loading="${i === 0 ? 'eager' : 'lazy'}"
+                            ></iframe>
+                        </div>
+                    </div>
+                `).join('');
+
+                // Build dots
+                dotsContainer.innerHTML = carouselVideos.map((_, i) =>
+                    `<div class="carousel-dot${i === 0 ? ' active' : ''}" onclick="carouselGoTo(${i})"></div>`
+                ).join('');
+
+                updateCarouselState();
+                // Swap skeleton → real content
+                document.getElementById('videoCarouselSkeleton').style.display = 'none';
+                document.getElementById('videoCarouselInner').style.display = 'block';
+
+                // Touch/swipe support
+                const wrapper = document.querySelector('.video-carousel-wrapper');
+                wrapper.addEventListener('touchstart', e => {
+                    carouselTouchStartX = e.touches[0].clientX;
+                    carouselTouchStartY = e.touches[0].clientY;
+                }, { passive: true });
+                wrapper.addEventListener('touchend', e => {
+                    const dx = e.changedTouches[0].clientX - carouselTouchStartX;
+                    const dy = e.changedTouches[0].clientY - carouselTouchStartY;
+                    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
+                        carouselMove(dx < 0 ? 1 : -1);
+                    }
+                }, { passive: true });
+
+            } catch (e) {
+                console.warn('Could not load homepage videos:', e);
+            }
+        }
+
+        function carouselMove(direction) {
+            const next = carouselIndex + direction;
+            if (next < 0 || next >= carouselVideos.length) return;
+            carouselGoTo(next);
+        }
+
+        function carouselGoTo(index) {
+            carouselIndex = index;
+            updateCarouselState();
+        }
+
+        function updateCarouselState() {
+            const track = document.getElementById('videoCarouselTrack');
+            track.style.transform = `translateX(-${carouselIndex * 100}%)`;
+
+            document.getElementById('carouselPrev').disabled = carouselIndex === 0;
+            document.getElementById('carouselNext').disabled = carouselIndex === carouselVideos.length - 1;
+
+            document.querySelectorAll('.carousel-dot').forEach((dot, i) => {
+                dot.classList.toggle('active', i === carouselIndex);
+            });
+
+            const titleLabel = document.getElementById('videoTitleLabel');
+            if (carouselVideos[carouselIndex]) {
+                titleLabel.textContent = carouselVideos[carouselIndex].title || '';
+            }
+        }
+
+        window.addEventListener('load', loadHomepageVideos);
+
+        </script>
+
+
+    <!-- Background Music Player -->
+    <style>
+        @keyframes musicPulse {
+            0%, 100% { box-shadow: 0 4px 16px rgba(124,58,237,0.45); transform: scale(1); }
+            50% { box-shadow: 0 4px 28px rgba(124,58,237,0.85); transform: scale(1.08); }
+        }
+        #musicToggleBtn.waiting { animation: musicPulse 1.8s ease-in-out infinite; }
+    </style>
+
+    <div id="musicPlayer" style="position:fixed; bottom:1.25rem; right:1.25rem; z-index:9999; display:none; flex-direction:column; align-items:flex-end; gap:0.5rem;">
+        <div id="musicLabel" style="display:none; background:rgba(11,15,42,0.92); border:1px solid rgba(124,58,237,0.35); border-radius:10px; padding:0.4rem 0.75rem; font-size:0.75rem; color:#a78bfa; white-space:nowrap; backdrop-filter:blur(10px);">
+            🎵 Background Music
+        </div>
+        <div id="musicHint" style="background:rgba(11,15,42,0.92); border:1px solid rgba(124,58,237,0.35); border-radius:10px; padding:0.4rem 0.75rem; font-size:0.72rem; color:rgba(167,139,250,0.8); white-space:nowrap; backdrop-filter:blur(10px);">
+            Tap to play music
+        </div>
+        <button id="musicToggleBtn" onclick="toggleMusic()" title="Toggle Background Music" class="waiting"
+            style="width:48px; height:48px; border-radius:50%; background:linear-gradient(135deg,#7c3aed,#5b21b6); border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:1.3rem; transition:transform 0.2s ease, box-shadow 0.2s ease;">
+            🎵
+        </button>
+    </div>
+
+    <iframe id="ytBgMusic"
+        src=""
+        allow="autoplay"
+        style="display:none; width:0; height:0; border:none; position:absolute;"
+        title="Background Music">
+    </iframe>
+
+    <script>
+        var musicPlaying = false;
+        var musicStarted = false;
+        var MUSIC_SRC = 'https://www.youtube.com/embed/H4kVafIdANI?autoplay=1&loop=1&playlist=H4kVafIdANI&controls=0&mute=0&enablejsapi=1';
+
+        function startMusic() {
+            if (musicStarted) return;
+            var iframe = document.getElementById('ytBgMusic');
+            var btn = document.getElementById('musicToggleBtn');
+            var label = document.getElementById('musicLabel');
+            var hint = document.getElementById('musicHint');
+            iframe.src = MUSIC_SRC;
+            musicStarted = true;
+            musicPlaying = true;
+            btn.classList.remove('waiting');
+            btn.innerHTML = '⏸';
+            btn.style.boxShadow = '0 4px 20px rgba(124,58,237,0.7)';
+            label.style.display = 'block';
+            hint.style.display = 'none';
+            document.removeEventListener('scroll', startMusic);
+            document.removeEventListener('click', onFirstInteraction);
+            document.removeEventListener('touchstart', startMusic);
+            document.removeEventListener('keydown', startMusic);
+        }
+
+        function onFirstInteraction(e) {
+            if (e.target.id === 'musicToggleBtn') return;
+            startMusic();
+        }
+
+        function toggleMusic() {
+            var iframe = document.getElementById('ytBgMusic');
+            var btn = document.getElementById('musicToggleBtn');
+            var label = document.getElementById('musicLabel');
+            var hint = document.getElementById('musicHint');
+
+            if (!musicStarted) {
+                startMusic();
+                return;
+            }
+
+            if (musicPlaying) {
+                iframe.src = '';
+                musicStarted = false;
+                musicPlaying = false;
+                btn.classList.add('waiting');
+                btn.innerHTML = '🎵';
+                btn.style.boxShadow = '';
+                label.style.display = 'none';
+                hint.style.display = 'block';
+                document.addEventListener('scroll', startMusic, { once: true });
+                document.addEventListener('click', onFirstInteraction);
+                document.addEventListener('touchstart', startMusic, { once: true });
+                document.addEventListener('keydown', startMusic, { once: true });
+            } else {
+                startMusic();
+            }
+        }
+
+        document.addEventListener('scroll', startMusic, { once: true });
+        document.addEventListener('click', onFirstInteraction);
+        document.addEventListener('touchstart', startMusic, { once: true });
+        document.addEventListener('keydown', startMusic, { once: true });
+
+        document.getElementById('musicToggleBtn').addEventListener('mouseenter', function() {
+            if (!this.classList.contains('waiting')) this.style.transform = 'scale(1.1)';
+        });
+        document.getElementById('musicToggleBtn').addEventListener('mouseleave', function() {
+            if (!this.classList.contains('waiting')) this.style.transform = 'scale(1)';
+        });
+    </script>
+
+    <!-- Sponsor Certificate Carousel Script -->
+    <script>
+    (function() {
+        var certs = [];
+        var certIdx = 0;
+        var certTimer = null;
+        var certPaused = false;
+
+        function certGoTo(idx) {
+            if (!certs.length) return;
+            certIdx = (idx + certs.length) % certs.length;
+            var track = document.getElementById('certCarouselTrack');
+            if (track) track.style.transform = 'translateX(-' + (certIdx * 100) + '%)';
+            var dots = document.querySelectorAll('.cert-dot');
+            dots.forEach(function(d, i) {
+                d.classList.toggle('active', i === certIdx);
+            });
+        }
+
+        function certNext() {
+            certGoTo(certIdx + 1);
+        }
+
+        function certStartAuto() {
+            certStopAuto();
+            certTimer = setInterval(function() {
+                if (!certPaused) certNext();
+            }, 2000);
+        }
+
+        function certStopAuto() {
+            if (certTimer) { clearInterval(certTimer); certTimer = null; }
+        }
+
+        function buildCertCarousel(data) {
+            var section = document.getElementById('cert-carousel-section');
+            var track = document.getElementById('certCarouselTrack');
+            var dotsEl = document.getElementById('certCarouselDots');
+            if (!section || !track || !dotsEl) return;
+
+            certs = data;
+            if (!certs.length) return;
+
+            track.innerHTML = '';
+            dotsEl.innerHTML = '';
+
+            certs.forEach(function(cert, i) {
+                var slide = document.createElement('div');
+                slide.className = 'cert-slide';
+
+                var img = document.createElement('img');
+                img.src = cert.cert_url;
+                img.alt = 'Sponsorship certificate for ' + cert.sponsor_name;
+                img.loading = i === 0 ? 'eager' : 'lazy';
+
+                var caption = document.createElement('div');
+                caption.className = 'cert-slide-caption';
+
+                var nameEl = document.createElement('div');
+                nameEl.className = 'cert-caption-name';
+                nameEl.textContent = cert.sponsor_name;
+
+                var amtEl = document.createElement('div');
+                amtEl.className = 'cert-caption-amount';
+                if (cert.amount_gd && cert.amount_gd > 0) {
+                    var amt = parseFloat(cert.amount_gd);
+                    amtEl.textContent = (Number.isInteger(amt) ? amt.toLocaleString() : amt.toFixed(2)) + ' G$';
+                }
+
+                caption.appendChild(nameEl);
+                caption.appendChild(amtEl);
+                slide.appendChild(img);
+                slide.appendChild(caption);
+                track.appendChild(slide);
+
+                var dot = document.createElement('div');
+                dot.className = 'cert-dot' + (i === 0 ? ' active' : '');
+                dot.setAttribute('aria-label', 'Go to slide ' + (i + 1));
+                (function(idx) { dot.addEventListener('click', function() { certGoTo(idx); }); })(i);
+                dotsEl.appendChild(dot);
+            });
+
+            // Swap skeleton → real content
+            var sk = document.getElementById('certCarouselSkeleton');
+            var inner = document.getElementById('certCarouselInner');
+            if (sk) sk.style.display = 'none';
+            if (inner) inner.style.display = 'block';
+            certGoTo(0);
+            certStartAuto();
+
+            // Pause on hover / touch
+            var outer = document.getElementById('certCarouselOuter');
+            if (outer) {
+                outer.addEventListener('mouseenter', function() { certPaused = true; });
+                outer.addEventListener('mouseleave', function() { certPaused = false; });
+                outer.addEventListener('touchstart', function(e) {
+                    certPaused = true;
+                    var startX = e.touches[0].clientX;
+                    function onEnd(ev) {
+                        var dx = (ev.changedTouches ? ev.changedTouches[0].clientX : startX) - startX;
+                        if (Math.abs(dx) > 40) certGoTo(dx < 0 ? certIdx + 1 : certIdx - 1);
+                        certPaused = false;
+                        outer.removeEventListener('touchend', onEnd);
+                    }
+                    outer.addEventListener('touchend', onEnd);
+                }, { passive: true });
+            }
+        }
+
+        function loadCertCarousel() {
+            fetch('/api/sponsor-certificates')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success && data.certificates && data.certificates.length > 0) {
+                        buildCertCarousel(data.certificates);
+                    } else {
+                        var sk = document.getElementById('certCarouselSkeleton');
+                        if (sk) sk.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#6b7280;font-size:0.9rem;">🤝 Sponsor certificates coming soon!</div>';
+                    }
+                })
+                .catch(function(e) {
+                    console.warn('Could not load sponsor certificates:', e);
+                    var sk = document.getElementById('certCarouselSkeleton');
+                    if (sk) sk.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#6b7280;font-size:0.9rem;">🤝 Sponsor certificates coming soon!</div>';
+                });
+        }
+
+        document.addEventListener('DOMContentLoaded', loadCertCarousel);
+    })();
+
+    // ── Community Tweets Carousel ───────────────────────────────────────────
+    (function() {
+        var ctIndex = 0;
+        var ctTotal = 0;
+        var ctTimer = null;
+        var ctPaused = false;
+        var CT_INTERVAL = 6000;
+
+        function extractTweetId(url) {
+            var m = url.match(/\/status\/(\d+)/);
+            return m ? m[1] : null;
+        }
+
+        function ctGoTo(idx) {
+            var track = document.getElementById('ct-track');
+            if (!track) return;
+            ctIndex = ((idx % ctTotal) + ctTotal) % ctTotal;
+            track.style.transform = 'translateX(-' + (ctIndex * 100) + '%)';
+            document.querySelectorAll('.ct-dot').forEach(function(d, i) {
+                d.style.background = i === ctIndex ? '#a78bfa' : 'rgba(167,139,250,0.3)';
+                d.style.transform = i === ctIndex ? 'scale(1.35)' : 'scale(1)';
+            });
+        }
+
+        window.ctMove = function(dir) {
+            ctPaused = true;
+            clearInterval(ctTimer);
+            ctGoTo(ctIndex + dir);
+            ctTimer = setInterval(function() { if (!ctPaused) ctGoTo(ctIndex + 1); }, CT_INTERVAL);
+            setTimeout(function() { ctPaused = false; }, 6000);
+        };
+
+        async function loadCommunityTweets() {
+            try {
+                var res = await fetch('/api/featured-tweets');
+                var data = await res.json();
+                if (!data.success || !data.tweets || data.tweets.length === 0) return;
+
+                var validTweets = data.tweets.filter(function(t) {
+                    return t.tweet_id || extractTweetId(t.tweet_url);
+                });
+                if (validTweets.length === 0) return;
+
+                ctTotal = validTweets.length;
+
+                var section  = document.getElementById('community-tweets-section');
+                var loading  = document.getElementById('community-tweets-loading');
+                var carousel = document.getElementById('community-tweets-carousel');
+                var track    = document.getElementById('ct-track');
+                var dotsWrap = document.getElementById('ct-dots');
+
+                section.style.display  = 'block';
+                loading.style.display  = 'none';
+                carousel.style.display = 'block';
+
+                // Hide arrows if only 1 tweet
+                if (ctTotal === 1) {
+                    var p = document.getElementById('ct-prev');
+                    var n = document.getElementById('ct-next');
+                    if (p) p.style.display = 'none';
+                    if (n) n.style.display = 'none';
+                }
+
+                track.innerHTML = '';
+                dotsWrap.innerHTML = '';
+
+                validTweets.forEach(function(tweet, i) {
+                    var tweetId = tweet.tweet_id || extractTweetId(tweet.tweet_url);
+
+                    // Slide
+                    var slide = document.createElement('div');
+                    slide.style.cssText = 'flex:0 0 100%;min-width:0;';
+
+                    var card = document.createElement('div');
+                    card.style.cssText = 'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;';
+
+                    if (tweet.label) {
+                        var lbl = document.createElement('div');
+                        lbl.style.cssText = 'font-size:0.8rem;font-weight:600;color:#a78bfa;padding:0.5rem 0.9rem 0.25rem;';
+                        lbl.textContent = '🏷 ' + tweet.label;
+                        card.appendChild(lbl);
+                    }
+
+                    var iframe = document.createElement('iframe');
+                    iframe.src = 'https://platform.twitter.com/embed/Tweet.html?id=' + tweetId + '&theme=dark&dnt=true&lang=en';
+                    iframe.style.cssText = 'width:100%;border:none;height:520px;display:block;';
+                    iframe.setAttribute('loading', 'eager');
+
+                    card.appendChild(iframe);
+                    slide.appendChild(card);
+                    track.appendChild(slide);
+
+                    // Dot
+                    var dot = document.createElement('div');
+                    dot.className = 'ct-dot';
+                    dot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:rgba(167,139,250,0.3);cursor:pointer;transition:background 0.2s,transform 0.2s;';
+                    (function(idx) { dot.onclick = function() { ctPaused = true; ctGoTo(idx); setTimeout(function(){ ctPaused=false; }, 6000); }; })(i);
+                    dotsWrap.appendChild(dot);
+                });
+
+                ctGoTo(0);
+
+                // Auto-swipe every 3 seconds (pause on hover)
+                if (ctTotal > 1) {
+                    ctTimer = setInterval(function() { if (!ctPaused) ctGoTo(ctIndex + 1); }, CT_INTERVAL);
+                    carousel.addEventListener('mouseenter', function() { ctPaused = true; });
+                    carousel.addEventListener('mouseleave', function() { ctPaused = false; });
+                    // Touch swipe support
+                    var tsX = null;
+                    carousel.addEventListener('touchstart', function(e) { tsX = e.touches[0].clientX; ctPaused = true; }, {passive:true});
+                    carousel.addEventListener('touchend', function(e) {
+                        if (tsX === null) return;
+                        var diff = tsX - e.changedTouches[0].clientX;
+                        if (Math.abs(diff) > 30) ctGoTo(ctIndex + (diff > 0 ? 1 : -1));
+                        tsX = null;
+                        setTimeout(function(){ ctPaused = false; }, 4000);
+                    }, {passive:true});
+                }
+
+            } catch(e) {
+                console.warn('Community tweets carousel error:', e);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadCommunityTweets);
+    })();
+    </script>
+</body>
+</html>
