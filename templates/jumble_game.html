@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Jumble Words - GoodMarket</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+            min-height: 100vh;
+            color: #f1f5f9;
+        }
+        .navbar {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(99, 102, 241, 0.25);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .nav-brand {
+            font-size: 1.4rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .back-btn {
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1.2rem;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+        .game-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .game-header h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+        .game-header p {
+            color: rgba(241, 245, 249, 0.7);
+        }
+        .stats-row {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+        .stat-card {
+            flex: 1;
+            min-width: 120px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(99,102,241,0.2);
+            border-radius: 14px;
+            padding: 1rem;
+            text-align: center;
+        }
+        .stat-label {
+            font-size: 0.75rem;
+            color: rgba(241,245,249,0.5);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.4rem;
+        }
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #6366f1;
+        }
+        .stat-value.green { color: #10b981; }
+        .stat-value.yellow { color: #fbbf24; }
+        .game-card {
+            background: rgba(255,255,255,0.05);
+            border: 2px solid rgba(99,102,241,0.3);
+            border-radius: 24px;
+            padding: 2rem;
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        .timer-circle {
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            background: conic-gradient(#6366f1 0deg, rgba(255,255,255,0.1) 0deg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            font-size: 1.8rem;
+            font-weight: 800;
+            position: relative;
+        }
+        .timer-inner {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: #1e293b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: #f1f5f9;
+        }
+        .jumbled-word {
+            font-size: 3rem;
+            font-weight: 800;
+            letter-spacing: 0.3em;
+            color: #a855f7;
+            margin-bottom: 0.5rem;
+            word-break: break-all;
+        }
+        .word-hint {
+            color: rgba(241,245,249,0.5);
+            font-size: 0.9rem;
+            margin-bottom: 2rem;
+        }
+        .answer-form {
+            display: flex;
+            gap: 0.75rem;
+            flex-direction: column;
+            align-items: center;
+        }
+        .answer-input {
+            width: 100%;
+            max-width: 400px;
+            background: rgba(255,255,255,0.08);
+            border: 2px solid rgba(99,102,241,0.3);
+            border-radius: 14px;
+            padding: 1rem 1.5rem;
+            color: white;
+            font-size: 1.3rem;
+            font-weight: 600;
+            text-align: center;
+            outline: none;
+            transition: border-color 0.3s;
+            letter-spacing: 0.1em;
+            text-transform: lowercase;
+        }
+        .answer-input:focus {
+            border-color: #6366f1;
+        }
+        .answer-input.correct {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+        .answer-input.wrong {
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+        .submit-btn {
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            color: white;
+            border: none;
+            padding: 1rem 3rem;
+            border-radius: 14px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+            max-width: 400px;
+            transition: opacity 0.2s;
+        }
+        .submit-btn:hover { opacity: 0.9; }
+        .submit-btn:disabled {
+            background: rgba(100,116,139,0.4);
+            cursor: not-allowed;
+        }
+        .result-banner {
+            padding: 1rem 2rem;
+            border-radius: 14px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            display: none;
+            margin-top: 1rem;
+        }
+        .result-banner.correct {
+            background: rgba(16, 185, 129, 0.15);
+            border: 2px solid rgba(16, 185, 129, 0.4);
+            color: #10b981;
+            display: block;
+        }
+        .result-banner.wrong {
+            background: rgba(239, 68, 68, 0.15);
+            border: 2px solid rgba(239, 68, 68, 0.4);
+            color: #ef4444;
+            display: block;
+        }
+        .result-banner.timeout {
+            background: rgba(251, 191, 36, 0.15);
+            border: 2px solid rgba(251, 191, 36, 0.4);
+            color: #fbbf24;
+            display: block;
+        }
+        .next-btn {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            padding: 0.8rem 2.5rem;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 1rem;
+            width: 100%;
+            max-width: 400px;
+        }
+        .start-btn {
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            color: white;
+            border: none;
+            padding: 1.2rem 3rem;
+            border-radius: 16px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+            max-width: 350px;
+        }
+        .limit-reached-card {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(245, 158, 11, 0.1));
+            border: 2px solid rgba(251, 191, 36, 0.4);
+            border-radius: 24px;
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+        .limit-icon { font-size: 4rem; margin-bottom: 1rem; }
+        .limit-title { font-size: 1.8rem; font-weight: 800; color: #fbbf24; margin-bottom: 1rem; }
+        .limit-text { color: rgba(241, 245, 249, 0.8); line-height: 1.6; }
+        .info-box {
+            background: rgba(99,102,241,0.08);
+            border: 1px solid rgba(99,102,241,0.2);
+            border-radius: 16px;
+            padding: 1.2rem 1.5rem;
+            margin-bottom: 1.5rem;
+            font-size: 0.9rem;
+            color: rgba(241,245,249,0.7);
+            line-height: 1.6;
+        }
+        .info-box strong { color: #6366f1; }
+        .wins-progress {
+            background: rgba(255,255,255,0.08);
+            border-radius: 8px;
+            height: 10px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+        .wins-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1, #a855f7);
+            border-radius: 8px;
+            transition: width 0.4s ease;
+        }
+        #review-screen, #idle-screen, #playing-screen, #limit-screen { display: none; }
+        #review-screen.visible, #idle-screen.visible, #playing-screen.visible, #limit-screen.visible { display: block; }
+
+        .review-card {
+            background: rgba(255,255,255,0.05);
+            border: 2px solid rgba(99,102,241,0.3);
+            border-radius: 24px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+        }
+        .review-card h2 {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: #a855f7;
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+        .review-card .review-subtitle {
+            text-align: center;
+            color: rgba(241,245,249,0.6);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+        }
+        .review-content-block {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(99,102,241,0.15);
+            border-radius: 14px;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1rem;
+            color: rgba(241,245,249,0.88);
+            font-size: 0.95rem;
+            line-height: 1.75;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+        .review-content-block:last-of-type {
+            margin-bottom: 0;
+        }
+        .review-contents-list {
+            max-height: 420px;
+            overflow-y: auto;
+            margin-bottom: 1.5rem;
+        }
+        .review-empty {
+            text-align: center;
+            color: rgba(241,245,249,0.4);
+            padding: 2rem;
+            font-size: 0.95rem;
+        }
+        .continue-btn {
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            color: white;
+            border: none;
+            padding: 1.1rem 3rem;
+            border-radius: 16px;
+            font-size: 1.15rem;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+            max-width: 350px;
+            display: block;
+            margin: 0 auto;
+            transition: opacity 0.2s;
+        }
+        .continue-btn:hover { opacity: 0.9; }
+
+        @media (max-width: 600px) {
+            .navbar { padding: 0.5rem 1rem; }
+            .nav-brand { font-size: 1rem; }
+            .back-btn { padding: 0.35rem 0.8rem; font-size: 0.8rem; }
+
+            .container { padding: 0.6rem 0.75rem; }
+
+            .game-header { margin-bottom: 0.6rem; }
+            .game-header h1 { font-size: 1.4rem; margin-bottom: 0.2rem; }
+            .game-header p { font-size: 0.78rem; }
+
+            .stats-row { flex-direction: row; gap: 0.4rem; margin-bottom: 0.7rem; }
+            .stat-card { padding: 0.5rem 0.3rem; border-radius: 10px; min-width: unset; }
+            .stat-label { font-size: 0.62rem; margin-bottom: 0.2rem; }
+            .stat-value { font-size: 1.1rem; }
+            .stat-value[style*="font-size:1rem"] { font-size: 0.85rem !important; }
+
+            .info-box { padding: 0.7rem 0.85rem; margin-bottom: 0.7rem; font-size: 0.78rem; border-radius: 10px; line-height: 1.5; }
+
+            .game-card { padding: 1rem 0.85rem; border-radius: 16px; margin-bottom: 0.8rem; }
+
+            .timer-circle { width: 65px; height: 65px; font-size: 1.3rem; margin: 0 auto 0.8rem; }
+            .timer-inner { width: 50px; height: 50px; font-size: 1.2rem; }
+
+            .jumbled-word { font-size: 2rem; letter-spacing: 0.2em; margin-bottom: 0.3rem; }
+            .word-hint { font-size: 0.78rem; margin-bottom: 1rem; }
+
+            .answer-input { padding: 0.7rem 1rem; font-size: 1rem; border-radius: 10px; }
+            .submit-btn { padding: 0.7rem 1.5rem; font-size: 0.95rem; border-radius: 10px; }
+            .next-btn { padding: 0.6rem 1.5rem; font-size: 0.9rem; border-radius: 10px; margin-top: 0.6rem; }
+            .start-btn { padding: 0.9rem 2rem; font-size: 1rem; border-radius: 12px; }
+
+            .result-banner { padding: 0.6rem 1rem; font-size: 0.9rem; margin-top: 0.6rem; border-radius: 10px; }
+
+            .review-card { padding: 1rem 0.85rem; border-radius: 16px; margin-bottom: 0.8rem; }
+            .review-card h2 { font-size: 1.1rem; margin-bottom: 0.3rem; }
+            .review-card .review-subtitle { font-size: 0.78rem; margin-bottom: 0.8rem; }
+            .review-content-block { padding: 0.75rem 1rem; font-size: 0.82rem; max-height: 160px; margin-bottom: 0.6rem; border-radius: 10px; }
+            .review-contents-list { max-height: 300px; margin-bottom: 0.8rem; }
+            .continue-btn { padding: 0.8rem 2rem; font-size: 1rem; border-radius: 12px; }
+
+            .limit-reached-card { padding: 1.5rem 1rem; border-radius: 16px; }
+            .limit-icon { font-size: 2.5rem; margin-bottom: 0.6rem; }
+            .limit-title { font-size: 1.3rem; margin-bottom: 0.6rem; }
+            .limit-text { font-size: 0.85rem; }
+
+            .wins-progress { height: 7px; margin-top: 0.3rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">🔤 Jumble Words</div>
+        <a href="/minigames" class="back-btn">← Back</a>
+    </nav>
+
+    <div class="container">
+        <div class="game-header">
+            <h1>🔤 Jumble Words</h1>
+            <p>Unscramble the letters to earn G$ rewards!</p>
+        </div>
+
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-label">Today's Wins</div>
+                <div class="stat-value green" id="daily-wins">0</div>
+                <div class="wins-progress"><div class="wins-fill" id="wins-bar" style="width:0%"></div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Remaining</div>
+                <div class="stat-value" id="remaining-wins">10</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Per Correct</div>
+                <div class="stat-value yellow">5 G$</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Min. Withdraw</div>
+                <div class="stat-value" style="font-size:1rem; color:#10b981;">200 G$</div>
+            </div>
+        </div>
+
+        <div class="info-box">
+            <strong>How to play:</strong> A scrambled word will appear. Type the correct unscrambled word and submit before the timer runs out.
+            Earn <strong>5 G$</strong> for each correct answer. Maximum <strong>10 wins per day</strong>. 
+            Your winnings are added to your Play &amp; Earn balance (minimum withdrawal: <strong>200 G$</strong>).
+        </div>
+
+        <!-- Review Screen -->
+        <div id="review-screen" class="visible">
+            <div class="review-card">
+                <h2>📖 Review the Content</h2>
+                <p class="review-subtitle">Read and study the material below. The jumble words are taken from this content.</p>
+                <div class="review-contents-list" id="review-contents-list">
+                    <div class="review-empty">Loading content...</div>
+                </div>
+                <button class="continue-btn" onclick="goToPlay()">Continue to Play →</button>
+            </div>
+        </div>
+
+        <!-- Idle / Start Screen -->
+        <div id="idle-screen">
+            <div class="game-card">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">🎯</div>
+                <h2 style="font-size: 1.5rem; margin-bottom: 0.75rem;">Ready to Play?</h2>
+                <p style="color: rgba(241,245,249,0.6); margin-bottom: 2rem;">Each word gives you 30 seconds to answer. Good luck!</p>
+                <button class="start-btn" onclick="startGame()">Start Playing</button>
+            </div>
+        </div>
+
+        <!-- Playing Screen -->
+        <div id="playing-screen">
+            <div class="game-card">
+                <div class="timer-circle" id="timer-circle">
+                    <div class="timer-inner" id="timer-display">30</div>
+                </div>
+                <div class="jumbled-word" id="jumbled-display">- - - -</div>
+                <div class="word-hint" id="word-hint">Word length: ?</div>
+                <div class="answer-form">
+                    <input type="text" class="answer-input" id="answer-input"
+                        placeholder="Type your answer..."
+                        autocomplete="off" autocorrect="off" spellcheck="false"
+                        onkeydown="handleKeyDown(event)">
+                    <button class="submit-btn" id="submit-btn" onclick="submitAnswer()">Submit Answer</button>
+                    <div class="result-banner" id="result-banner"></div>
+                    <button class="next-btn" id="next-btn" onclick="nextWord()" style="display:none">Next Word →</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Limit Reached Screen -->
+        <div id="limit-screen">
+            <div class="limit-reached-card">
+                <div class="limit-icon">🏆</div>
+                <div class="limit-title">Daily Limit Reached!</div>
+                <p class="limit-text">
+                    You've completed all <strong>10 wins</strong> for today!<br><br>
+                    Come back tomorrow to earn more G$.<br><br>
+                    Your earnings have been added to your balance. You can withdraw when your balance reaches <strong>200 G$</strong>.
+                </p>
+                <a href="/minigames" style="display: inline-block; margin-top: 1.5rem; background: linear-gradient(135deg, #6366f1, #a855f7); color: white; padding: 0.8rem 2rem; border-radius: 12px; font-weight: 700; text-decoration: none;">Back to Games</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentWordId = null;
+        let timerInterval = null;
+        let timeLeft = 30;
+        let canSubmit = false;
+        let answered = false;
+
+        async function loadStatus() {
+            try {
+                const res = await fetch('/jumble/api/daily-status');
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('daily-wins').textContent = data.daily_wins;
+                    document.getElementById('remaining-wins').textContent = data.remaining;
+                    document.getElementById('wins-bar').style.width = (data.daily_wins / data.max_wins * 100) + '%';
+                    if (data.limit_reached) {
+                        showScreen('limit');
+                    }
+                }
+            } catch (e) {
+                console.error('Status error:', e);
+            }
+        }
+
+        function showScreen(name) {
+            ['review', 'idle', 'playing', 'limit'].forEach(s => {
+                document.getElementById(s + '-screen').classList.remove('visible');
+            });
+            document.getElementById(name + '-screen').classList.add('visible');
+        }
+
+        function goToPlay() {
+            showScreen('idle');
+        }
+
+        async function loadReviewContents() {
+            try {
+                const res = await fetch('/jumble/api/get-review-contents');
+                const data = await res.json();
+                const list = document.getElementById('review-contents-list');
+                if (data.success && data.contents && data.contents.length > 0) {
+                    list.innerHTML = data.contents.map(c =>
+                        `<div class="review-content-block">${escapeHtml(c.content_text)}</div>`
+                    ).join('');
+                } else {
+                    list.innerHTML = '<div class="review-empty">No review content available yet.</div>';
+                }
+            } catch (e) {
+                document.getElementById('review-contents-list').innerHTML =
+                    '<div class="review-empty">Could not load content. You can still continue to play.</div>';
+            }
+        }
+
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        async function startGame() {
+            await fetchNewWord();
+        }
+
+        async function nextWord() {
+            document.getElementById('next-btn').style.display = 'none';
+            document.getElementById('result-banner').className = 'result-banner';
+            document.getElementById('result-banner').textContent = '';
+            document.getElementById('answer-input').className = 'answer-input';
+            document.getElementById('answer-input').value = '';
+            await fetchNewWord();
+        }
+
+        async function fetchNewWord() {
+            try {
+                const res = await fetch('/jumble/api/get-word');
+                const data = await res.json();
+                if (!data.success) {
+                    if (data.limit_reached) {
+                        showScreen('limit');
+                    } else {
+                        alert(data.error || 'No words available. Check back later!');
+                    }
+                    return;
+                }
+                currentWordId = data.word_id;
+                document.getElementById('jumbled-display').textContent = data.jumbled.toUpperCase();
+                document.getElementById('word-hint').textContent = 'Word length: ' + data.length + ' letters';
+                document.getElementById('answer-input').disabled = false;
+                document.getElementById('answer-input').value = '';
+                document.getElementById('answer-input').focus();
+                document.getElementById('submit-btn').disabled = false;
+                answered = false;
+                canSubmit = true;
+                showScreen('playing');
+                startTimer(data.timer || 30);
+            } catch (e) {
+                alert('Error loading word. Please try again.');
+            }
+        }
+
+        function startTimer(seconds) {
+            clearInterval(timerInterval);
+            timeLeft = seconds;
+            updateTimerDisplay();
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                updateTimerDisplay();
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    if (!answered) {
+                        timeUp();
+                    }
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay() {
+            const el = document.getElementById('timer-display');
+            const circle = document.getElementById('timer-circle');
+            el.textContent = timeLeft;
+            const fraction = timeLeft / 30;
+            const deg = fraction * 360;
+            let color = '#6366f1';
+            if (timeLeft <= 10) color = '#ef4444';
+            else if (timeLeft <= 20) color = '#fbbf24';
+            circle.style.background = `conic-gradient(${color} ${deg}deg, rgba(255,255,255,0.08) ${deg}deg)`;
+        }
+
+        function timeUp() {
+            answered = true;
+            canSubmit = false;
+            document.getElementById('answer-input').disabled = true;
+            document.getElementById('submit-btn').disabled = true;
+            const banner = document.getElementById('result-banner');
+            banner.className = 'result-banner timeout';
+            banner.textContent = "⏱️ Time's up! Try the next word.";
+            document.getElementById('next-btn').style.display = 'block';
+        }
+
+        function handleKeyDown(e) {
+            if (e.key === 'Enter' && canSubmit && !answered) {
+                submitAnswer();
+            }
+        }
+
+        async function submitAnswer() {
+            if (!canSubmit || answered) return;
+            const answer = document.getElementById('answer-input').value.trim().toLowerCase();
+            if (!answer) {
+                alert('Please type your answer!');
+                return;
+            }
+            answered = true;
+            canSubmit = false;
+            clearInterval(timerInterval);
+            document.getElementById('submit-btn').disabled = true;
+            document.getElementById('answer-input').disabled = true;
+
+            try {
+                const res = await fetch('/jumble/api/submit-answer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ word_id: currentWordId, answer: answer })
+                });
+                const data = await res.json();
+                const banner = document.getElementById('result-banner');
+                const input = document.getElementById('answer-input');
+
+                if (!data.success) {
+                    if (data.limit_reached) {
+                        showScreen('limit');
+                        return;
+                    }
+                    banner.className = 'result-banner wrong';
+                    banner.textContent = data.error || 'Something went wrong.';
+                } else if (data.correct) {
+                    input.className = 'answer-input correct';
+                    banner.className = 'result-banner correct';
+                    banner.textContent = `✅ ${data.message} Balance: ${data.new_balance?.toFixed(2)} G$`;
+                    document.getElementById('daily-wins').textContent = data.daily_wins;
+                    document.getElementById('remaining-wins').textContent = data.max_wins - data.daily_wins;
+                    document.getElementById('wins-bar').style.width = (data.daily_wins / data.max_wins * 100) + '%';
+                    if (data.limit_reached) {
+                        setTimeout(() => showScreen('limit'), 2500);
+                        return;
+                    }
+                } else {
+                    input.className = 'answer-input wrong';
+                    banner.className = 'result-banner wrong';
+                    banner.textContent = `❌ ${data.message}`;
+                }
+                document.getElementById('next-btn').style.display = 'block';
+            } catch (e) {
+                alert('Error submitting answer. Please try again.');
+            }
+        }
+
+        loadStatus();
+        loadReviewContents();
+    </script>
+</body>
+</html>
