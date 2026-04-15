@@ -1,0 +1,1788 @@
+from flask import Flask, request, jsonify, render_template, session, redirect
+from blockchain import has_recent_ubi_claim, is_identity_verified, check_ubi_entitlement
+from analytics_service import analytics
+from routes import routes
+# Removed: from hour_bonus import (...)
+from learn_and_earn import init_learn_and_earn
+from web3 import Web3
+from datetime import datetime # Import datetime for session timestamp
+import os
+import logging
+import subprocess
+import sys
+import json
+import base64 as _b64
+
+from reloadly import init_reloadly
+from savings import init_savings
+
+
+from functools import wraps
+from time import time
+from flask_compress import Compress
+
+# Simple in-memory cache for frequently accessed data
+_cache = {}
+_cache_timestamps = {}
+CACHE_DURATION = 60  # 60 seconds
+
+def cached_response(duration=CACHE_DURATION):
+    """Decorator to cache API responses"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # Create cache key from function name and args
+            cache_key = f"{f.__name__}:{str(args)}:{str(kwargs)}"
+
+            # Check if cached and still valid
+            if cache_key in _cache:
+                if time() - _cache_timestamps.get(cache_key, 0) < duration:
+                    return _cache[cache_key]
+
+            # Execute function and cache result
+            result = f(*args, **kwargs)
+            _cache[cache_key] = result
+            _cache_timestamps[cache_key] = time()
+
+            # Limit cache size (keep only 100 most recent)
+            if len(_cache) > 100:
+                oldest_key = min(_cache_timestamps, key=_cache_timestamps.get)
+                del _cache[oldest_key]
+                del _cache_timestamps[oldest_key]
+
+            return result
+        return decorated_function
+    return decorator
+
+# Configure logging - reduced for production performance
+logging.basicConfig(level=logging.WARNING)  # Changed from INFO to WARNING
+logger = logging.getLogger(__name__)
+
+# Reduce werkzeug logging for health checks
+logging.getLogger('werkzeug').setLevel(logging.ERROR)  # Changed from WARNING to ERROR
+logging.getLogger('httpx').setLevel(logging.ERROR)  # Reduce httpx logging
+
+app = Flask(__name__, static_folder='static', static_url_path='/static')
+app.secret_key = os.environ.get('SESSION_SECRET') or os.environ.get('SECRET_KEY', 'your-secret-key-here')
+
+# Enable gzip compression
+compress = Compress()
+compress.init_app(app)
+
+# Configure session for better persistence
+from datetime import timedelta
+app.permanent_session_lifetime = timedelta(hours=24)  # 24 hour session lifetime
+app.config['SESSION_COOKIE_SECURE'] = True  # Use HTTPS for cookies
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_DOMAIN'] = None  # Allow cookies on all domains (including custom domains)
+
+# Memory optimization for Reserved VM (1 vCPU / 2 GiB RAM)
+app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024  # 8MB max file upload (reduced)
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Cache static files for 1 year
+
+# Performance optimization for low-resource deployment
+app.config['JSON_SORT_KEYS'] = False  # Reduce JSON processing overhead
+app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False  # Disable pretty printing for better performance
+app.config['TEMPLATES_AUTO_RELOAD'] = False  # Disable template auto-reload in production
+
+# Database connection pooling
+app.config['SQLALCHEMY_POOL_SIZE'] = 5
+app.config['SQLALCHEMY_POOL_TIMEOUT'] = 10
+app.config['SQLALCHEMY_POOL_RECYCLE'] = 3600
+app.config['SQLALCHEMY_MAX_OVERFLOW'] = 2
+
+# Removed: Initialize Reloadly clients and services
+# reloadly_client = None
+# currency_converter = None
+# reloadly_blockchain = None
+
+# Removed: initialize_reloadly function
+# def initialize_reloadly():
+#     global reloadly_client, currency_converter, reloadly_blockchain
+#     try:
+#         # Load environment variables
+#         reloadly_client_id = os.getenv("RELOADLY_CLIENT_ID")
+#         reloadly_client_secret = os.getenv("RELOADLY_CLIENT_SECRET")
+#         gooddollar_contract_address = os.getenv("GOODDOLLAR_CONTRACT_ADDRESS")
+#         celo_rpc_url = os.getenv("CELO_RPC_URL", 'https://forno.celo.org')
+#         chain_id = int(os.getenv("CHAIN_ID", 44787)) # Default to Alfajores if not set
+#         merchant_address = os.getenv("MERCHANT_ADDRESS")
+#         refund_key = os.getenv("REFUND_KEY")
+#         gd_usd_price = float(os.getenv("GD_USD_PRICE", 0.002)) # Default to $0.002 per G$
+#         forex_rates_path = os.getenv("DEFAULT_FX_JSON_PATH", "data/forex_rates.json")
+#
+#         # Initialize Reloadly Client for production (will work even without credentials using fallback data)
+#         reloadly_client = ReloadlyClient(reloadly_client_id, reloadly_client_secret, environment="production")
+#
+#         if reloadly_client.is_initialized:
+#             logger.info("✅ Reloadly API client initialized with credentials.")
+#         else:
+#             logger.warning("⚠️ Reloadly API client initialized with fallback data (no credentials).")
+#
+#         # Initialize Currency Converter
+#         try:
+#             currency_converter = CurrencyConverter()
+#             logger.info("✅ Currency converter initialized.")
+#         except Exception as cc_error:
+#             logger.warning(f"⚠️ Currency converter failed to initialize: {cc_error}")
+#             currency_converter = None
+#
+#         # Initialize Reloadly Blockchain service (optional)
+#         try:
+#             if all([merchant_address, refund_key, gooddollar_contract_address, celo_rpc_url]):
+#                 reloadly_blockchain = ReloadlyBlockchain()
+#                 logger.info("✅ Reloadly Blockchain service initialized.")
+#             else:
+#                 logger.warning("⚠️ Reloadly Blockchain service not initialized (missing config)")
+#                 reloadly_blockchain = None
+#         except Exception as rb_error:
+#             logger.warning(f"⚠️ Reloadly Blockchain service failed to initialize: {rb_error}")
+#             reloadly_blockchain = None
+#
+#         return True
+#
+#     except Exception as e:
+#         logger.error(f"❌ Error initializing Reloadly services: {e}")
+#         return False
+
+
+
+# Blockchain configuration for wallet balance checking
+CELO_RPC_URL = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')  # Default to Celo's public RPC
+# Use the main G$ token contract for balance checking
+GOODDOLLAR_CONTRACT_ADDRESS = os.getenv('GOODDOLLAR_CONTRACT', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
+
+# Global blockchain variables
+w3 = None
+gooddollar_contract = None
+
+# Initialize blockchain connection
+def initialize_blockchain():
+    """Initialize blockchain connection for wallet balance checking"""
+    global w3, gooddollar_contract
+    try:
+        from web3 import Web3
+
+        # Initialize Web3 connection
+        w3 = Web3(Web3.HTTPProvider(CELO_RPC_URL))
+
+        if not w3.is_connected():
+            logger.error("❌ Failed to connect to Celo network")
+            return False
+
+        logger.info("✅ Connected to Celo network")
+
+        # GoodDollar ERC20 ABI for balance checking
+        erc20_abi = [
+            {
+                "constant": True,
+                "inputs": [{"name": "_owner", "type": "address"}],
+                "name": "balanceOf",
+                "outputs": [{"name": "balance", "type": "uint256"}],
+                "type": "function"
+            },
+            {
+                "constant": True,
+                "inputs": [],
+                "name": "decimals",
+                "outputs": [{"name": "", "type": "uint8"}],
+                "type": "function"
+            },
+            {
+                "constant": True,
+                "inputs": [],
+                "name": "symbol",
+                "outputs": [{"name": "", "type": "string"}],
+                "type": "function"
+            },
+            {
+                "constant": True,
+                "inputs": [],
+                "name": "name",
+                "outputs": [{"name": "", "type": "string"}],
+                "type": "function"
+            }
+        ]
+
+        # Create GoodDollar contract instance
+        gooddollar_contract = w3.eth.contract(
+            address=Web3.to_checksum_address(GOODDOLLAR_CONTRACT_ADDRESS),
+            abi=erc20_abi
+        )
+
+        logger.info(f"✅ GoodDollar contract loaded: {GOODDOLLAR_CONTRACT_ADDRESS}")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Blockchain initialization error: {e}")
+        return False
+
+# Initialize smart contract system
+def initialize_smart_contract():
+    """Initialize smart contract system"""
+    try:
+        # Contract system temporarily disabled - using direct blockchain integration
+        logger.info("⚠️ Smart contract system disabled - using direct blockchain integration")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Smart contract initialization error: {e}")
+        return False
+
+# Initialize the blockchain connection when the app starts
+if not initialize_blockchain():
+    logger.warning("Blockchain initialization failed. Wallet balance features might not work.")
+
+# Initialize smart contract system
+if not initialize_smart_contract():
+    logger.warning("Smart contract system initialization failed. Contract features might not work.")
+
+# Removed: Initialize Reloadly services
+# if not initialize_reloadly():
+#     logger.warning("Reloadly services initialization failed. Top-up features might not work.")
+
+# Blockchain service removed - will be replaced with new smart contract integration
+
+# Register the routes blueprint FIRST (contains all API routes including /api/recent-daily-tasks)
+# This must be before any catch-all routes
+app.register_blueprint(routes)
+logger.info("✅ Routes blueprint registered with API endpoints")
+
+
+# Context processor: inject feature visibility into all templates (server-side, no flicker)
+_feature_visibility_cache = {"data": None, "expires_at": 0}
+
+@app.context_processor
+def inject_feature_visibility():
+    import time
+    global _feature_visibility_cache
+    now = time.time()
+    if _feature_visibility_cache["data"] and now < _feature_visibility_cache["expires_at"]:
+        return _feature_visibility_cache["data"]
+    try:
+        from supabase_client import get_supabase_client, safe_supabase_operation
+        supabase = get_supabase_client()
+        swap_visible = True
+        wallet_visible = True
+        savings_visible = True
+        if supabase:
+            result = safe_supabase_operation(
+                lambda: supabase.table('maintenance_settings')
+                    .select('feature_name,is_maintenance')
+                    .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_utility'])
+                    .execute(),
+                operation_name="context processor feature visibility"
+            )
+            topup_visible = True
+            giftcard_visible = True
+            utility_visible = True
+            if result and result.data:
+                for row in result.data:
+                    fn = row['feature_name']
+                    val = not row.get('is_maintenance', False)
+                    if fn == 'swap_feature':
+                        swap_visible = val
+                    elif fn == 'wallet_feature':
+                        wallet_visible = val
+                    elif fn == 'savings_feature':
+                        savings_visible = val
+                    elif fn == 'store_topup':
+                        topup_visible = val
+                    elif fn == 'store_giftcard':
+                        giftcard_visible = val
+                    elif fn == 'store_utility':
+                        utility_visible = val
+        flags = {"swap_visible": swap_visible, "wallet_visible": wallet_visible,
+                 "savings_visible": savings_visible,
+                 "topup_visible": topup_visible, "giftcard_visible": giftcard_visible,
+                 "utility_visible": utility_visible}
+        _feature_visibility_cache["data"] = flags
+        _feature_visibility_cache["expires_at"] = now + 15
+        return flags
+    except Exception:
+        return {"swap_visible": True, "wallet_visible": True, "savings_visible": True,
+                "topup_visible": True, "giftcard_visible": True, "utility_visible": True}
+
+# Register GoodMarket blueprint
+# Removed: from goodmarket.routes import goodmarket_bp
+# Removed: app.register_blueprint(goodmarket_bp, url_prefix='/goodmarket')
+
+# Initialize Telegram Task
+from telegram_task import init_telegram_task
+if not init_telegram_task(app):
+    logger.warning("⚠️ Telegram Task initialization failed")
+else:
+    logger.info("✅ Telegram Task initialized successfully")
+
+# Initialize Twitter Task
+from twitter_task import init_twitter_task
+if not init_twitter_task(app):
+    logger.warning("⚠️ Twitter Task initialization failed")
+else:
+    logger.info("✅ Twitter Task initialized successfully")
+
+# Initialize Discourse Task
+from discourse_task import init_discourse_task
+if not init_discourse_task(app):
+    logger.warning("⚠️ Discourse Task initialization failed")
+else:
+    logger.info("✅ Discourse Task initialized successfully")
+
+
+# Initialize News Feed first
+from news_feed import init_news_feed, news_feed_service
+init_news_feed(app)
+
+# Initialize Minigames System
+logger.info("🎮 Initializing Minigames system...")
+from minigames import init_minigames
+if init_minigames(app):
+    logger.info("✅ Minigames system initialized")
+else:
+    logger.error("❌ Minigames initialization failed")
+
+# Register Telegram bot blueprint
+from telegram_bot import telegram_bot
+app.register_blueprint(telegram_bot)
+logger.info("✅ Telegram bot blueprint registered")
+
+# Initialize G$ Savings
+logger.info("💰 Initializing G$ Savings system...")
+if init_savings(app):
+    logger.info("✅ G$ Savings initialized")
+else:
+    logger.error("❌ G$ Savings initialization failed")
+
+# Initialize Reloadly Store
+logger.info("🛒 Initializing Reloadly Store...")
+if init_reloadly(app):
+    logger.info("✅ Reloadly Store initialized")
+else:
+    logger.error("❌ Reloadly Store initialization failed")
+
+# Initialize Jumble Words System
+logger.info("🔤 Initializing Jumble Words system...")
+from jumble import init_jumble
+if init_jumble(app):
+    logger.info("✅ Jumble Words system initialized")
+else:
+    logger.error("❌ Jumble Words initialization failed")
+
+# Initialize Price Prediction System
+logger.info("📈 Initializing Price Prediction system...")
+try:
+    from price_prediction import init_price_prediction
+    init_price_prediction(app)
+    logger.info("✅ Price Prediction system initialized")
+except Exception as e:
+    logger.error(f"❌ Price Prediction initialization failed: {e}")
+
+# Initialize Community Stories System
+logger.info("🌟 Initializing Community Stories system...")
+from community_stories import init_community_stories
+if init_community_stories(app):
+    logger.info("✅ Community Stories system initialized")
+else:
+    logger.error("❌ Community Stories initialization failed")
+
+# Initialize Reward Configuration Service
+logger.info("💰 Initializing Reward Configuration Service...")
+try:
+    from reward_config_service import reward_config_service
+    logger.info("✅ Reward Configuration Service initialized")
+except Exception as e:
+    logger.error(f"❌ Reward Configuration Service initialization failed: {e}")
+
+# Initialize Referral Program system (at module level for gunicorn compatibility)
+logger.info("🎁 Initializing Referral Program system...")
+try:
+    from referral_program import referral_bp
+    app.register_blueprint(referral_bp)
+    logger.info("✅ Referral Program system ready")
+except Exception as e:
+    logger.warning(f"⚠️ Referral Program initialization failed: {e}")
+
+# Initialize Learn & Earn System at module level (required for gunicorn)
+logger.info("🎓 Initializing Learn & Earn system...")
+if init_learn_and_earn(app):
+    logger.info("✅ Learn & Earn system initialized")
+else:
+    logger.error("❌ Learn & Earn initialization failed")
+
+# Notification service removed - all references cleaned up
+
+
+
+
+@app.route("/health")
+def health_check():
+    """Lightweight health check for autoscale — no DB or blockchain calls"""
+    return jsonify({"status": "ok"}), 200
+
+@app.route("/")
+def index():
+    """Health check endpoint for deployment"""
+    return jsonify({
+        "status": "healthy",
+        "service": "GoodDollar Analytics Platform",
+        "version": "1.0.0"
+    }), 200
+
+@app.route("/login")
+def home():
+    return redirect("/", code=302)
+
+@app.route("/api")
+def api_status():
+    return jsonify({
+        "status": "online",
+        "message": "GoodDollar Analytics Platform API",
+        "version": "1.0.0",
+        "endpoints": [
+            "/api/analytics",
+            # Removed: "/api/hour-bonus/status",
+            "/api/gooddollar-balance",
+            "/api/forum/posts",
+            "/api/p2p/history",
+            "/api/learn-earn/history"
+        ]
+    })
+
+
+
+@app.route("/verify-ubi", methods=["POST"])
+def verify_ubi():
+    data = request.get_json()
+    wallet = data.get("wallet")
+    if not wallet:
+        return jsonify({"status": "error", "message": "⚠️ Wallet address required"}), 400
+
+    # Validate wallet format first
+    if not (len(wallet) == 42 and wallet.startswith("0x")):
+        result = {"status": "error", "message": "❌ Invalid wallet address format"}
+        analytics.track_verification_attempt(wallet, False)
+        return jsonify(result)
+
+    # Use actual blockchain verification
+    result = has_recent_ubi_claim(wallet)
+
+    if result["status"] == "success":
+        # Store wallet in session if verified
+        session["wallet_address"] = wallet
+        session["wallet"] = wallet # Keep this for backward compatibility if needed
+        session["verified"] = True
+        session["ubi_verified"] = True # Add this for clarity
+        session.permanent = True
+        analytics.track_verification_attempt(wallet, True)
+        analytics.track_user_session(wallet)
+
+        return jsonify({
+            "status": "success",
+            "message": result["message"],
+            "wallet": wallet,
+            "block_number": result.get("summary", {}).get("latest_activity", {}).get("block"),
+            "claim_amount": result.get("summary", {}).get("latest_activity", {}).get("amount", "N/A"),
+            "redirect_to": "/overview"  # Skip terms page, go directly to overview
+        })
+    else:
+        analytics.track_verification_attempt(wallet, False)
+        return jsonify({
+            "status": "error",
+            "message": result["message"],
+            "reason": "no_recent_claim"
+        }), 400
+
+@app.route("/api/faucet/gas", methods=["POST"])
+def faucet_gas():
+    """Proxy the GoodDollar topWallet faucet call server-side to avoid CORS
+    and to properly inspect the response body for errors."""
+    import requests as req_lib
+    data = request.get_json(silent=True) or {}
+    wallet = data.get("wallet", "").strip()
+    if not wallet or not (len(wallet) == 42 and wallet.startswith("0x")):
+        return jsonify({"ok": -1, "error": "Invalid wallet address"}), 400
+    try:
+        resp = req_lib.post(
+            "https://goodserver.gooddollar.org/verify/topWallet",
+            json={"chainId": 42220, "account": wallet},
+            timeout=15,
+            headers={"Content-Type": "application/json"}
+        )
+        body = resp.json()
+        ok_val = body.get("ok", -1)
+        if ok_val == -1:
+            error_msg = body.get("error", "Faucet declined request")
+            logging.warning(f"⚠️ GoodDollar faucet declined for {wallet}: {error_msg}")
+            return jsonify({"ok": -1, "error": error_msg})
+        logging.info(f"✅ GoodDollar faucet topped up gas for {wallet}")
+        return jsonify({"ok": 1})
+    except Exception as e:
+        logging.error(f"❌ Faucet proxy error for {wallet}: {e}")
+        return jsonify({"ok": -1, "error": str(e)})
+
+
+@app.route("/api/faucet/onchain", methods=["POST"])
+def faucet_onchain():
+    """On-chain fallback: use GAMES_KEY to call topWallet(user) on the GoodDollar
+    Faucet contract directly, bypassing the goodserver API rate-limits."""
+    from web3 import Web3
+    data = request.get_json(silent=True) or {}
+    wallet = data.get("wallet", "").strip()
+    if not wallet or not (len(wallet) == 42 and wallet.startswith("0x")):
+        return jsonify({"ok": -1, "error": "Invalid wallet address"}), 400
+
+    games_key = os.getenv("GAMES_KEY")
+    if not games_key:
+        logging.error("❌ GAMES_KEY not configured — on-chain faucet unavailable")
+        return jsonify({"ok": -1, "error": "On-chain faucet not configured"})
+
+    try:
+        w3 = Web3(Web3.HTTPProvider("https://forno.celo.org"))
+        if not w3.is_connected():
+            return jsonify({"ok": -1, "error": "RPC connection failed"})
+
+        games_key_clean = games_key.strip()
+        if not games_key_clean.startswith("0x"):
+            games_key_clean = "0x" + games_key_clean
+        payer = w3.eth.account.from_key(games_key_clean)
+
+        FAUCET = Web3.to_checksum_address("0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84")
+        user_addr = Web3.to_checksum_address(wallet)
+        # topWallet(address) selector: 0x3771dcf8
+        call_data = "0x3771dcf8" + "000000000000000000000000" + user_addr[2:].lower()
+
+        gas_price = w3.eth.gas_price
+        gas_est   = w3.eth.estimate_gas({"from": payer.address, "to": FAUCET, "data": call_data})
+        nonce     = w3.eth.get_transaction_count(payer.address)
+
+        tx = {
+            "from":     payer.address,
+            "to":       FAUCET,
+            "data":     call_data,
+            "gas":      int(gas_est * 1.2),
+            "gasPrice": gas_price,
+            "nonce":    nonce,
+            "chainId":  42220,
+        }
+        signed = w3.eth.account.sign_transaction(tx, games_key_clean)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        tx_hex = tx_hash.hex()
+        logging.info(f"✅ On-chain topWallet sent for {wallet}: {tx_hex}")
+        return jsonify({"ok": 1, "txHash": tx_hex})
+    except Exception as e:
+        err_str = str(e)
+        # "low toTop" means wallet already has enough CELO — treat as success
+        if "low toTop" in err_str or "lowtotop" in err_str.lower():
+            logging.info(f"ℹ️ On-chain topWallet skipped for {wallet}: wallet already above threshold")
+            return jsonify({"ok": 1, "skipped": True, "reason": "already_funded"})
+        logging.error(f"❌ On-chain faucet error for {wallet}: {e}")
+        return jsonify({"ok": -1, "error": err_str})
+
+
+@app.route("/api/ubi/check-entitlement", methods=["POST"])
+def ubi_check_entitlement():
+    data = request.get_json()
+    wallet = data.get("wallet", "").strip()
+    if not wallet or not (len(wallet) == 42 and wallet.startswith("0x")):
+        return jsonify({"success": False, "error": "Invalid wallet address"}), 400
+    result = check_ubi_entitlement(wallet)
+    return jsonify(result)
+
+
+
+@app.route("/dashboard")
+def dashboard():
+    wallet = session.get("wallet")
+    if not wallet or not session.get("verified"):
+        return redirect("/")
+
+    # Track page view and get dashboard data
+    analytics.track_page_view(wallet, "dashboard")
+    dashboard_data = analytics.get_dashboard_stats(wallet)
+
+    wc_project_id = os.environ.get("WALLETCONNECT_PROJECT_ID", "")
+    return render_template("dashboard.html", wallet=wallet, data=dashboard_data, wc_project_id=wc_project_id)
+
+@app.route("/overview")
+def overview():
+    wallet = session.get("wallet")
+    if not wallet or not session.get("verified"):
+        return redirect("/")
+
+    # Track page view and get analytics data
+    analytics.track_page_view(wallet, "overview")
+    overview_data = analytics.get_dashboard_stats(wallet)
+
+    return render_template("overview.html", wallet=wallet, data=overview_data)
+
+@app.route("/profile")
+def profile():
+    wallet = session.get("wallet")
+    if not wallet or not session.get("verified"):
+        return redirect("/")
+    analytics.track_page_view(wallet, "profile")
+    return render_template("profile.html", wallet=wallet)
+
+@app.route("/api/analytics")
+@cached_response(duration=30)  # Cache for 30 seconds
+def api_analytics():
+    wallet = session.get("wallet")
+    if not wallet or not session.get("verified"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    return jsonify(analytics.get_user_analytics(wallet))
+
+# Removed: /api/hour-bonus/status route
+# Removed: /api/hour-bonus/claim route
+# Removed: /api/hour-bonus/history route
+# Removed: /api/hour-bonus/system-status route
+
+@app.route("/api/gd-price", methods=["GET"])
+def get_gd_price():
+    """Fetch live GoodDollar price from CoinGecko in multiple currencies"""
+    import time as _time
+    cache_key = "gd_price_coingecko"
+    cached = _cache.get(cache_key)
+    if cached and _time.time() - _cache_timestamps.get(cache_key, 0) < 300:
+        return cached
+
+    try:
+        import requests as _req
+        vs_currencies = (
+            "usd,eur,gbp,jpy,aud,cad,chf,nzd,sgd,hkd,"
+            "php,ngn,idr,inr,thb,vnd,myr,pkr,bdt,mmk,"
+            "kes,ghs,tzs,ugx,zar,xof,mad,etb,egp,"
+            "brl,mxn,cop,ars,clp,pen,"
+            "try,aed,sar,ils,"
+            "cny,krw"
+        )
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids=gooddollar&vs_currencies={vs_currencies}"
+        resp = _req.get(url, timeout=10, headers={"Accept": "application/json"})
+        data = resp.json()
+        prices = data.get("gooddollar", {})
+
+        result = jsonify({"success": True, "prices": prices})
+        _cache[cache_key] = result
+        import time as _time2
+        _cache_timestamps[cache_key] = _time2.time()
+        return result
+    except Exception as e:
+        logger.error(f"CoinGecko price fetch error: {e}")
+        return jsonify({"success": False, "error": str(e), "prices": {}}), 500
+
+@app.route("/api/gooddollar-balance", methods=["GET"])
+def get_gooddollar_balance_api():
+    """Get GoodDollar balance for current user"""
+    wallet = session.get("wallet")
+    if not wallet or not session.get("verified"):
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+
+    try:
+        # Use blockchain.py get_gooddollar_balance function directly
+        from blockchain import get_gooddollar_balance as get_balance
+        result = get_balance(wallet)
+
+        if not result:
+            return jsonify({
+                "success": False,
+                "error": "Failed to fetch balance",
+                "balance_formatted": "Error loading"
+            }), 500
+
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"❌ Balance API error: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "balance_formatted": "Error loading"
+        }), 500
+
+@app.route("/api/balance/<wallet_address>", methods=["GET"])
+def get_balance_by_wallet(wallet_address):
+    """Get GoodDollar balance for specific wallet (used by overview page)"""
+    session_wallet = session.get("wallet")
+    if not session_wallet or not session.get("verified"):
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+
+    # Only allow getting balance for the authenticated user's wallet
+    if wallet_address != session_wallet:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+
+    try:
+        # Use blockchain.py get_gooddollar_balance function directly
+        from blockchain import get_gooddollar_balance as get_balance
+        result = get_balance(wallet_address)
+
+        if not result:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to fetch balance',
+                'balance_formatted': 'Error loading'
+            }), 500
+
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Balance API error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'balance_formatted': 'Error loading'
+        }), 500
+
+# Contract info route removed - will be replaced with new smart contract integration
+
+# Terms & Service route removed - no longer needed
+
+# Accept terms route removed - no longer needed
+
+# Decline terms route removed - no longer needed
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/")
+
+# API endpoints for dashboard functionality
+@app.route('/api/gooddollar-balance')
+def get_gooddollar_balance():
+    """Get GoodDollar balance for authenticated user"""
+    try:
+        wallet_address = session.get('wallet') or session.get('wallet_address')
+        if not wallet_address or not session.get('verified'):
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        # Use blockchain.py get_gooddollar_balance function directly
+        from blockchain import get_gooddollar_balance as get_balance
+        balance_result = get_balance(wallet_address)
+
+        return jsonify(balance_result)
+    except Exception as e:
+        logger.error(f"Balance API error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# Note: /api/news-feed routes are handled by news_feed.py via init_news_feed(app)
+
+# Community Forum module removed
+
+
+
+
+@app.route('/api/twitter-task/transaction-history')
+def get_twitter_task_transaction_history():
+    """Get user's Twitter task transaction history for dashboard integration"""
+    try:
+        wallet = session.get('wallet') or session.get('wallet_address')
+        verified = session.get('verified') or session.get('ubi_verified')
+
+        if not wallet or not verified:
+            return jsonify({
+                "success": True,
+                "transactions": [],
+                "total": 0
+            }), 200
+
+        limit = int(request.args.get('limit', 50))
+
+        logger.info(f"📋 Getting Twitter task history for {wallet[:8]}... (limit: {limit})")
+
+        from twitter_task.twitter_task import twitter_task_service
+
+        # Get transaction history
+        history = twitter_task_service.get_transaction_history(wallet, limit)
+
+        return jsonify(history)
+
+    except Exception as e:
+        logger.error(f"❌ Error getting Twitter task history: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "transactions": [],
+            "total": 0
+        }), 500
+
+@app.route('/learn-earn/quiz-history')
+def get_learn_earn_quiz_history():
+    """Get user's Learn & Earn quiz history for dashboard integration - ALL HISTORICAL DATA"""
+    try:
+        wallet = session.get('wallet') or session.get('wallet_address')
+        verified = session.get('verified') or session.get('ubi_verified')
+
+        if not wallet or not verified:
+            logger.warning(f"⚠️ Unauthorized Learn & Earn history request - no wallet/verification")
+            return jsonify({
+                "success": True,
+                "quiz_history": [],
+                "total": 0,
+                "message": "Not authenticated"
+            }), 200
+
+        limit = int(request.args.get('limit', 500))  # Default 500 records for comprehensive history
+
+        logger.info(f"📋 Getting ALL Learn & Earn history for {wallet[:8]}... (limit: {limit})")
+
+        from learn_and_earn.learn_and_earn import quiz_manager
+
+        # Get quiz history - NO DATE FILTERING, ALL HISTORICAL LOGS
+        history = quiz_manager.get_quiz_history(wallet, limit)
+
+        # Ensure history is a list
+        if not isinstance(history, list):
+            logger.error(f"❌ Quiz history is not a list: {type(history)}")
+            history = []
+
+        # Format history for dashboard display
+        formatted_history = []
+        for record in history:
+            try:
+                formatted_record = {
+                    'quiz_id': record.get('quiz_id'),
+                    'score': record.get('score'),
+                    'total_questions': record.get('total_questions'),
+                    'amount_g$': record.get('amount_g$'),
+                    'timestamp': record.get('timestamp'),
+                    'transaction_hash': record.get('transaction_hash'),
+                    'status': 'completed' if record.get('status') else 'failed',
+                    'reward_status': record.get('reward_status', 'completed'),
+                    'username': record.get('username', 'User')
+                }
+                formatted_history.append(formatted_record)
+            except Exception as format_error:
+                logger.error(f"❌ Error formatting quiz record: {format_error}")
+                continue
+
+        logger.info(f"✅ Found {len(formatted_history)} Learn & Earn records for {wallet[:8]}... (ALL TIME)")
+
+        # Log date range if there are records
+        if formatted_history:
+            dates = [r['timestamp'] for r in formatted_history if r.get('timestamp')]
+            if dates:
+                oldest_date = min(dates)
+                newest_date = max(dates)
+                logger.info(f"📅 Complete history range: {oldest_date} (oldest) to {newest_date} (newest)")
+
+        response_data = {
+            "success": True,
+            "quiz_history": formatted_history,
+            "total": len(formatted_history)
+        }
+
+        if formatted_history:
+            response_data["oldest_record"] = formatted_history[-1]['timestamp']
+            response_data["newest_record"] = formatted_history[0]['timestamp']
+
+        logger.info(f"✅ Returning Learn & Earn history response with {len(formatted_history)} records")
+        return jsonify(response_data), 200
+
+    except Exception as e:
+        logger.error(f"❌ Error getting Learn & Earn history: {e}")
+        import traceback
+        logger.error(f"🔍 Traceback: {traceback.format_exc()}")
+        return jsonify({
+            "success": True,
+            "quiz_history": [],
+            "total": 0,
+            "error": str(e)
+        }), 200
+
+@app.route('/api/unified-transaction-history')
+def get_unified_transaction_history():
+    """Get unified transaction history from all earning sources"""
+    try:
+        wallet = session.get('wallet') or session.get('wallet_address')
+        verified = session.get('verified') or session.get('ubi_verified')
+
+        if not wallet or not verified:
+            return jsonify({"success": True, "transactions": [], "total": 0}), 200
+
+        limit = int(request.args.get('limit', 100))
+        all_transactions = []
+
+        # 1. Daily Social Task (Twitter + Telegram)
+        try:
+            from twitter_task.twitter_task import twitter_task_service
+            from telegram_task.telegram_task import telegram_task_service
+            twitter_hist = twitter_task_service.get_transaction_history(wallet, 50)
+            telegram_hist = telegram_task_service.get_transaction_history(wallet, 50)
+            if twitter_hist.get('success') and twitter_hist.get('transactions'):
+                for tx in twitter_hist['transactions']:
+                    all_transactions.append({
+                        'type': 'daily_task',
+                        'source': 'Twitter',
+                        'icon': '🐦',
+                        'label': 'Daily Social Task (Twitter)',
+                        'amount': float(tx.get('reward_amount', 0)),
+                        'timestamp': tx.get('created_at') or tx.get('timestamp', ''),
+                        'status': tx.get('status', 'unknown'),
+                        'tx_hash': tx.get('transaction_hash') or tx.get('tx_hash'),
+                        'rejection_reason': tx.get('rejection_reason')
+                    })
+            if telegram_hist.get('success') and telegram_hist.get('transactions'):
+                for tx in telegram_hist['transactions']:
+                    all_transactions.append({
+                        'type': 'daily_task',
+                        'source': 'Telegram',
+                        'icon': '✈️',
+                        'label': 'Daily Social Task (Telegram)',
+                        'amount': float(tx.get('reward_amount', 0)),
+                        'timestamp': tx.get('created_at') or tx.get('timestamp', ''),
+                        'status': tx.get('status', 'unknown'),
+                        'tx_hash': tx.get('transaction_hash') or tx.get('tx_hash'),
+                        'rejection_reason': tx.get('rejection_reason')
+                    })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch daily task history: {e}")
+
+        # 2. Learn & Earn
+        try:
+            from learn_and_earn.learn_and_earn import quiz_manager
+            quiz_hist = quiz_manager.get_quiz_history(wallet, 100)
+            if isinstance(quiz_hist, list):
+                for rec in quiz_hist:
+                    all_transactions.append({
+                        'type': 'learn_earn',
+                        'source': 'Learn & Earn',
+                        'icon': '📚',
+                        'label': f"Learn & Earn - {rec.get('quiz_id', 'Quiz')}",
+                        'amount': float(rec.get('amount_g$', 0)),
+                        'timestamp': rec.get('timestamp', ''),
+                        'status': 'completed' if rec.get('status') else 'failed',
+                        'tx_hash': rec.get('transaction_hash'),
+                        'extra': f"Score: {rec.get('score', 0)}/{rec.get('total_questions', 0)}"
+                    })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch Learn & Earn history: {e}")
+
+        # 3. Minigames (direct game rewards)
+        try:
+            from supabase_client import supabase as sb
+            if sb:
+                mg_result = sb.table('minigame_rewards_log')\
+                    .select('*')\
+                    .eq('wallet_address', wallet)\
+                    .order('created_at', desc=True)\
+                    .limit(50)\
+                    .execute()
+                for tx in (mg_result.data or []):
+                    game = tx.get('game_type', 'minigame').replace('_', ' ').title()
+                    all_transactions.append({
+                        'type': 'minigame',
+                        'source': 'Play & Earn',
+                        'icon': '🎮',
+                        'label': f"Play & Earn - {game}",
+                        'amount': float(tx.get('reward_amount', 0)),
+                        'timestamp': tx.get('created_at', ''),
+                        'status': 'completed',
+                        'tx_hash': tx.get('transaction_hash')
+                    })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch minigame history: {e}")
+
+        # 3b. Minigames Play & Earn Withdrawals (Jumble Words, Crash Game, etc.)
+        try:
+            from supabase_client import supabase as sb
+            if sb:
+                wd_result = sb.table('minigame_withdrawals_log')\
+                    .select('*')\
+                    .eq('wallet_address', wallet)\
+                    .order('withdrawal_date', desc=True)\
+                    .limit(50)\
+                    .execute()
+                for tx in (wd_result.data or []):
+                    all_transactions.append({
+                        'type': 'minigame_withdrawal',
+                        'source': 'Play & Earn',
+                        'icon': '💸',
+                        'label': 'Play & Earn Withdrawal',
+                        'amount': float(tx.get('amount', 0)),
+                        'timestamp': tx.get('withdrawal_date', '') or tx.get('created_at', ''),
+                        'status': 'completed',
+                        'tx_hash': tx.get('tx_hash')
+                    })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch minigame withdrawal history: {e}")
+
+        # 4. Community Stories
+        try:
+            from community_stories.community_stories_service import community_stories_service
+            cs_result = community_stories_service.get_user_submissions(wallet)
+            for sub in (cs_result.get('submissions') or []):
+                status = sub.get('status', 'pending')
+                all_transactions.append({
+                    'type': 'community_story',
+                    'source': 'Community Stories',
+                    'icon': '📖',
+                    'label': 'Community Story Submission',
+                    'amount': float(sub.get('reward_amount', 0)) if status == 'approved' else 0,
+                    'timestamp': sub.get('submitted_at', ''),
+                    'status': status,
+                    'tx_hash': sub.get('tx_hash')
+                })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch community stories history: {e}")
+
+        # 5. Discourse Task
+        try:
+            from supabase_client import supabase as sb
+            if sb:
+                disc_result = sb.table('discourse_task_log')\
+                    .select('*')\
+                    .eq('wallet_address', wallet.lower())\
+                    .order('submitted_at', desc=True)\
+                    .limit(50)\
+                    .execute()
+                for row in (disc_result.data or []):
+                    status = row.get('status', 'pending')
+                    all_transactions.append({
+                        'type': 'discourse_task',
+                        'source': 'Discourse Task',
+                        'icon': '💬',
+                        'label': f"Discourse Task (@{row.get('discourse_username', 'unknown')})",
+                        'amount': float(row.get('reward_amount', 0)) if status == 'approved' else 0,
+                        'timestamp': row.get('submitted_at', ''),
+                        'status': status,
+                        'tx_hash': row.get('tx_hash')
+                    })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch discourse task history: {e}")
+
+        # 6. Reloadly Orders (mobile top-up, gift cards, utility bills)
+        try:
+            from reloadly.service import get_user_orders
+            reloadly_orders = get_user_orders(wallet, 50)
+            type_labels = {
+                'topup': ('📱', 'Mobile Top-Up (Reloadly)'),
+                'giftcard': ('🎁', 'Gift Card (Reloadly)'),
+                'utility': ('💡', 'Utility Bill (Reloadly)')
+            }
+            for order in reloadly_orders:
+                order_type = order.get('order_type', 'order')
+                icon, label = type_labels.get(order_type, ('🛒', f'Reloadly Order ({order_type})'))
+                status = order.get('status', 'unknown')
+                gd_amount = float(order.get('gd_amount', 0) or 0)
+                usd_amount = order.get('usd_amount', 0)
+                all_transactions.append({
+                    'type': 'reloadly',
+                    'source': 'GoodShop',
+                    'icon': icon,
+                    'label': label,
+                    'amount': gd_amount,
+                    'timestamp': order.get('created_at', ''),
+                    'status': status,
+                    'tx_hash': order.get('tx_hash'),
+                    'extra': f"${usd_amount} USD"
+                })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch Reloadly order history: {e}")
+
+        # 7. Daily Voucher Claims (from voucher_claims_log — has tx_hash + amount)
+        try:
+            from supabase_client import supabase as sb
+            if sb:
+                vcl_result = sb.table('voucher_claims_log')\
+                    .select('*')\
+                    .eq('wallet_address', wallet)\
+                    .order('claimed_at', desc=True)\
+                    .limit(50)\
+                    .execute()
+                # Track dates already covered by voucher_claims_log
+                vcl_dates = set()
+                for row in (vcl_result.data or []):
+                    vcl_dates.add(row.get('voucher_date', ''))
+                    all_transactions.append({
+                        'type': 'daily_voucher',
+                        'source': 'GoodMarket Voucher',
+                        'icon': '🎟️',
+                        'label': f"GoodMarket Voucher Claimed ({row.get('voucher_date', '')})",
+                        'amount': float(row.get('gd_amount') or 0),
+                        'timestamp': row.get('claimed_at', ''),
+                        'status': 'completed',
+                        'tx_hash': row.get('tx_hash')
+                    })
+                # Also include daily_voucher claims not yet in voucher_claims_log (older or no tx saved)
+                dv_result = sb.table('daily_voucher')\
+                    .select('*')\
+                    .eq('claimed_by', wallet)\
+                    .eq('is_claimed', True)\
+                    .order('claimed_at', desc=True)\
+                    .limit(50)\
+                    .execute()
+                for row in (dv_result.data or []):
+                    if row.get('voucher_date') not in vcl_dates:
+                        all_transactions.append({
+                            'type': 'daily_voucher',
+                            'source': 'GoodMarket Voucher',
+                            'icon': '🎟️',
+                            'label': f"GoodMarket Voucher Claimed ({row.get('voucher_date', '')})",
+                            'amount': 0,
+                            'timestamp': row.get('claimed_at', '') or row.get('voucher_date', ''),
+                            'status': 'completed',
+                            'tx_hash': None
+                        })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch daily voucher history: {e}")
+
+        # 8. NFT Mints (Achievement NFTs)
+        try:
+            from supabase_client import supabase as sb
+            if sb:
+                nft_mint_result = sb.table('achievement_nft_mints')\
+                    .select('*')\
+                    .eq('owner_wallet', wallet)\
+                    .order('minted_at', desc=True)\
+                    .limit(50)\
+                    .execute()
+                for row in (nft_mint_result.data or []):
+                    all_transactions.append({
+                        'type': 'nft_mint',
+                        'source': 'NFT Marketplace',
+                        'icon': '🏅',
+                        'label': f"NFT Minted - {row.get('quiz_name', row.get('quiz_id', 'Achievement'))}",
+                        'amount': 0,
+                        'timestamp': row.get('minted_at', '') or row.get('created_at', ''),
+                        'status': 'completed',
+                        'tx_hash': row.get('tx_hash'),
+                        'extra': f"Token #{row.get('token_id', '')} | Score: {row.get('score', 0)}/{row.get('total', 0)}"
+                    })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch NFT mint history: {e}")
+
+        # 9. NFT Burns
+        try:
+            from supabase_client import supabase as sb
+            if sb:
+                nft_burn_result = sb.table('nft_burn_history')\
+                    .select('*')\
+                    .eq('owner_wallet', wallet)\
+                    .order('burned_at', desc=True)\
+                    .limit(50)\
+                    .execute()
+                for row in (nft_burn_result.data or []):
+                    all_transactions.append({
+                        'type': 'nft_burn',
+                        'source': 'NFT Marketplace',
+                        'icon': '🔥',
+                        'label': f"NFT Burned - {row.get('quiz_name', 'Achievement')}",
+                        'amount': float(row.get('burn_amount_g', 0) or 0),
+                        'timestamp': row.get('burned_at', '') or row.get('created_at', ''),
+                        'status': 'completed',
+                        'tx_hash': row.get('reward_tx_hash') or row.get('burn_tx_hash'),
+                        'extra': f"Token #{row.get('token_id', '')}"
+                    })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch NFT burn history: {e}")
+
+        # 10. NFT Sales (as seller)
+        try:
+            from supabase_client import supabase as sb
+            if sb:
+                nft_sale_result = sb.table('nft_sale_history')\
+                    .select('*')\
+                    .eq('seller_wallet', wallet)\
+                    .order('sold_at', desc=True)\
+                    .limit(50)\
+                    .execute()
+                for row in (nft_sale_result.data or []):
+                    all_transactions.append({
+                        'type': 'nft_sale',
+                        'source': 'NFT Marketplace',
+                        'icon': '💎',
+                        'label': f"NFT Sold - {row.get('quiz_name', 'Achievement')}",
+                        'amount': float(row.get('price_g', 0) or 0),
+                        'timestamp': row.get('sold_at', '') or row.get('created_at', ''),
+                        'status': 'completed',
+                        'tx_hash': row.get('g_tx_hash') or row.get('nft_tx_hash'),
+                        'extra': f"Token #{row.get('token_id', '')}"
+                    })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch NFT sale history: {e}")
+
+        # 11. NFT Purchases (as buyer)
+        try:
+            from supabase_client import supabase as sb
+            if sb:
+                nft_buy_result = sb.table('nft_sale_history')\
+                    .select('*')\
+                    .eq('buyer_wallet', wallet)\
+                    .order('sold_at', desc=True)\
+                    .limit(50)\
+                    .execute()
+                for row in (nft_buy_result.data or []):
+                    all_transactions.append({
+                        'type': 'nft_purchase',
+                        'source': 'NFT Marketplace',
+                        'icon': '🛒',
+                        'label': f"NFT Purchased - {row.get('quiz_name', 'Achievement')}",
+                        'amount': float(row.get('price_g', 0) or 0),
+                        'timestamp': row.get('sold_at', '') or row.get('created_at', ''),
+                        'status': 'completed',
+                        'tx_hash': row.get('g_tx_hash') or row.get('nft_tx_hash'),
+                        'extra': f"Token #{row.get('token_id', '')}"
+                    })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch NFT purchase history: {e}")
+
+        # Sort all by timestamp (newest first)
+        def parse_ts(tx):
+            ts = tx.get('timestamp', '') or ''
+            return ts
+
+        all_transactions.sort(key=parse_ts, reverse=True)
+        all_transactions = all_transactions[:limit]
+
+        SPENDING_TYPES = {'reloadly', 'nft_purchase'}
+        total_earned = sum(
+            t['amount'] for t in all_transactions
+            if t.get('status') in ('approved', 'completed') and t.get('type') not in SPENDING_TYPES
+        )
+
+        return jsonify({
+            "success": True,
+            "transactions": all_transactions,
+            "total": len(all_transactions),
+            "total_earned": round(total_earned, 6)
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Error getting unified transaction history: {e}")
+        return jsonify({"success": False, "error": str(e), "transactions": [], "total": 0}), 500
+
+
+@app.route('/api/debug/session', methods=['GET'])
+def debug_session():
+    """Debug endpoint to check session status"""
+    try:
+        return jsonify({
+            'success': True,
+            'session_data': {
+                'wallet': session.get('wallet'),
+                'wallet_address': session.get('wallet_address'),
+                'verified': session.get('verified'),
+                'ubi_verified': session.get('ubi_verified'),
+                'username': session.get('username'),
+                'terms_accepted': session.get('terms_accepted'),
+                'permanent': session.permanent
+            }
+        })
+    except Exception as e:
+        logger.error(f"❌ Session debug error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# Forum like route is handled by community forum module
+
+# Community Forum endpoints removed
+
+
+_REFERRER_AMOUNT = 1000.0
+_REFEREE_AMOUNT = 500.0
+
+def _process_referral_disbursement(referral_blockchain_service, referral_service, referrer_wallet, referee_wallet, referral_code):
+    """Disburse referral rewards to referrer (1000 G$) and referee (500 G$)."""
+    try:
+        referrer_result = referral_blockchain_service.disburse_referral_reward_sync(
+            referrer_wallet, _REFERRER_AMOUNT, 'referrer')
+        referee_result = referral_blockchain_service.disburse_referral_reward_sync(
+            referee_wallet, _REFEREE_AMOUNT, 'referee')
+
+        referrer_status = 'completed' if referrer_result.get('success') else 'pending'
+        referee_status = 'completed' if referee_result.get('success') else 'pending'
+
+        referral_service.log_reward(referrer_wallet, _REFERRER_AMOUNT, 'referrer',
+                                    referral_code, referrer_result.get('tx_hash'), referrer_status)
+        referral_service.log_reward(referee_wallet, _REFEREE_AMOUNT, 'referee',
+                                    referral_code, referee_result.get('tx_hash'), referee_status)
+
+        if referrer_result.get('success') and referee_result.get('success'):
+            referral_service.update_referral_status(referee_wallet, 'completed')
+            referral_service.increment_referrer_stats(referrer_wallet, _REFERRER_AMOUNT)
+            logger.info(f"✅ Referral rewards disbursed: {referral_code} | referrer={referrer_wallet[:8]}...")
+        else:
+            referral_service.update_referral_status(referee_wallet, 'pending_disbursed', 'Insufficient balance')
+            logger.warning(f"⚠️ Referral reward pending disbursement for {referral_code}")
+    except Exception as e:
+        logger.error(f"❌ Referral disbursement error: {e}")
+
+
+@app.route('/verify-identity', methods=['POST'])
+def verify_identity():
+    """Handle identity verification with UBI validation"""
+    try:
+        data = request.get_json()
+        wallet_address = data.get('wallet_address', '').strip()
+        referral_code = data.get('referral_code', '').strip()
+
+        if not wallet_address:
+            return jsonify({'error': 'Wallet address is required'}), 400
+
+        # Validate wallet address format
+        if not Web3.is_address(wallet_address):
+            return jsonify({'error': 'Invalid wallet address format'}), 400
+
+        # Normalize to EIP-55 checksum format so MetaMask, WalletConnect,
+        # and manual paste all resolve to the SAME record in Supabase
+        try:
+            wallet_address = Web3.to_checksum_address(wallet_address)
+        except Exception:
+            return jsonify({'error': 'Could not normalize wallet address'}), 400
+
+        logger.info(f"🔐 Identity verification attempt for {wallet_address}")
+
+        # Check if user is already verified in the session
+        if session.get('verified') and session.get('wallet') == wallet_address:
+            logger.info(f"✅ User {wallet_address} already verified in session")
+            return jsonify({
+                'success': True,
+                'message': 'Already verified!',
+                'wallet': wallet_address,
+                'already_verified': True
+            })
+
+        # Verify signature to prove wallet ownership
+        signature = data.get('signature', '').strip()
+        login_message = data.get('message', '').strip()
+        if signature and login_message:
+            try:
+                from eth_account.messages import encode_defunct
+                from eth_account import Account as EthAccount
+                msg_obj = encode_defunct(text=login_message)
+                recovered = EthAccount.recover_message(msg_obj, signature=signature)
+                if recovered.lower() != wallet_address.lower():
+                    logger.warning(f"❌ Signature mismatch for {wallet_address}: recovered {recovered}")
+                    return jsonify({'success': False, 'error': 'Signature verification failed — wrong wallet?'}), 400
+                logger.info(f"✅ Signature verified for {wallet_address}")
+            except Exception as sig_err:
+                logger.warning(f"⚠️ Signature check error for {wallet_address}: {sig_err}")
+                return jsonify({'success': False, 'error': 'Invalid signature'}), 400
+        else:
+            logger.info(f"⚠️ No signature provided for {wallet_address} — rejecting login")
+            return jsonify({'success': False, 'error': 'Signature required to log in'}), 400
+
+        # ── NEW USER CHECK (before any DB write) ────────────────────────────────
+        # We must determine whether this wallet is brand-new to the platform
+        # BEFORE analytics.track_verification_attempt() creates the DB record,
+        # because referrals are only valid for first-time users.
+        is_new_user = False
+        try:
+            from supabase_client import get_supabase_client, safe_supabase_operation
+            _sb = get_supabase_client()
+            if _sb:
+                _existing = safe_supabase_operation(
+                    lambda: _sb.table('user_data')
+                        .select('wallet_address')
+                        .ilike('wallet_address', wallet_address)
+                        .limit(1)
+                        .execute(),
+                    operation_name="check new user for referral"
+                )
+                is_new_user = not (_existing and _existing.data)
+                logger.info(f"{'🆕 New' if is_new_user else '👤 Existing'} user detected: {wallet_address[:10]}...")
+        except Exception as _nu_err:
+            logger.warning(f"⚠️ Could not determine new-user status: {_nu_err}")
+
+        # ── EXTERNAL FACE VERIFICATION CHECK ────────────────────────────────────
+        # Check GoodDollar on-chain identity status BEFORE creating the DB record.
+        # This is used both for tracking attribution AND for referral validation.
+        fv_status = {}
+        try:
+            fv_status = is_identity_verified(wallet_address)
+        except Exception as fv_err:
+            logger.warning(f"⚠️ Could not check face verification: {fv_err}")
+
+        is_face_verified = fv_status.get('verified', False)
+
+        # Track verification attempt (GoodMarket access only, not face verification)
+        analytics.track_verification_attempt(wallet_address, True)
+
+        # Store in session with permanent flag
+        session.permanent = True
+        session['wallet'] = wallet_address
+        session['wallet_address'] = wallet_address
+        session['verified'] = True
+        session['ubi_verified'] = True
+        session['verification_time'] = datetime.now().isoformat()
+
+        # Record unverified visit or log face-verified status for attribution
+        try:
+            from supabase_client import supabase_logger as sb_logger
+            if not is_face_verified:
+                if sb_logger:
+                    sb_logger.record_unverified_visit(wallet_address)
+                    logger.info(f"📝 Unverified visitor recorded: {wallet_address[:10]}...")
+                session['ubi_verified'] = False
+            else:
+                logger.info(f"✅ User is already face-verified on GoodDollar: {wallet_address[:10]}...")
+        except Exception as attr_err:
+            logger.warning(f"⚠️ Could not record visit attribution: {attr_err}")
+
+        # ── REFERRAL PROCESSING ──────────────────────────────────────────────────
+        # Rules:
+        #  1. Referral only valid for NEW users (not yet in user_data)
+        #  2. Referral only valid if referee is NOT yet externally face-verified
+        #  3. Reward only disbursed after referee completes face verification
+        referral_warning = None
+        if referral_code:
+            try:
+                from referral_program.referral_service import referral_service as ref_svc
+                from referral_program.blockchain import referral_blockchain_service as ref_bc_svc
+
+                if not is_new_user:
+                    # Existing user — referral cannot apply
+                    logger.info(f"ℹ️ Referral ignored: {wallet_address[:8]}... is an existing user")
+                    referral_warning = "Referral rewards are only available for users joining the platform for the first time."
+                elif is_face_verified:
+                    # Already verified externally — referral cannot apply
+                    logger.info(f"ℹ️ Referral ignored: {wallet_address[:8]}... is already face-verified on GoodDollar")
+                    referral_warning = "Referral rewards are not applicable: your wallet is already verified on GoodDollar."
+                else:
+                    # Valid candidate — validate code and record referral
+                    validation = ref_svc.validate_referral_code(referral_code.upper())
+                    if validation.get('valid'):
+                        referrer_wallet = validation.get('referrer_wallet')
+                        record_result = ref_svc.record_referral(referral_code.upper(), wallet_address)
+                        if record_result.get('success'):
+                            logger.info(f"📋 Referral recorded: {referral_code} for {wallet_address[:8]}...")
+                            # Save referrer and referral code in user_data for this new user
+                            try:
+                                from supabase_client import supabase_logger as _sb_log
+                                if _sb_log:
+                                    _sb_log.save_referrer_wallet(
+                                        wallet_address, referrer_wallet, referral_code.upper()
+                                    )
+                            except Exception as _sr_err:
+                                logger.warning(f"⚠️ Could not save referral data: {_sr_err}")
+                            # Do NOT disburse yet — wait for face verification completion
+                            logger.info(f"⏳ Referral pending face verification: {referral_code}")
+                        elif record_result.get('already_exists'):
+                            logger.info(f"ℹ️ Referral already recorded for {wallet_address[:8]}...")
+                        else:
+                            logger.warning(f"⚠️ Could not record referral: {record_result.get('error')}")
+                    else:
+                        code_len = len(referral_code)
+                        if code_len < 8:
+                            referral_warning = f"Referral code \"{referral_code.upper()}\" looks incomplete ({code_len}/8 characters). Please check the full code and try again."
+                        else:
+                            referral_warning = f"Referral code \"{referral_code.upper()}\" was not recognized. Please check the code and try again."
+                        logger.warning(f"⚠️ Invalid referral code: {referral_code} — {validation.get('error')}")
+            except Exception as ref_err:
+                logger.warning(f"⚠️ Referral processing error in verify-identity: {ref_err}")
+        elif is_face_verified:
+            # No referral code submitted but user is face-verified — check for a
+            # previously recorded pending referral and disburse reward now.
+            # Use atomic claim to prevent double-disbursement with fv-callback.
+            try:
+                from referral_program.referral_service import referral_service as ref_svc
+                from referral_program.blockchain import referral_blockchain_service as ref_bc_svc
+                claimed = ref_svc.claim_pending_referral_for_disbursement(wallet_address)
+                if claimed.get('claimed'):
+                    referral_row = claimed.get('referral', {})
+                    referrer_wallet = referral_row.get('referrer_wallet')
+                    ref_code = referral_row.get('referral_code')
+                    if referrer_wallet and ref_code:
+                        logger.info(f"🔄 Pending referral claimed for {wallet_address[:8]}... — disbursing now")
+                        _process_referral_disbursement(ref_bc_svc, ref_svc, referrer_wallet, wallet_address, ref_code)
+                else:
+                    logger.info(f"ℹ️ No pending referral to claim for {wallet_address[:8]}... in verify-identity.")
+            except Exception as ref_err:
+                logger.warning(f"⚠️ Pending referral check error in verify-identity: {ref_err}")
+
+        logger.info(f"✅ Identity verification successful for {wallet_address}")
+
+        # Pre-warm the dashboard stats cache in the background so /overview loads fast
+        import threading as _threading
+        from analytics_service import analytics as _analytics
+        _threading.Thread(
+            target=_analytics.get_dashboard_stats,
+            args=(wallet_address,),
+            daemon=True
+        ).start()
+
+        response_data = {
+            'success': True,
+            'message': 'Identity verification successful!',
+            'wallet': wallet_address,
+            'ubi_verified': True,
+            'redirect_to': '/overview'
+        }
+        if referral_warning:
+            response_data['referral_warning'] = referral_warning
+        return jsonify(response_data)
+
+    except Exception as e:
+        logger.error(f"❌ Identity verification error: {e}")
+        return jsonify({'error': 'Verification failed'}), 500
+
+
+@app.route('/fv-callback')
+def fv_callback():
+    """Handle redirect back from GoodDollar face verification."""
+    raw_verified = request.args.get('verified', '')
+    if raw_verified:
+        try:
+            decoded = _b64.b64decode(raw_verified + '==').decode('utf-8').strip().lower()
+            is_verified_param = decoded  # 'true' o 'false'
+        except Exception:
+            is_verified_param = raw_verified.lower()
+    else:
+        is_verified_param = request.args.get('isVerified', 'false').lower()
+    wallet_address = request.args.get('wallet', '').strip()
+    reason = request.args.get('reason', '')
+    via_goodmarket = request.args.get('src', '') == 'goodmarket'
+
+    if is_verified_param == 'true' and wallet_address:
+        try:
+            wallet_address = Web3.to_checksum_address(wallet_address)
+        except Exception:
+            pass
+
+        # Trust GoodDollar's isVerified=true — set session immediately so the
+        # user is not kicked back to the login page.  On-chain propagation can
+        # lag behind by several seconds, so we do NOT block on the contract
+        # check here.  The claim button re-checks on-chain before sending any
+        # transaction, so it's safe to be optimistic here.
+        session.permanent = True
+        session['wallet'] = wallet_address
+        session['wallet_address'] = wallet_address
+        session['verified'] = True
+        session['verification_time'] = datetime.now().isoformat()
+
+        # GoodDollar already confirmed face verification via the callback URL —
+        # record the attribution immediately, regardless of on-chain propagation lag.
+        # This ensures ALL users who face-verify on GoodMarket are counted as
+        # "verified via GoodMarket" in the DB (verified_after_goodmarket = True).
+        logger.info(f"🔖 FV callback src=goodmarket: {via_goodmarket} for {wallet_address[:10]}...")
+        analytics.track_verification_attempt(wallet_address, True, face_verified=True)
+        analytics.track_user_session(wallet_address)
+
+        # Disburse any pending referral reward now that this user is face-verified.
+        # Use atomic claim to prevent double-disbursement if verify-identity fires concurrently.
+        try:
+            from referral_program.referral_service import referral_service as ref_svc
+            from referral_program.blockchain import referral_blockchain_service as ref_bc_svc
+            claimed = ref_svc.claim_pending_referral_for_disbursement(wallet_address)
+            if claimed.get('claimed'):
+                referral_row = claimed.get('referral', {})
+                referrer_wallet = referral_row.get('referrer_wallet')
+                ref_code = referral_row.get('referral_code')
+                if referrer_wallet and ref_code:
+                    logger.info(f"🎁 FV callback: disbursing pending referral {ref_code} for {wallet_address[:8]}...")
+                    _process_referral_disbursement(ref_bc_svc, ref_svc, referrer_wallet, wallet_address, ref_code)
+            else:
+                logger.info(f"ℹ️ FV callback: no pending referral to claim for {wallet_address[:8]}... (already processed or none).")
+        except Exception as ref_err:
+            logger.warning(f"⚠️ Referral disbursement error in fv-callback: {ref_err}")
+
+        # Do a quick on-chain check; if it already propagated, mark fully
+        # verified; otherwise flag as pending (claim button will re-check).
+        identity_result = is_identity_verified(wallet_address)
+        if identity_result.get('verified'):
+            session['ubi_verified'] = True
+            logger.info(f"✅ FV callback: {wallet_address} verified and logged in")
+            return redirect('/overview')
+        else:
+            session['ubi_verified'] = False
+            logger.warning(f"⚠️ FV callback: {wallet_address} — GoodDollar says verified but contract not yet updated; redirecting to overview with pending notice")
+            return redirect('/overview?fv_pending=1')
+
+    # GoodDollar reported failure — preserve any existing login and redirect
+    # back to overview if already logged in, otherwise go to homepage.
+    logger.warning(f"⚠️ FV callback: not verified — reason: {reason}")
+    existing_wallet = session.get('wallet')
+    if existing_wallet:
+        return redirect('/overview?fv_failed=1&reason=' + reason)
+    return redirect('/?fv_failed=1&reason=' + reason)
+
+
+# Notification endpoints removed - notification service is disabled
+
+# Community Forum post creation removed
+
+# Routes for username editing are in routes.py blueprint
+
+@app.route('/api/debug/database-status')
+def debug_database_status():
+    """Debug endpoint to check database connection and data fetching"""
+    try:
+        from supabase_client import get_supabase_client, supabase_enabled
+
+        status = {
+            "supabase_enabled": supabase_enabled,
+            "environment_vars": {
+                "SUPABASE_URL_exists": bool(os.getenv("SUPABASE_URL")),
+                "SUPABASE_ANON_KEY_exists": bool(os.getenv("SUPABASE_ANON_KEY"))
+            },
+            "connection_test": None,
+            "analytics_test": None
+        }
+
+        # Test connection
+        supabase = get_supabase_client()
+        if supabase:
+            try:
+                # Try a simple query
+                test_query = supabase.table("user_data").select("id").limit(1).execute()
+                status["connection_test"] = {
+                    "success": True,
+                    "message": "Database connection successful"
+                }
+            except Exception as conn_error:
+                status["connection_test"] = {
+                    "success": False,
+                    "error": str(conn_error)
+                }
+        else:
+            status["connection_test"] = {
+                "success": False,
+                "error": "Supabase client not initialized"
+            }
+
+        # Test analytics data fetch
+        try:
+            disbursement_stats = analytics._get_total_disbursements_stats()
+            status["analytics_test"] = {
+                "success": True,
+                "has_breakdown_formatted": "breakdown_formatted" in disbursement_stats,
+                "breakdown_categories": len(disbursement_stats.get("breakdown_formatted", {})),
+                "total_disbursed": disbursement_stats.get("total_g_disbursed", 0)
+            }
+        except Exception as analytics_error:
+            status["analytics_test"] = {
+                "success": False,
+                "error": str(analytics_error)
+            }
+
+        return jsonify(status)
+
+    except Exception as e:
+        logger.error(f"❌ Database status check error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/debug/task-data/<wallet_address>')
+def debug_task_data(wallet_address):
+    """Debug endpoint to check task completion data for specific user"""
+    try:
+        # Security check - only allow current session user or admins
+        session_wallet = session.get('wallet')
+        if not session_wallet or not session.get('verified'):
+            return jsonify({'error': 'Not authenticated'}), 401
+
+        if wallet_address != session_wallet:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        from supabase_client import get_supabase_client
+        supabase = get_supabase_client()
+
+        if not supabase:
+            return jsonify({'error': 'Database not available'})
+
+        # Get task completion logs
+        from task_completion.task_manager import task_manager
+        masked_wallet = task_manager._mask_wallet(wallet_address)
+
+        logger.info(f"🔍 Debug: Checking task data for {wallet_address}")
+        logger.info(f"🔍 Debug: Masked wallet: {masked_wallet}")
+
+        # Get task completions
+        completions = supabase.table('task_completion_log')\
+            .select('*')\
+            .eq('wallet_address', masked_wallet)\
+            .order('timestamp', desc=True)\
+            .execute()
+
+        # Get pending rewards
+        pending = supabase.table('task_pending_rewards')\
+            .select('*')\
+            .eq('wallet_address', wallet_address)\
+            .execute()
+
+        # Calculate total from completions
+        total_from_completions = 0
+        if completions.data:
+            total_from_completions = sum(float(c.get('reward_amount', 0)) for c in completions.data)
+
+        debug_data = {
+            'wallet_address': wallet_address,
+            'masked_wallet': masked_wallet,
+            'task_completions': {
+                'count': len(completions.data) if completions.data else 0,
+                'total_amount': total_from_completions,
+                'completions': completions.data[:10] if completions.data else []  # First 10
+            },
+            'pending_rewards': {
+                'count': len(pending.data) if pending.data else 0,
+                'data': pending.data
+            },
+            'sync_needed': total_from_completions > 0
+        }
+
+        logger.info(f"🔍 Debug results for {wallet_address[:8]}...")
+        logger.info(f"   Task completions: {debug_data['task_completions']['count']}")
+        logger.info(f"   Total from completions: {debug_data['task_completions']['total_amount']} G$")
+        logger.info(f"   Pending records: {debug_data['pending_rewards']['count']}")
+
+        return jsonify(debug_data)
+
+    except Exception as e:
+        logger.error(f"❌ Debug task data error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# Removed: All Reloadly Top-up Routes
+# Removed: @app.route("/topup")
+# Removed: def topup_page(): ...
+# Removed: @app.route("/treasury-deposit")
+# Removed: def treasury_deposit_page(): ...
+# Removed: @app.route("/api/operators/<country_code>")
+# Removed: def get_operators(country_code): ...
+# Removed: @app.route("/api/products/<int:operator_id>")
+# Removed: def get_products(operator_id): ...
+# Removed: @app.route("/api/merchant")
+# Removed: def get_merchant(): ...
+# Removed: @app.route("/api/quote", methods=["POST"])
+# Removed: def create_quote(): ...
+# Removed: @app.route("/purchase_topup", methods=["POST"])
+# Removed: def purchase_topup(): ...
+# Removed: @app.route("/api/payment-status/<order_id>")
+# Removed: def check_payment_status(order_id): ...
+# Removed: @app.route("/api/countries")
+# Removed: def get_countries(): ...
+# Removed: @app.route("/api/operators")
+# Removed: def get_all_operators(): ...
+# Removed: @app.route("/api/products")
+# Removed: def get_all_products(): ...
+# Removed: @app.route("/api/reloadly/test")
+# Removed: def test_reloadly_apis(): ...
+
+
+# Username functionality removed
+
+
+if __name__ == "__main__":
+    logger.info("🚀 Starting GoodDollar Analytics Platform...")
+
+    # Initialize Supabase logger first
+    # analytics.supabase_logger = supabase_logger # This line might be an issue if supabase_logger is not defined
+
+    # Initialize modules with feature toggles
+    ENABLE_HEAVY_FEATURES = True  # Force enable for P2P Trading
+
+    # Removed: Hourly Bonus system initialization
+    # if ENABLE_HEAVY_FEATURES:
+    #     from hour_bonus import init_hour_bonus
+    #     if init_hour_bonus(app):
+    #         logger.info("✅ Hourly Bonus system ready")
+    #     else:
+    #         logger.error("❌ Hourly Bonus system failed to initialize")
+    # else:
+    #     logger.info("⚠️ Heavy features disabled for performance")
+
+    # Learn & Earn is now initialized at module level (above) for gunicorn compatibility
+
+    port = int(os.environ.get("PORT", 5000))
+    logger.info(f"🌐 Starting Flask server on http://0.0.0.0:{port}")
+    logger.info(f"✅ Server is ready to accept connections")
+    logger.info(f"📡 Webview URL: https://{os.environ.get('REPL_SLUG', 'app')}.{os.environ.get('REPL_OWNER', 'replit')}.repl.co")
+
+    # Start Flask with threaded mode for better concurrent request handling
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True, use_reloader=False)
