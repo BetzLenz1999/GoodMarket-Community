@@ -1,0 +1,17 @@
+{
+  "name": "GoodMarket",
+  "short_name": "GoodMarket",
+  "description": "Learn & Earn with GoodDollar on Celo",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "/static/icons/goodmarket-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
