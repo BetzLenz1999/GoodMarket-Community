@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G$ Savings – GoodMarket</title>
+    <meta name="theme-color" content="#7c3aed">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Inter',sans-serif; background:linear-gradient(135deg,#0B0F2A 0%,#130D35 50%,#1A103D 100%); color:#e2e8f0; min-height:100vh; }
+
+        /* ── Navbar ── */
+        .navbar { background:rgba(11,15,42,0.92); border-bottom:1px solid rgba(255,255,255,0.07); padding:0 1.5rem; position:sticky; top:0; z-index:100; backdrop-filter:blur(20px); box-shadow:0 1px 24px rgba(0,0,0,0.35); }
+        .nav-container { max-width:1300px; margin:0 auto; display:flex; justify-content:space-between; align-items:center; height:56px; gap:.75rem; }
+        .logo { font-size:1.2rem; font-weight:800; color:#7c3aed; text-decoration:none; letter-spacing:-.5px; white-space:nowrap; flex-shrink:0; }
+        .nav-links { display:flex; gap:.1rem; align-items:center; flex-wrap:nowrap; overflow:hidden; }
+        .nav-links a { color:rgba(255,255,255,.55); text-decoration:none; font-weight:500; font-size:.875rem; white-space:nowrap; padding:.4rem .65rem; border-radius:8px; transition:color .2s,background .2s; }
+        .nav-links a:hover { color:#a78bfa; background:rgba(124,58,237,.1); }
+        .nav-links a.active { color:#fff; background:rgba(124,58,237,.18); font-weight:600; }
+        .nav-sep { width:1px; height:20px; background:rgba(255,255,255,.12); margin:0 .4rem; flex-shrink:0; }
+        .wallet-tag { background:rgba(124,58,237,.12); border:1px solid rgba(124,58,237,.28); border-radius:20px; padding:.28rem .8rem; font-weight:600; font-family:'Courier New',monospace; font-size:.8rem; color:#a78bfa; white-space:nowrap; flex-shrink:0; }
+        .logout-btn { background:rgba(239,68,68,.1)!important; border:1px solid rgba(239,68,68,.25)!important; color:#f87171!important; padding:.28rem .85rem!important; border-radius:20px!important; font-size:.85rem!important; white-space:nowrap!important; flex-shrink:0; }
+        .logout-btn:hover { background:rgba(239,68,68,.2)!important; }
+        @media(max-width:768px){ .navbar{padding:0 .75rem;} .nav-links{flex-wrap:wrap;gap:.15rem;justify-content:flex-end;overflow:visible;} .nav-links a{font-size:.78rem;padding:.28rem .5rem;} }
+
+        /* ── Layout ── */
+        .container { max-width:920px; margin:0 auto; padding:2rem 1.25rem 5rem; }
+        .page-header { margin-bottom:2rem; }
+        .page-title { font-size:1.8rem; font-weight:800; color:#fff; letter-spacing:-.5px; margin-bottom:.35rem; }
+        .page-subtitle { color:rgba(255,255,255,.45); font-size:.95rem; }
+
+        /* ── Cards ── */
+        .card { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:1.5rem; margin-bottom:1.25rem; }
+        .card-title { font-size:.72rem; font-weight:600; color:rgba(255,255,255,.35); letter-spacing:.1em; text-transform:uppercase; margin-bottom:1.25rem; }
+
+        /* ── Stats row ── */
+        .stats-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:1rem; margin-bottom:1.25rem; }
+        .stat-box { background:rgba(124,58,237,.07); border:1px solid rgba(124,58,237,.18); border-radius:12px; padding:1rem 1.1rem; }
+        .stat-label { font-size:.72rem; color:rgba(255,255,255,.4); margin-bottom:.3rem; }
+        .stat-value { font-size:1.15rem; font-weight:700; color:#e2e8f0; }
+        .stat-sub { font-size:.72rem; color:rgba(255,255,255,.3); margin-top:.15rem; }
+
+        /* ── Duration picker ── */
+        .dur-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(85px,1fr)); gap:.6rem; margin-bottom:1.25rem; }
+        .dur-btn { padding:.7rem .5rem; border-radius:10px; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.03); color:rgba(255,255,255,.55); font-weight:600; font-size:.8rem; cursor:pointer; transition:all .2s; text-align:center; }
+        .dur-btn:hover { border-color:rgba(124,58,237,.4); color:#a78bfa; }
+        .dur-btn.selected { background:rgba(124,58,237,.22); border-color:rgba(124,58,237,.6); color:#c4b5fd; }
+        .dur-btn .dur-label { font-size:.68rem; font-weight:400; color:rgba(255,255,255,.35); margin-top:.15rem; }
+
+        /* ── Form inputs ── */
+        .form-group { margin-bottom:1rem; }
+        .form-group label { display:block; font-size:.78rem; color:rgba(255,255,255,.45); margin-bottom:.45rem; }
+        .input-wrap { position:relative; }
+        .input-wrap input { width:100%; padding:.75rem 3.5rem .75rem 1rem; border-radius:10px; border:1px solid rgba(255,255,255,.1); background:rgba(0,0,0,.25); color:#e2e8f0; font-size:.95rem; outline:none; transition:border-color .2s; }
+        .input-wrap input:focus { border-color:rgba(124,58,237,.5); }
+        .input-suffix { position:absolute; right:.9rem; top:50%; transform:translateY(-50%); font-size:.8rem; color:rgba(255,255,255,.35); font-weight:600; }
+        .hint { font-size:.73rem; color:rgba(255,255,255,.3); margin-top:.35rem; }
+
+        /* ── Buttons ── */
+        .btn { padding:.8rem 1.5rem; border-radius:10px; font-weight:700; font-size:.9rem; border:none; cursor:pointer; transition:all .2s; }
+        .btn:disabled { opacity:.4; cursor:not-allowed; }
+        .btn-primary { background:linear-gradient(135deg,#7c3aed,#6d28d9); color:#fff; width:100%; box-shadow:0 4px 20px rgba(124,58,237,.35); }
+        .btn-primary:not(:disabled):hover { opacity:.9; transform:translateY(-1px); }
+        .btn-outline { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); color:rgba(255,255,255,.65); padding:.55rem 1.2rem; font-size:.82rem; }
+        .btn-outline:hover { background:rgba(255,255,255,.09); color:#fff; }
+        .btn-green { background:linear-gradient(135deg,#059669,#047857); color:#fff; }
+        .btn-green:not(:disabled):hover { opacity:.9; }
+
+        /* ── Alert ── */
+        .alert { border-radius:10px; padding:.9rem 1.1rem; margin-bottom:1rem; font-size:.875rem; line-height:1.55; display:none; }
+        .alert-info { background:rgba(99,102,241,.12); border:1px solid rgba(99,102,241,.3); color:#a5b4fc; }
+        .alert-success { background:rgba(16,185,129,.1); border:1px solid rgba(16,185,129,.25); color:#6ee7b7; }
+        .alert-error { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.25); color:#fca5a5; }
+        .alert-warn { background:rgba(245,158,11,.09); border:1px solid rgba(245,158,11,.22); color:#fcd34d; }
+
+        /* ── Deposits table ── */
+        .dep-list { display:flex; flex-direction:column; gap:.75rem; }
+        .dep-card { background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.07); border-radius:12px; padding:1rem 1.2rem; display:flex; flex-wrap:wrap; align-items:center; gap:.75rem; }
+        .dep-card.unlocked { border-color:rgba(16,185,129,.25); }
+        .dep-amount { font-size:1.05rem; font-weight:700; color:#e2e8f0; min-width:120px; }
+        .dep-meta { flex:1; min-width:160px; }
+        .dep-meta .row { font-size:.78rem; color:rgba(255,255,255,.45); margin-bottom:.15rem; }
+        .dep-meta .row span { color:#c4b5fd; font-weight:600; }
+        .dep-badge { padding:.25rem .7rem; border-radius:20px; font-size:.72rem; font-weight:700; }
+        .badge-locked { background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.25); color:#fcd34d; }
+        .badge-ready { background:rgba(16,185,129,.12); border:1px solid rgba(16,185,129,.25); color:#34d399; }
+        .badge-done { background:rgba(148,163,184,.08); border:1px solid rgba(148,163,184,.2); color:#94a3b8; }
+        .badge-bonus { background:rgba(124,58,237,.15); border:1px solid rgba(124,58,237,.3); color:#c4b5fd; font-size:.68rem; margin-left:.4rem; }
+
+        /* ── Steps ── */
+        .steps { list-style:none; display:flex; flex-direction:column; gap:.7rem; }
+        .step { display:flex; gap:.85rem; align-items:flex-start; }
+        .step-n { width:26px; height:26px; border-radius:50%; background:rgba(124,58,237,.2); border:1px solid rgba(124,58,237,.4); display:flex; align-items:center; justify-content:center; font-size:.72rem; font-weight:700; color:#a78bfa; flex-shrink:0; margin-top:2px; }
+        .step-t { font-size:.87rem; color:rgba(255,255,255,.68); line-height:1.55; }
+        .step-t strong { color:#c4b5fd; }
+
+        /* ── Bonus highlight ── */
+        .bonus-box { background:rgba(124,58,237,.07); border:1px solid rgba(124,58,237,.22); border-radius:12px; padding:1rem 1.2rem; display:flex; gap:.85rem; align-items:flex-start; }
+        .bonus-icon { font-size:1.4rem; flex-shrink:0; }
+        .bonus-text { font-size:.85rem; color:rgba(255,255,255,.65); line-height:1.55; }
+        .bonus-text strong { color:#c4b5fd; }
+
+        /* ── Spinner ── */
+        .spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.2); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:.4rem; }
+        @keyframes spin { to{transform:rotate(360deg);} }
+
+        /* ── Tabs ── */
+        .tabs { display:flex; gap:.5rem; margin-bottom:1.25rem; border-bottom:1px solid rgba(255,255,255,.08); padding-bottom:0; }
+        .tab-btn { padding:.6rem 1.1rem; border:none; background:none; color:rgba(255,255,255,.4); font-size:.875rem; font-weight:600; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; transition:color .2s,border-color .2s; }
+        .tab-btn.active { color:#a78bfa; border-bottom-color:#7c3aed; }
+        .tab-panel { display:none; }
+        .tab-panel.active { display:block; }
+
+        .divider { height:1px; background:rgba(255,255,255,.06); margin:1.25rem 0; }
+
+        .empty-state { text-align:center; padding:2.5rem 1rem; color:rgba(255,255,255,.3); font-size:.9rem; }
+    </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar">
+    <div class="nav-container">
+        <a href="/dashboard" class="logo">💰 GoodMarket</a>
+        <div class="nav-links">
+            <a href="/overview">Overview</a>
+            <a href="/dashboard">Dashboard</a>
+            {% if wallet_visible %}<a href="/wallet">Wallet</a>{% endif %}
+            {% if savings_visible %}<a href="/savings" class="active">Savings</a>{% endif %}
+            <a href="/profile">Profile</a>
+            <div class="nav-sep"></div>
+            {% if wallet and wallet != 'None' %}
+            <div class="wallet-tag">{{ wallet[:6] }}...{{ wallet[-4:] }}</div>
+            {% endif %}
+            <a href="/logout" class="logout-btn">Logout</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1 class="page-title">🏦 G$ Savings</h1>
+        <p class="page-subtitle">Lock your G$ and keep it safe — earn a bonus for long-term saves</p>
+    </div>
+
+    <!-- Contract Stats -->
+    <div class="stats-row" id="statsRow">
+        <div class="stat-box">
+            <div class="stat-label">Total Locked</div>
+            <div class="stat-value" id="statLocked">—</div>
+            <div class="stat-sub">G$ across all savers</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Reward Pool</div>
+            <div class="stat-value" id="statPool">—</div>
+            <div class="stat-sub">Available for bonuses</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Total Saves</div>
+            <div class="stat-value" id="statCount">—</div>
+            <div class="stat-sub">Deposits ever made</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Contract</div>
+            <div class="stat-value" style="font-size:.78rem; font-family:monospace; word-break:break-all;">
+                <a href="https://celoscan.io/address/{{ savings_contract }}" target="_blank" style="color:#a78bfa;">{{ savings_contract[:10] }}…</a>
+            </div>
+            <div class="stat-sub">Celo Mainnet · Verified</div>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('save')">💾 Save G$</button>
+        <button class="tab-btn" onclick="switchTab('deposits')">📋 My Saves</button>
+        <button class="tab-btn" onclick="switchTab('sponsor')">🤝 Sponsor Pool</button>
+        <button class="tab-btn" onclick="switchTab('info')">ℹ️ How It Works</button>
+    </div>
+
+    <!-- ── TAB: SAVE ── -->
+    <div class="tab-panel active" id="tab-save">
+        <div class="card">
+            <div class="card-title">Lock G$ into Savings</div>
+
+            <!-- Alert -->
+            <div id="saveAlert" class="alert"></div>
+
+            <!-- Step 1: Choose duration -->
+            <div class="form-group">
+                <label>1 · Choose Lock Duration</label>
+                <div class="dur-grid" id="durGrid">
+                    <div class="dur-btn" data-days="1" onclick="selectDuration(this)">1<div class="dur-label">Day</div></div>
+                    <div class="dur-btn" data-days="30" onclick="selectDuration(this)">30<div class="dur-label">Days</div></div>
+                    <div class="dur-btn" data-days="60" onclick="selectDuration(this)">60<div class="dur-label">Days</div></div>
+                    <div class="dur-btn" data-days="90" onclick="selectDuration(this)">90<div class="dur-label">Days</div></div>
+                    <div class="dur-btn selected" data-days="120" onclick="selectDuration(this)">120<div class="dur-label">Days</div></div>
+                    <div class="dur-btn" data-days="150" onclick="selectDuration(this)">150<div class="dur-label">Days</div></div>
+                    <div class="dur-btn" data-days="180" onclick="selectDuration(this)">180<div class="dur-label">Days</div></div>
+                    <div class="dur-btn" data-days="210" onclick="selectDuration(this)">210<div class="dur-label">Days</div></div>
+                    <div class="dur-btn" data-days="240" onclick="selectDuration(this)">240<div class="dur-label">Days</div></div>
+                    <div class="dur-btn" data-days="270" onclick="selectDuration(this)">270<div class="dur-label">Days</div></div>
+                    <div class="dur-btn" data-days="300" onclick="selectDuration(this)">300<div class="dur-label">Days</div></div>
+                    <div class="dur-btn" data-days="330" onclick="selectDuration(this)">330<div class="dur-label">Days</div></div>
+                    <div class="dur-btn" data-days="365" onclick="selectDuration(this)">365<div class="dur-label">Days (1yr)</div></div>
+                </div>
+            </div>
+
+            <!-- Step 2: Amount -->
+            <div class="form-group">
+                <label>2 · Enter Amount</label>
+                <div class="input-wrap">
+                    <input type="number" id="saveAmount" placeholder="e.g. 5000" min="1000" max="10000000" step="1" oninput="onAmountChange()">
+                    <span class="input-suffix">G$</span>
+                </div>
+                <div class="hint">Min: 1,000 G$ &nbsp;·&nbsp; Max: 10,000,000 G$</div>
+            </div>
+
+            <!-- Bonus notice -->
+            <div class="bonus-box" id="bonusNotice" style="display:none; margin-bottom:1rem;">
+                <div class="bonus-icon">🎁</div>
+                <div class="bonus-text" id="bonusNoticeText">
+                    You qualify for a bonus on withdrawal — paid from the community reward pool (if funded).
+                </div>
+            </div>
+
+            <!-- Summary -->
+            <div class="card" style="margin-bottom:1rem; background:rgba(0,0,0,.2); border-color:rgba(255,255,255,.06);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.6rem;">
+                    <span style="font-size:.82rem; color:rgba(255,255,255,.4);">Lock Amount</span>
+                    <span id="summaryAmount" style="font-weight:700; color:#e2e8f0;">— G$</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.6rem;">
+                    <span style="font-size:.82rem; color:rgba(255,255,255,.4);">Lock Duration</span>
+                    <span id="summaryDuration" style="font-weight:700; color:#e2e8f0;">120 days</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="font-size:.82rem; color:rgba(255,255,255,.4);">Unlocks On</span>
+                    <span id="summaryUnlocks" style="font-weight:700; color:#a78bfa;">—</span>
+                </div>
+            </div>
+
+            <!-- Action steps -->
+            <div id="actionStep1" style="display:block;">
+                <button class="btn btn-outline" onclick="doApprove()" id="approveBtn" style="width:100%; margin-bottom:.6rem;">
+                    <i class="fas fa-check-circle"></i> Step 1 — Approve G$ Spending
+                </button>
+                <button class="btn btn-primary" onclick="doSave()" id="saveBtn" disabled>
+                    <i class="fas fa-lock"></i> Step 2 — Lock & Save G$
+                </button>
+            </div>
+
+            <p style="font-size:.73rem; color:rgba(255,255,255,.25); text-align:center; margin-top:.85rem;">
+                Funds are locked until the unlock date. Only YOU can withdraw. GoodMarket cannot access your deposit.
+            </p>
+        </div>
+    </div>
+
+    <!-- ── TAB: MY SAVES ── -->
+    <div class="tab-panel" id="tab-deposits">
+        <div class="card">
+            <div class="card-title">My Active Saves</div>
+            <div id="depositsAlert" class="alert"></div>
+            <div id="depList" class="dep-list">
+                <div class="empty-state">Loading your saves…</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── TAB: SPONSOR POOL ── -->
+    <div class="tab-panel" id="tab-sponsor">
+        <div class="card">
+            <div class="card-title">Fund the Reward Pool</div>
+
+            <div class="bonus-box" style="margin-bottom:1.25rem;">
+                <div class="bonus-icon">🤝</div>
+                <div class="bonus-text">
+                    As a <strong>sponsor</strong>, your G$ goes directly into the community reward pool — used to pay tiered bonuses (<strong>1,000 – 10,000 G$</strong>) to long-term savers. Your contribution is permanently recorded on-chain.
+                </div>
+            </div>
+
+            <div id="sponsorAlert" class="alert"></div>
+
+            <div class="form-group">
+                <label>Amount to Contribute</label>
+                <div class="input-wrap">
+                    <input type="number" id="sponsorAmount" placeholder="e.g. 10000" min="1" step="1">
+                    <span class="input-suffix">G$</span>
+                </div>
+                <div class="hint">Any amount above 0 G$ is accepted.</div>
+            </div>
+
+            <button class="btn btn-outline" onclick="doPoolApprove()" id="poolApproveBtn" style="width:100%; margin-bottom:.6rem;">
+                <i class="fas fa-check-circle"></i> Step 1 — Approve G$ Spending
+            </button>
+            <button class="btn btn-primary" onclick="doFundPool()" id="poolFundBtn" disabled>
+                <i class="fas fa-hand-holding-heart"></i> Step 2 — Add to Reward Pool
+            </button>
+
+            <p style="font-size:.73rem; color:rgba(255,255,255,.25); text-align:center; margin-top:.85rem;">
+                Funds go directly into the <code style="color:#a78bfa;">fundRewardPool()</code> function on the smart contract. Only used for saver bonuses.
+            </p>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Current Reward Pool</div>
+            <div style="display:flex; align-items:center; gap:1rem;">
+                <div>
+                    <div style="font-size:1.6rem; font-weight:800; color:#c4b5fd;" id="sponsorPoolStat">—</div>
+                    <div style="font-size:.78rem; color:rgba(255,255,255,.35); margin-top:.2rem;">Available for saver bonuses</div>
+                </div>
+                <button class="btn btn-outline" onclick="loadSponsorStats()" style="font-size:.78rem; padding:.4rem .9rem;">
+                    <i class="fas fa-rotate"></i> Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── TAB: INFO ── -->
+    <div class="tab-panel" id="tab-info">
+        <div class="card">
+            <div class="card-title">What is G$ Savings?</div>
+            <ul class="steps">
+                <li class="step">
+                    <div class="step-n">1</div>
+                    <div class="step-t"><strong>Lock your G$</strong> for a fixed period — from 1 day up to 1 year. Your tokens go directly into a smart contract on the Celo blockchain.</div>
+                </li>
+                <li class="step">
+                    <div class="step-n">2</div>
+                    <div class="step-t"><strong>Funds are frozen</strong> for the duration you chose. No one — not even GoodMarket — can touch them. Only your own wallet can withdraw.</div>
+                </li>
+                <li class="step">
+                    <div class="step-n">3</div>
+                    <div class="step-t"><strong>After the lock ends</strong>, click "Withdraw" on your save. Your exact G$ (plus any bonus) is returned straight to your wallet.</div>
+                </li>
+                <li class="step">
+                    <div class="step-n">★</div>
+                    <div class="step-t"><strong>Short-term bonus:</strong> Lock for exactly <strong>1 day</strong> (any amount ≥ 1,000 G$) and earn <strong>+10 G$</strong> on withdrawal — paid from the reward pool if funded.</div>
+                </li>
+                <li class="step">
+                    <div class="step-n">★</div>
+                    <div class="step-t"><strong>Long-term bonus:</strong> Save ≥ 10,000 G$ for ≥ 150 days and earn a tiered bonus — <strong>1,000 G$</strong> (10K–99K), <strong>2,500 G$</strong> (100K–499K), or <strong>10,000 G$</strong> (500K–10M) — paid from the reward pool if funded.</div>
+                </li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Lock Durations & Limits</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:.6rem; font-size:.85rem;">
+                <div style="color:rgba(255,255,255,.4);">Minimum deposit</div><div style="font-weight:600; color:#c4b5fd;">1,000 G$</div>
+                <div style="color:rgba(255,255,255,.4);">Maximum deposit</div><div style="font-weight:600; color:#c4b5fd;">10,000,000 G$</div>
+                <div style="color:rgba(255,255,255,.4);">Shortest lock</div><div style="font-weight:600; color:#c4b5fd;">1 day</div>
+                <div style="color:rgba(255,255,255,.4);">Longest lock</div><div style="font-weight:600; color:#c4b5fd;">365 days (1 year)</div>
+                <div style="color:rgba(255,255,255,.4);">Short-term bonus (≥1,000 G$ + 1 day)</div><div style="font-weight:600; color:#34d399;">+10 G$</div>
+                <div style="color:rgba(255,255,255,.4);">Long-term tier 1 (10K–99K G$ + ≥150d)</div><div style="font-weight:600; color:#34d399;">+1,000 G$</div>
+                <div style="color:rgba(255,255,255,.4);">Long-term tier 2 (100K–499K G$ + ≥150d)</div><div style="font-weight:600; color:#34d399;">+2,500 G$</div>
+                <div style="color:rgba(255,255,255,.4);">Long-term tier 3 (500K–10M G$ + ≥150d)</div><div style="font-weight:600; color:#34d399;">+10,000 G$</div>
+                <div style="color:rgba(255,255,255,.4);">Early withdrawal</div><div style="font-weight:600; color:#f87171;">Not allowed</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Smart Contract Security</div>
+            <ul class="steps">
+                <li class="step">
+                    <div class="step-n"><i class="fas fa-shield-halved" style="font-size:.65rem;"></i></div>
+                    <div class="step-t">Only the depositing wallet can withdraw — <strong>not the platform, not anyone else</strong>.</div>
+                </li>
+                <li class="step">
+                    <div class="step-n"><i class="fas fa-lock" style="font-size:.65rem;"></i></div>
+                    <div class="step-t">The contract has <strong>no owner and no admin controls</strong>. Reward pool funds can never be withdrawn by anyone — only used to pay saver bonuses.</div>
+                </li>
+                <li class="step">
+                    <div class="step-n"><i class="fas fa-eye" style="font-size:.65rem;"></i></div>
+                    <div class="step-t">All transactions are publicly visible on <a href="https://celoscan.io/address/{{ savings_contract }}" target="_blank" style="color:#a78bfa;">CeloScan</a>.</div>
+                </li>
+            </ul>
+
+            <div class="divider"></div>
+
+            <div style="font-size:.82rem; color:rgba(255,255,255,.35); line-height:1.6;">
+                <strong style="color:rgba(255,255,255,.5);">Want to sponsor the reward pool?</strong><br>
+                Any wallet can call <code style="color:#a78bfa;">fundRewardPool(amount)</code> on the contract to add G$ for bonuses.
+                Sponsors are publicly visible on-chain. Contact us on Telegram or Discourse to be featured.
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+<script>
+    const WALLET = "{{ wallet }}";
+    const SAVINGS_CONTRACT = "{{ savings_contract }}";
+    const GD_CONTRACT = "{{ gd_contract }}";
+    const CHAIN_ID = {{ chain_id }};
+    const CELO_RPC = "https://forno.celo.org";
+    window.isCustodialMode = {{ (login_method == 'custodial') | tojson }};
+
+    // ── Custodial helper: encode calldata client-side, sign server-side ──
+    async function custodialTx(toAddr, abiFragment, args, alertId) {
+        const iface = new ethers.Interface([abiFragment]);
+        const fnName = abiFragment.match(/function (\w+)/)[1];
+        const data = iface.encodeFunctionData(fnName, args);
+        const res = await fetch('/api/custodial/sign-tx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to: toAddr, data, value: '0x0', chain_id: CHAIN_ID })
+        });
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error || 'Server signing failed');
+        return d.tx_hash;
+    }
+
+    const SAVINGS_ABI = [
+        "function depositSavings(uint256 amount, uint256 lockDays) external",
+        "function withdraw(uint256 depositId) external",
+        "function fundRewardPool(uint256 amount) external",
+        "function getUserDepositIds(address user) external view returns (uint256[])",
+        "function getDeposit(uint256 depositId) external view returns (address,uint256,uint256,uint256,uint256,bool,bool,bool,bool,uint256)",
+        "function getContractStats() external view returns (uint256,uint256,uint256,uint256)",
+        "function getBonusAmount(uint256 amount, uint256 lockDays) external pure returns (uint256)",
+        "event Saved(address indexed user, uint256 indexed depositId, uint256 amount, uint256 lockDays, uint256 unlocksAt)",
+        "event Withdrawn(address indexed user, uint256 indexed depositId, uint256 amount, uint256 timestamp)",
+    ];
+
+    const ERC20_ABI = [
+        "function balanceOf(address owner) view returns (uint256)",
+        "function allowance(address owner, address spender) view returns (uint256)",
+        "function approve(address spender, uint256 amount) returns (bool)",
+    ];
+
+    let selectedDays = 120;
+
+    // ── Tabs ──
+    function switchTab(name) {
+        document.querySelectorAll('.tab-btn').forEach((b,i) => {
+            const tabs = ['save','deposits','sponsor','info'];
+            b.classList.toggle('active', tabs[i] === name);
+        });
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        document.getElementById('tab-' + name).classList.add('active');
+        if (name === 'deposits') loadDeposits();
+    }
+
+    // ── Duration picker ──
+    function selectDuration(el) {
+        document.querySelectorAll('.dur-btn').forEach(b => b.classList.remove('selected'));
+        el.classList.add('selected');
+        selectedDays = parseInt(el.dataset.days);
+        updateSummary();
+        checkBonusEligibility();
+    }
+
+    function updateSummary() {
+        const amt = parseFloat(document.getElementById('saveAmount').value) || 0;
+        document.getElementById('summaryAmount').textContent = amt > 0 ? amt.toLocaleString() + ' G$' : '— G$';
+        document.getElementById('summaryDuration').textContent = selectedDays + ' day' + (selectedDays > 1 ? 's' : '');
+        if (amt > 0) {
+            const d = new Date();
+            d.setDate(d.getDate() + selectedDays);
+            document.getElementById('summaryUnlocks').textContent = d.toDateString();
+        } else {
+            document.getElementById('summaryUnlocks').textContent = '—';
+        }
+    }
+
+    function onAmountChange() {
+        updateSummary();
+        checkBonusEligibility();
+    }
+
+    function checkBonusEligibility() {
+        const amt = parseFloat(document.getElementById('saveAmount').value) || 0;
+        const notice = document.getElementById('bonusNotice');
+        const noticeText = document.getElementById('bonusNoticeText');
+
+        // Short-term: exactly 1-day lock, any deposit >= 1,000 G$
+        if (selectedDays === 1 && amt >= 1000) {
+            noticeText.innerHTML = `You qualify for the <strong>+10 G$ short-term bonus</strong>! Locking for 1 day earns 10 G$ on withdrawal — paid from the community reward pool (if funded).`;
+            notice.style.display = 'flex';
+            return;
+        }
+
+        // Long-term: >= 150 days and >= 10,000 G$
+        if (selectedDays >= 150 && amt >= 10000) {
+            let bonusAmt, range;
+            if (amt >= 500000) {
+                bonusAmt = '10,000 G$'; range = '500,000 – 10,000,000 G$';
+            } else if (amt >= 100000) {
+                bonusAmt = '2,500 G$'; range = '100,000 – 499,999 G$';
+            } else {
+                bonusAmt = '1,000 G$'; range = '10,000 – 99,999 G$';
+            }
+            noticeText.innerHTML = `You qualify for the <strong>+${bonusAmt} long-term bonus</strong>! Depositing ${range} for ≥150 days earns this bonus on withdrawal — paid from the community reward pool (if funded).`;
+            notice.style.display = 'flex';
+            return;
+        }
+
+        notice.style.display = 'none';
+    }
+
+    // ── Wallet helpers ──
+    class WCEthersShim {
+        constructor(wcClient, wcSession, account) {
+            this._sc = wcClient;
+            this._session = wcSession;
+            this._account = account;
+        }
+        async request({ method, params }) {
+            if (method === 'eth_accounts' || method === 'eth_requestAccounts') return [this._account];
+            if (method === 'eth_chainId') return '0xa4ec';
+            if (method === 'net_version') return '42220';
+            return this._sc.request({
+                topic: this._session.topic,
+                chainId: 'eip155:42220',
+                request: { method, params: params || [] }
+            });
+        }
+    }
+
+    // Handles EIP-5749 multi-wallet: prefer MetaMask from providers[] array
+    function _getEthProvider() {
+        if (!window.ethereum) return null;
+        if (window.ethereum.providers && window.ethereum.providers.length) {
+            const mm = window.ethereum.providers.find(p => p.isMetaMask && !p.isBraveWallet);
+            if (mm) return mm;
+            return window.ethereum.providers[0];
+        }
+        return window.ethereum;
+    }
+
+    async function getSigner() {
+        const ep = _getEthProvider();
+        if (ep) {
+            const accounts = await ep.request({ method: 'eth_requestAccounts' });
+            const active = (accounts && accounts[0] || '').toLowerCase();
+            if (active && active !== WALLET.toLowerCase()) {
+                const walletName = ep.isMetaMask ? 'MetaMask' : ep.isTrust ? 'Trust Wallet' : 'your wallet';
+                throw new Error(
+                    'Wrong account selected in ' + walletName + '. Please switch to ' +
+                    WALLET.slice(0,6) + '…' + WALLET.slice(-4) +
+                    ' and try again.'
+                );
+            }
+            const provider = new ethers.BrowserProvider(ep);
+            return await provider.getSigner();
+        }
+        if (window._wcSignClient && window._wcSession) {
+            const shim = new WCEthersShim(window._wcSignClient, window._wcSession, WALLET);
+            const provider = new ethers.BrowserProvider(shim);
+            return await provider.getSigner();
+        }
+        throw new Error('No wallet connected. Install MetaMask or scan the QR code below to connect via WalletConnect.');
+    }
+
+    // ── Approve ──
+    async function doApprove() {
+        const amtStr = document.getElementById('saveAmount').value.trim();
+        const amt = parseFloat(amtStr);
+        if (!amtStr || isNaN(amt) || amt < 1000 || amt > 10000000) {
+            showAlert('saveAlert', 'error', '⚠️ Enter a valid amount (1,000–10,000,000 G$).');
+            return;
+        }
+
+        const btn = document.getElementById('approveBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Approving…';
+
+        try {
+            const amtWei = ethers.parseUnits(amtStr, 18);
+
+            if (window.isCustodialMode) {
+                showAlert('saveAlert', 'info', '<span class="spinner"></span> Approving G$ spending server-side…');
+                const txHash = await custodialTx(GD_CONTRACT,
+                    "function approve(address spender, uint256 amount) returns (bool)",
+                    [SAVINGS_CONTRACT, amtWei]);
+                showAlert('saveAlert', 'success',
+                    `✅ Approved! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View ↗</a><br>Now click "Lock & Save G$".`);
+                document.getElementById('saveBtn').disabled = false;
+                btn.innerHTML = '<i class="fas fa-check-circle"></i> Approved ✓';
+                return;
+            }
+
+            showAlert('saveAlert', 'info', '<span class="spinner"></span> Check your MetaMask extension — click it to open if nothing pops up…');
+            const signer = await getSigner();
+            await ensureCeloNetwork();
+
+            const gd = new ethers.Contract(GD_CONTRACT, ERC20_ABI, signer);
+            showAlert('saveAlert', 'info', '<span class="spinner"></span> Approve G$ spending in your wallet…');
+            const tx = await gd.approve(SAVINGS_CONTRACT, amtWei);
+            await tx.wait();
+
+            showAlert('saveAlert', 'success', '✅ Approved! Now click "Lock & Save G$" to complete your save.');
+            document.getElementById('saveBtn').disabled = false;
+            btn.innerHTML = '<i class="fas fa-check-circle"></i> Approved ✓';
+        } catch (err) {
+            console.error(err);
+            if (err.message && err.message.includes('No wallet')) {
+                showAlert('saveAlert', 'error', '⚠️ ' + err.message);
+                document.getElementById('savingsWcSection').style.display = 'block';
+            } else {
+                showAlert('saveAlert', 'error', '❌ Approval failed: ' + (err.reason || err.message || 'Unknown error'));
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check-circle"></i> Step 1 — Approve G$ Spending';
+        }
+    }
+
+    // ── Save ──
+    async function doSave() {
+        const amtStr = document.getElementById('saveAmount').value.trim();
+        const amt = parseFloat(amtStr);
+        if (!amtStr || isNaN(amt) || amt < 1000 || amt > 10000000) {
+            showAlert('saveAlert', 'error', '⚠️ Enter a valid amount (1,000–10,000,000 G$).');
+            return;
+        }
+
+        const btn = document.getElementById('saveBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Locking…';
+
+        try {
+            const amtWei = ethers.parseUnits(amtStr, 18);
+
+            if (window.isCustodialMode) {
+                showAlert('saveAlert', 'info', '<span class="spinner"></span> Locking G$ server-side — no wallet needed…');
+                const txHash = await custodialTx(SAVINGS_CONTRACT,
+                    "function depositSavings(uint256 amount, uint256 lockDays) external",
+                    [amtWei, BigInt(selectedDays)]);
+                const unlockDate = new Date();
+                unlockDate.setDate(unlockDate.getDate() + selectedDays);
+                showAlert('saveAlert', 'success',
+                    `🎉 Saved ${parseFloat(amtStr).toLocaleString()} G$ for ${selectedDays} days!<br>` +
+                    `Unlocks: <strong>${unlockDate.toDateString()}</strong><br>` +
+                    `<a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
+                );
+                document.getElementById('saveAmount').value = '';
+                updateSummary();
+                document.getElementById('approveBtn').disabled = false;
+                document.getElementById('approveBtn').innerHTML = '<i class="fas fa-check-circle"></i> Step 1 — Approve G$ Spending';
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-lock"></i> Step 2 — Lock & Save G$';
+                loadStats();
+                return;
+            }
+
+            const signer = await getSigner();
+            await ensureCeloNetwork();
+
+            const savings = new ethers.Contract(SAVINGS_CONTRACT, SAVINGS_ABI, signer);
+            showAlert('saveAlert', 'info', '<span class="spinner"></span> Confirm the save transaction in your wallet…');
+            const tx = await savings.depositSavings(amtWei, BigInt(selectedDays));
+            showAlert('saveAlert', 'info', '<span class="spinner"></span> Waiting for Celo confirmation…');
+            const receipt = await tx.wait();
+
+            const unlockDate = new Date();
+            unlockDate.setDate(unlockDate.getDate() + selectedDays);
+            showAlert('saveAlert', 'success',
+                `🎉 Successfully saved ${parseFloat(amtStr).toLocaleString()} G$ for ${selectedDays} days!<br>` +
+                `Unlocks: <strong>${unlockDate.toDateString()}</strong><br>` +
+                `<a href="https://celoscan.io/tx/${receipt.hash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
+            );
+            document.getElementById('saveAmount').value = '';
+            updateSummary();
+            document.getElementById('approveBtn').disabled = false;
+            document.getElementById('approveBtn').innerHTML = '<i class="fas fa-check-circle"></i> Step 1 — Approve G$ Spending';
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-lock"></i> Step 2 — Lock & Save G$';
+            loadStats();
+
+        } catch (err) {
+            console.error(err);
+            showAlert('saveAlert', 'error', '❌ Save failed: ' + (err.reason || err.message || 'Unknown error'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-lock"></i> Step 2 — Lock & Save G$';
+        }
+    }
+
+    // ── Withdraw ──
+    async function doWithdraw(depositId) {
+        try {
+            if (window.isCustodialMode) {
+                showAlert('depositsAlert', 'info', '<span class="spinner"></span> Signing withdrawal server-side…');
+                const txHash = await custodialTx(SAVINGS_CONTRACT,
+                    "function withdraw(uint256 depositId) external",
+                    [BigInt(depositId)]);
+                showAlert('depositsAlert', 'success',
+                    `✅ Withdrawn! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
+                );
+                loadDeposits(); loadStats();
+                return;
+            }
+
+            const signer = await getSigner();
+            await ensureCeloNetwork();
+            const savings = new ethers.Contract(SAVINGS_CONTRACT, SAVINGS_ABI, signer);
+
+            showAlert('depositsAlert', 'info', '<span class="spinner"></span> Confirm withdrawal in your wallet…');
+            const tx = await savings.withdraw(BigInt(depositId));
+            showAlert('depositsAlert', 'info', '<span class="spinner"></span> Waiting for Celo confirmation…');
+            const receipt = await tx.wait();
+
+            showAlert('depositsAlert', 'success',
+                `✅ Withdrawn successfully! <a href="https://celoscan.io/tx/${receipt.hash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
+            );
+            loadDeposits();
+            loadStats();
+        } catch (err) {
+            console.error(err);
+            showAlert('depositsAlert', 'error', '❌ Withdrawal failed: ' + (err.reason || err.message || 'Unknown error'));
+        }
+    }
+
+    // ── Load stats ──
+    async function loadStats() {
+        try {
+            const res = await fetch('/savings/api/stats');
+            const data = await res.json();
+            if (data.error) return;
+            document.getElementById('statLocked').textContent = fmtGD(data.total_locked_gd);
+            document.getElementById('statPool').textContent = fmtGD(data.reward_pool_gd);
+            document.getElementById('statCount').textContent = data.total_deposits_count;
+        } catch (e) {
+            console.warn('Stats load failed', e);
+        }
+    }
+
+    // ── Load deposits ──
+    async function loadDeposits() {
+        const container = document.getElementById('depList');
+        container.innerHTML = '<div class="empty-state">Loading…</div>';
+        try {
+            const res = await fetch('/savings/api/deposits');
+            const data = await res.json();
+            const deps = data.deposits || [];
+            if (deps.length === 0) {
+                container.innerHTML = '<div class="empty-state">No saves yet. Go to "Save G$" to get started.</div>';
+                return;
+            }
+            container.innerHTML = '';
+            for (const d of deps) {
+                container.appendChild(buildDepCard(d));
+            }
+        } catch (e) {
+            container.innerHTML = '<div class="empty-state" style="color:#f87171;">Failed to load. Check your connection.</div>';
+        }
+    }
+
+    function buildDepCard(d) {
+        const el = document.createElement('div');
+        el.className = 'dep-card' + (d.is_unlocked && !d.withdrawn ? ' unlocked' : '');
+
+        const unlock = new Date(d.unlocks_at * 1000);
+        const deposited = new Date(d.deposited_at * 1000);
+
+        let statusBadge = '';
+        if (d.withdrawn) {
+            statusBadge = '<span class="dep-badge badge-done">Withdrawn</span>';
+        } else if (d.is_unlocked) {
+            statusBadge = '<span class="dep-badge badge-ready">Ready to Withdraw</span>';
+        } else {
+            statusBadge = '<span class="dep-badge badge-locked">Locked</span>';
+        }
+
+        let bonusBadge = '';
+        if (d.bonus_claimed) {
+            bonusBadge = '<span class="dep-badge badge-bonus">🎁 Bonus Claimed</span>';
+        } else if (d.bonus_eligible) {
+            const pb = d.pending_bonus_gd > 0 ? ` (+${fmtGD(d.pending_bonus_gd)})` : '';
+            bonusBadge = `<span class="dep-badge badge-bonus">🎁 Bonus Eligible${pb}</span>`;
+        }
+
+        let withdrawBtn = '';
+        if (!d.withdrawn && d.is_unlocked) {
+            withdrawBtn = `<button class="btn btn-green" onclick="doWithdraw(${d.id})" style="font-size:.8rem; padding:.5rem 1rem;">Withdraw</button>`;
+        }
+
+        el.innerHTML = `
+            <div class="dep-amount">${fmtGD(d.amount_gd)}</div>
+            <div class="dep-meta">
+                <div class="row">Lock: <span>${d.lock_days} days</span></div>
+                <div class="row">Saved: <span>${deposited.toDateString()}</span></div>
+                <div class="row">Unlocks: <span>${unlock.toDateString()}</span></div>
+            </div>
+            <div style="display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;">
+                ${statusBadge}${bonusBadge}
+            </div>
+            ${withdrawBtn ? `<div>${withdrawBtn}</div>` : ''}
+        `;
+        return el;
+    }
+
+    // ── Utilities ──
+    function fmtGD(n) {
+        if (n >= 1_000_000) return (n/1_000_000).toFixed(2) + 'M G$';
+        if (n >= 1_000) return (n/1_000).toFixed(1) + 'K G$';
+        return (Math.round(n * 100) / 100).toLocaleString() + ' G$';
+    }
+
+    function showAlert(id, type, msg) {
+        const el = document.getElementById(id);
+        el.className = `alert alert-${type}`;
+        el.innerHTML = msg;
+        el.style.display = 'block';
+    }
+
+    async function ensureCeloNetwork() {
+        const ep = _getEthProvider();
+        if (!ep) return; // WalletConnect — assume wallet is on Celo
+        const chainIdHex = await ep.request({ method: 'eth_chainId' });
+        if (parseInt(chainIdHex, 16) !== CHAIN_ID) {
+            try {
+                await ep.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: '0x' + CHAIN_ID.toString(16) }]
+                });
+            } catch (e) {
+                if (e.code === 4902) {
+                    await ep.request({
+                        method: 'wallet_addEthereumChain',
+                        params: [{
+                            chainId: '0x' + CHAIN_ID.toString(16),
+                            chainName: 'Celo Mainnet',
+                            nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+                            rpcUrls: ['https://forno.celo.org'],
+                            blockExplorerUrls: ['https://celoscan.io']
+                        }]
+                    });
+                }
+            }
+        }
+    }
+
+    // ── Pool Approve ──
+    async function doPoolApprove() {
+        const amtStr = document.getElementById('sponsorAmount').value.trim();
+        const amt = parseFloat(amtStr);
+        if (!amtStr || isNaN(amt) || amt <= 0) {
+            showAlert('sponsorAlert', 'error', '⚠️ Enter a valid amount greater than 0 G$.');
+            return;
+        }
+
+        const btn = document.getElementById('poolApproveBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Approving…';
+
+        try {
+            const amtWei = ethers.parseUnits(amtStr, 18);
+
+            if (window.isCustodialMode) {
+                showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Approving G$ spending server-side…');
+                const txHash = await custodialTx(GD_CONTRACT,
+                    "function approve(address spender, uint256 amount) returns (bool)",
+                    [SAVINGS_CONTRACT, amtWei]);
+                showAlert('sponsorAlert', 'success',
+                    `✅ Approved! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View ↗</a><br>Now click "Add to Reward Pool".`);
+                document.getElementById('poolFundBtn').disabled = false;
+                btn.innerHTML = '<i class="fas fa-check-circle"></i> Approved ✓';
+                return;
+            }
+
+            showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Check your wallet — click it to open if nothing pops up…');
+            const signer = await getSigner();
+            await ensureCeloNetwork();
+
+            const gd = new ethers.Contract(GD_CONTRACT, ERC20_ABI, signer);
+            showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Approve G$ spending in your wallet…');
+            const tx = await gd.approve(SAVINGS_CONTRACT, amtWei);
+            await tx.wait();
+
+            showAlert('sponsorAlert', 'success', '✅ Approved! Now click "Add to Reward Pool" to complete your contribution.');
+            document.getElementById('poolFundBtn').disabled = false;
+            btn.innerHTML = '<i class="fas fa-check-circle"></i> Approved ✓';
+        } catch (err) {
+            console.error(err);
+            showAlert('sponsorAlert', 'error', '❌ Approval failed: ' + (err.reason || err.message || 'Unknown error'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check-circle"></i> Step 1 — Approve G$ Spending';
+        }
+    }
+
+    // ── Fund Reward Pool ──
+    async function doFundPool() {
+        const amtStr = document.getElementById('sponsorAmount').value.trim();
+        const amt = parseFloat(amtStr);
+        if (!amtStr || isNaN(amt) || amt <= 0) {
+            showAlert('sponsorAlert', 'error', '⚠️ Enter a valid amount greater than 0 G$.');
+            return;
+        }
+
+        const btn = document.getElementById('poolFundBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Sending…';
+
+        try {
+            const amtWei = ethers.parseUnits(amtStr, 18);
+
+            if (window.isCustodialMode) {
+                showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Funding reward pool server-side…');
+                const txHash = await custodialTx(SAVINGS_CONTRACT,
+                    "function fundRewardPool(uint256 amount) external",
+                    [amtWei]);
+                showAlert('sponsorAlert', 'success',
+                    `🎉 <strong>${parseFloat(amtStr).toLocaleString()} G$</strong> added to the reward pool.<br>` +
+                    `<a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
+                );
+                document.getElementById('sponsorAmount').value = '';
+                document.getElementById('poolApproveBtn').disabled = false;
+                document.getElementById('poolApproveBtn').innerHTML = '<i class="fas fa-check-circle"></i> Step 1 — Approve G$ Spending';
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-hand-holding-heart"></i> Step 2 — Add to Reward Pool';
+                loadStats(); loadSponsorStats();
+                return;
+            }
+
+            const signer = await getSigner();
+            await ensureCeloNetwork();
+
+            const savings = new ethers.Contract(SAVINGS_CONTRACT, SAVINGS_ABI, signer);
+            showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Confirm the transaction in your wallet…');
+            const tx = await savings.fundRewardPool(amtWei);
+            showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Waiting for Celo confirmation…');
+            const receipt = await tx.wait();
+
+            showAlert('sponsorAlert', 'success',
+                `🎉 Thank you! <strong>${parseFloat(amtStr).toLocaleString()} G$</strong> added to the reward pool.<br>` +
+                `<a href="https://celoscan.io/tx/${receipt.hash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
+            );
+            document.getElementById('sponsorAmount').value = '';
+            document.getElementById('poolApproveBtn').disabled = false;
+            document.getElementById('poolApproveBtn').innerHTML = '<i class="fas fa-check-circle"></i> Step 1 — Approve G$ Spending';
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-hand-holding-heart"></i> Step 2 — Add to Reward Pool';
+            loadStats();
+            loadSponsorStats();
+        } catch (err) {
+            console.error(err);
+            showAlert('sponsorAlert', 'error', '❌ Transaction failed: ' + (err.reason || err.message || 'Unknown error'));
+            document.getElementById('poolFundBtn').disabled = false;
+            document.getElementById('poolFundBtn').innerHTML = '<i class="fas fa-hand-holding-heart"></i> Step 2 — Add to Reward Pool';
+        }
+    }
+
+    // ── Load sponsor pool stat ──
+    async function loadSponsorStats() {
+        try {
+            const res = await fetch('/savings/api/stats');
+            const data = await res.json();
+            if (data.error) return;
+            document.getElementById('sponsorPoolStat').textContent = fmtGD(data.reward_pool_gd);
+        } catch (e) {
+            console.warn('Sponsor stats load failed', e);
+        }
+    }
+
+    // ── Init ──
+    updateSummary();
+    loadStats();
+    loadSponsorStats();
+</script>
+
+{% if walletconnect_project_id %}
+<!-- WalletConnect v2 for savings -->
+<div id="savingsWcSection" style="display:none; margin:1rem 0; padding:1rem; background:rgba(124,58,237,0.12); border:1px solid rgba(124,58,237,0.35); border-radius:14px; text-align:center;">
+    <div style="font-size:1.5rem; margin-bottom:.4rem;">📱</div>
+    <div style="font-weight:700; color:#fbbf24; margin-bottom:.25rem;">Connect Your Wallet</div>
+    <div style="font-size:.85rem; color:rgba(255,255,255,0.6); margin-bottom:.75rem;">Scan with MetaMask, TrustWallet, or any Celo-compatible wallet</div>
+    <canvas id="savingsWcQr" style="border-radius:10px; background:#fff; padding:8px; max-width:180px;"></canvas>
+    <div id="savingsWcStatus" style="font-size:.8rem; color:rgba(255,255,255,0.5); margin-top:.5rem;"></div>
+</div>
+<script>
+window._wcProjectId = '{{ walletconnect_project_id }}';
+window._wcSignClient = null;
+window._wcSession = null;
+
+function _wcLoadSdk() {
+    return new Promise(function(resolve, reject) {
+        var s = document.createElement('script');
+        s.src = '{{ url_for("static", filename="js/wc-bundle.js") }}';
+        s.onload = function() {
+            var SC = (window['@walletconnect/sign-client'] || {}).SignClient;
+            SC ? resolve(SC) : reject(new Error('WC SDK unavailable'));
+        };
+        s.onerror = function() { reject(new Error('WC SDK load failed')); };
+        document.head.appendChild(s);
+    });
+}
+
+window._wcGetClient = function() {
+    if (window._wcSignClient) return Promise.resolve(window._wcSignClient);
+    return _wcLoadSdk().then(function(SignClient) {
+        return SignClient.init({
+            projectId: window._wcProjectId,
+            metadata: {
+                name: 'GoodMarket Savings',
+                description: 'Lock G$ and earn with GoodMarket',
+                url: window.location.origin,
+                icons: [window.location.origin + '/static/icons/icon-192x192.png']
+            }
+        }).then(function(client) {
+            window._wcSignClient = client;
+            var sessions = client.session.getAll();
+            if (sessions.length > 0 && !window._wcSession) {
+                window._wcSession = sessions[sessions.length - 1];
+                console.log('✅ WC session restored from storage');
+            }
+            return client;
+        });
+    });
+};
+
+// Warm up WC client & try to restore session
+setTimeout(function() { window._wcGetClient().catch(function() {}); }, 1500);
+
+// Show QR to connect
+window._savingsStartWc = function() {
+    var section = document.getElementById('savingsWcSection');
+    section.style.display = 'block';
+    var statusEl = document.getElementById('savingsWcStatus');
+    statusEl.textContent = 'Initializing…';
+    window._wcGetClient().then(function(client) {
+        return client.connect({
+            requiredNamespaces: {},
+            optionalNamespaces: {
+                eip155: {
+                    methods: ['eth_accounts', 'eth_sendTransaction', 'personal_sign'],
+                    chains: ['eip155:42220'],
+                    events: ['chainChanged', 'accountsChanged']
+                }
+            }
+        });
+    }).then(function(result) {
+        if (result.uri) {
+            statusEl.textContent = 'Scan the QR code with your wallet';
+            // Generate QR using qrcode.js
+            var qrDiv = document.getElementById('savingsWcQr');
+            if (window.QRCode) {
+                new QRCode(qrDiv, { text: result.uri, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.L });
+            } else {
+                var img = document.createElement('img');
+                img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=' + encodeURIComponent(result.uri);
+                img.style.maxWidth = '160px';
+                qrDiv.innerHTML = '';
+                qrDiv.appendChild(img);
+            }
+        }
+        return result.approval();
+    }).then(function(session) {
+        window._wcSession = session;
+        var section = document.getElementById('savingsWcSection');
+        section.innerHTML = '<div style="color:#86efac; font-weight:700;">✅ Wallet Connected! You can now approve and save G$.</div>';
+        console.log('✅ WC session established in savings');
+    }).catch(function(err) {
+        statusEl.textContent = 'Connection failed: ' + (err.message || 'Unknown error');
+    });
+};
+</script>
+{% endif %}
+
+</body>
+</html>
