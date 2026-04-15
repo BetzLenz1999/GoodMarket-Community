@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile - GoodMarket</title>
+    <meta name="theme-color" content="#7c3aed">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0B0F2A 0%, #130D35 50%, #1A103D 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+
+        .navbar {
+            background: rgba(11, 15, 42, 0.92);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            padding: 0 1.5rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            box-shadow: 0 1px 24px rgba(0,0,0,0.35);
+        }
+        .nav-container {
+            max-width: 1300px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 56px;
+            gap: 0.75rem;
+        }
+        .logo { font-size: 1.2rem; font-weight: 800; color: #7c3aed; text-decoration: none; letter-spacing: -0.5px; white-space: nowrap; flex-shrink: 0; }
+        .nav-links { display: flex; gap: 0.1rem; align-items: center; flex-wrap: nowrap; overflow: hidden; }
+        .nav-links a { color: rgba(255,255,255,0.55); text-decoration: none; font-weight: 500; font-size: 0.875rem; white-space: nowrap; padding: 0.4rem 0.65rem; border-radius: 8px; transition: color 0.2s, background 0.2s; }
+        .nav-links a:hover { color: #a78bfa; background: rgba(124,58,237,0.1); }
+        .nav-links a.active { color: #fff; background: rgba(124,58,237,0.18); font-weight: 600; }
+        .nav-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.12); margin: 0 0.4rem; flex-shrink: 0; }
+        .wallet-tag {
+            background: rgba(124,58,237,0.12);
+            border: 1px solid rgba(124,58,237,0.28);
+            border-radius: 20px;
+            padding: 0.28rem 0.8rem;
+            font-weight: 600;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8rem;
+            color: #a78bfa;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .logout-btn {
+            background: rgba(239,68,68,0.1) !important;
+            border: 1px solid rgba(239,68,68,0.25) !important;
+            color: #f87171 !important;
+            padding: 0.28rem 0.85rem !important;
+            border-radius: 20px !important;
+            font-size: 0.85rem !important;
+            white-space: nowrap !important;
+            flex-shrink: 0;
+            transition: background 0.2s, color 0.2s !important;
+        }
+        .logout-btn:hover { background: rgba(239,68,68,0.2) !important; color: #fca5a5 !important; }
+        @media (max-width: 768px) {
+            .navbar { padding: 0 0.75rem; }
+            .nav-container { height: auto; padding: 0.5rem 0; flex-wrap: wrap; gap: 0.3rem; }
+            .nav-links { flex-wrap: wrap; gap: 0.15rem; justify-content: flex-end; overflow: visible; }
+            .nav-links a { font-size: 0.78rem; padding: 0.28rem 0.5rem; }
+            .nav-sep { display: none; }
+            .wallet-tag { font-size: 0.75rem; padding: 0.22rem 0.6rem; }
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem 1.25rem 4rem;
+        }
+
+        /* Profile Header Card */
+        .profile-header {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #7c3aed, #3b82f6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            flex-shrink: 0;
+        }
+
+        .profile-info h1 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 0.3rem;
+        }
+
+        .wallet-badge {
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #a78bfa;
+            background: rgba(124, 58, 237, 0.12);
+            border: 1px solid rgba(124, 58, 237, 0.25);
+            padding: 0.3rem 0.8rem;
+            border-radius: 8px;
+            display: inline-block;
+            margin-bottom: 0.5rem;
+        }
+
+        .join-date {
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Total Earnings Banner */
+        .total-banner {
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.25), rgba(59, 130, 246, 0.15));
+            border: 1px solid rgba(124, 58, 237, 0.35);
+            border-radius: 16px;
+            padding: 1.5rem 2rem;
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .total-banner .label {
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 0.4rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .total-banner .amount {
+            font-size: 2.8rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #a78bfa, #60a5fa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.1;
+        }
+
+        .total-banner .sub {
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.35);
+            margin-top: 0.3rem;
+        }
+
+        /* Earnings Breakdown */
+        .section-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.7);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.75rem;
+        }
+
+        .earnings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .earnings-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 1.25rem;
+            transition: border-color 0.2s;
+        }
+
+        .earnings-card:hover { border-color: rgba(124, 58, 237, 0.35); }
+
+        .earnings-card .icon { font-size: 1.6rem; margin-bottom: 0.5rem; }
+        .earnings-card .name { font-size: 0.82rem; color: rgba(255,255,255,0.5); margin-bottom: 0.25rem; }
+        .earnings-card .value { font-size: 1.3rem; font-weight: 700; color: #a78bfa; }
+        .earnings-card .count { font-size: 0.78rem; color: rgba(255,255,255,0.35); margin-top: 0.2rem; }
+
+        /* Activity Timeline */
+        .activity-section {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 16px;
+            padding: 1.5rem;
+        }
+
+        .activity-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.85rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .activity-item:last-child { border-bottom: none; }
+
+        .activity-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(124, 58, 237, 0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+
+        .activity-info { flex: 1; }
+        .activity-type { font-size: 0.9rem; font-weight: 600; color: #e2e8f0; }
+        .activity-date { font-size: 0.78rem; color: rgba(255,255,255,0.35); margin-top: 0.1rem; }
+        .activity-amount { font-weight: 700; color: #4ade80; font-size: 0.95rem; white-space: nowrap; }
+
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: rgba(255,255,255,0.35);
+            font-size: 0.9rem;
+        }
+
+        .loading-text {
+            color: rgba(255,255,255,0.4);
+            font-style: italic;
+        }
+
+        @media (max-width: 600px) {
+            .profile-header { flex-direction: column; text-align: center; }
+            .total-banner .amount { font-size: 2rem; }
+            .earnings-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/dashboard" class="logo">💰 GoodMarket</a>
+            <div class="nav-links">
+                <a href="/overview">Overview</a>
+                <a href="/dashboard">Dashboard</a>
+                {% if wallet_visible %}<a href="/wallet">Wallet</a>{% endif %}
+                {% if savings_visible %}<a href="/savings">Savings</a>{% endif %}
+                <a href="/profile" class="active">Profile</a>
+                <a href="/news">News</a>
+                <a href="/admin" id="adminLink" style="display:none;">Admin</a>
+                <div class="nav-sep"></div>
+                {% if wallet and wallet != 'None' %}
+                <div class="wallet-tag">{{ wallet[:6] }}...{{ wallet[-4:] }}</div>
+                {% endif %}
+                <a href="/logout" class="logout-btn">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+
+        <!-- Profile Header -->
+        <div class="profile-header">
+            <div class="avatar">👤</div>
+            <div class="profile-info">
+                <h1>My Profile</h1>
+                <div class="wallet-badge">{{ wallet[:10] }}...{{ wallet[-8:] }}</div>
+                <div class="join-date" id="joinDate">Loading join date...</div>
+            </div>
+        </div>
+
+        <!-- Total Earnings -->
+        <div class="total-banner">
+            <div class="label">Total G$ Earned</div>
+            <div class="amount" id="totalEarned"><span class="loading-text">Loading...</span></div>
+            <div class="sub" id="totalSub">Across all earning activities</div>
+        </div>
+
+        <!-- Earnings Breakdown -->
+        <div class="section-title">Earnings Breakdown</div>
+        <div class="earnings-grid" id="earningsGrid">
+            <div class="earnings-card">
+                <div class="icon">🎓</div>
+                <div class="name">Learn &amp; Earn</div>
+                <div class="value" id="learnTotal">—</div>
+                <div class="count" id="learnCount">— quizzes</div>
+            </div>
+            <div class="earnings-card">
+                <div class="icon">📱</div>
+                <div class="name">Telegram Tasks</div>
+                <div class="value" id="telegramTotal">—</div>
+                <div class="count" id="telegramCount">— tasks</div>
+            </div>
+            <div class="earnings-card">
+                <div class="icon">🐦</div>
+                <div class="name">Twitter Tasks</div>
+                <div class="value" id="twitterTotal">—</div>
+                <div class="count" id="twitterCount">— tasks</div>
+            </div>
+            <div class="earnings-card">
+                <div class="icon">🌟</div>
+                <div class="name">Community Stories</div>
+                <div class="value" id="storiesTotal">—</div>
+                <div class="count" id="storiesCount">— stories</div>
+            </div>
+            <div class="earnings-card">
+                <div class="icon">📈</div>
+                <div class="name">Price Prediction</div>
+                <div class="value" id="pricePredTotal">—</div>
+                <div class="count" id="pricePredCount">— wins</div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="section-title">Recent Activity</div>
+        <div class="activity-section" id="activitySection">
+            <div class="empty-state">Loading activity...</div>
+        </div>
+
+    </div>
+
+    <script>
+        function formatGD(amount) {
+            return parseFloat(amount).toLocaleString('en-US', {maximumFractionDigits: 2}) + ' G$';
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return 'Unknown';
+            try {
+                const d = new Date(dateStr);
+                return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+            } catch(e) { return 'Unknown'; }
+        }
+
+        async function checkAdmin() {
+            try {
+                const res = await fetch('/api/admin/check');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.is_admin) {
+                        document.getElementById('adminLink').style.display = 'inline-flex';
+                    }
+                }
+            } catch(e) {}
+        }
+
+        async function loadProfile() {
+            try {
+                const res = await fetch('/api/profile');
+                if (!res.ok) {
+                    if (res.status === 401) { window.location.href = '/'; return; }
+                    throw new Error('Failed to load profile');
+                }
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error);
+
+                document.getElementById('joinDate').textContent =
+                    data.first_login ? 'Member since ' + formatDate(data.first_login) : 'Member';
+
+                document.getElementById('totalEarned').textContent = formatGD(data.earnings.total);
+                const totalActivities = (data.counts.quizzes || 0) + (data.counts.twitter_tasks || 0) + (data.counts.telegram_tasks || 0) + (data.counts.stories || 0) + (data.counts.price_predictions || 0);
+                document.getElementById('totalSub').textContent =
+                    `Across ${totalActivities} completed activities`;
+
+                document.getElementById('learnTotal').textContent = formatGD(data.earnings.learn_earn);
+                document.getElementById('learnCount').textContent = data.counts.quizzes + ' quizzes';
+
+                document.getElementById('telegramTotal').textContent = formatGD(data.earnings.telegram);
+                document.getElementById('telegramCount').textContent = data.counts.telegram_tasks + ' tasks';
+
+                document.getElementById('twitterTotal').textContent = formatGD(data.earnings.twitter);
+                document.getElementById('twitterCount').textContent = data.counts.twitter_tasks + ' tasks';
+
+                document.getElementById('storiesTotal').textContent = formatGD(data.earnings.community_stories);
+                document.getElementById('storiesCount').textContent = data.counts.stories + ' stories';
+
+                document.getElementById('pricePredTotal').textContent = formatGD(data.earnings.price_prediction || 0);
+                document.getElementById('pricePredCount').textContent = (data.counts.price_predictions || 0) + ' wins';
+
+                const activitySection = document.getElementById('activitySection');
+                if (!data.recent_activity || data.recent_activity.length === 0) {
+                    activitySection.innerHTML = '<div class="empty-state">No activity yet. Start earning G$ today!</div>';
+                } else {
+                    activitySection.innerHTML = data.recent_activity.map(item => `
+                        <div class="activity-item">
+                            <div class="activity-icon">${item.icon}</div>
+                            <div class="activity-info">
+                                <div class="activity-type">${item.type}</div>
+                                <div class="activity-date">${formatDate(item.date)}</div>
+                            </div>
+                            <div class="activity-amount">+${formatGD(item.amount)}</div>
+                        </div>
+                    `).join('');
+                }
+
+            } catch(e) {
+                console.error('Profile load error:', e);
+                document.getElementById('totalEarned').textContent = 'Error loading';
+                document.getElementById('activitySection').innerHTML =
+                    '<div class="empty-state">Could not load profile data. Please try refreshing.</div>';
+            }
+        }
+
+        checkAdmin();
+        loadProfile();
+    </script>
+</body>
+</html>
