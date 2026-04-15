@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>GoodMarket Store – Buy with G$</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; }
+
+        .top-bar {
+            background: linear-gradient(135deg, #1a1d2e, #252840);
+            padding: 14px 20px;
+            display: flex; align-items: center; gap: 12px;
+            border-bottom: 1px solid #2e3150;
+        }
+        .top-bar a { color: #7986cb; text-decoration: none; font-size: 14px; }
+        .top-bar h1 { font-size: 18px; font-weight: 700; color: #fff; }
+        .sandbox-badge {
+            background: #ff9800; color: #000; font-size: 10px;
+            font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-left: 4px;
+        }
+        .gd-rate { margin-left: auto; font-size: 13px; color: #aaa; }
+        .gd-rate span { color: #7986cb; font-weight: 600; }
+
+        .tabs {
+            display: flex; background: #1a1d2e;
+            border-bottom: 1px solid #2e3150; overflow-x: auto;
+        }
+        .tab-btn {
+            padding: 14px 22px; border: none; background: none;
+            color: #aaa; font-size: 14px; cursor: pointer;
+            border-bottom: 3px solid transparent; white-space: nowrap;
+            transition: color 0.2s, border-color 0.2s;
+        }
+        .tab-btn.active { color: #7986cb; border-bottom-color: #7986cb; }
+        .tab-btn:hover { color: #fff; }
+
+        .tab-content { display: none; padding: 20px; max-width: 900px; margin: 0 auto; }
+        .tab-content.active { display: block; }
+
+        .card {
+            background: #1a1d2e; border: 1px solid #2e3150;
+            border-radius: 12px; padding: 20px; margin-bottom: 16px;
+        }
+        .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: #fff; }
+
+        .form-group { margin-bottom: 14px; }
+        .form-group label { display: block; font-size: 12px; color: #aaa; margin-bottom: 6px; }
+        .form-group input, .form-group select {
+            width: 100%; padding: 10px 14px; border-radius: 8px;
+            border: 1px solid #2e3150; background: #0f1117;
+            color: #e0e0e0; font-size: 14px; outline: none;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus, .form-group select:focus { border-color: #7986cb; }
+
+        .btn {
+            padding: 11px 22px; border-radius: 8px; border: none;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary { background: linear-gradient(135deg, #5c6bc0, #7986cb); color: #fff; }
+        .btn-secondary { background: #2e3150; color: #ccc; }
+        .btn-full { width: 100%; }
+
+        .operator-grid, .gc-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;
+        }
+        .operator-card, .gc-card {
+            background: #0f1117; border: 1px solid #2e3150; border-radius: 10px;
+            padding: 14px; cursor: pointer; transition: border-color 0.2s, transform 0.1s;
+        }
+        .operator-card:hover, .gc-card:hover { border-color: #7986cb; transform: translateY(-1px); }
+        .operator-card.selected, .gc-card.selected { border-color: #7986cb; background: #1a1d2e; }
+        .op-name { font-weight: 600; font-size: 14px; color: #fff; margin-bottom: 4px; }
+        .op-country { font-size: 12px; color: #aaa; }
+        .op-amounts { font-size: 11px; color: #7986cb; margin-top: 6px; }
+
+        .amount-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .bundle-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; max-height: 320px; overflow-y: auto; }
+        .bundle-chip {
+            background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 10px;
+            padding: 10px 14px; cursor: pointer; transition: all 0.2s;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .bundle-chip:hover, .bundle-chip.selected { background: #1e2260; border-color: #5c6bc0; }
+        .bundle-name { font-size: 13px; font-weight: 500; color: #e0e0e0; flex: 1; }
+        .bundle-price { flex-shrink: 0; text-align: right; font-size: 13px; margin-left: 12px; }
+        .chip {
+            padding: 6px 14px; border-radius: 20px; border: 1px solid #2e3150;
+            background: #0f1117; color: #ccc; font-size: 13px; cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .chip:hover, .chip.selected { background: #5c6bc0; border-color: #5c6bc0; color: #fff; }
+
+        .summary-box {
+            background: #252840; border-radius: 10px; padding: 16px;
+            margin: 16px 0; border: 1px solid #2e3150;
+        }
+        .summary-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+        .summary-row:last-child { margin-bottom: 0; font-weight: 700; color: #7986cb; font-size: 16px; }
+
+        .status-pill {
+            display: inline-block; padding: 3px 10px; border-radius: 10px;
+            font-size: 11px; font-weight: 600;
+        }
+        .status-completed { background: #1b5e20; color: #69f0ae; }
+        .status-pending_payment { background: #4a3800; color: #ffd54f; }
+        .status-processing { background: #1a237e; color: #82b1ff; }
+        .status-verifying { background: #1a237e; color: #82b1ff; }
+        .status-refunded { background: #4a1942; color: #ea80fc; }
+        .status-failed, .status-payment_failed, .status-refund_failed { background: #b71c1c; color: #ff8a80; }
+        .status-expired { background: #2a2a2a; color: #9e9e9e; }
+        .status-cancelled { background: #2a2a2a; color: #bdbdbd; }
+
+        /* ── PAYMENT MODAL ── */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.8); z-index: 999;
+            align-items: center; justify-content: center; padding: 16px;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal {
+            background: #1a1d2e; border: 1px solid #2e3150; border-radius: 14px;
+            padding: 28px; max-width: 460px; width: 100%; position: relative;
+            max-height: 90vh; overflow-y: auto;
+        }
+        .modal h2 { font-size: 18px; margin-bottom: 6px; color: #fff; }
+        .modal-subtitle { font-size: 13px; color: #aaa; margin-bottom: 20px; }
+        .modal-close {
+            position: absolute; top: 14px; right: 16px;
+            background: none; border: none; color: #aaa;
+            font-size: 20px; cursor: pointer;
+        }
+
+        /* Payment steps */
+        .pay-step { display: none; }
+        .pay-step.active { display: block; }
+
+        .pay-status-box {
+            border-radius: 10px; padding: 14px 16px;
+            font-size: 13px; margin: 14px 0; font-weight: 500;
+        }
+        .pay-status-info { background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.3); color: #a5b4fc; }
+        .pay-status-success { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
+        .pay-status-error { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+        .pay-status-warning { background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3); color: #fde68a; }
+
+        /* QR code box */
+        .qr-box {
+            text-align: center; padding: 20px;
+            background: #fff; border-radius: 12px; margin: 16px auto;
+            display: inline-block;
+        }
+        .qr-wrapper { text-align: center; }
+        .qr-label { font-size: 12px; color: #aaa; margin-top: 12px; }
+
+        /* Spinner */
+        .spin { display: inline-block; animation: spin360 0.8s linear infinite; }
+        @keyframes spin360 { to { transform: rotate(360deg); } }
+
+        /* Address display */
+        .addr-box {
+            background: #0f1117; border: 1px solid #2e3150; border-radius: 8px;
+            padding: 10px 14px; font-size: 11px; word-break: break-all; color: #aaa;
+            margin: 8px 0;
+        }
+
+        .loading { text-align: center; padding: 40px; color: #aaa; }
+        .loading i { font-size: 28px; animation: spin360 1s linear infinite; }
+        .empty-msg { text-align: center; padding: 40px; color: #555; font-size: 15px; }
+
+        .toast {
+            position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+            padding: 12px 20px; border-radius: 10px; font-size: 14px;
+            font-weight: 600; animation: slideIn 0.3s ease;
+        }
+        .toast-success { background: #1b5e20; color: #69f0ae; border: 1px solid #388e3c; }
+        .toast-error { background: #b71c1c; color: #ff8a80; border: 1px solid #c62828; }
+        @keyframes slideIn { from { transform: translateY(20px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+
+        .order-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 0; border-bottom: 1px solid #2e3150;
+        }
+        .order-row:last-child { border-bottom: none; }
+        .order-info { flex: 1; margin-left: 12px; }
+        .order-title { font-size: 14px; color: #fff; font-weight: 600; }
+        .order-sub { font-size: 12px; color: #aaa; margin-top: 2px; }
+
+        @media (max-width: 500px) {
+            .operator-grid, .gc-grid { grid-template-columns: 1fr 1fr; }
+            .tab-btn { padding: 12px 14px; font-size: 13px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="top-bar">
+    <a href="/dashboard"><i class="fas fa-arrow-left"></i></a>
+    <h1>GoodMarket Store</h1>
+    {% if is_sandbox %}<span class="sandbox-badge">SANDBOX</span>{% endif %}
+    <div class="gd-rate">1 G$ ≈ <span id="liveGdRate">${{ "%.6f"|format(gd_price) }}</span> <span style="font-size:9px;color:#69f0ae;opacity:0.7" id="rateSource">CoinGecko</span></div>
+</div>
+
+<div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('topup', this)"><i class="fas fa-mobile-alt"></i> Mobile Top-Up</button>
+    <button class="tab-btn" onclick="switchTab('giftcard', this)"><i class="fas fa-gift"></i> Gift Cards</button>
+    <button class="tab-btn" onclick="switchTab('utility', this)"><i class="fas fa-bolt"></i> Utility</button>
+    <button class="tab-btn" onclick="switchTab('orders', this)"><i class="fas fa-receipt"></i> My Orders</button>
+</div>
+
+<!-- TOP-UP TAB -->
+<div id="tab-topup" class="tab-content active">
+    <div class="card">
+        <h3><i class="fas fa-search"></i> Find Operator</h3>
+        <div class="form-group">
+            <label>Country Code</label>
+            <input id="tuCountry" value="PH" maxlength="2" style="text-transform:uppercase"/>
+        </div>
+        <div class="form-group">
+            <label>Phone Number (optional — auto-detect operator)</label>
+            <input id="tuPhone" placeholder="e.g. 09171234567"/>
+        </div>
+        <button class="btn btn-primary" onclick="loadOperators()"><i class="fas fa-search"></i> Find Operators</button>
+    </div>
+    <div id="operatorList"></div>
+    <div id="topupForm" style="display:none">
+        <div class="card">
+            <h3 id="tuOperatorName"></h3>
+            <div id="tuAmountSection"></div>
+            <div class="form-group" style="margin-top:12px">
+                <label>Recipient Phone Number</label>
+                <input id="tuRecipient" placeholder="Phone number to top-up"/>
+            </div>
+            <div class="summary-box" id="tuSummary" style="display:none"></div>
+            <button class="btn btn-primary btn-full" onclick="initiateTopup()" style="margin-top:12px"><i class="fas fa-bolt"></i> Pay with G$</button>
+        </div>
+    </div>
+</div>
+
+<!-- GIFT CARDS TAB -->
+<div id="tab-giftcard" class="tab-content">
+    <div class="card">
+        <h3><i class="fas fa-filter"></i> Filter</h3>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+            <div class="form-group" style="flex:1;min-width:120px;margin-bottom:0">
+                <label>Country Code (optional)</label>
+                <input id="gcCountry" placeholder="e.g. US, PH"/>
+            </div>
+            <button class="btn btn-primary" onclick="loadGiftcards()"><i class="fas fa-search"></i> Search</button>
+        </div>
+    </div>
+    <div id="gcList"></div>
+</div>
+
+<!-- UTILITY TAB -->
+<div id="tab-utility" class="tab-content">
+    <div class="card">
+        <h3><i class="fas fa-filter"></i> Filter</h3>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+            <div class="form-group" style="flex:1;min-width:120px;margin-bottom:0">
+                <label>Country Code (optional)</label>
+                <input id="utilCountry" placeholder="e.g. PH, NG"/>
+            </div>
+            <button class="btn btn-primary" onclick="loadBillers()"><i class="fas fa-search"></i> Find Billers</button>
+        </div>
+    </div>
+    <div id="billerList"></div>
+    <div id="utilityForm" style="display:none">
+        <div class="card">
+            <h3 id="utilBillerName"></h3>
+            <div class="form-group">
+                <label>Amount (USD)</label>
+                <input id="utilAmount" type="number" step="0.01" min="0" placeholder="e.g. 5.00" oninput="updateUtilSummary()"/>
+            </div>
+            <div class="form-group">
+                <label>Subscriber / Account ID</label>
+                <input id="utilSubscriber" placeholder="Account or meter number"/>
+            </div>
+            <div class="summary-box" id="utilSummary" style="display:none"></div>
+            <button class="btn btn-primary btn-full" onclick="initiateUtility()" style="margin-top:12px"><i class="fas fa-bolt"></i> Pay with G$</button>
+        </div>
+    </div>
+</div>
+
+<!-- ORDERS TAB -->
+<div id="tab-orders" class="tab-content">
+    <!-- Summary stats -->
+    <div id="orderStats" style="display:none">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+            <div class="card" style="text-align:center;padding:14px">
+                <div style="font-size:22px;font-weight:700;color:#7986cb" id="statTotal">0</div>
+                <div style="font-size:11px;color:#aaa;margin-top:2px">Total Orders</div>
+            </div>
+            <div class="card" style="text-align:center;padding:14px">
+                <div style="font-size:22px;font-weight:700;color:#69f0ae" id="statCompleted">0</div>
+                <div style="font-size:11px;color:#aaa;margin-top:2px">Completed</div>
+            </div>
+            <div class="card" style="text-align:center;padding:14px">
+                <div style="font-size:22px;font-weight:700;color:#fff" id="statGd">0</div>
+                <div style="font-size:11px;color:#aaa;margin-top:2px">G$ Spent</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <h3 style="margin-bottom:0"><i class="fas fa-receipt"></i> Transaction History</h3>
+            <button class="btn btn-secondary" onclick="loadOrders()" style="padding:6px 14px;font-size:12px">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
+        <div id="orderList"><div class="loading"><i class="fas fa-spinner"></i></div></div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     PAYMENT MODAL
+═══════════════════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="payModal">
+    <div class="modal">
+        <button class="modal-close" onclick="closePayModal()">&times;</button>
+        <h2><i class="fas fa-wallet"></i> Pay with G$</h2>
+        <p class="modal-subtitle" id="payModalLabel"></p>
+
+        <!-- STEP 1: Preparing order -->
+        <div class="pay-step active" id="stepPrepare">
+            <div class="pay-status-box pay-status-info">
+                <i class="fas fa-spinner spin"></i> Preparing your order...
+            </div>
+        </div>
+
+        <!-- STEP 2: Wallet connect / payment -->
+        <div class="pay-step" id="stepPay">
+            <div class="summary-box" id="payModalSummary"></div>
+
+            <!-- DApp browser flow (window.ethereum detected) -->
+            <div id="dappFlow" style="display:none">
+                <div class="pay-status-box pay-status-info" id="dappStatus"></div>
+                <button class="btn btn-primary btn-full" id="dappPayBtn" onclick="dappSendPayment()" style="margin-top:8px">
+                    <i class="fas fa-bolt"></i> Send <span id="dappGdAmt"></span> G$ Now
+                </button>
+            </div>
+
+            <!-- Regular browser: Manual send via Merchant Address -->
+            <div id="merchantFlow" style="display:none">
+                <div class="pay-status-box pay-status-info" style="font-size:13px;text-align:left">
+                    <i class="fas fa-info-circle"></i> Send exactly <strong id="merchantGdAmt"></strong> G$ to the merchant address below.
+                </div>
+
+                <!-- Step 1: Show address button -->
+                <button id="showMerchantBtn" class="btn btn-primary btn-full" onclick="revealMerchantAddr()" style="margin-top:10px">
+                    <i class="fas fa-wallet"></i> Show Merchant Address
+                </button>
+
+                <!-- Step 2: Address card + confirm button (hidden until button clicked) -->
+                <div id="merchantAddrBox" style="display:none;margin-top:10px">
+                    <div style="background:#0f0f1a;border:1px solid #3a3a5c;border-radius:10px;padding:12px 14px">
+                        <div style="font-size:10px;color:#777;margin-bottom:6px;letter-spacing:0.6px;text-transform:uppercase">Merchant Wallet · Celo Network</div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <span id="merchantAddrText" style="font-family:monospace;font-size:11px;color:#a5b4fc;word-break:break-all;flex:1;line-height:1.5"></span>
+                            <button onclick="copyMerchantAddr()" title="Copy address"
+                                style="flex-shrink:0;background:#3730a3;border:none;border-radius:6px;padding:8px 12px;color:#fff;cursor:pointer;font-size:14px">
+                                <i class="fas fa-copy" id="merchantCopyIcon"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div style="font-size:11px;color:#f59e0b;margin-top:8px;padding:8px 10px;background:rgba(245,158,11,0.07);border-radius:6px;border:1px solid rgba(245,158,11,0.18)">
+                        ⚠️ <strong>Celo network only.</strong> Token: <strong>G$ (GoodDollar)</strong>. Amount must match exactly.
+                    </div>
+                    <button class="btn btn-primary btn-full" onclick="startMerchantScan()" style="margin-top:10px">
+                        <i class="fas fa-satellite-dish"></i> I've Sent the Payment — Check Now
+                    </button>
+                </div>
+            </div>
+
+            <div id="payFlowStatus" style="margin-top:12px;"></div>
+        </div>
+
+        <!-- STEP 3: Processing -->
+        <div class="pay-step" id="stepProcessing">
+            <div class="pay-status-box pay-status-info" style="text-align:center">
+                <div style="font-size:28px;margin-bottom:10px"><i class="fas fa-satellite-dish spin"></i></div>
+                <strong id="processingMsg">Watching the blockchain for your payment...</strong>
+                <div style="font-size:12px;color:#818cf8;margin-top:8px" id="processingDetail">Scanning Celo network • Auto-detecting G$ transfer</div>
+                <div style="margin-top:14px;background:rgba(255,255,255,0.06);border-radius:8px;height:6px;overflow:hidden">
+                    <div id="detectProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#5c6bc0,#7986cb);transition:width 0.5s ease;border-radius:8px"></div>
+                </div>
+                <div style="font-size:11px;color:#555;margin-top:6px" id="detectPollCount">Poll 0 / 60 • expires in 5:00</div>
+            </div>
+        </div>
+
+        <!-- STEP 4: Result -->
+        <div class="pay-step" id="stepResult">
+            <div class="pay-status-box" id="resultBox"></div>
+            <button class="btn btn-secondary btn-full" onclick="closePayModal()" style="margin-top:12px">Close</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let GD_PRICE = {{ gd_price }};
+const MERCHANT_ADDRESS = "{{ merchant_address }}";
+const GD_CONTRACT = "{{ gd_contract }}";
+const GD_DECIMALS = 18;
+const CELO_CHAIN_ID = 42220;
+const WC_PROJECT_ID = "{{ walletconnect_project_id }}";
+window.isCustodialMode = {{ (login_method == 'custodial') | tojson }};
+
+// ─── Live G$ price refresh (every 5 min from CoinGecko via backend) ──────────
+async function refreshGdPrice() {
+    try {
+        const res = await fetch('/reloadly/api/gd-price');
+        const data = await res.json();
+        if (data.success && data.gd_usd_price > 0) {
+            GD_PRICE = data.gd_usd_price;
+            const el = document.getElementById('liveGdRate');
+            if (el) el.textContent = '$' + data.gd_usd_price.toFixed(6);
+        }
+    } catch (_) {}
+}
+refreshGdPrice();
+setInterval(refreshGdPrice, 5 * 60 * 1000);  // refresh every 5 minutes
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let selectedOperator = null, selectedAmount = null;
+let selectedGcProduct = null, selectedBiller = null;
+let currentOrderId = null;
+let _pendingOrderData = null;
+let _scanningActive = false;   // true while blockchain polling is running
+
+// ─── Utils ────────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'success') {
+    const t = document.createElement('div');
+    t.className = `toast toast-${type}`;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 4500);
+}
+
+async function apiFetch(url, opts = {}) {
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    return res.json();
+}
+
+function switchTab(name, btn) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    btn.classList.add('active');
+    if (name === 'orders') loadOrders();
+}
+
+// ─── ERC-20 Transfer Encoding ─────────────────────────────────────────────────
+function gdToWei(amountGd) {
+    // Use BigInt-only arithmetic to avoid float64 precision loss on large numbers
+    // amountGd is a number like 875 — multiply integer part and decimal part separately
+    const amountStr = amountGd.toFixed(6);            // e.g. "875.000000"
+    const [intPart, decPart = '000000'] = amountStr.split('.');
+    const dec6 = decPart.slice(0, 6).padEnd(6, '0'); // 6 decimal places
+    const wei6 = BigInt(intPart) * BigInt(1_000_000) + BigInt(dec6); // G$ * 10^6
+    return wei6 * BigInt(10 ** 12); // scale to 18 decimals (10^6 * 10^12 = 10^18)
+}
+
+function encodeGdTransfer(toAddress, amountGd) {
+    // Build calldata for ERC-20 transfer(address,uint256)
+    // to:   GD_CONTRACT (token contract)
+    // data: transfer(MERCHANT_ADDRESS, amount)
+    const selector = 'a9059cbb'; // keccak256("transfer(address,uint256)")[0:4]
+    const paddedTo = toAddress.replace(/^0x/i, '').toLowerCase().padStart(64, '0');
+    const amountWei = gdToWei(amountGd);
+    const paddedAmt = amountWei.toString(16).padStart(64, '0');
+    return '0x' + selector + paddedTo + paddedAmt;
+}
+
+function gdToWeiHex(amountGd) {
+    return '0x' + gdToWei(amountGd).toString(16);
+}
+
+// ─── DApp Browser (window.ethereum) ──────────────────────────────────────────
+// Handles EIP-5749 multi-wallet: prefer MetaMask over Brave Wallet
+function _getEthProvider() {
+    if (!window.ethereum) return null;
+    if (window.ethereum.providers && window.ethereum.providers.length) {
+        const mm = window.ethereum.providers.find(p => p.isMetaMask && !p.isBraveWallet);
+        if (mm) return mm;
+        return window.ethereum.providers[0];
+    }
+    return window.ethereum;
+}
+
+function isDAppBrowser() {
+    return !!(_getEthProvider());
+}
+
+async function dappConnect() {
+    const ep = _getEthProvider();
+    await ep.request({ method: 'eth_requestAccounts' });
+    const chainHex = await ep.request({ method: 'eth_chainId' });
+    if (parseInt(chainHex, 16) !== CELO_CHAIN_ID) {
+        try {
+            await ep.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x' + CELO_CHAIN_ID.toString(16) }] });
+        } catch {
+            await ep.request({
+                method: 'wallet_addEthereumChain',
+                params: [{ chainId: '0x' + CELO_CHAIN_ID.toString(16), chainName: 'Celo Mainnet', nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 }, rpcUrls: ['https://forno.celo.org'], blockExplorerUrls: ['https://celoscan.io'] }]
+            });
+        }
+    }
+    const accounts = await ep.request({ method: 'eth_accounts' });
+    return accounts[0];
+}
+
+async function dappSendPayment() {
+    const btn = document.getElementById('dappPayBtn');
+    btn.disabled = true;
+    setDappStatus('info', '<i class="fas fa-spinner spin"></i> Checking your G$ balance...');
+
+    try {
+        const gdNeeded = _pendingOrderData.gd_amount;
+
+        // Balance check
+        try {
+            const balRes = await fetch(`/api/gooddollar-balance`);
+            const balData = await balRes.json();
+            if (balData.success) {
+                const gdBal = parseFloat(balData.balance);
+                if (gdBal < gdNeeded) {
+                    btn.disabled = false;
+                    setDappStatus('error',
+                        `❌ Insufficient G$ balance.<br>` +
+                        `<small>You need <strong>${gdNeeded.toLocaleString()} G$</strong> but your wallet only has <strong>${Math.floor(gdBal).toLocaleString()} G$</strong>.<br>` +
+                        `Claim more G$ via UBI or earn more before buying.</small>`
+                    );
+                    return;
+                }
+            }
+        } catch (_) { /* Balance check failed — proceed anyway */ }
+
+        const data = encodeGdTransfer(MERCHANT_ADDRESS, gdNeeded);
+
+        // ── Custodial mode: sign server-side, no wallet popup ──
+        if (window.isCustodialMode) {
+            setDappStatus('info', '<i class="fas fa-spinner spin"></i> Signing payment server-side…');
+            const custRes = await fetch('/api/custodial/sign-tx', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ to: GD_CONTRACT, data: data, value: '0x0', chain_id: CELO_CHAIN_ID })
+            });
+            const custData = await custRes.json();
+            if (!custData.success) throw new Error(custData.error || 'Server signing failed');
+            setDappStatus('success', '✅ Transaction submitted! Hash: ' + custData.tx_hash.slice(0, 16) + '...');
+            await processConfirmation(custData.tx_hash);
+            return;
+        }
+
+        const from = await dappConnect();
+
+        setDappStatus('info',
+            '<i class="fas fa-spinner spin"></i> Confirm in wallet:<br>' +
+            '<small style="color:#aaa">Sending <strong>' + gdNeeded + ' G$</strong> to merchant via G$ token contract.<br>' +
+            'The recipient shown in advanced details is:<br>' +
+            '<code style="font-size:10px">' + MERCHANT_ADDRESS.slice(0,10) + '...' + MERCHANT_ADDRESS.slice(-6) + '</code></small>'
+        );
+
+        const txHash = await _getEthProvider().request({
+            method: 'eth_sendTransaction',
+            params: [{
+                from: from,
+                to: GD_CONTRACT,
+                data: data,
+                gas: '0x3D090'
+            }]
+        });
+
+        if (!txHash) throw new Error('No transaction hash returned by wallet');
+
+        setDappStatus('success', '✅ Transaction submitted! Hash: ' + txHash.slice(0, 16) + '...');
+        await processConfirmation(txHash);
+
+    } catch (err) {
+        btn.disabled = false;
+        const msg = err?.message || 'Unknown error';
+        if (msg.toLowerCase().includes('rejected') || msg.toLowerCase().includes('cancelled') || msg.toLowerCase().includes('denied')) {
+            setDappStatus('error', '❌ Payment cancelled by user.');
+        } else if (msg.toLowerCase().includes('no transaction hash')) {
+            setDappStatus('error', '❌ Wallet did not broadcast the transaction. Try using WalletConnect QR instead.');
+        } else {
+            setDappStatus('error', '❌ ' + msg.substring(0, 160));
+        }
+    }
+}
+
+function setDappStatus(type, html) {
+    const el = document.getElementById('dappStatus');
+    el.className = `pay-status-box pay-status-${type}`;
+    el.innerHTML = html;
+}
+
+// ─── Merchant Address Flow (Regular Browser) ──────────────────────────────────
+function revealMerchantAddr() {
+    document.getElementById('merchantAddrText').textContent = MERCHANT_ADDRESS;
+    document.getElementById('merchantAddrBox').style.display = 'block';
+    document.getElementById('showMerchantBtn').style.display = 'none';
+}
+
+function copyMerchantAddr() {
+    navigator.clipboard.writeText(MERCHANT_ADDRESS).then(() => {
+        const icon = document.getElementById('merchantCopyIcon');
+        icon.className = 'fas fa-check';
+        showToast('Merchant address copied!', 'success');
+        setTimeout(() => { icon.className = 'fas fa-copy'; }, 2500);
+    }).catch(() => {
+        showToast('Copy failed — please copy manually.', 'error');
+    });
+}
+
+function startMerchantScan() {
+    startAutoDetect();
+}
+
+function setPayFlowStatus(type, html) {
+    const el = document.getElementById('payFlowStatus');
+    el.className = `pay-status-box pay-status-${type}`;
+    el.innerHTML = html;
+    el.style.display = 'block';
+}
+
+
+// ─── Order Steps ──────────────────────────────────────────────────────────────
+function showStep(id) {
+    document.querySelectorAll('.pay-step').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+}
+
+async function openPayModal(order) {
+    _pendingOrderData = order;
+    currentOrderId = null;
+    document.getElementById('payModalLabel').textContent = order.label;
+    document.getElementById('payFlowStatus').style.display = 'none';
+    document.getElementById('payFlowStatus').innerHTML = '';
+
+    // Reset flows
+    document.getElementById('dappFlow').style.display = 'none';
+    document.getElementById('merchantFlow').style.display = 'none';
+    document.getElementById('merchantAddrBox').style.display = 'none';
+    document.getElementById('showMerchantBtn').style.display = 'block';
+
+    document.getElementById('payModal').classList.add('open');
+    showStep('stepPrepare');
+
+    // Step 1: Create order on backend
+    try {
+        const res = await apiFetch('/reloadly/api/order/prepare', {
+            method: 'POST',
+            body: JSON.stringify({
+                order_type: order.order_type,
+                usd_amount: order.usd_amount,
+                payload: order.payload
+            })
+        });
+        if (!res.success) {
+            showStep('stepResult');
+            setResult('error', '❌ Could not create order: ' + res.error);
+            return;
+        }
+        currentOrderId = res.order_id;
+    } catch (e) {
+        showStep('stepResult');
+        setResult('error', '❌ Network error creating order.');
+        return;
+    }
+
+    // Step 2: Payment
+    document.getElementById('payModalSummary').innerHTML = `
+        <div class="summary-row"><span>Product</span><span style="text-align:right;max-width:60%">${order.label}</span></div>
+        <div class="summary-row"><span>Amount</span><span>$${order.usd_amount.toFixed(2)} USD</span></div>
+        <div class="summary-row"><span>You Pay</span><span style="color:#69f0ae;font-weight:700">${order.gd_amount.toLocaleString()} G$</span></div>`;
+
+    // Balance check — show warning if user may not have enough G$
+    try {
+        const bRes = await fetch('/api/gooddollar-balance');
+        const bData = await bRes.json();
+        if (bData.success) {
+            const bal = parseFloat(bData.balance);
+            const needed = order.gd_amount;
+            if (bal < needed) {
+                document.getElementById('payFlowStatus').className = 'pay-status-box pay-status-error';
+                document.getElementById('payFlowStatus').innerHTML =
+                    `⚠️ Low G$ balance: You have <strong>${Math.floor(bal).toLocaleString()} G$</strong> but this order requires <strong>${needed.toLocaleString()} G$</strong>. Please top up your G$ before proceeding.`;
+                document.getElementById('payFlowStatus').style.display = 'block';
+            }
+        }
+    } catch (_) {}
+
+    showStep('stepPay');
+
+    if (isDAppBrowser()) {
+        // DApp browser — direct payment via window.ethereum
+        document.getElementById('dappFlow').style.display = 'block';
+        document.getElementById('dappGdAmt').textContent = order.gd_amount;
+        setDappStatus('info', '<i class="fas fa-mobile-alt"></i> Wallet detected! Click below to pay.');
+        document.getElementById('dappPayBtn').disabled = false;
+    } else {
+        // Regular browser — manual send to merchant address
+        document.getElementById('merchantFlow').style.display = 'block';
+        document.getElementById('merchantGdAmt').textContent = order.gd_amount;
+    }
+}
+
+// ─── Auto-detect payment polling ─────────────────────────────────────────────
+const POLL_INTERVAL_MS = 5000;  // 5 seconds between polls
+const POLL_MAX = 60;             // 5 minutes total (60 × 5s)
+let _lastKnownTxHash = null;     // passed to detect-payment for receipt checks
+
+async function markOrderStatus(orderId, status) {
+    if (!orderId) return;
+    try {
+        await fetch(`/reloadly/api/order/${orderId}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status })
+        });
+    } catch (_) {}
+}
+
+async function startAutoDetect() {
+    _scanningActive = true;
+    showStep('stepProcessing');
+    document.getElementById('processingMsg').textContent = 'Watching the blockchain for your payment...';
+    document.getElementById('processingDetail').textContent = 'Scanning Celo network • Auto-detecting G$ transfer';
+    document.getElementById('detectProgressBar').style.width = '0%';
+    document.getElementById('detectPollCount').textContent = 'Poll 0 / ' + POLL_MAX;
+
+    let poll = 0;
+    while (poll < POLL_MAX) {
+        poll++;
+        const pct = Math.round((poll / POLL_MAX) * 100);
+        const secsLeft = Math.max(0, (POLL_MAX - poll) * (POLL_INTERVAL_MS / 1000));
+        const mm = String(Math.floor(secsLeft / 60)).padStart(1, '0');
+        const ss = String(secsLeft % 60).padStart(2, '0');
+        document.getElementById('detectProgressBar').style.width = pct + '%';
+        document.getElementById('detectPollCount').textContent = `Poll ${poll} / ${POLL_MAX} • expires in ${mm}:${ss}`;
+        document.getElementById('processingDetail').textContent = `Scanning Celo blocks… attempt ${poll} of ${POLL_MAX}`;
+
+        try {
+            const body = { order_id: currentOrderId };
+            if (_lastKnownTxHash) body.tx_hash = _lastKnownTxHash;
+
+            const res = await apiFetch('/reloadly/api/order/detect-payment', {
+                method: 'POST',
+                body: JSON.stringify(body)
+            });
+
+            // Hard auth/not-found error
+            if (res.error && !res.found && res.success === false && !res.message) {
+                showStep('stepResult');
+                setResult('error', '❌ ' + res.error);
+                return;
+            }
+
+            if (res.found) {
+                _scanningActive = false;
+                showStep('stepResult');
+                if (res.status === 'payment_failed') {
+                    // Transaction reverted on-chain — no G$ was taken
+                    setResult('error', (res.error || '❌ Transaction failed on-chain.') +
+                        '<br><br>💡 <strong>Common causes:</strong><br>' +
+                        '• Insufficient G$ balance<br>' +
+                        '• Wallet not on Celo network<br>' +
+                        '• Not enough CELO for gas fees<br><br>' +
+                        'No G$ was deducted. Please try again.');
+                    showToast('Transaction failed', 'error');
+                } else if (res.status === 'completed' || res.success) {
+                    setResult('success', '✅ Payment detected on blockchain!<br>Your order has been completed and delivered.');
+                    showToast('Order completed!', 'success');
+                    loadOrders();
+                } else if (res.already_processed) {
+                    const statusMsg = {
+                        completed: '✅ Order already completed!',
+                        refunded: '⚠️ Payment was detected but fulfillment failed — your G$ was refunded.',
+                        payment_failed: '❌ Transaction failed on-chain. No G$ was deducted.',
+                        refund_failed: '❌ Order failed and refund also failed. Contact support.'
+                    };
+                    const isGood = res.status === 'completed';
+                    setResult(isGood ? 'success' : 'error', statusMsg[res.status] || `Status: ${res.status}`);
+                } else {
+                    let msg = '❌ ' + (res.error || 'Order fulfillment failed.');
+                    if (res.refunded) msg += `<br><br>✅ Your ${_pendingOrderData?.gd_amount} G$ has been refunded.`;
+                    setResult(res.refunded ? 'warning' : 'error', msg);
+                    showToast(res.refunded ? 'Failed — refunded' : 'Order failed', 'error');
+                }
+                return;
+            }
+
+            // Not found yet — keep polling
+        } catch (e) {
+            // Network error — keep trying
+            document.getElementById('processingDetail').textContent = `Network error on attempt ${poll}, retrying...`;
+        }
+
+        if (poll < POLL_MAX) {
+            await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+        }
+    }
+
+    // Timed out — mark order expired and show result
+    _scanningActive = false;
+    if (currentOrderId) await markOrderStatus(currentOrderId, 'expired');
+    showStep('stepResult');
+    setResult('error', `⏳ Scanning expired after 5 minutes — no payment detected.<br><br>Order ID: <strong>${currentOrderId}</strong><br><br>If you already sent the G$, check your <strong>Order History</strong> — it may still appear shortly. Otherwise, contact support with your order ID.`);
+    showToast('Detection timed out', 'error');
+}
+
+// Called after wallet sends the transaction — start blockchain auto-detection
+// txHash is optionally passed to the backend for immediate receipt verification
+async function processConfirmation(txHash) {
+    if (txHash) _lastKnownTxHash = txHash;
+    await startAutoDetect();
+}
+
+function setResult(type, html) {
+    const el = document.getElementById('resultBox');
+    el.className = `pay-status-box pay-status-${type}`;
+    el.innerHTML = html;
+}
+
+function closePayModal() {
+    document.getElementById('payModal').classList.remove('open');
+    // If scan is running and order has no payment yet, mark as cancelled
+    if (_scanningActive && currentOrderId) {
+        const oid = currentOrderId;
+        fetch(`/reloadly/api/order/${oid}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'cancelled' })
+        }).catch(() => {});
+        _scanningActive = false;
+    }
+    _pendingOrderData = null;
+    currentOrderId = null;
+    _lastKnownTxHash = null;
+}
+
+// ─── TOP-UP ───────────────────────────────────────────────────────────────────
+async function loadOperators() {
+    const country = document.getElementById('tuCountry').value.trim().toUpperCase();
+    const phone = document.getElementById('tuPhone').value.trim();
+    const list = document.getElementById('operatorList');
+    list.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i></div>';
+    selectedOperator = null;
+    selectedAmount = null;
+    document.getElementById('topupForm').style.display = 'none';
+    try {
+        let detectedId = null;
+
+        // Auto-detect operator from phone number, but still load all operators
+        if (phone) {
+            const det = await apiFetch(`/reloadly/api/topup/detect-operator?phone=${encodeURIComponent(phone)}&country=${country}`);
+            if (det.success && det.operator) detectedId = det.operator.id;
+        }
+
+        // Always load the full operator list
+        const data = await apiFetch(`/reloadly/api/topup/operators?country=${country}`);
+        if (!data.success) { list.innerHTML = `<div class="empty-msg">❌ ${data.error}</div>`; return; }
+
+        renderOperators(data.operators, detectedId);
+
+        // Auto-select the detected operator if found
+        if (detectedId !== null) {
+            const idx = data.operators.findIndex(op => op.id === detectedId);
+            if (idx !== -1) selectOperator(idx);
+        }
+    } catch(e) { list.innerHTML = '<div class="empty-msg">❌ Failed to load operators</div>'; }
+}
+
+function renderOperators(operators, detectedId = null) {
+    const list = document.getElementById('operatorList');
+    if (!operators || !operators.length) { list.innerHTML = '<div class="empty-msg">No operators found.</div>'; return; }
+    window._operators = operators;
+    list.innerHTML = `<div class="card">
+        <h3>Select Operator ${detectedId ? '<span style="font-size:11px;color:#69f0ae;font-weight:400;margin-left:6px">✓ Auto-detected from phone number</span>' : ''}</h3>
+        <div class="operator-grid">${
+        operators.map((op, i) => {
+            const isDetected = op.id === detectedId;
+            return `
+            <div class="operator-card${isDetected ? ' selected' : ''}" onclick="selectOperator(${i})" id="opcard-${i}">
+                ${op.logoUrls && op.logoUrls[0] ? `<img src="${op.logoUrls[0]}" style="height:32px;margin-bottom:8px;object-fit:contain;max-width:100%">` : ''}
+                <div class="op-name">${op.name}</div>
+                <div class="op-country">${op.country?.name || ''}</div>
+                <div class="op-amounts">${op.gd_amounts ? op.gd_amounts.slice(0,3).map(a=>`${a} G$`).join(' · ') : (op.minAmount ? `$${op.minAmount}–$${op.maxAmount}` : '')}</div>
+                ${isDetected ? '<div style="font-size:9px;color:#69f0ae;margin-top:4px">● Detected</div>' : ''}
+            </div>`;
+        }).join('')
+    }</div></div>`;
+}
+
+function selectOperator(idx) {
+    selectedOperator = window._operators[idx];
+    selectedAmount = null;
+    document.querySelectorAll('.operator-card').forEach(c => c.classList.remove('selected'));
+    document.getElementById('opcard-' + idx)?.classList.add('selected');
+    document.getElementById('tuOperatorName').textContent = selectedOperator.name;
+    const sec = document.getElementById('tuAmountSection');
+    if (selectedOperator.fixedAmounts && selectedOperator.fixedAmounts.length) {
+        const gd = selectedOperator.gd_amounts || selectedOperator.fixedAmounts.map(a => Math.round(a / GD_PRICE));
+        const localAmounts = selectedOperator.localFixedAmounts || [];
+        const localDescs = selectedOperator.localFixedAmountsDescriptions || {};
+        const usdDescs = selectedOperator.fixedAmountsDescriptions || {};
+        const currSymbol = selectedOperator.destinationCurrencySymbol || '$';
+        const currCode = selectedOperator.destinationCurrencyCode || 'USD';
+        const isUSD = currCode === 'USD';
+        const hasDescs = Object.keys(localDescs).length > 0 || Object.keys(usdDescs).length > 0;
+        const isBundle = selectedOperator.bundle || selectedOperator.data || hasDescs;
+
+        sec.innerHTML = `<label style="font-size:12px;color:#aaa;display:block;margin-bottom:8px">
+            ${isBundle ? 'Select Promo / Bundle' : 'Select Amount'}
+            </label>
+            <div class="${isBundle ? 'bundle-list' : 'amount-chips'}">${selectedOperator.fixedAmounts.map((a, i) => {
+                const localAmt = localAmounts[i];
+                const localKey = localAmt !== undefined ? parseFloat(localAmt).toFixed(2) : null;
+                const usdKey = parseFloat(a).toFixed(2);
+                // Try local description first, then USD description
+                const desc = (localKey && (localDescs[localKey] || localDescs[parseFloat(localKey)])) ||
+                             usdDescs[a] || usdDescs[usdKey] || usdDescs[String(parseFloat(a))] || '';
+                // Local currency display
+                const localDisplay = localAmt !== undefined && !isUSD
+                    ? `${currSymbol}${parseFloat(localAmt).toLocaleString()}`
+                    : `$${parseFloat(a).toFixed(2)}`;
+                if (isBundle && desc) {
+                    return `<div class="bundle-chip" onclick="selectFixedAmt(${a},${gd[i]},this)" data-usd="${a}" data-local="${localAmt||''}">
+                        <div class="bundle-name">${desc}</div>
+                        <div class="bundle-price">
+                            <div style="color:#69f0ae;font-weight:700;font-size:13px">${Math.round(gd[i]).toLocaleString()} G$</div>
+                            <div style="color:#888;font-size:10px">${localDisplay}</div>
+                        </div>
+                    </div>`;
+                }
+                return `<div class="chip" onclick="selectFixedAmt(${a},${gd[i]},this)">
+                    ${localDisplay} <span style="color:#7986cb">(${Math.round(gd[i]).toLocaleString()} G$)</span>
+                </div>`;
+            }).join('')}</div>`;
+    } else {
+        const cSym = selectedOperator.destinationCurrencySymbol || '$';
+        const localMin = selectedOperator.localMinAmount || selectedOperator.minAmount;
+        const localMax = selectedOperator.localMaxAmount || selectedOperator.maxAmount;
+        const isLocalUSD = (selectedOperator.destinationCurrencyCode || 'USD') === 'USD';
+        const rangeLabel = isLocalUSD
+            ? `$${selectedOperator.minAmount} – $${selectedOperator.maxAmount} USD`
+            : `${cSym}${localMin} – ${cSym}${localMax} (${selectedOperator.destinationCurrencyCode})`;
+        sec.innerHTML = `<div class="form-group">
+            <label style="font-size:12px;color:#aaa">Amount in USD — ${rangeLabel}</label>
+            <input id="tuCustomAmt" type="number" step="0.01" min="${selectedOperator.minAmount}" max="${selectedOperator.maxAmount}" placeholder="USD amount" oninput="updateTuSummary()"/>
+        </div>`;
+    }
+    document.getElementById('topupForm').style.display = 'block';
+    updateTuSummary();
+}
+
+function selectFixedAmt(usd, gd, el) {
+    document.querySelectorAll('#tuAmountSection .chip, #tuAmountSection .bundle-chip').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    const desc = el.querySelector('.bundle-name')?.textContent?.trim() || null;
+    const localAmt = el.dataset.local || null;
+    const currSym = selectedOperator?.destinationCurrencySymbol || '$';
+    const currCode = selectedOperator?.destinationCurrencyCode || 'USD';
+    const localDisplay = localAmt && currCode !== 'USD' ? `${currSym}${parseFloat(localAmt).toLocaleString()} ${currCode}` : `$${parseFloat(usd).toFixed(2)} USD`;
+    selectedAmount = { usd, gd, desc, localDisplay };
+    updateTuSummary();
+}
+
+function updateTuSummary() {
+    const s = document.getElementById('tuSummary');
+    let usd, gd;
+    if (selectedAmount) { usd = selectedAmount.usd; gd = selectedAmount.gd; }
+    else { const inp = document.getElementById('tuCustomAmt'); if (!inp?.value) { s.style.display='none'; return; } usd = parseFloat(inp.value); gd = Math.ceil(usd / GD_PRICE); }
+    if (!usd) { s.style.display='none'; return; }
+    s.style.display='block';
+    const amountDisplay = selectedAmount?.localDisplay || `$${parseFloat(usd).toFixed(2)} USD`;
+    s.innerHTML = `${selectedAmount?.desc
+        ? `<div class="summary-row"><span>Promo</span><span style="text-align:right;max-width:55%;font-size:12px">${selectedAmount.desc}</span></div>`
+        : ''}
+        <div class="summary-row"><span>Amount</span><span>${amountDisplay}</span></div>
+        <div class="summary-row"><span>Operator</span><span>${selectedOperator?.name||''}</span></div>
+        <div class="summary-row"><span>You Pay</span><span style="color:#69f0ae;font-weight:700">${Math.round(gd).toLocaleString()} G$</span></div>`;
+}
+
+function initiateTopup() {
+    const phone = document.getElementById('tuRecipient').value.trim();
+    if (!phone) { showToast('Enter recipient phone number', 'error'); return; }
+    if (!selectedOperator) { showToast('Select an operator', 'error'); return; }
+    let usd, gd;
+    if (selectedAmount) { usd = selectedAmount.usd; gd = selectedAmount.gd; }
+    else { const inp = document.getElementById('tuCustomAmt'); if (!inp?.value) { showToast('Enter amount', 'error'); return; } usd = parseFloat(inp.value); gd = Math.ceil(usd / GD_PRICE); }
+    const country = document.getElementById('tuCountry').value.trim().toUpperCase();
+    const promoLabel = selectedAmount?.desc ? selectedAmount.desc : `$${parseFloat(usd).toFixed(2)}`;
+    openPayModal({ order_type: 'topup', usd_amount: usd, gd_amount: gd,
+        payload: { operator_id: selectedOperator.operatorId, amount: usd, phone, country,
+                   operator_name: selectedOperator.name, promo_name: selectedAmount?.desc || null },
+        label: `${promoLabel} · ${phone} · ${selectedOperator.name}` });
+}
+
+// ─── GIFT CARDS ───────────────────────────────────────────────────────────────
+async function loadGiftcards() {
+    const country = document.getElementById('gcCountry').value.trim().toUpperCase() || null;
+    const list = document.getElementById('gcList');
+    list.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i></div>';
+    try {
+        const data = await apiFetch(`/reloadly/api/giftcards${country ? '?country='+country : ''}`);
+        if (!data.success) { list.innerHTML = `<div class="empty-msg">❌ ${data.error}</div>`; return; }
+        const products = data.products || [];
+        if (!products.length) { list.innerHTML = '<div class="empty-msg">No gift cards found.</div>'; return; }
+        window._gcProducts = products;
+        list.innerHTML = `<div class="card"><h3>Select Gift Card</h3><div class="gc-grid">${
+            products.slice(0,40).map((p,i) => `
+            <div class="gc-card" onclick="selectGc(${i})" id="gccard-${i}">
+                ${p.logoUrls && p.logoUrls[0] ? `<img src="${p.logoUrls[0]}" style="height:36px;margin-bottom:8px;object-fit:contain;max-width:100%">` : ''}
+                <div class="op-name">${p.productName}</div>
+                <div class="op-country">${p.country?.name || p.countryCode || ''}</div>
+                <div class="op-amounts">${p.gd_fixed ? p.gd_fixed.slice(0,2).map(a=>`${a} G$`).join(' · ') : (p.gd_min ? `${p.gd_min}–${p.gd_max} G$` : '')}</div>
+            </div>`).join('')
+        }</div></div>`;
+    } catch(e) { list.innerHTML = '<div class="empty-msg">❌ Failed to load gift cards</div>'; }
+}
+
+function selectGc(idx) {
+    selectedGcProduct = window._gcProducts[idx];
+    document.querySelectorAll('.gc-card').forEach(c => c.classList.remove('selected'));
+    document.getElementById('gccard-' + idx)?.classList.add('selected');
+    const ex = document.getElementById('gcOrderForm'); if (ex) ex.remove();
+    const div = document.createElement('div');
+    div.id = 'gcOrderForm'; div.className = 'card';
+    let amtHtml = '';
+    if (selectedGcProduct.fixedRecipientDenominations?.length) {
+        const gd = selectedGcProduct.gd_fixed || selectedGcProduct.fixedRecipientDenominations.map(a => Math.ceil(a / GD_PRICE));
+        amtHtml = `<div class="form-group"><label>Select Denomination</label><div class="amount-chips">${
+            selectedGcProduct.fixedRecipientDenominations.map((a,i) => `<div class="chip" onclick="selectGcAmt(${a},${gd[i]},this)">$${a} <span style="color:#7986cb">(${gd[i]} G$)</span></div>`).join('')}</div></div>`;
+    } else {
+        amtHtml = `<div class="form-group"><label>Amount (USD) — $${selectedGcProduct.minRecipientDenomination}–$${selectedGcProduct.maxRecipientDenomination}</label>
+            <input id="gcCustomAmt" type="number" step="0.01" min="${selectedGcProduct.minRecipientDenomination}" max="${selectedGcProduct.maxRecipientDenomination}" placeholder="Enter amount"/></div>`;
+    }
+    div.innerHTML = `<h3>${selectedGcProduct.productName}</h3>${amtHtml}
+        <div class="summary-box" id="gcSummary" style="display:none"></div>
+        <button class="btn btn-primary btn-full" onclick="initiateGiftcard()" style="margin-top:12px"><i class="fas fa-bolt"></i> Pay with G$</button>`;
+    document.getElementById('gcList').after(div);
+    window._gcSelectedAmt = null;
+}
+
+function selectGcAmt(usd, gd, el) {
+    document.querySelectorAll('#gcOrderForm .chip').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    window._gcSelectedAmt = { usd, gd };
+    const s = document.getElementById('gcSummary');
+    s.style.display='block';
+    s.innerHTML = `<div class="summary-row"><span>Gift Card</span><span>${selectedGcProduct.productName}</span></div>
+        <div class="summary-row"><span>Value</span><span>$${usd}</span></div>
+        <div class="summary-row"><span>You Pay</span><span>${gd} G$</span></div>`;
+}
+
+function initiateGiftcard() {
+    if (!selectedGcProduct) { showToast('Select a gift card', 'error'); return; }
+    let usd, gd;
+    if (window._gcSelectedAmt) { usd = window._gcSelectedAmt.usd; gd = window._gcSelectedAmt.gd; }
+    else { const inp = document.getElementById('gcCustomAmt'); if (!inp?.value) { showToast('Enter amount', 'error'); return; } usd = parseFloat(inp.value); gd = Math.ceil(usd / GD_PRICE); }
+    openPayModal({ order_type: 'giftcard', usd_amount: usd, gd_amount: gd,
+        payload: { product_id: selectedGcProduct.productId, unit_price: usd, quantity: 1 },
+        label: `${selectedGcProduct.productName} — $${usd}` });
+}
+
+// ─── UTILITY ──────────────────────────────────────────────────────────────────
+async function loadBillers() {
+    const country = document.getElementById('utilCountry').value.trim().toUpperCase() || null;
+    const list = document.getElementById('billerList');
+    list.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i></div>';
+    document.getElementById('utilityForm').style.display = 'none';
+    try {
+        const data = await apiFetch(`/reloadly/api/utility/billers${country ? '?country='+country : ''}`);
+        if (!data.success) { list.innerHTML = `<div class="empty-msg">❌ ${data.error}</div>`; return; }
+        const billers = data.billers || [];
+        if (!billers.length) { list.innerHTML = '<div class="empty-msg">No billers found.</div>'; return; }
+        window._billers = billers;
+        list.innerHTML = `<div class="card"><h3>Select Biller</h3><div class="operator-grid">${
+            billers.slice(0,30).map((b,i) => `
+            <div class="operator-card" onclick="selectBiller(${i})" id="bcard-${i}">
+                <div class="op-name">${b.name}</div>
+                <div class="op-country">${b.countryISOCode||''} · ${b.type||''}</div>
+            </div>`).join('')
+        }</div></div>`;
+    } catch(e) { list.innerHTML = '<div class="empty-msg">❌ Failed to load billers</div>'; }
+}
+
+function selectBiller(idx) {
+    selectedBiller = window._billers[idx];
+    document.querySelectorAll('#billerList .operator-card').forEach(c => c.classList.remove('selected'));
+    document.getElementById('bcard-' + idx)?.classList.add('selected');
+    document.getElementById('utilBillerName').textContent = selectedBiller.name;
+    document.getElementById('utilityForm').style.display = 'block';
+}
+
+function updateUtilSummary() {
+    const usd = parseFloat(document.getElementById('utilAmount').value);
+    const s = document.getElementById('utilSummary');
+    if (!usd) { s.style.display='none'; return; }
+    const gd = Math.ceil(usd / GD_PRICE);
+    s.style.display='block';
+    s.innerHTML = `<div class="summary-row"><span>Biller</span><span>${selectedBiller?.name||''}</span></div>
+        <div class="summary-row"><span>Amount</span><span>$${usd.toFixed(2)}</span></div>
+        <div class="summary-row"><span>You Pay</span><span>${gd} G$</span></div>`;
+}
+
+function initiateUtility() {
+    if (!selectedBiller) { showToast('Select a biller', 'error'); return; }
+    const usd = parseFloat(document.getElementById('utilAmount').value);
+    const sub = document.getElementById('utilSubscriber').value.trim();
+    if (!usd || usd <= 0) { showToast('Enter valid amount', 'error'); return; }
+    if (!sub) { showToast('Enter subscriber/account ID', 'error'); return; }
+    const gd = Math.ceil(usd / GD_PRICE);
+    openPayModal({ order_type: 'utility', usd_amount: usd, gd_amount: gd,
+        payload: { biller_id: selectedBiller.id, amount: usd, subscriber_id: sub },
+        label: `${selectedBiller.name} — Account ${sub}` });
+}
+
+// ─── ORDERS ───────────────────────────────────────────────────────────────────
+async function loadOrders() {
+    const list = document.getElementById('orderList');
+    list.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i> Loading history…</div>';
+    try {
+        const data = await apiFetch('/reloadly/api/orders');
+        const orders = data.orders || [];
+
+        // Stats
+        const statsEl = document.getElementById('orderStats');
+        if (orders.length) {
+            statsEl.style.display = 'block';
+            document.getElementById('statTotal').textContent = orders.length;
+            document.getElementById('statCompleted').textContent = orders.filter(o => o.status === 'completed').length;
+            const gdSpent = orders
+                .filter(o => o.status === 'completed')
+                .reduce((s, o) => s + parseFloat(o.gd_amount || 0), 0);
+            document.getElementById('statGd').textContent = gdSpent.toFixed(2);
+        } else {
+            statsEl.style.display = 'none';
+        }
+
+        if (!orders.length) {
+            list.innerHTML = `
+            <div style="text-align:center;padding:40px 20px;color:#888">
+                <div style="font-size:40px;margin-bottom:12px">🛒</div>
+                <div>No transactions yet.</div>
+                <div style="font-size:12px;margin-top:6px">Your purchases will appear here.</div>
+            </div>`;
+            return;
+        }
+
+        const icons = { topup: '📱', giftcard: '🎁', utility: '⚡' };
+        const typeLabel = { topup: 'Mobile Top-Up', giftcard: 'Gift Card', utility: 'Utility' };
+        const CELOSCAN = 'https://celoscan.io/tx/';
+
+        list.innerHTML = orders.map(o => {
+            const payload = o.order_payload || {};
+            // Build product detail line
+            let detail = '';
+            if (o.order_type === 'topup') {
+                detail = [payload.phone, payload.operator_name].filter(Boolean).join(' · ');
+            } else if (o.order_type === 'giftcard') {
+                detail = payload.product_name || '';
+            } else if (o.order_type === 'utility') {
+                detail = [payload.bill_type, payload.account_number].filter(Boolean).join(' · ');
+            }
+
+            const date = new Date(o.created_at).toLocaleString('en-PH', {
+                month: 'short', day: 'numeric', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
+
+            const txLink = o.tx_hash
+                ? `<a href="${CELOSCAN}${o.tx_hash}" target="_blank" rel="noopener"
+                      style="color:#7986cb;font-size:11px;text-decoration:none">
+                      <i class="fas fa-external-link-alt" style="font-size:9px"></i>
+                      ${o.tx_hash.slice(0,10)}…${o.tx_hash.slice(-6)}
+                   </a>` : '';
+
+            const refundLink = o.refund_tx_hash
+                ? `<a href="${CELOSCAN}${o.refund_tx_hash}" target="_blank" rel="noopener"
+                      style="color:#ea80fc;font-size:11px;text-decoration:none">
+                      <i class="fas fa-undo" style="font-size:9px"></i>
+                      Refund: ${o.refund_tx_hash.slice(0,10)}…${o.refund_tx_hash.slice(-6)}
+                   </a>` : '';
+
+            const failReason = o.failure_reason
+                ? `<div style="font-size:11px;color:#ef9a9a;margin-top:2px">
+                       <i class="fas fa-exclamation-circle"></i> ${o.failure_reason}
+                   </div>` : '';
+
+            const rlId = o.reloadly_transaction_id
+                ? `<span style="font-size:10px;color:#888;background:#1e1e1e;padding:2px 6px;border-radius:4px">
+                       Ref# ${o.reloadly_transaction_id}
+                   </span>` : '';
+
+            return `
+            <div class="order-row" style="flex-direction:column;align-items:stretch;gap:8px;padding:14px 16px">
+                <div style="display:flex;align-items:center;gap:10px">
+                    <span style="font-size:24px;flex-shrink:0">${icons[o.order_type]||'🛍️'}</span>
+                    <div style="flex:1;min-width:0">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+                            <span style="font-weight:600;font-size:14px">${typeLabel[o.order_type]||o.order_type}</span>
+                            <span class="status-pill status-${o.status}">${o.status.replace(/_/g,' ')}</span>
+                        </div>
+                        ${detail ? `<div style="font-size:12px;color:#bbb;margin-top:2px">${detail}</div>` : ''}
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+                    <div>
+                        <span style="font-weight:700;color:#69f0ae">${parseFloat(o.gd_amount).toFixed(2)} G$</span>
+                        <span style="color:#aaa;font-size:12px;margin-left:4px">≈ $${parseFloat(o.usd_amount).toFixed(2)}</span>
+                    </div>
+                    <div style="font-size:11px;color:#888">${date}</div>
+                </div>
+                ${(txLink || refundLink || rlId) ? `
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:4px;border-top:1px solid #2a2a2a">
+                    ${txLink}
+                    ${refundLink}
+                    ${rlId}
+                </div>` : ''}
+                ${failReason}
+            </div>`;
+        }).join('');
+    } catch(e) {
+        document.getElementById('orderList').innerHTML =
+            '<div class="empty-msg">❌ Failed to load history. Please refresh.</div>';
+    }
+}
+
+// ─── STORE VISIBILITY ─────────────────────────────────────────────────────────
+async function applyStoreVisibility() {
+    try {
+        const data = await apiFetch('/api/feature-visibility');
+        const map = {
+            topup:    data.topup_visible !== false,
+            giftcard: data.giftcard_visible !== false,
+            utility:  data.utility_visible !== false
+        };
+        // Get all tab buttons and their associated content
+        const tabBtns = document.querySelectorAll('.tab-btn[onclick*="switchTab"]');
+        tabBtns.forEach(btn => {
+            const match = btn.getAttribute('onclick').match(/switchTab\('(\w+)'/);
+            if (!match) return;
+            const name = match[1];
+            if (name in map && !map[name]) {
+                btn.style.display = 'none';
+                const content = document.getElementById('tab-' + name);
+                if (content) content.style.display = 'none';
+            }
+        });
+        // If the currently active tab is hidden, switch to the first visible tab
+        const activeBtn = document.querySelector('.tab-btn.active');
+        if (activeBtn && activeBtn.style.display === 'none') {
+            const firstVisible = document.querySelector('.tab-btn:not([style*="display: none"])');
+            if (firstVisible) firstVisible.click();
+        }
+    } catch (e) {
+        // Visibility check failed — show all tabs by default
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    applyStoreVisibility();
+    loadOrders();
+});
+</script>
+</body>
+</html>
