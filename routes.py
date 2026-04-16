@@ -14,6 +14,9 @@ import random
 import hashlib
 import hmac
 import requests
+from email.message import EmailMessage
+import smtplib
+from urllib.parse import urlencode
 
 # Initialize notification service
 notification_service = NotificationService()
@@ -5161,11 +5164,81 @@ def _set_custodial_session(private_key: str, login_method: str = "custodial"):
     return wallet_address
 
 
+def _apply_referral_code(referral_code: str, wallet_address: str, context: str):
+    if not referral_code:
+        return
+    try:
+        from referral_program.referral_service import referral_service
+        normalized_code = referral_code.upper()
+        validation = referral_service.validate_referral_code(normalized_code)
+        if validation.get("valid"):
+            referral_service.record_referral(
+                referral_code=normalized_code,
+                referee_wallet=wallet_address
+            )
+    except Exception as ref_err:
+        logger.warning(f"Referral processing error in {context}: {ref_err}")
+
+
+def _send_email_otp_via_smtp(email: str, otp: str) -> tuple[bool, str]:
+    smtp_host = (os.environ.get("SMTP_HOST") or "").strip()
+    smtp_port = int((os.environ.get("SMTP_PORT") or "587").strip())
+    smtp_user = (os.environ.get("SMTP_USER") or "").strip()
+    smtp_password = (os.environ.get("SMTP_PASSWORD") or "").strip()
+    smtp_from = (os.environ.get("SMTP_FROM_EMAIL") or smtp_user or "").strip()
+    smtp_from_name = (os.environ.get("SMTP_FROM_NAME") or "GoodMarket").strip()
+    use_tls = str(os.environ.get("SMTP_USE_TLS", "true")).strip().lower() not in ("0", "false", "no")
+
+    if not smtp_host or not smtp_from:
+        return False, "Email service is not configured."
+
+    msg = EmailMessage()
+    msg["Subject"] = "Your GoodMarket OTP Code"
+    msg["From"] = f"{smtp_from_name} <{smtp_from}>"
+    msg["To"] = email
+    msg.set_content(
+        f"Your One-Time Password (OTP) is: {otp}\n\n"
+        "This code expires in 5 minutes.\n\n"
+        "If you did not request this code, you can ignore this email."
+    )
+
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+        if use_tls:
+            server.starttls()
+        if smtp_user and smtp_password:
+            server.login(smtp_user, smtp_password)
+        server.send_message(msg)
+    return True, "OTP sent"
+
+
+def _google_identity_login(token_data: dict, referral_code: str = ""):
+    aud = (token_data.get("aud") or "").strip()
+    sub = (token_data.get("sub") or "").strip()
+    email = _normalize_email(token_data.get("email"))
+    email_verified = token_data.get("email_verified")
+
+    expected_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    if expected_client_id and aud != expected_client_id:
+        return {"success": False, "error": "Google client mismatch"}, 400
+    if not sub:
+        return {"success": False, "error": "Google identity missing"}, 400
+    if email and str(email_verified).lower() not in ("true", "1"):
+        return {"success": False, "error": "Google email is not verified"}, 400
+
+    identity = f"google:{sub}"
+    if email:
+        identity += f":{email}"
+    private_key = _derive_custodial_private_key(identity)
+    wallet_address = _set_custodial_session(private_key, login_method="google")
+    _apply_referral_code(referral_code, wallet_address, "Google login")
+    return {"success": True, "wallet": wallet_address, "redirect_to": "/wallet"}, 200
+
+
 @routes.route("/api/auth/email/send-otp", methods=["POST"])
 def send_email_otp():
     """
-    Generate OTP for email login.
-    No extra environment variable is required for this flow.
+    Generate OTP for email login and send via SMTP.
+    Requires SMTP_* environment variables.
     """
     try:
         data = request.get_json() or {}
@@ -5183,12 +5256,13 @@ def send_email_otp():
         session["email_otp_attempts"] = 0
         session.permanent = True
 
-        # NOTE: For zero-env compatibility we return OTP to the client.
-        # Frontend should show this code to the user as "Email OTP".
+        sent, send_message = _send_email_otp_via_smtp(email, otp)
+        if not sent:
+            return jsonify({"success": False, "error": send_message}), 500
+
         return jsonify({
             "success": True,
-            "message": "OTP generated successfully",
-            "otp": otp,
+            "message": "OTP sent to your email address",
             "expires_in": 300
         })
     except Exception as e:
@@ -5232,18 +5306,7 @@ def verify_email_otp():
         session.pop("email_otp_expires", None)
         session.pop("email_otp_attempts", None)
 
-        if referral_code:
-            try:
-                from referral_program.referral_service import referral_service
-                normalized_code = referral_code.upper()
-                validation = referral_service.validate_referral_code(normalized_code)
-                if validation.get("valid"):
-                    referral_service.record_referral(
-                        referral_code=normalized_code,
-                        referee_wallet=wallet_address
-                    )
-            except Exception as ref_err:
-                logger.warning(f"Referral processing error in email OTP login: {ref_err}")
+        _apply_referral_code(referral_code, wallet_address, "email OTP login")
 
         return jsonify({"success": True, "wallet": wallet_address, "redirect_to": "/wallet"})
     except Exception as e:
@@ -5271,42 +5334,96 @@ def google_login():
             return jsonify({"success": False, "error": "Invalid Google token"}), 400
 
         token_data = resp.json()
-        aud = (token_data.get("aud") or "").strip()
-        sub = (token_data.get("sub") or "").strip()
-        email = _normalize_email(token_data.get("email"))
-        email_verified = token_data.get("email_verified")
-
-        expected_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
-        if expected_client_id and aud != expected_client_id:
-            return jsonify({"success": False, "error": "Google client mismatch"}), 400
-        if not sub:
-            return jsonify({"success": False, "error": "Google identity missing"}), 400
-        if email and str(email_verified).lower() not in ("true", "1"):
-            return jsonify({"success": False, "error": "Google email is not verified"}), 400
-
-        identity = f"google:{sub}"
-        if email:
-            identity += f":{email}"
-        private_key = _derive_custodial_private_key(identity)
-        wallet_address = _set_custodial_session(private_key, login_method="google")
-
-        if referral_code:
-            try:
-                from referral_program.referral_service import referral_service
-                normalized_code = referral_code.upper()
-                validation = referral_service.validate_referral_code(normalized_code)
-                if validation.get("valid"):
-                    referral_service.record_referral(
-                        referral_code=normalized_code,
-                        referee_wallet=wallet_address
-                    )
-            except Exception as ref_err:
-                logger.warning(f"Referral processing error in Google login: {ref_err}")
-
-        return jsonify({"success": True, "wallet": wallet_address, "redirect_to": "/wallet"})
+        payload, status_code = _google_identity_login(token_data, referral_code)
+        return jsonify(payload), status_code
     except Exception as e:
         logger.error(f"Google login error: {e}")
         return jsonify({"success": False, "error": "Google login failed"}), 500
+
+
+@routes.route("/auth/google/start", methods=["GET"])
+def google_login_start():
+    try:
+        google_client_id = (os.environ.get("GOOGLE_CLIENT_ID") or "").strip()
+        google_client_secret = (os.environ.get("GOOGLE_CLIENT_SECRET") or "").strip()
+        if not google_client_id or not google_client_secret:
+            return redirect("/?auth_error=google_config_missing")
+
+        state = hashlib.sha256(f"{time.time()}:{os.urandom(16).hex()}".encode()).hexdigest()
+        referral_code = (request.args.get("referral_code") or "").strip()
+        session["google_oauth_state"] = state
+        session["google_oauth_referral"] = referral_code
+        session.permanent = True
+
+        redirect_uri = url_for("routes.google_login_callback", _external=True)
+        query = urlencode({
+            "client_id": google_client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state,
+            "prompt": "select_account"
+        })
+        return redirect(f"https://accounts.google.com/o/oauth2/v2/auth?{query}")
+    except Exception as e:
+        logger.error(f"Google OAuth start error: {e}")
+        return redirect("/?auth_error=google_start_failed")
+
+
+@routes.route("/auth/google/callback", methods=["GET"])
+def google_login_callback():
+    try:
+        received_state = (request.args.get("state") or "").strip()
+        expected_state = (session.get("google_oauth_state") or "").strip()
+        if not expected_state or not hmac.compare_digest(received_state, expected_state):
+            return redirect("/?auth_error=google_state_invalid")
+
+        code = (request.args.get("code") or "").strip()
+        if not code:
+            return redirect("/?auth_error=google_code_missing")
+
+        google_client_id = (os.environ.get("GOOGLE_CLIENT_ID") or "").strip()
+        google_client_secret = (os.environ.get("GOOGLE_CLIENT_SECRET") or "").strip()
+        redirect_uri = url_for("routes.google_login_callback", _external=True)
+        token_resp = requests.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": code,
+                "client_id": google_client_id,
+                "client_secret": google_client_secret,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code"
+            },
+            timeout=10
+        )
+        if token_resp.status_code != 200:
+            logger.warning(f"Google token exchange failed: {token_resp.text[:300]}")
+            return redirect("/?auth_error=google_token_exchange_failed")
+
+        token_data = token_resp.json()
+        id_token = (token_data.get("id_token") or "").strip()
+        if not id_token:
+            return redirect("/?auth_error=google_id_token_missing")
+
+        info_resp = requests.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": id_token},
+            timeout=10
+        )
+        if info_resp.status_code != 200:
+            return redirect("/?auth_error=google_token_invalid")
+
+        referral_code = (session.get("google_oauth_referral") or "").strip()
+        payload, status_code = _google_identity_login(info_resp.json(), referral_code)
+        session.pop("google_oauth_state", None)
+        session.pop("google_oauth_referral", None)
+
+        if status_code != 200 or not payload.get("success"):
+            return redirect("/?auth_error=google_login_failed")
+        return redirect(payload.get("redirect_to") or "/wallet")
+    except Exception as e:
+        logger.error(f"Google OAuth callback error: {e}")
+        return redirect("/?auth_error=google_callback_failed")
 
 
 @routes.route("/api/turnkey/login", methods=["POST"])
