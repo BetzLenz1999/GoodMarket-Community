@@ -6,6 +6,7 @@ import { encryptPrivateKeyToBundle } from '@turnkey/crypto';
 const PROJECT_ID = process.env.WALLETCONNECT_PROJECT_ID;
 const PORT = parseInt(process.env.WC_SERVICE_PORT || '3001');
 const APP_URL = process.env.APP_URL || 'https://goodmarket.live';
+const TURNKEY_OTP_APP_NAME = process.env.TURNKEY_OTP_APP_NAME || 'GoodMarket';
 
 const TURNKEY_ORG_ID = process.env.TURNKEY_ORGANIZATION_ID;
 const TURNKEY_API_PUBLIC_KEY = process.env.TURNKEY_API_PUBLIC_KEY;
@@ -31,6 +32,16 @@ if (TURNKEY_ORG_ID && TURNKEY_API_PUBLIC_KEY && TURNKEY_API_PRIVATE_KEY) {
 
 let signClient = null;
 const sessions = {};
+const otpSessionsByEmail = {};
+
+function pruneExpiredOtpSessions() {
+    const now = Date.now();
+    for (const [email, item] of Object.entries(otpSessionsByEmail)) {
+        if (!item || !item.expiresAt || item.expiresAt <= now) {
+            delete otpSessionsByEmail[email];
+        }
+    }
+}
 
 async function initClient() {
     signClient = await SignClient.init({
@@ -229,6 +240,74 @@ async function handleTurnkey(req, res, path) {
         } catch (err) {
             console.error('Turnkey sign-msg error:', err.message);
             return sendJSON(res, 500, { error: err.message });
+        }
+    }
+
+    // POST /turnkey/email/send-code — send OTP code to email via Turnkey
+    if (req.method === 'POST' && (path === '/turnkey/email/send-code' || path === '/turnkey/email/send-otp' || path === '/turnkey/otp/send')) {
+        try {
+            pruneExpiredOtpSessions();
+            const { email } = await readBody(req);
+            const normalizedEmail = (email || '').toString().trim().toLowerCase();
+            if (!normalizedEmail || !normalizedEmail.includes('@')) {
+                return sendJSON(res, 400, { error: 'Valid email required' });
+            }
+
+            const result = await client.initOtp({
+                contact: normalizedEmail,
+                otpType: 'OTP_TYPE_EMAIL',
+                appName: TURNKEY_OTP_APP_NAME,
+                alphanumeric: false,
+                otpLength: 6,
+                expirationSeconds: '600'
+            });
+
+            if (!result?.otpId) {
+                return sendJSON(res, 500, { error: 'Turnkey did not return otpId' });
+            }
+
+            otpSessionsByEmail[normalizedEmail] = {
+                otpId: result.otpId,
+                expiresAt: Date.now() + 10 * 60 * 1000
+            };
+
+            return sendJSON(res, 200, { success: true, otpId: result.otpId });
+        } catch (err) {
+            console.error('Turnkey email OTP send error:', err.message);
+            return sendJSON(res, 500, { error: err.message });
+        }
+    }
+
+    // POST /turnkey/email/verify-code — verify OTP code for email
+    if (req.method === 'POST' && (path === '/turnkey/email/verify-code' || path === '/turnkey/email/verify-otp' || path === '/turnkey/otp/verify')) {
+        try {
+            pruneExpiredOtpSessions();
+            const { email, code } = await readBody(req);
+            const normalizedEmail = (email || '').toString().trim().toLowerCase();
+            const otpCode = (code || '').toString().trim();
+            if (!normalizedEmail || !otpCode) {
+                return sendJSON(res, 400, { error: 'email and code required' });
+            }
+
+            const otpState = otpSessionsByEmail[normalizedEmail];
+            if (!otpState?.otpId) {
+                return sendJSON(res, 400, { error: 'No active OTP for email. Request a new code.' });
+            }
+
+            const result = await client.verifyOtp({
+                otpId: otpState.otpId,
+                otpCode
+            });
+
+            if (!result?.verificationToken) {
+                return sendJSON(res, 400, { error: 'Invalid OTP code' });
+            }
+
+            delete otpSessionsByEmail[normalizedEmail];
+            return sendJSON(res, 200, { success: true });
+        } catch (err) {
+            console.error('Turnkey email OTP verify error:', err.message);
+            return sendJSON(res, 400, { error: err.message || 'Invalid OTP code' });
         }
     }
 
