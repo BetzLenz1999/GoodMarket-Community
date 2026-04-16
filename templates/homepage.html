@@ -1986,6 +1986,13 @@
             const btnText = document.getElementById('googleLoginBtnText');
             const btn = btnText ? btnText.closest('button') : null;
 
+            const buildGoogleRedirectUrl = () => {
+                const qs = new URLSearchParams();
+                if (referral) qs.set('referral_code', referral);
+                const suffix = qs.toString();
+                return '/auth/google/start' + (suffix ? `?${suffix}` : '');
+            };
+
             if (!clientId) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = 'Google login is not configured. Please set GOOGLE_CLIENT_ID.';
@@ -2039,15 +2046,15 @@
 
                 google.accounts.id.prompt((notification) => {
                     if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-                        statusDiv.className = 'status-message error';
-                        statusDiv.textContent = 'Google popup was blocked or unavailable. Please allow popups/cookies and try again.';
-                        if (btn) btn.disabled = false;
-                        if (btnText) btnText.textContent = 'Continue with Google';
+                        statusDiv.className = 'status-message info';
+                        statusDiv.textContent = 'Google popup unavailable. Redirecting to Google sign-in...';
+                        window.location.href = buildGoogleRedirectUrl();
                     }
                 });
             } catch (err) {
-                statusDiv.className = 'status-message error';
-                statusDiv.textContent = 'Unable to initialize Google login.';
+                statusDiv.className = 'status-message info';
+                statusDiv.textContent = 'Opening Google sign-in page...';
+                window.location.href = buildGoogleRedirectUrl();
                 if (btn) btn.disabled = false;
                 if (btnText) btnText.textContent = 'Continue with Google';
             }
@@ -2079,7 +2086,11 @@
                 const data = await resp.json();
                 if (data.success) {
                     statusDiv.className = 'status-message success';
-                    statusDiv.textContent = '✅ OTP sent to your email. Please check your inbox.';
+                    if (data.dev_otp) {
+                        statusDiv.textContent = `✅ Email service unavailable. Temporary OTP: ${data.dev_otp} (for testing only, expires in 5 min).`;
+                    } else {
+                        statusDiv.textContent = '✅ OTP sent to your email. Please check your inbox.';
+                    }
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = data.error || 'Failed to send OTP.';

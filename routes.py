@@ -5211,6 +5211,17 @@ def _send_email_otp_via_smtp(email: str, otp: str) -> tuple[bool, str]:
     return True, "OTP sent"
 
 
+def _allow_dev_otp_fallback() -> bool:
+    fallback_flag = (os.environ.get("EMAIL_OTP_DEV_FALLBACK") or "").strip().lower()
+    if fallback_flag in ("1", "true", "yes", "on"):
+        return True
+    if fallback_flag in ("0", "false", "no", "off"):
+        return False
+    flask_env = (os.environ.get("FLASK_ENV") or "").strip().lower()
+    app_env = (os.environ.get("APP_ENV") or "").strip().lower()
+    return flask_env != "production" and app_env != "production"
+
+
 def _google_identity_login(token_data: dict, referral_code: str = ""):
     aud = (token_data.get("aud") or "").strip()
     sub = (token_data.get("sub") or "").strip()
@@ -5257,14 +5268,23 @@ def send_email_otp():
         session.permanent = True
 
         sent, send_message = _send_email_otp_via_smtp(email, otp)
-        if not sent:
-            return jsonify({"success": False, "error": send_message}), 500
+        if sent:
+            return jsonify({
+                "success": True,
+                "message": "OTP sent to your email address",
+                "expires_in": 300
+            })
 
-        return jsonify({
-            "success": True,
-            "message": "OTP sent to your email address",
-            "expires_in": 300
-        })
+        if _allow_dev_otp_fallback():
+            logger.warning(f"Email OTP fallback enabled; SMTP unavailable ({send_message}). OTP for {email}: {otp}")
+            return jsonify({
+                "success": True,
+                "message": "Email service unavailable. Use the temporary OTP shown below for testing.",
+                "expires_in": 300,
+                "dev_otp": otp
+            })
+
+        return jsonify({"success": False, "error": send_message}), 500
     except Exception as e:
         logger.error(f"Email OTP send error: {e}")
         return jsonify({"success": False, "error": "Failed to generate OTP"}), 500
