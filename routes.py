@@ -5158,21 +5158,45 @@ def turnkey_send_email_code():
         if not email or "@" not in email:
             return jsonify({"success": False, "message": "Valid email is required."}), 400
 
+        session.pop("turnkey_email_verified", None)
+
+        # Preferred: delegate OTP delivery to Turnkey sidecar service.
+        try:
+            from turnkey_service import send_email_otp_turnkey
+            _, tk_err = send_email_otp_turnkey(email)
+        except Exception as tk_exception:
+            tk_err = str(tk_exception)
+
+        if not tk_err:
+            session["turnkey_email_otp"] = {
+                "email": email,
+                "provider": "turnkey",
+                "attempts": 0,
+                "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+            }
+            return jsonify({"success": True, "message": "Verification code sent."})
+
+        logger.warning(f"Turnkey OTP send unavailable, falling back to SMTP OTP: {tk_err}")
+
+        # Fallback: local session OTP + SMTP email.
         code = "".join(secrets.choice("0123456789") for _ in range(6))
         code_hash = hashlib.sha256(code.encode()).hexdigest()
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
         session["turnkey_email_otp"] = {
             "email": email,
+            "provider": "local",
             "code_hash": code_hash,
             "expires_at": expires_at.isoformat(),
             "attempts": 0,
         }
-        session.pop("turnkey_email_verified", None)
 
         sent, err = _send_wallet_email_code(email, code)
         if not sent:
-            return jsonify({"success": False, "message": err}), 503
+            return jsonify({
+                "success": False,
+                "message": "Turnkey OTP is unavailable and SMTP email is not configured."
+            }), 503
 
         return jsonify({"success": True, "message": "Verification code sent."})
     except Exception as e:
@@ -5194,6 +5218,7 @@ def turnkey_verify_email_code():
         if otp_state.get("email") != email:
             return jsonify({"success": False, "message": "Email/code mismatch. Request a new code."}), 400
 
+        provider = str(otp_state.get("provider") or "local").lower()
         expires_raw = otp_state.get("expires_at")
         expires_at = datetime.fromisoformat(expires_raw) if expires_raw else None
         if not expires_at or datetime.now(timezone.utc) > expires_at:
@@ -5205,11 +5230,22 @@ def turnkey_verify_email_code():
             session.pop("turnkey_email_otp", None)
             return jsonify({"success": False, "message": "Too many attempts. Request a new code."}), 429
 
-        code_hash = hashlib.sha256(code.encode()).hexdigest()
-        if code_hash != otp_state.get("code_hash"):
-            otp_state["attempts"] = attempts + 1
-            session["turnkey_email_otp"] = otp_state
-            return jsonify({"success": False, "message": "Incorrect code."}), 400
+        if provider == "turnkey":
+            try:
+                from turnkey_service import verify_email_otp_turnkey
+                _, tk_err = verify_email_otp_turnkey(email, code)
+            except Exception as tk_exception:
+                tk_err = str(tk_exception)
+            if tk_err:
+                otp_state["attempts"] = attempts + 1
+                session["turnkey_email_otp"] = otp_state
+                return jsonify({"success": False, "message": "Incorrect code."}), 400
+        else:
+            code_hash = hashlib.sha256(code.encode()).hexdigest()
+            if code_hash != otp_state.get("code_hash"):
+                otp_state["attempts"] = attempts + 1
+                session["turnkey_email_otp"] = otp_state
+                return jsonify({"success": False, "message": "Incorrect code."}), 400
 
         session["turnkey_email_verified"] = {
             "email": email,
