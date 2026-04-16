@@ -1794,7 +1794,7 @@
                 <button class="close-modal" onclick="closeWalletModal()">×</button>
             </div>
 
-            <!-- Options: Two Turnkey-based login paths -->
+            <!-- Options: Turnkey-based login path -->
             <div class="wallet-options" id="walletOptions">
 
                 <!-- Important Reminder Banner -->
@@ -1803,9 +1803,9 @@
                     <div style="font-size:0.8rem; color:#374151; line-height:1.65;">
                         <div style="margin-bottom:0.45rem;">✅ <strong style="color:#059669;">Brand new to GoodDollar?</strong> — Go ahead and <em>Create New GoodDollar Wallet</em>.</div>
                         <div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; padding:0.5rem 0.7rem;">
-                            🚫 <strong style="color:#dc2626;">Already use GoodDapp, MiniPay, or any GoodDollar claiming app?</strong><br>
+                            🚫 <strong style="color:#dc2626;">Already have an old GoodDollar wallet?</strong><br>
                             <span style="font-size:0.78rem; color:#4b5563;">
-                                <strong>Do NOT create a new wallet.</strong> GoodMarket, MiniPay, and GoodDapp all share the same wallet system — creating a new wallet gives you a different address and you may lose access to your existing G$ balance. Instead, choose <strong style="color:#b45309;">Import Existing Wallet</strong> and enter your private key.
+                                For security reasons, private key import is disabled in this page.
                             </span>
                         </div>
                     </div>
@@ -1819,16 +1819,6 @@
                         <p class="option-desc">Brand new to GoodDollar? We'll create a free Celo wallet for you automatically</p>
                     </div>
                     <span class="option-arrow" style="color:#10b981;">→</span>
-                </button>
-
-                <!-- Option 2: Import Existing Wallet (Private Key) -->
-                <button class="wallet-option-card" onclick="showPrivateKeyForm()" style="border-color: rgba(251,191,36,0.4); background: linear-gradient(135deg, rgba(251,191,36,0.06), rgba(245,158,11,0.04));">
-                    <div class="option-icon">🔑</div>
-                    <div class="option-text">
-                        <div class="option-title" style="color:#fbbf24;">Import Existing Wallet</div>
-                        <p class="option-desc">Already use GoodDapp, MiniPay, or GoodDollar? Import using your existing private key</p>
-                    </div>
-                    <span class="option-arrow" style="color:#fbbf24;">→</span>
                 </button>
 
                 <div style="text-align:center; padding-top: 0.25rem;">
@@ -1865,55 +1855,6 @@
                 </button>
 
                 <div id="createWalletStatus" class="status-message"></div>
-            </div>
-
-            <!-- Import Existing Wallet Form (Private Key, hidden by default) -->
-            <div class="wallet-form" id="privateKeyForm">
-                <button class="back-btn" onclick="showWalletOptions()">← Back</button>
-
-                <div style="background: linear-gradient(135deg, rgba(251,191,36,0.1), rgba(245,158,11,0.06)); border: 1px solid rgba(251,191,36,0.35); border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 1rem;">
-                    <div style="font-weight:700; color:#fbbf24; font-size:0.9rem; margin-bottom:0.4rem;">🔑 Import Existing Wallet</div>
-                    <div style="font-size:0.82rem; color:#1f2937; line-height:1.6;">
-                        Already have a GoodDollar wallet? Import your private key — it stays encrypted in your session only, never written to the database.
-                    </div>
-                </div>
-
-                <div class="wallet-input-group">
-                    <label class="wallet-label" for="privateKeyInput">Private Key</label>
-                    <input
-                        type="password"
-                        id="privateKeyInput"
-                        class="wallet-input"
-                        placeholder="0x... (64 hex chars)"
-                        autocomplete="off"
-                        autocorrect="off"
-                        spellcheck="false"
-                    />
-                    <div style="font-size:0.75rem; color:rgba(255,255,255,0.4); margin-top:0.35rem;">
-                        Export your private key from your GoodDollar wallet app's Security settings
-                    </div>
-                </div>
-
-                <div class="wallet-input-group">
-                    <label class="wallet-label" for="pkReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
-                    <input
-                        type="text"
-                        id="pkReferralCode"
-                        class="wallet-input"
-                        placeholder="Enter referral code if you have one"
-                        autocomplete="off"
-                    />
-                </div>
-
-                <button class="connect-btn" onclick="loginWithPrivateKey()" style="background: linear-gradient(135deg, #d97706, #b45309);">
-                    <span id="pkConnectBtnText">Import Key &amp; Login</span>
-                </button>
-
-                <div id="pkStatusMessage" class="status-message"></div>
-
-                <div style="margin-top: 1rem; text-align:center; font-size:0.8rem; color:rgba(255,255,255,0.45);">
-                    Don't have a GoodDollar wallet yet? <a href="#" onclick="showCreateWalletForm();return false;" style="color:#10b981; text-decoration:none;">Create one for free →</a>
-                </div>
             </div>
 
         </div>
@@ -1971,7 +1912,7 @@
 
         function showWalletOptions() {
             document.getElementById('walletOptions').style.display = 'flex';
-            ['createWalletForm', 'privateKeyForm'].forEach(id => {
+            ['createWalletForm'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('visible');
             });
@@ -1979,19 +1920,8 @@
 
         function showCreateWalletForm() {
             document.getElementById('walletOptions').style.display = 'none';
-            document.getElementById('privateKeyForm').classList.remove('visible');
             const f = document.getElementById('createWalletForm');
             if (f) f.classList.add('visible');
-        }
-
-        function showPrivateKeyForm() {
-            document.getElementById('walletOptions').style.display = 'none';
-            document.getElementById('createWalletForm').classList.remove('visible');
-            const pkForm = document.getElementById('privateKeyForm');
-            if (pkForm) {
-                pkForm.classList.add('visible');
-                setTimeout(() => { document.getElementById('privateKeyInput').focus(); }, 100);
-            }
         }
 
         async function createTurnkeyWallet() {
@@ -2028,53 +1958,6 @@
                 statusDiv.textContent = 'Network error. Please try again.';
                 if (btn) btn.disabled = false;
                 btnText.textContent = 'Create My Wallet';
-            }
-        }
-
-        async function loginWithPrivateKey() {
-            const pk = document.getElementById('privateKeyInput').value.trim();
-            const referral = document.getElementById('pkReferralCode').value.trim();
-            const statusDiv = document.getElementById('pkStatusMessage');
-            const btnText = document.getElementById('pkConnectBtnText');
-
-            if (!pk) {
-                statusDiv.className = 'status-message error';
-                statusDiv.textContent = 'Please enter your private key.';
-                return;
-            }
-            const cleanPk = pk.startsWith('0x') ? pk : '0x' + pk;
-            if (!/^0x[0-9a-fA-F]{64}$/.test(cleanPk)) {
-                statusDiv.className = 'status-message error';
-                statusDiv.textContent = 'Invalid private key — must be 64 hex characters.';
-                return;
-            }
-
-            btnText.textContent = 'Importing key securely…';
-            statusDiv.className = 'status-message info';
-            statusDiv.textContent = '🔒 Encrypting and securing your key. This may take up to 30 seconds…';
-
-            try {
-                const resp = await fetch('/api/turnkey/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ private_key: cleanPk, referral_code: referral || null })
-                });
-                const data = await resp.json();
-
-                if (resp.ok && data.success) {
-                    statusDiv.className = 'status-message success';
-                    statusDiv.textContent = '✅ Logged in! Redirecting…';
-                    document.getElementById('privateKeyInput').value = '';
-                    setTimeout(() => { window.location.href = data.redirect_to || '/wallet'; }, 1200);
-                } else {
-                    statusDiv.className = 'status-message error';
-                    statusDiv.textContent = data.error || 'Login failed. Please try again.';
-                    btnText.textContent = 'Import Key & Login';
-                }
-            } catch (err) {
-                statusDiv.className = 'status-message error';
-                statusDiv.textContent = 'Network error. Please try again.';
-                btnText.textContent = 'Import Key & Login';
             }
         }
 
