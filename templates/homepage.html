@@ -1840,6 +1840,44 @@
                 </div>
 
                 <div class="wallet-input-group">
+                    <label class="wallet-label" for="createEmail">Email Address</label>
+                    <div style="display:flex; gap:8px;">
+                        <input
+                            type="email"
+                            id="createEmail"
+                            class="wallet-input"
+                            placeholder="you@example.com"
+                            autocomplete="email"
+                            style="flex:1;"
+                        />
+                        <button type="button" class="connect-btn" id="sendCodeBtn" onclick="sendEmailCode()" style="width:auto; padding:0 14px; margin:0; background:linear-gradient(135deg,#6366f1,#4f46e5);">
+                            Send Code
+                        </button>
+                    </div>
+                </div>
+
+                <div class="wallet-input-group">
+                    <label class="wallet-label" for="createEmailCode">Email Code</label>
+                    <div style="display:flex; gap:8px;">
+                        <input
+                            type="text"
+                            id="createEmailCode"
+                            class="wallet-input"
+                            placeholder="6-digit code"
+                            autocomplete="one-time-code"
+                            maxlength="6"
+                            inputmode="numeric"
+                            style="flex:1;"
+                        />
+                        <button type="button" class="connect-btn" id="verifyCodeBtn" onclick="verifyEmailCode()" style="width:auto; padding:0 14px; margin:0; background:linear-gradient(135deg,#8b5cf6,#7c3aed);">
+                            Verify
+                        </button>
+                    </div>
+                </div>
+
+                <div id="emailCodeStatus" class="status-message"></div>
+
+                <div class="wallet-input-group">
                     <label class="wallet-label" for="createReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
                     <input
                         type="text"
@@ -1861,6 +1899,8 @@
     </div>
 
     <script>
+        let emailCodeVerified = false;
+
         // Check if user should return to community stories after login
         window.addEventListener('load', function() {
             const returnToCommunityStories = sessionStorage.getItem('return_to_community_stories');
@@ -1922,6 +1962,83 @@
             document.getElementById('walletOptions').style.display = 'none';
             const f = document.getElementById('createWalletForm');
             if (f) f.classList.add('visible');
+            emailCodeVerified = false;
+            const codeStatus = document.getElementById('emailCodeStatus');
+            if (codeStatus) {
+                codeStatus.className = 'status-message';
+                codeStatus.textContent = '';
+            }
+        }
+
+        function updateEmailStatus(message, type = '') {
+            const statusDiv = document.getElementById('emailCodeStatus');
+            if (!statusDiv) return;
+            statusDiv.className = type ? `status-message ${type}` : 'status-message';
+            statusDiv.textContent = message;
+        }
+
+        async function sendEmailCode() {
+            const email = (document.getElementById('createEmail') || {}).value?.trim() || '';
+            const sendBtn = document.getElementById('sendCodeBtn');
+            if (!email || !email.includes('@')) {
+                updateEmailStatus('Please enter a valid email address.', 'error');
+                return;
+            }
+
+            if (sendBtn) sendBtn.disabled = true;
+            updateEmailStatus('⏳ Sending verification code to your email…', 'info');
+
+            try {
+                const resp = await fetch('/api/turnkey/email/send-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    emailCodeVerified = false;
+                    updateEmailStatus('✅ Code sent. Check your inbox and enter the 6-digit code.', 'success');
+                } else {
+                    updateEmailStatus(data.message || 'Failed to send code.', 'error');
+                }
+            } catch (err) {
+                updateEmailStatus('Network error while sending code.', 'error');
+            } finally {
+                if (sendBtn) sendBtn.disabled = false;
+            }
+        }
+
+        async function verifyEmailCode() {
+            const email = (document.getElementById('createEmail') || {}).value?.trim() || '';
+            const code = (document.getElementById('createEmailCode') || {}).value?.trim() || '';
+            const verifyBtn = document.getElementById('verifyCodeBtn');
+            if (!email || !code) {
+                updateEmailStatus('Enter your email and the verification code.', 'error');
+                return;
+            }
+            if (verifyBtn) verifyBtn.disabled = true;
+            updateEmailStatus('⏳ Verifying email code…', 'info');
+
+            try {
+                const resp = await fetch('/api/turnkey/email/verify-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, code })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    emailCodeVerified = true;
+                    updateEmailStatus('✅ Email verified. You can now create your wallet.', 'success');
+                } else {
+                    emailCodeVerified = false;
+                    updateEmailStatus(data.message || 'Invalid verification code.', 'error');
+                }
+            } catch (err) {
+                emailCodeVerified = false;
+                updateEmailStatus('Network error while verifying code.', 'error');
+            } finally {
+                if (verifyBtn) verifyBtn.disabled = false;
+            }
         }
 
         async function createTurnkeyWallet() {
@@ -1929,6 +2046,13 @@
             const btnText = document.getElementById('createWalletBtnText');
             const btn = btnText ? btnText.closest('button') : null;
             const referral = (document.getElementById('createReferralCode') || {}).value || '';
+            const email = (document.getElementById('createEmail') || {}).value?.trim() || '';
+
+            if (!emailCodeVerified) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = 'Please verify your email code first.';
+                return;
+            }
 
             if (btn) btn.disabled = true;
             btnText.textContent = 'Creating wallet…';
@@ -1939,7 +2063,7 @@
                 const resp = await fetch('/api/turnkey/create-wallet', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ referral_code: referral || null })
+                    body: JSON.stringify({ referral_code: referral || null, email, require_email_code: true })
                 });
                 const data = await resp.json();
 

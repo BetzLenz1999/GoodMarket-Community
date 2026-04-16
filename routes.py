@@ -9,6 +9,11 @@ import logging
 import os
 import threading
 import time
+import secrets
+import hashlib
+from datetime import datetime, timedelta, timezone
+import smtplib
+from email.mime.text import MIMEText
 
 # Initialize notification service
 notification_service = NotificationService()
@@ -5110,6 +5115,112 @@ def _get_fernet():
     return Fernet(fernet_key)
 
 
+def _send_wallet_email_code(email: str, code: str) -> tuple[bool, str | None]:
+    """Send wallet verification code via SMTP using environment configuration."""
+    smtp_host = os.environ.get("SMTP_HOST", "").strip()
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "").strip()
+    smtp_pass = os.environ.get("SMTP_PASS", "").strip()
+    smtp_from = os.environ.get("SMTP_FROM", smtp_user).strip()
+
+    if not smtp_host or not smtp_from:
+        return False, "Email delivery is not configured on this server yet."
+
+    msg = MIMEText(
+        f"Your GoodMarket wallet verification code is: {code}\n\n"
+        "This code expires in 10 minutes.",
+        "plain",
+        "utf-8",
+    )
+    msg["Subject"] = "Your GoodMarket verification code"
+    msg["From"] = smtp_from
+    msg["To"] = email
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
+            server.starttls()
+            if smtp_user and smtp_pass:
+                server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_from, [email], msg.as_string())
+        return True, None
+    except Exception as e:
+        logger.error(f"Failed sending OTP email to {email}: {e}")
+        return False, "Failed to send verification email. Please try again."
+
+
+@routes.route("/api/turnkey/email/send-code", methods=["POST"])
+def turnkey_send_email_code():
+    """Send a one-time email code used before wallet creation."""
+    try:
+        payload = request.get_json() or {}
+        email = str(payload.get("email", "")).strip().lower()
+        if not email or "@" not in email:
+            return jsonify({"success": False, "message": "Valid email is required."}), 400
+
+        code = "".join(secrets.choice("0123456789") for _ in range(6))
+        code_hash = hashlib.sha256(code.encode()).hexdigest()
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+        session["turnkey_email_otp"] = {
+            "email": email,
+            "code_hash": code_hash,
+            "expires_at": expires_at.isoformat(),
+            "attempts": 0,
+        }
+        session.pop("turnkey_email_verified", None)
+
+        sent, err = _send_wallet_email_code(email, code)
+        if not sent:
+            return jsonify({"success": False, "message": err}), 503
+
+        return jsonify({"success": True, "message": "Verification code sent."})
+    except Exception as e:
+        logger.error(f"turnkey_send_email_code error: {e}")
+        return jsonify({"success": False, "message": "Unable to send code right now."}), 500
+
+
+@routes.route("/api/turnkey/email/verify-code", methods=["POST"])
+def turnkey_verify_email_code():
+    """Verify one-time email code and mark session as email-verified."""
+    try:
+        payload = request.get_json() or {}
+        email = str(payload.get("email", "")).strip().lower()
+        code = str(payload.get("code", "")).strip()
+        otp_state = session.get("turnkey_email_otp") or {}
+
+        if not email or not code:
+            return jsonify({"success": False, "message": "Email and code are required."}), 400
+        if otp_state.get("email") != email:
+            return jsonify({"success": False, "message": "Email/code mismatch. Request a new code."}), 400
+
+        expires_raw = otp_state.get("expires_at")
+        expires_at = datetime.fromisoformat(expires_raw) if expires_raw else None
+        if not expires_at or datetime.now(timezone.utc) > expires_at:
+            session.pop("turnkey_email_otp", None)
+            return jsonify({"success": False, "message": "Code expired. Please request a new one."}), 400
+
+        attempts = int(otp_state.get("attempts", 0))
+        if attempts >= 5:
+            session.pop("turnkey_email_otp", None)
+            return jsonify({"success": False, "message": "Too many attempts. Request a new code."}), 429
+
+        code_hash = hashlib.sha256(code.encode()).hexdigest()
+        if code_hash != otp_state.get("code_hash"):
+            otp_state["attempts"] = attempts + 1
+            session["turnkey_email_otp"] = otp_state
+            return jsonify({"success": False, "message": "Incorrect code."}), 400
+
+        session["turnkey_email_verified"] = {
+            "email": email,
+            "verified_at": datetime.now(timezone.utc).isoformat(),
+        }
+        session.pop("turnkey_email_otp", None)
+        return jsonify({"success": True, "message": "Email verified."})
+    except Exception as e:
+        logger.error(f"turnkey_verify_email_code error: {e}")
+        return jsonify({"success": False, "message": "Unable to verify code right now."}), 500
+
+
 @routes.route("/api/turnkey/login", methods=["POST"])
 def turnkey_login():
     """Login with a private key — derives address locally, stores encrypted key in session."""
@@ -5193,6 +5304,18 @@ def turnkey_create_wallet():
         user_id = data.get("userId") or session.get("wallet") or f"new_{int(time.time())}"
         user_name = data.get("userName", user_id)
         referral_code = data.get("referral_code", None)
+        email = str(data.get("email", "")).strip().lower()
+
+        require_email_code_env = str(os.environ.get("TURNKEY_REQUIRE_EMAIL_CODE", "true")).lower() == "true"
+        require_email_code = bool(data.get("require_email_code", False)) and require_email_code_env
+        if require_email_code:
+            verified = session.get("turnkey_email_verified") or {}
+            verified_email = str(verified.get("email", "")).strip().lower()
+            if not email or verified_email != email:
+                return jsonify({
+                    "status": "error",
+                    "message": "Please verify your email code before creating a wallet."
+                }), 400
 
         result, err = create_turnkey_wallet(user_id, user_name)
         if err:
@@ -5218,6 +5341,8 @@ def turnkey_create_wallet():
             session["wallet"] = wallet_address
             session["verified"] = True
             session["login_method"] = "custodial"
+            if email:
+                session["user_email"] = email
             session["custodial_key_enc"] = encrypted_key
             session.pop("turnkey_suborg_id", None)
             session.pop("turnkey_sign_with", None)
@@ -5268,6 +5393,8 @@ def turnkey_create_wallet():
 
         session["wallet"] = wallet_address
         session["verified"] = True
+        if email:
+            session["user_email"] = email
         session["turnkey_suborg_id"] = suborg_id
         session["turnkey_sign_with"] = sign_with
         session["login_method"] = "turnkey"
