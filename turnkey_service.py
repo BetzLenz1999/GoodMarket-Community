@@ -49,6 +49,52 @@ def create_turnkey_wallet(user_id, user_name=None):
     return data, None
 
 
+def send_email_otp_turnkey(email):
+    """Ask Turnkey sidecar to send an email OTP code."""
+    payload = {"email": str(email).strip().lower()}
+    candidate_paths = [
+        "/turnkey/email/send-code",
+        "/turnkey/email/send-otp",
+        "/turnkey/otp/send",
+    ]
+    last_err = None
+    for path in candidate_paths:
+        data, err = _call_wc("POST", path, payload, timeout=30)
+        if err:
+            last_err = err
+            continue
+        # accept common response shapes
+        if isinstance(data, dict) and data.get("success") is False:
+            last_err = data.get("error") or data.get("message") or "Turnkey OTP send failed"
+            continue
+        return data or {"success": True}, None
+    return None, last_err or "Turnkey email OTP send unavailable"
+
+
+def verify_email_otp_turnkey(email, code):
+    """Ask Turnkey sidecar to verify an email OTP code."""
+    payload = {
+        "email": str(email).strip().lower(),
+        "code": str(code).strip(),
+    }
+    candidate_paths = [
+        "/turnkey/email/verify-code",
+        "/turnkey/email/verify-otp",
+        "/turnkey/otp/verify",
+    ]
+    last_err = None
+    for path in candidate_paths:
+        data, err = _call_wc("POST", path, payload, timeout=30)
+        if err:
+            last_err = err
+            continue
+        if isinstance(data, dict) and data.get("success") is False:
+            last_err = data.get("error") or data.get("message") or "Invalid OTP code"
+            continue
+        return data or {"success": True}, None
+    return None, last_err or "Turnkey email OTP verify unavailable"
+
+
 def import_private_key(user_id, private_key, user_name=None):
     """Import an existing private key into a new Turnkey sub-org for a user."""
     data, err = _call_wc('POST', '/turnkey/import-key', {
