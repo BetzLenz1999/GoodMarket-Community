@@ -6,6 +6,7 @@
     <title>GoodMarket - Learn & Earn with Web3</title>
     <!-- Telegram Mini App SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#7c3aed">
@@ -1794,29 +1795,39 @@
                 <button class="close-modal" onclick="closeWalletModal()">×</button>
             </div>
 
-            <!-- Options: Turnkey-based login path -->
+            <!-- Options: Auth login path -->
             <div class="wallet-options" id="walletOptions">
 
                 <!-- Important Reminder Banner -->
                 <div style="background: #fffbeb; border: 1.5px solid #f59e0b; border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 0.3rem; text-align:left;">
                     <div style="font-weight:700; color:#b45309; font-size:0.88rem; margin-bottom:0.45rem;">⚠️ Important — Please Read Before Choosing</div>
                     <div style="font-size:0.8rem; color:#374151; line-height:1.65;">
-                        <div style="margin-bottom:0.45rem;">✅ <strong style="color:#059669;">Brand new to GoodDollar?</strong> — Go ahead and <em>Create New GoodDollar Wallet</em>.</div>
+                        <div style="margin-bottom:0.45rem;">✅ <strong style="color:#059669;">Secure login:</strong> Use Google or Email OTP to access your GoodMarket wallet.</div>
                         <div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; padding:0.5rem 0.7rem;">
-                            🚫 <strong style="color:#dc2626;">Already have an old GoodDollar wallet?</strong><br>
+                            🚫 <strong style="color:#dc2626;">Create New Wallet login removed.</strong><br>
                             <span style="font-size:0.78rem; color:#4b5563;">
-                                For security reasons, private key import is disabled in this page.
+                                Please continue using Google sign-in or Email OTP.
                             </span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Option 1: Create New Wallet -->
-                <button class="wallet-option-card" onclick="showCreateWalletForm()" style="border-color: rgba(16,185,129,0.45); background: linear-gradient(135deg, rgba(16,185,129,0.09), rgba(5,150,105,0.05));">
-                    <div class="option-icon">🆕</div>
+                <!-- Option 1: Google login -->
+                <button class="wallet-option-card" onclick="showGoogleLoginForm()" style="border-color: rgba(59,130,246,0.45); background: linear-gradient(135deg, rgba(59,130,246,0.09), rgba(37,99,235,0.05));">
+                    <div class="option-icon">🔵</div>
                     <div class="option-text">
-                        <div class="option-title" style="color:#10b981;">Create New GoodDollar Wallet</div>
-                        <p class="option-desc">Brand new to GoodDollar? We'll create a free Celo wallet for you automatically</p>
+                        <div class="option-title" style="color:#2563eb;">Continue with Google</div>
+                        <p class="option-desc">Sign in quickly using your Google account</p>
+                    </div>
+                    <span class="option-arrow" style="color:#2563eb;">→</span>
+                </button>
+
+                <!-- Option 2: Email OTP -->
+                <button class="wallet-option-card" onclick="showEmailOtpForm()" style="border-color: rgba(16,185,129,0.45); background: linear-gradient(135deg, rgba(16,185,129,0.09), rgba(5,150,105,0.05));">
+                    <div class="option-icon">📩</div>
+                    <div class="option-text">
+                        <div class="option-title" style="color:#10b981;">Continue with Email OTP</div>
+                        <p class="option-desc">Get a one-time code and login with your email address</p>
                     </div>
                     <span class="option-arrow" style="color:#10b981;">→</span>
                 </button>
@@ -1828,33 +1839,71 @@
                 </div>
             </div>
 
-            <!-- Create New Wallet Form -->
-            <div class="wallet-form" id="createWalletForm">
+            <!-- Google login form -->
+            <div class="wallet-form" id="googleLoginForm">
                 <button class="back-btn" onclick="showWalletOptions()">← Back</button>
 
-                <div style="background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.06)); border: 1px solid rgba(16,185,129,0.35); border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 1.2rem;">
-                    <div style="font-weight:700; color:#10b981; font-size:0.9rem; margin-bottom:0.4rem;">🆕 Create Your GoodDollar Wallet</div>
+                <div style="background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(37,99,235,0.06)); border: 1px solid rgba(59,130,246,0.35); border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 1.2rem;">
+                    <div style="font-weight:700; color:#2563eb; font-size:0.9rem; margin-bottom:0.4rem;">🔵 Continue with Google</div>
                     <div style="font-size:0.82rem; color:#1f2937; line-height:1.6;">
-                        We'll create a new Celo wallet for you. Your wallet address will be ready in seconds — no app or seed phrase needed to get started.
+                        Sign in with your Google account to open your GoodMarket wallet.
                     </div>
                 </div>
 
                 <div class="wallet-input-group">
-                    <label class="wallet-label" for="createReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
+                    <label class="wallet-label" for="googleReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
                     <input
                         type="text"
-                        id="createReferralCode"
+                        id="googleReferralCode"
                         class="wallet-input"
                         placeholder="Enter referral code if you have one"
                         autocomplete="off"
                     />
                 </div>
 
-                <button class="connect-btn" onclick="createTurnkeyWallet()" style="background: linear-gradient(135deg, #059669, #047857);">
-                    <span id="createWalletBtnText">Create My Wallet</span>
+                <button class="connect-btn" onclick="loginWithGoogle()" style="background: linear-gradient(135deg, #2563eb, #1d4ed8);">
+                    <span id="googleLoginBtnText">Continue with Google</span>
                 </button>
 
-                <div id="createWalletStatus" class="status-message"></div>
+                <div id="googleLoginStatus" class="status-message"></div>
+            </div>
+
+            <!-- Email OTP form -->
+            <div class="wallet-form" id="emailOtpForm">
+                <button class="back-btn" onclick="showWalletOptions()">← Back</button>
+
+                <div style="background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.06)); border: 1px solid rgba(16,185,129,0.35); border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 1.2rem;">
+                    <div style="font-weight:700; color:#10b981; font-size:0.9rem; margin-bottom:0.4rem;">📩 Email OTP Login</div>
+                    <div style="font-size:0.82rem; color:#1f2937; line-height:1.6;">
+                        Enter your email, get a 6-digit OTP, and continue.
+                    </div>
+                </div>
+
+                <div class="wallet-input-group">
+                    <label class="wallet-label" for="emailOtpEmail">Email Address</label>
+                    <input type="email" id="emailOtpEmail" class="wallet-input" placeholder="you@example.com" autocomplete="email" />
+                </div>
+
+                <div class="wallet-input-group">
+                    <label class="wallet-label" for="emailOtpCode">OTP Code</label>
+                    <input type="text" id="emailOtpCode" class="wallet-input" placeholder="Enter 6-digit code" maxlength="6" inputmode="numeric" />
+                </div>
+
+                <div class="wallet-input-group">
+                    <label class="wallet-label" for="emailOtpReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
+                    <input type="text" id="emailOtpReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" autocomplete="off" />
+                </div>
+
+                <div style="display:flex; gap:0.6rem;">
+                    <button class="connect-btn" onclick="sendEmailOtp()" style="background: linear-gradient(135deg, #0ea5e9, #0284c7); flex:1;">
+                        <span id="sendOtpBtnText">Send OTP</span>
+                    </button>
+                    <button class="connect-btn" onclick="verifyEmailOtp()" style="background: linear-gradient(135deg, #059669, #047857); flex:1;">
+                        <span id="verifyOtpBtnText">Verify OTP</span>
+                    </button>
+                </div>
+
+                <div id="emailOtpStatus" class="status-message"></div>
             </div>
 
         </div>
@@ -1912,52 +1961,166 @@
 
         function showWalletOptions() {
             document.getElementById('walletOptions').style.display = 'flex';
-            ['createWalletForm'].forEach(id => {
+            ['googleLoginForm', 'emailOtpForm'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('visible');
             });
         }
 
-        function showCreateWalletForm() {
+        function showGoogleLoginForm() {
             document.getElementById('walletOptions').style.display = 'none';
-            const f = document.getElementById('createWalletForm');
+            const f = document.getElementById('googleLoginForm');
             if (f) f.classList.add('visible');
         }
 
-        async function createTurnkeyWallet() {
-            const statusDiv = document.getElementById('createWalletStatus');
-            const btnText = document.getElementById('createWalletBtnText');
-            const btn = btnText ? btnText.closest('button') : null;
-            const referral = (document.getElementById('createReferralCode') || {}).value || '';
+        function showEmailOtpForm() {
+            document.getElementById('walletOptions').style.display = 'none';
+            const f = document.getElementById('emailOtpForm');
+            if (f) f.classList.add('visible');
+        }
 
-            if (btn) btn.disabled = true;
-            btnText.textContent = 'Creating wallet…';
-            statusDiv.className = 'status-message info';
-            statusDiv.textContent = '⏳ Setting up your GoodDollar wallet on Celo. This may take up to 30 seconds…';
+        async function loginWithGoogle() {
+            const clientId = '{{ google_client_id }}';
+            const statusDiv = document.getElementById('googleLoginStatus');
+            const referral = (document.getElementById('googleReferralCode') || {}).value || '';
+            const btnText = document.getElementById('googleLoginBtnText');
+            const btn = btnText ? btnText.closest('button') : null;
+
+            if (!clientId) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = 'Google login is not configured. Please set GOOGLE_CLIENT_ID.';
+                return;
+            }
 
             try {
-                const resp = await fetch('/api/turnkey/create-wallet', {
+                if (btn) btn.disabled = true;
+                if (btnText) btnText.textContent = 'Opening Google...';
+                statusDiv.className = 'status-message info';
+                statusDiv.textContent = '⏳ Opening Google sign-in...';
+
+                google.accounts.id.initialize({
+                    client_id: clientId,
+                    callback: async (response) => {
+                        try {
+                            const idToken = response.credential;
+                            if (!idToken) {
+                                statusDiv.className = 'status-message error';
+                                statusDiv.textContent = 'Google did not return an ID token.';
+                                return;
+                            }
+
+                            const resp = await fetch('/api/auth/google', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ id_token: idToken, referral_code: referral || null })
+                            });
+                            const data = await resp.json();
+                            if (data.success && data.wallet) {
+                                statusDiv.className = 'status-message success';
+                                statusDiv.textContent = `✅ Logged in: ${data.wallet.slice(0,8)}…${data.wallet.slice(-4)} — Redirecting...`;
+                                setTimeout(() => { window.location.href = data.redirect_to || '/wallet'; }, 1200);
+                            } else {
+                                statusDiv.className = 'status-message error';
+                                statusDiv.textContent = data.error || 'Google login failed.';
+                            }
+                        } catch (err) {
+                            statusDiv.className = 'status-message error';
+                            statusDiv.textContent = 'Google login request failed.';
+                        } finally {
+                            if (btn) btn.disabled = false;
+                            if (btnText) btnText.textContent = 'Continue with Google';
+                        }
+                    }
+                });
+                google.accounts.id.prompt();
+            } catch (err) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = 'Unable to initialize Google login.';
+                if (btn) btn.disabled = false;
+                if (btnText) btnText.textContent = 'Continue with Google';
+            }
+        }
+
+        async function sendEmailOtp() {
+            const email = (document.getElementById('emailOtpEmail') || {}).value || '';
+            const statusDiv = document.getElementById('emailOtpStatus');
+            const btnText = document.getElementById('sendOtpBtnText');
+            const btn = btnText ? btnText.closest('button') : null;
+
+            if (!email) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = 'Please enter your email address.';
+                return;
+            }
+
+            try {
+                if (btn) btn.disabled = true;
+                if (btnText) btnText.textContent = 'Sending...';
+                statusDiv.className = 'status-message info';
+                statusDiv.textContent = '⏳ Generating OTP...';
+
+                const resp = await fetch('/api/auth/email/send-otp', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ referral_code: referral || null })
+                    body: JSON.stringify({ email })
                 });
                 const data = await resp.json();
-
-                if (data.status === 'success' && data.wallet) {
+                if (data.success) {
                     statusDiv.className = 'status-message success';
-                    statusDiv.textContent = `✅ Wallet created: ${data.wallet.slice(0,8)}…${data.wallet.slice(-4)} — Redirecting…`;
-                    setTimeout(() => { window.location.href = '/wallet'; }, 1500);
+                    statusDiv.textContent = `✅ OTP ready. Your code is: ${data.otp}`;
                 } else {
                     statusDiv.className = 'status-message error';
-                    statusDiv.textContent = data.message || 'Wallet creation failed. Please try again.';
-                    if (btn) btn.disabled = false;
-                    btnText.textContent = 'Create My Wallet';
+                    statusDiv.textContent = data.error || 'Failed to send OTP.';
                 }
             } catch (err) {
                 statusDiv.className = 'status-message error';
-                statusDiv.textContent = 'Network error. Please try again.';
+                statusDiv.textContent = 'Network error while sending OTP.';
+            } finally {
                 if (btn) btn.disabled = false;
-                btnText.textContent = 'Create My Wallet';
+                if (btnText) btnText.textContent = 'Send OTP';
+            }
+        }
+
+        async function verifyEmailOtp() {
+            const email = (document.getElementById('emailOtpEmail') || {}).value || '';
+            const otp = (document.getElementById('emailOtpCode') || {}).value || '';
+            const referral = (document.getElementById('emailOtpReferralCode') || {}).value || '';
+            const statusDiv = document.getElementById('emailOtpStatus');
+            const btnText = document.getElementById('verifyOtpBtnText');
+            const btn = btnText ? btnText.closest('button') : null;
+
+            if (!email || !otp) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = 'Please provide email and OTP code.';
+                return;
+            }
+
+            try {
+                if (btn) btn.disabled = true;
+                if (btnText) btnText.textContent = 'Verifying...';
+                statusDiv.className = 'status-message info';
+                statusDiv.textContent = '⏳ Verifying OTP...';
+
+                const resp = await fetch('/api/auth/email/verify-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, otp, referral_code: referral || null })
+                });
+                const data = await resp.json();
+                if (data.success && data.wallet) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✅ Logged in: ${data.wallet.slice(0,8)}…${data.wallet.slice(-4)} — Redirecting...`;
+                    setTimeout(() => { window.location.href = data.redirect_to || '/wallet'; }, 1200);
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = data.error || 'OTP verification failed.';
+                }
+            } catch (err) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = 'Network error while verifying OTP.';
+            } finally {
+                if (btn) btn.disabled = false;
+                if (btnText) btnText.textContent = 'Verify OTP';
             }
         }
 
