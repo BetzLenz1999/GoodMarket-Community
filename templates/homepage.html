@@ -1998,6 +1998,10 @@
                 statusDiv.className = 'status-message info';
                 statusDiv.textContent = '⏳ Opening Google sign-in...';
 
+                if (!window.google || !google.accounts || !google.accounts.id) {
+                    throw new Error('Google Identity Services not loaded');
+                }
+
                 google.accounts.id.initialize({
                     client_id: clientId,
                     callback: async (response) => {
@@ -2032,7 +2036,15 @@
                         }
                     }
                 });
-                google.accounts.id.prompt();
+
+                google.accounts.id.prompt((notification) => {
+                    if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                        statusDiv.className = 'status-message error';
+                        statusDiv.textContent = 'Google popup was blocked or unavailable. Please allow popups/cookies and try again.';
+                        if (btn) btn.disabled = false;
+                        if (btnText) btnText.textContent = 'Continue with Google';
+                    }
+                });
             } catch (err) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = 'Unable to initialize Google login.';
@@ -2067,7 +2079,7 @@
                 const data = await resp.json();
                 if (data.success) {
                     statusDiv.className = 'status-message success';
-                    statusDiv.textContent = `✅ OTP ready. Your code is: ${data.otp}`;
+                    statusDiv.textContent = '✅ OTP sent to your email. Please check your inbox.';
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = data.error || 'Failed to send OTP.';
