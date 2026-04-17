@@ -6039,6 +6039,8 @@ def gas_faucet():
     """
     Check user's CELO balance. If below FAUCET_MIN_CELO, call the GoodDollar
     Faucet contract topWallet(user) from GAMES_KEY so user can pay gas.
+    Wait for faucet tx confirmation and re-check user CELO balance before
+    reporting gas as ready for claim flow.
     Rate-limited to once per 24 h per wallet.
     """
     import time
@@ -6064,8 +6066,13 @@ def gas_faucet():
         celo_bal = float(w3.from_wei(celo_wei, "ether"))
 
         if celo_bal >= FAUCET_MIN_CELO:
-            return jsonify({"success": True, "topped_up": False,
-                            "reason": f"Balance OK ({celo_bal:.4f} CELO)", "balance": celo_bal})
+            return jsonify({
+                "success": True,
+                "topped_up": False,
+                "gas_ready": True,
+                "reason": f"Balance OK ({celo_bal:.4f} CELO)",
+                "balance": celo_bal
+            })
 
         # Rate-limit check
         now = time.time()
@@ -6073,8 +6080,12 @@ def gas_faucet():
             last = _faucet_last_sent.get(checksum_wallet.lower(), 0)
             if now - last < FAUCET_COOLDOWN_HOURS * 3600:
                 remaining_h = (FAUCET_COOLDOWN_HOURS * 3600 - (now - last)) / 3600
-                return jsonify({"success": True, "topped_up": False,
-                                "reason": f"Already topped up recently. Try again in {remaining_h:.1f}h."})
+                return jsonify({
+                    "success": True,
+                    "topped_up": False,
+                    "gas_ready": False,
+                    "reason": f"Already topped up recently. Try again in {remaining_h:.1f}h."
+                })
 
         # Build faucet wallet (GAMES_KEY)
         key = faucet_key if faucet_key.startswith("0x") else "0x" + faucet_key
@@ -6084,8 +6095,12 @@ def gas_faucet():
 
         if faucet_bal < 0.001:
             logger.warning(f"Gas faucet wallet low: {faucet_bal:.4f} CELO — cannot top up {wallet[:8]}...")
-            return jsonify({"success": False, "topped_up": False,
-                            "reason": "Faucet wallet is low on funds. Contact support."}), 200
+            return jsonify({
+                "success": False,
+                "topped_up": False,
+                "gas_ready": False,
+                "reason": "Faucet wallet is low on funds. Contact support."
+            }), 200
 
         nonce = w3.eth.get_transaction_count(faucet_acct.address, "pending")
         gas_price = int(w3.eth.gas_price * 1.2)
@@ -6115,12 +6130,33 @@ def gas_faucet():
         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
         tx_hash_hex = "0x" + tx_hash.hex()
 
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=90)
+        if not receipt or receipt.get("status") != 1:
+            logger.error(f"Gas faucet tx failed for {wallet[:8]}... tx={tx_hash_hex}")
+            return jsonify({
+                "success": False,
+                "topped_up": False,
+                "gas_ready": False,
+                "reason": "Gas faucet transaction failed",
+                "tx_hash": tx_hash_hex
+            }), 200
+
+        # Confirm user balance after faucet disbursement
+        updated_celo_wei = w3.eth.get_balance(checksum_wallet)
+        updated_celo_bal = float(w3.from_wei(updated_celo_wei, "ether"))
+        gas_ready = updated_celo_bal >= FAUCET_MIN_CELO
+
         with _faucet_lock:
             _faucet_last_sent[checksum_wallet.lower()] = now
 
         logger.info(f"Gas faucet topWallet() requested for {wallet[:8]}... tx={tx_hash_hex[:12]}...")
-        return jsonify({"success": True, "topped_up": True,
-                        "tx_hash": tx_hash_hex})
+        return jsonify({
+            "success": True,
+            "topped_up": True,
+            "gas_ready": gas_ready,
+            "tx_hash": tx_hash_hex,
+            "balance": updated_celo_bal
+        })
 
     except Exception as e:
         err_text = str(e).lower()
@@ -6128,6 +6164,7 @@ def gas_faucet():
             return jsonify({
                 "success": True,
                 "topped_up": False,
+                "gas_ready": True,
                 "reason": "Balance already above faucet threshold"
             }), 200
         logger.error(f"gas_faucet error: {e}")
