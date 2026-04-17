@@ -1842,7 +1842,7 @@
                         <div class="option-icon">✍️</div>
                         <div class="option-text">
                             <div class="option-title">Manual Address</div>
-                            <p class="option-desc">Fallback mode when wallet signer is unavailable</p>
+                            <p class="option-desc">Manual copy/paste guidance when signer flow fails</p>
                         </div>
                         <span class="option-arrow">→</span>
                     </button>
@@ -2099,39 +2099,80 @@
             el.textContent = message;
         }
 
-        function getInjectedProvider() {
+        function getAllInjectedProviders() {
             const eth = window.ethereum;
-            if (!eth) return null;
-            const providers = Array.isArray(eth.providers) ? eth.providers : [eth];
-            const mm = providers.find(p => p.isMetaMask && !p.isBraveWallet);
-            if (mm) return mm;
+            if (!eth) return [];
+            if (Array.isArray(eth.providers) && eth.providers.length) return eth.providers;
+            return [eth];
+        }
+
+        // EIP-5749 helper: prefer MetaMask provider when multiple injected providers are present.
+        function getEip5749Provider() {
+            const providers = getAllInjectedProviders();
+            if (!providers.length) return null;
+            if (providers.length > 1) {
+                const metaMaskProvider = providers.find(p => p && p.isMetaMask && !p.isBraveWallet);
+                if (metaMaskProvider) return metaMaskProvider;
+            }
             return providers[0] || null;
+        }
+
+        function isMobileDappContext() {
+            const ua = (navigator.userAgent || '').toLowerCase();
+            return /android|iphone|ipad|ipod|minipay|trust|metamask/.test(ua);
         }
 
         function getInjectedProviderLabel(provider) {
             if (!provider) return null;
-            if (provider.isMetaMask && !provider.isBraveWallet) return 'MetaMask';
-            if (provider.isTrust) return 'Trust Wallet';
             if (provider.isMiniPay) return 'MiniPay';
+            if (provider.isTrust) return 'Trust Wallet';
+            if (provider.isMetaMask && !provider.isBraveWallet) return 'MetaMask';
             return 'Injected Wallet';
         }
 
+        function getPreferredInjectedProvider() {
+            const providers = getAllInjectedProviders();
+            if (!providers.length) return null;
+
+            // Mobile dapp browsers: MiniPay > Trust Wallet > MetaMask > generic.
+            const miniPayProvider = providers.find(p => p && p.isMiniPay);
+            if (miniPayProvider) return miniPayProvider;
+            const trustProvider = providers.find(p => p && p.isTrust);
+            if (trustProvider) return trustProvider;
+            const metaMaskProvider = providers.find(p => p && p.isMetaMask && !p.isBraveWallet);
+            if (metaMaskProvider) return metaMaskProvider;
+
+            // Multi-provider desktop fallback helper (EIP-5749).
+            return isMobileDappContext() ? (providers[0] || null) : getEip5749Provider();
+        }
+
         function detectInjectedWallet() {
-            const provider = getInjectedProvider();
+            const provider = getPreferredInjectedProvider();
             const title = document.getElementById('injectedWalletTitle');
             const desc = document.getElementById('injectedWalletDesc');
             const btn = document.getElementById('injectedWalletBtn');
             if (!title || !desc || !btn) return;
             if (!provider) {
                 title.textContent = 'Injected Wallet';
-                desc.textContent = 'Not detected — install MetaMask/Trust/MiniPay or use WalletConnect/manual fallback';
+                if (isMobileDappContext()) {
+                    desc.textContent = 'No injected wallet detected. Open in MiniPay/MetaMask/Trust Wallet dapp browser, or use WalletConnect.';
+                } else {
+                    desc.textContent = 'Not detected — install MetaMask extension or use WalletConnect QR / manual fallback guidance.';
+                }
                 btn.style.opacity = '0.78';
                 return;
             }
             const name = getInjectedProviderLabel(provider);
             title.textContent = name;
-            desc.textContent = `${name} detected — click to connect`;
+            desc.textContent = `${name} detected — connect wallet, then approve signature to login`;
             btn.style.opacity = '1';
+        }
+
+
+        function getPendingReferralCode() {
+            const fromManual = ((document.getElementById('manualReferralCode') || {}).value || '').trim();
+            const saved = (sessionStorage.getItem('pending_referral_code') || '').trim();
+            return fromManual || saved || '';
         }
 
         function makeLoginMessage(address) {
@@ -2157,23 +2198,26 @@
         }
 
         async function connectInjectedWallet() {
-            const provider = getInjectedProvider();
+            const provider = getPreferredInjectedProvider();
             if (!provider) {
-                showWalletStatus('walletConnectStatus', 'No injected wallet found. Use WalletConnect or manual address fallback.', 'error');
+                showWalletStatus('walletConnectStatus', 'No injected wallet found. Use WalletConnect QR or manual wallet guidance.', 'error');
                 return;
             }
-            showWalletStatus('walletConnectStatus', '⏳ Connecting injected wallet...', 'info');
+            showWalletStatus('walletConnectStatus', '⏳ Connecting wallet… approve account access in your wallet.', 'info');
             try {
                 const accounts = await provider.request({ method: 'eth_requestAccounts' });
                 if (!accounts || !accounts.length) throw new Error('No wallet account found.');
                 const wallet = accounts[0];
                 const message = makeLoginMessage(wallet);
+                showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve the login message in your wallet.', 'info');
                 const signature = await provider.request({ method: 'personal_sign', params: [message, wallet] });
-                await postVerifyIdentity(wallet, signature, message);
-                showWalletStatus('walletConnectStatus', '✅ Wallet connected. Redirecting...', 'success');
+                await postVerifyIdentity(wallet, signature, message, getPendingReferralCode());
+                showWalletStatus('walletConnectStatus', '✅ Signature verified. Redirecting...', 'success');
                 setTimeout(() => { window.location.href = '/wallet'; }, 900);
             } catch (err) {
-                showWalletStatus('walletConnectStatus', '❌ ' + (err.message || 'Failed to connect injected wallet'), 'error');
+                const msg = (err && err.message) ? err.message : 'Failed to connect injected wallet';
+                const rejected = /reject|denied|cancel/i.test(msg);
+                showWalletStatus('walletConnectStatus', (rejected ? '❌ Signature or connection was rejected. ' : '❌ ') + msg, rejected ? 'warning' : 'error');
             }
         }
 
@@ -2184,23 +2228,9 @@
                 showWalletStatus('manualAddressStatus', 'Please enter a valid EVM address (0x...)', 'error');
                 return;
             }
-            showWalletStatus('manualAddressStatus', '⏳ Continuing with manual fallback (no signer)...', 'info');
-            try {
-                const resp = await fetch('/verify-identity', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        wallet_address: raw,
-                        referral_code: referral || '',
-                        allow_manual_fallback: true
-                    })
-                });
-                const data = await resp.json();
-                if (!(resp.ok && data.success)) throw new Error(data.error || data.message || 'Manual fallback failed');
-                showWalletStatus('manualAddressStatus', '✅ Address accepted. Redirecting...', 'success');
-                setTimeout(() => { window.location.href = '/wallet'; }, 900);
-            } catch (err) {
-                showWalletStatus('manualAddressStatus', '❌ ' + (err.message || 'Manual fallback failed'), 'error');
+            showWalletStatus('manualAddressStatus', 'ℹ️ Manual wallet mode cannot login without a signature. Use this address as a copy helper, then connect/sign with WalletConnect or injected wallet.', 'warning');
+            if (referral) {
+                sessionStorage.setItem('pending_referral_code', referral);
             }
         }
 
@@ -2279,7 +2309,7 @@
                     const uriData = await uriResp.json();
                     if (uriData.success && uriData.uri && uriData.id) {
                         drawWalletConnectQr(uriData.uri);
-                        showWalletStatus('walletConnectStatus', 'Scan QR with your wallet app. Waiting for approval...', 'info');
+                        showWalletStatus('walletConnectStatus', '📲 Awaiting wallet approval. Scan QR or open deeplink in your wallet app.', 'info');
                         const started = Date.now();
                         while (Date.now() - started < 120000) {
                             await new Promise(r => setTimeout(r, 2200));
@@ -2287,6 +2317,7 @@
                             const stData = await stResp.json();
                             if (stData.status === 'approved' && stData.address) {
                                 const message = makeLoginMessage(stData.address);
+                                showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve login signature in your wallet.', 'info');
                                 const signResp = await fetch('/api/wc-sign/' + encodeURIComponent(uriData.id), {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
@@ -2296,18 +2327,19 @@
                                 if (!signResp.ok || !signData.signature) {
                                     throw new Error(signData.error || 'WalletConnect signature failed');
                                 }
-                                await postVerifyIdentity(stData.address, signData.signature, message);
+                                await postVerifyIdentity(stData.address, signData.signature, message, getPendingReferralCode());
                                 showWalletStatus('walletConnectStatus', '✅ Wallet connected via WalletConnect. Redirecting...', 'success');
                                 setTimeout(() => { window.location.href = '/wallet'; }, 900);
                                 return;
                             }
-                            if (stData.status === 'rejected') throw new Error('WalletConnect request rejected.');
+                            if (stData.status === 'rejected') throw new Error('WalletConnect request rejected by wallet.');
                         }
-                        throw new Error('WalletConnect session timed out. Please try again.');
+                        throw new Error('WalletConnect session timed out. Please try again or use manual wallet guidance.');
                     }
                 }
             } catch (serverErr) {
                 console.warn('Sidecar WalletConnect unavailable, using browser fallback:', serverErr);
+                showWalletStatus('walletConnectStatus', '⚠️ WalletConnect relay unavailable. Trying in-browser WalletConnect fallback…', 'warning');
             }
 
             try {
@@ -2324,7 +2356,7 @@
                 });
                 if (result.uri) {
                     drawWalletConnectQr(result.uri);
-                    showWalletStatus('walletConnectStatus', 'Scan QR with wallet app. Waiting for approval...', 'info');
+                    showWalletStatus('walletConnectStatus', '📲 Awaiting wallet approval (browser fallback). Scan QR in your wallet app.', 'info');
                 }
                 const session = await result.approval();
                 window._wcSession = session;
@@ -2340,17 +2372,21 @@
                 });
                 if (!address) throw new Error('No accounts returned from wallet');
                 const message = makeLoginMessage(address);
+                showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve login signature in your wallet.', 'info');
                 const messageHex = '0x' + Array.from(new TextEncoder().encode(message)).map(b => b.toString(16).padStart(2, '0')).join('');
                 const signature = await client.request({
                     topic: session.topic,
                     chainId: 'eip155:42220',
                     request: { method: 'personal_sign', params: [messageHex, address] }
                 });
-                await postVerifyIdentity(address, signature, message);
+                await postVerifyIdentity(address, signature, message, getPendingReferralCode());
                 showWalletStatus('walletConnectStatus', '✅ Wallet connected via browser WalletConnect fallback. Redirecting...', 'success');
                 setTimeout(() => { window.location.href = '/wallet'; }, 900);
             } catch (err) {
-                showWalletStatus('walletConnectStatus', '❌ ' + (err.message || 'WalletConnect failed'), 'error');
+                const emsg = (err && err.message) ? err.message : 'WalletConnect failed';
+                const rejected = /reject|denied|cancel/i.test(emsg);
+                const prefix = rejected ? '❌ Request rejected by wallet. ' : '❌ ';
+                showWalletStatus('walletConnectStatus', prefix + emsg + ' You can use manual wallet input for copy/paste guidance.', rejected ? 'warning' : 'error');
             }
         }
 
