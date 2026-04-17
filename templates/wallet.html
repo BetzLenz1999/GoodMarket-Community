@@ -686,7 +686,7 @@
             <div class="wallet-identity">
                 <div class="wallet-avatar">💎</div>
                 <div>
-                    <div class="wallet-name">My Wallet</div>
+                    <div class="wallet-name">My GoodDollar Portfolio</div>
                     <div class="wallet-addr" id="walletAddrShort">{{ wallet[:6] }}...{{ wallet[-4:] }}</div>
                 </div>
             </div>
@@ -698,6 +698,14 @@
 
     <!-- Action Buttons -->
     <div class="action-row">
+        <div class="action-item" onclick="window.location.href='/swap'">
+            <div class="action-circle">⇌</div>
+            <span class="action-label">Uniswap</span>
+        </div>
+        <div class="action-item" onclick="openModal('sendModal')">
+            <div class="action-circle">↑</div>
+            <span class="action-label">Send</span>
+        </div>
         <div class="action-item" onclick="openModal('claimModal');">
             <div class="action-circle claim-circle">
                 <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
@@ -706,18 +714,6 @@
                 </svg>
             </div>
             <span class="action-label">Claim</span>
-        </div>
-        <div class="action-item" onclick="openModal('sendModal')">
-            <div class="action-circle">↑</div>
-            <span class="action-label">Send</span>
-        </div>
-        <div class="action-item" onclick="openModal('receiveModal')">
-            <div class="action-circle">↓</div>
-            <span class="action-label">Receive</span>
-        </div>
-        <div class="action-item" onclick="window.location.href='/swap'">
-            <div class="action-circle">⇌</div>
-            <span class="action-label">Swap</span>
         </div>
         <div class="action-item" onclick="window.location.href='/savings'">
             <div class="action-circle">🏦</div>
