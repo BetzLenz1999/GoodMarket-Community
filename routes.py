@@ -6025,192 +6025,298 @@ def server_sign_tx():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# ── Gas Faucet ──────────────────────────────────────────────────────────────
-# In-memory rate-limit store: wallet_address -> unix timestamp of last top-up
-_faucet_last_sent: dict = {}
+# ── UBI Gas Faucet (safe claim flow support) ─────────────────────────────────
+# Short-term anti-duplicate cache: wallet_address -> unix timestamp of last
+# successful refill request (API or on-chain).
+_faucet_recent_refill: dict = {}
 _faucet_lock = threading.Lock()
-FAUCET_MIN_CELO = 0.002        # top-up if user has less than this
-FAUCET_COOLDOWN_HOURS = 24     # one top-up per wallet per 24 hours
-GOODDOLLAR_FAUCET_CONTRACT = "0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84"
 
-@routes.route("/api/gas-faucet", methods=["POST"])
+FAUCET_MIN_CELO = float(os.getenv("FAUCET_MIN_CELO", "0.002"))
+FAUCET_BUFFER_MULTIPLIER = float(os.getenv("FAUCET_BUFFER_MULTIPLIER", "1.35"))
+FAUCET_DUPLICATE_WINDOW_MIN = int(os.getenv("FAUCET_DUPLICATE_WINDOW_MIN", "30"))
+GOODDOLLAR_FAUCET_CONTRACT = os.getenv(
+    "GOODDOLLAR_FAUCET_CONTRACT",
+    "0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84"
+)
+GOODDOLLAR_FAUCET_API_URL = os.getenv(
+    "GOODDOLLAR_FAUCET_API_URL",
+    "https://goodserver.gooddollar.org/verify/topWallet"
+)
+
+
+def _validate_and_authorize_wallet(data: dict) -> tuple:
+    """Validate requested wallet and ensure it belongs to current session."""
+    wallet = session.get("wallet")
+    if not wallet:
+        return None, jsonify({"success": False, "error": "Not logged in"}), 401
+
+    requested_wallet = (data.get("wallet") or wallet).strip()
+    if requested_wallet.lower() != wallet.lower():
+        return None, jsonify({
+            "success": False,
+            "error": "Wrong wallet connected. Please use your logged-in wallet."
+        }), 403
+
+    try:
+        checksum_wallet = Web3.to_checksum_address(requested_wallet)
+    except Exception:
+        return None, jsonify({"success": False, "error": "Invalid wallet address"}), 400
+
+    return checksum_wallet, None, None
+
+
+def _get_gas_status(w3, checksum_wallet: str) -> dict:
+    """Estimate claim gas reserve and compare with current CELO balance."""
+    from blockchain import GOODDOLLAR_CONTRACTS
+
+    claim_selector = "0x4e71d92d"  # claim()
+    try:
+        estimated_gas = w3.eth.estimate_gas({
+            "from": checksum_wallet,
+            "to": Web3.to_checksum_address(GOODDOLLAR_CONTRACTS["UBI_PROXY"]),
+            "data": claim_selector,
+            "value": 0,
+        })
+    except Exception:
+        estimated_gas = 220000
+
+    gas_price_wei = int(w3.eth.gas_price)
+    required_wei = int(estimated_gas * gas_price_wei * FAUCET_BUFFER_MULTIPLIER)
+    minimum_wei = w3.to_wei(FAUCET_MIN_CELO, "ether")
+    required_wei = max(required_wei, int(minimum_wei))
+
+    balance_wei = int(w3.eth.get_balance(checksum_wallet))
+    return {
+        "balance_wei": str(balance_wei),
+        "balance_celo": float(w3.from_wei(balance_wei, "ether")),
+        "estimated_gas": int(estimated_gas),
+        "gas_price_wei": str(gas_price_wei),
+        "required_gas_wei": str(required_wei),
+        "required_gas_celo": float(w3.from_wei(required_wei, "ether")),
+        "gas_ready": balance_wei >= required_wei,
+    }
+
+
+def _has_recent_refill(checksum_wallet: str) -> tuple:
+    now = time.time()
+    with _faucet_lock:
+        last = _faucet_recent_refill.get(checksum_wallet.lower(), 0)
+    if now - last < FAUCET_DUPLICATE_WINDOW_MIN * 60:
+        remaining = int((FAUCET_DUPLICATE_WINDOW_MIN * 60) - (now - last))
+        return True, remaining
+    return False, 0
+
+
+def _record_recent_refill(checksum_wallet: str):
+    with _faucet_lock:
+        _faucet_recent_refill[checksum_wallet.lower()] = time.time()
+
+def _execute_onchain_faucet_topup(w3, checksum_wallet: str) -> dict:
+    """Internal helper to send topWallet(address) tx with GAMES_KEY."""
+    from blockchain import CELO_CHAIN_ID
+    from eth_account import Account
+
+    games_key = (os.getenv("GAMES_KEY") or "").strip()
+    if not games_key:
+        return {
+            "success": False,
+            "status": "not_configured",
+            "error": "On-chain faucet not configured (missing GAMES_KEY)"
+        }
+
+    key = games_key if games_key.startswith("0x") else "0x" + games_key
+    faucet_acct = Account.from_key(key)
+    faucet_contract = Web3.to_checksum_address(GOODDOLLAR_FAUCET_CONTRACT)
+
+    # calldata for topWallet(address): 0x3771dcf8 + padded wallet bytes
+    call_data = "0x3771dcf8" + "000000000000000000000000" + checksum_wallet[2:].lower()
+    nonce = w3.eth.get_transaction_count(faucet_acct.address, "pending")
+
+    try:
+        gas_est = w3.eth.estimate_gas({
+            "from": faucet_acct.address,
+            "to": faucet_contract,
+            "data": call_data,
+        })
+    except Exception:
+        gas_est = 140000
+
+    tx = {
+        "chainId": CELO_CHAIN_ID,
+        "nonce": nonce,
+        "gasPrice": int(w3.eth.gas_price * 1.2),
+        "gas": int(gas_est * 1.2),
+        "to": faucet_contract,
+        "value": 0,
+        "data": call_data,
+    }
+
+    signed = faucet_acct.sign_transaction(tx)
+    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+    tx_hash_hex = "0x" + tx_hash.hex()
+    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+
+    if receipt and receipt.get("status") == 1:
+        _record_recent_refill(checksum_wallet)
+        logger.info(f"✅ /api/faucet/onchain success wallet={checksum_wallet[:10]} tx={tx_hash_hex}")
+        return {"success": True, "status": "sent", "tx_hash": tx_hash_hex}
+
+    logger.error(f"❌ /api/faucet/onchain failed wallet={checksum_wallet[:10]} tx={tx_hash_hex}")
+    return {
+        "success": False,
+        "status": "failed",
+        "error": "On-chain faucet transaction failed",
+        "tx_hash": tx_hash_hex
+    }
+
+
+@routes.route("/api/faucet/status", methods=["POST"])
 @auth_required
-def gas_faucet():
-    """
-    Check user's CELO balance. If below FAUCET_MIN_CELO, call the GoodDollar
-    Faucet contract topWallet(user) from GAMES_KEY so user can pay gas.
-    Wait for faucet tx confirmation and re-check user CELO balance before
-    reporting gas as ready for claim flow.
-    Rate-limited to once per 24 h per wallet.
-    """
-    import time
+def faucet_status():
+    """Step A for safe-claim flow: gas readiness + duplicate refill status."""
     try:
         data = request.get_json(silent=True) or {}
-        from web3 import Web3
-        from eth_account import Account
-        from blockchain import CELO_RPC, CELO_CHAIN_ID
+        checksum_wallet, err_resp, status_code = _validate_and_authorize_wallet(data)
+        if err_resp:
+            return err_resp, status_code
 
-        wallet = session.get("wallet")
-        if not wallet:
-            return jsonify({"success": False, "error": "Not logged in"}), 401
-
-        # Anti-abuse: allow faucet only for the logged-in user wallet.
-        requested_wallet = (data.get("wallet") or "").strip()
-        if requested_wallet:
-            if requested_wallet.lower() != wallet.lower():
-                return jsonify({
-                    "success": False,
-                    "gas_ready": False,
-                    "error": "Invalid wallet for faucet top-up. Only your own wallet can be topped up."
-                }), 403
-
+        from blockchain import CELO_RPC
         w3 = Web3(Web3.HTTPProvider(CELO_RPC, request_kwargs={"timeout": 15}))
-        checksum_wallet = Web3.to_checksum_address(wallet)
+        gas_status = _get_gas_status(w3, checksum_wallet)
+        recent_refill, seconds_remaining = _has_recent_refill(checksum_wallet)
 
-        # Check current balance
-        celo_wei = w3.eth.get_balance(checksum_wallet)
-        celo_bal = float(w3.from_wei(celo_wei, "ether"))
-
-        if celo_bal >= FAUCET_MIN_CELO:
-            return jsonify({
-                "success": True,
-                "topped_up": False,
-                "gas_ready": True,
-                "reason": f"Balance OK ({celo_bal:.4f} CELO)",
-                "balance": celo_bal
-            })
-
-        # Rate-limit check
-        now = time.time()
-        with _faucet_lock:
-            last = _faucet_last_sent.get(checksum_wallet.lower(), 0)
-            if now - last < FAUCET_COOLDOWN_HOURS * 3600:
-                remaining_h = (FAUCET_COOLDOWN_HOURS * 3600 - (now - last)) / 3600
-                return jsonify({
-                    "success": True,
-                    "topped_up": False,
-                    "gas_ready": False,
-                    "reason": f"Already topped up recently. Try again in {remaining_h:.1f}h."
-                })
-
-        tx_hash_hex = None
-        topup_reason = None
-
-        # Preferred path: call GoodDollar faucet API first (official topWallet flow).
-        # Fallback path below: on-chain topWallet(address) from GAMES_KEY.
-        try:
-            import requests as req_lib
-            faucet_resp = req_lib.post(
-                "https://goodserver.gooddollar.org/verify/topWallet",
-                json={"chainId": 42220, "account": checksum_wallet},
-                timeout=15,
-                headers={"Content-Type": "application/json"}
-            )
-            faucet_body = faucet_resp.json()
-            if faucet_body.get("ok", -1) == 1:
-                topup_reason = "goodserver_topwallet_ok"
-                tx_hash_hex = faucet_body.get("txHash") or faucet_body.get("tx_hash")
-                logger.info(f"Gas faucet topWallet() accepted by goodserver for {wallet[:8]}...")
-            else:
-                topup_reason = faucet_body.get("error") or "goodserver_topwallet_declined"
-                logger.warning(f"Goodserver topWallet declined for {wallet[:8]}...: {topup_reason}")
-        except Exception as e:
-            topup_reason = f"goodserver_error:{e}"
-            logger.warning(f"Goodserver topWallet request failed for {wallet[:8]}...: {e}")
-
-        if topup_reason != "goodserver_topwallet_ok":
-            faucet_key = os.getenv("GAMES_KEY")
-            if not faucet_key:
-                return jsonify({
-                    "success": False,
-                    "topped_up": False,
-                    "gas_ready": False,
-                    "reason": "Faucet not configured (missing GAMES_KEY and goodserver topWallet unavailable)"
-                }), 200
-
-            # Build fallback faucet wallet (GAMES_KEY)
-            key = faucet_key if faucet_key.startswith("0x") else "0x" + faucet_key
-            faucet_acct = Account.from_key(key)
-            faucet_bal_wei = w3.eth.get_balance(faucet_acct.address)
-            faucet_bal = float(w3.from_wei(faucet_bal_wei, "ether"))
-
-            if faucet_bal < 0.001:
-                logger.warning(f"Gas faucet wallet low: {faucet_bal:.4f} CELO — cannot top up {wallet[:8]}...")
-                return jsonify({
-                    "success": False,
-                    "topped_up": False,
-                    "gas_ready": False,
-                    "reason": "Faucet wallet is low on funds. Contact support."
-                }), 200
-
-            nonce = w3.eth.get_transaction_count(faucet_acct.address, "pending")
-            gas_price = int(w3.eth.gas_price * 1.2)
-            faucet_contract = Web3.to_checksum_address(GOODDOLLAR_FAUCET_CONTRACT)
-            # topWallet(address) selector: 0x3771dcf8
-            call_data = "0x3771dcf8" + "000000000000000000000000" + checksum_wallet[2:].lower()
-
-            try:
-                gas_est = w3.eth.estimate_gas({
-                    "from": faucet_acct.address,
-                    "to": faucet_contract,
-                    "data": call_data,
-                })
-            except Exception:
-                gas_est = 140000
-
-            tx = {
-                "chainId": CELO_CHAIN_ID,
-                "nonce": nonce,
-                "gasPrice": gas_price,
-                "gas": int(gas_est * 1.2),
-                "to": faucet_contract,
-                "value": 0,
-                "data": call_data,
-            }
-            signed = faucet_acct.sign_transaction(tx)
-            tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-            tx_hash_hex = "0x" + tx_hash.hex()
-
-            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=90)
-            if not receipt or receipt.get("status") != 1:
-                logger.error(f"Gas faucet tx failed for {wallet[:8]}... tx={tx_hash_hex}")
-                return jsonify({
-                    "success": False,
-                    "topped_up": False,
-                    "gas_ready": False,
-                    "reason": "Gas faucet transaction failed",
-                    "tx_hash": tx_hash_hex
-                }), 200
-
-        # Confirm user balance after faucet disbursement
-        updated_celo_wei = w3.eth.get_balance(checksum_wallet)
-        updated_celo_bal = float(w3.from_wei(updated_celo_wei, "ether"))
-        gas_ready = updated_celo_bal >= FAUCET_MIN_CELO
-
-        with _faucet_lock:
-            _faucet_last_sent[checksum_wallet.lower()] = now
-
-        logger.info(f"Gas faucet topWallet() requested for {wallet[:8]}... tx={tx_hash_hex[:12]}...")
         return jsonify({
             "success": True,
-            "topped_up": True,
-            "gas_ready": gas_ready,
-            "tx_hash": tx_hash_hex,
-            "balance": updated_celo_bal,
-            "topup_source": "goodserver" if topup_reason == "goodserver_topwallet_ok" else "onchain_fallback"
+            "wallet": checksum_wallet.lower(),
+            "is_recent_refill": recent_refill,
+            "recent_refill_cooldown_seconds": seconds_remaining,
+            **gas_status,
         })
-
     except Exception as e:
-        err_text = str(e).lower()
-        if "low toTop".lower() in err_text or "lowtotop" in err_text:
+        logger.error(f"faucet_status error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/faucet/onchain", methods=["POST"])
+@auth_required
+def faucet_onchain():
+    """Step C fallback: sign/send topWallet(address) using GAMES_KEY."""
+    try:
+        data = request.get_json(silent=True) or {}
+        checksum_wallet, err_resp, status_code = _validate_and_authorize_wallet(data)
+        if err_resp:
+            return err_resp, status_code
+
+        from blockchain import CELO_RPC
+        w3 = Web3(Web3.HTTPProvider(CELO_RPC, request_kwargs={"timeout": 15}))
+        onchain_result = _execute_onchain_faucet_topup(w3, checksum_wallet)
+        status_code = 200 if onchain_result.get("success") else 502
+        if onchain_result.get("status") == "not_configured":
+            status_code = 503
+        return jsonify(onchain_result), status_code
+    except Exception as e:
+        err = str(e)
+        logger.error(f"faucet_onchain error: {err}")
+        return jsonify({"success": False, "status": "error", "error": err}), 500
+
+
+@routes.route("/api/faucet/gas", methods=["POST"])
+@auth_required
+def faucet_gas():
+    """Step B: API faucet first, then fallback to /api/faucet/onchain if needed."""
+    try:
+        data = request.get_json(silent=True) or {}
+        checksum_wallet, err_resp, status_code = _validate_and_authorize_wallet(data)
+        if err_resp:
+            return err_resp, status_code
+
+        from blockchain import CELO_RPC
+        w3 = Web3(Web3.HTTPProvider(CELO_RPC, request_kwargs={"timeout": 15}))
+        status_before = _get_gas_status(w3, checksum_wallet)
+        if status_before["gas_ready"]:
             return jsonify({
                 "success": True,
-                "topped_up": False,
+                "wallet": checksum_wallet.lower(),
                 "gas_ready": True,
-                "reason": "Balance already above faucet threshold"
-            }), 200
-        logger.error(f"gas_faucet error: {e}")
+                "topped_up": False,
+                "status": "already_funded",
+                **status_before,
+            })
+
+        recent_refill, seconds_remaining = _has_recent_refill(checksum_wallet)
+        if recent_refill:
+            return jsonify({
+                "success": True,
+                "wallet": checksum_wallet.lower(),
+                "gas_ready": False,
+                "topped_up": False,
+                "status": "recent_refill",
+                "reason": f"Recent refill detected. Retry after ~{seconds_remaining}s.",
+                "recent_refill_cooldown_seconds": seconds_remaining,
+                **status_before,
+            })
+
+        # Step B: GoodDollar API faucet
+        api_ok = False
+        api_tx_hash = None
+        api_error = None
+        try:
+            payload = json.dumps({"chainId": 42220, "account": checksum_wallet}).encode("utf-8")
+            req = urllib.request.Request(
+                GOODDOLLAR_FAUCET_API_URL,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            api_ok = body.get("ok", -1) == 1
+            api_tx_hash = body.get("txHash") or body.get("tx_hash")
+            api_error = None if api_ok else (body.get("error") or "API faucet declined")
+        except Exception as e:
+            api_error = str(e)
+
+        onchain_result = None
+        topup_source = None
+
+        if api_ok:
+            topup_source = "api"
+            _record_recent_refill(checksum_wallet)
+            logger.info(f"✅ API faucet accepted wallet={checksum_wallet[:10]} tx={api_tx_hash}")
+        else:
+            # Step C: on-chain fallback
+            onchain_result = _execute_onchain_faucet_topup(w3, checksum_wallet)
+            if onchain_result.get("success"):
+                topup_source = "onchain"
+
+        status_after = _get_gas_status(w3, checksum_wallet)
+        topped_up = bool(topup_source)
+
+        if topped_up:
+            _record_recent_refill(checksum_wallet)
+
+        return jsonify({
+            "success": bool(topped_up or status_after["gas_ready"]),
+            "wallet": checksum_wallet.lower(),
+            "gas_ready": status_after["gas_ready"],
+            "topped_up": topped_up,
+            "topup_source": topup_source,
+            "api_tx_hash": api_tx_hash,
+            "api_error": api_error,
+            "onchain_result": onchain_result,
+            "status": "ok" if (topped_up or status_after["gas_ready"]) else "unfunded",
+            **status_after,
+        })
+    except Exception as e:
+        logger.error(f"faucet_gas error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# Backward-compat endpoint used by existing clients.
+@routes.route("/api/gas-faucet", methods=["POST"])
+@auth_required
+def gas_faucet_compat():
+    return faucet_gas()
 
 
 @routes.route("/api/custodial/sign-msg", methods=["POST"])
