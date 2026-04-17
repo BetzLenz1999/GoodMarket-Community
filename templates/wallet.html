@@ -957,11 +957,7 @@
             <div class="alert" id="pkAlert"></div>
             {% else %}
             <div style="background:rgba(0,180,255,0.07);border:1px solid rgba(0,180,255,0.2);border-radius:12px;padding:0.9rem 1rem;font-size:0.85rem;color:var(--text-dim);margin-bottom:1rem;">
-                {% if login_method == 'turnkey' %}
-                ℹ️ This wallet is managed by Turnkey. Private key export is not available in this app for Turnkey-managed wallets.
-                {% else %}
                 ℹ️ Private key export is only available for custodial wallets created in GoodMarket.
-                {% endif %}
             </div>
             {% endif %}
 
