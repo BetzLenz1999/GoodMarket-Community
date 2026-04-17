@@ -9,9 +9,6 @@ import logging
 import os
 import threading
 import time
-import secrets
-import hashlib
-from datetime import datetime, timedelta, timezone
 
 # Initialize notification service
 notification_service = NotificationService()
@@ -5113,96 +5110,6 @@ def _get_fernet():
     return Fernet(fernet_key)
 
 
-@routes.route("/api/turnkey/email/send-code", methods=["POST"])
-def turnkey_send_email_code():
-    """Send a one-time email code used before wallet creation."""
-    try:
-        payload = request.get_json() or {}
-        email = str(payload.get("email", "")).strip().lower()
-        if not email or "@" not in email:
-            return jsonify({"success": False, "message": "Valid email is required."}), 400
-
-        session.pop("turnkey_email_verified", None)
-
-        try:
-            from turnkey_service import send_email_otp_turnkey
-            _, tk_err = send_email_otp_turnkey(email)
-        except Exception as tk_exception:
-            tk_err = str(tk_exception)
-
-        if not tk_err:
-            session["turnkey_email_otp"] = {
-                "email": email,
-                "provider": "turnkey",
-                "attempts": 0,
-                "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
-            }
-            return jsonify({"success": True, "message": "Verification code sent."})
-
-        logger.warning(f"Turnkey OTP send unavailable: {tk_err}")
-        return jsonify({
-            "success": False,
-            "message": "Turnkey OTP is unavailable right now. Please try again later."
-        }), 503
-    except Exception as e:
-        logger.error(f"turnkey_send_email_code error: {e}")
-        return jsonify({"success": False, "message": "Unable to send code right now."}), 500
-
-
-@routes.route("/api/turnkey/email/verify-code", methods=["POST"])
-def turnkey_verify_email_code():
-    """Verify one-time email code and mark session as email-verified."""
-    try:
-        payload = request.get_json() or {}
-        email = str(payload.get("email", "")).strip().lower()
-        code = str(payload.get("code", "")).strip()
-        otp_state = session.get("turnkey_email_otp") or {}
-
-        if not email or not code:
-            return jsonify({"success": False, "message": "Email and code are required."}), 400
-        if otp_state.get("email") != email:
-            return jsonify({"success": False, "message": "Email/code mismatch. Request a new code."}), 400
-
-        provider = str(otp_state.get("provider") or "").lower()
-        expires_raw = otp_state.get("expires_at")
-        expires_at = datetime.fromisoformat(expires_raw) if expires_raw else None
-        if not expires_at or datetime.now(timezone.utc) > expires_at:
-            session.pop("turnkey_email_otp", None)
-            return jsonify({"success": False, "message": "Code expired. Please request a new one."}), 400
-
-        attempts = int(otp_state.get("attempts", 0))
-        if attempts >= 5:
-            session.pop("turnkey_email_otp", None)
-            return jsonify({"success": False, "message": "Too many attempts. Request a new code."}), 429
-
-        if provider == "turnkey":
-            try:
-                from turnkey_service import verify_email_otp_turnkey
-                _, tk_err = verify_email_otp_turnkey(email, code)
-            except Exception as tk_exception:
-                tk_err = str(tk_exception)
-            if tk_err:
-                otp_state["attempts"] = attempts + 1
-                session["turnkey_email_otp"] = otp_state
-                return jsonify({"success": False, "message": "Incorrect code."}), 400
-        else:
-            session.pop("turnkey_email_otp", None)
-            return jsonify({
-                "success": False,
-                "message": "Invalid OTP session. Please request a new Turnkey code."
-            }), 400
-
-        session["turnkey_email_verified"] = {
-            "email": email,
-            "verified_at": datetime.now(timezone.utc).isoformat(),
-        }
-        session.pop("turnkey_email_otp", None)
-        return jsonify({"success": True, "message": "Email verified."})
-    except Exception as e:
-        logger.error(f"turnkey_verify_email_code error: {e}")
-        return jsonify({"success": False, "message": "Unable to verify code right now."}), 500
-
-
 @routes.route("/api/turnkey/login", methods=["POST"])
 def turnkey_login():
     """Login with a private key — derives address locally, stores encrypted key in session."""
@@ -5286,18 +5193,6 @@ def turnkey_create_wallet():
         user_id = data.get("userId") or session.get("wallet") or f"new_{int(time.time())}"
         user_name = data.get("userName", user_id)
         referral_code = data.get("referral_code", None)
-        email = str(data.get("email", "")).strip().lower()
-
-        require_email_code_env = str(os.environ.get("TURNKEY_REQUIRE_EMAIL_CODE", "true")).lower() == "true"
-        require_email_code = bool(data.get("require_email_code", False)) and require_email_code_env
-        if require_email_code:
-            verified = session.get("turnkey_email_verified") or {}
-            verified_email = str(verified.get("email", "")).strip().lower()
-            if not email or verified_email != email:
-                return jsonify({
-                    "status": "error",
-                    "message": "Please verify your email code before creating a wallet."
-                }), 400
 
         result, err = create_turnkey_wallet(user_id, user_name)
         if err:
@@ -5323,8 +5218,6 @@ def turnkey_create_wallet():
             session["wallet"] = wallet_address
             session["verified"] = True
             session["login_method"] = "custodial"
-            if email:
-                session["user_email"] = email
             session["custodial_key_enc"] = encrypted_key
             session.pop("turnkey_suborg_id", None)
             session.pop("turnkey_sign_with", None)
@@ -5375,8 +5268,6 @@ def turnkey_create_wallet():
 
         session["wallet"] = wallet_address
         session["verified"] = True
-        if email:
-            session["user_email"] = email
         session["turnkey_suborg_id"] = suborg_id
         session["turnkey_sign_with"] = sign_with
         session["login_method"] = "turnkey"
