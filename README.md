@@ -91,6 +91,69 @@ Run `create_daily_voucher_table.sql` in your Supabase SQL Editor to create the `
 | POST | `/api/admin/voucher` | Admin | Sets/updates the voucher link |
 | POST | `/api/admin/voucher/reset` | Admin | Resets claim status |
 
+## UBI claim + gas fallback flow
+
+The wallet claim flow now performs a safe sequence before sending `claim()`:
+
+1. **Entitlement check** (`GET /api/ubi-entitlement`)  
+   - Checks identity whitelist first (`isWhitelisted`).  
+   - If verified, checks UBI entitlement (`checkEntitlement(wallet)`).  
+   - Returns `is_verified`, `can_claim`, `entitlement`, `entitlement_formatted`, and `reason` when blocked.
+2. **Gas readiness check** (`POST /api/faucet/status`)  
+   - Estimates claim gas reserve (`eth_estimateGas * eth_gasPrice` with buffer).  
+   - Compares required reserve vs CELO wallet balance.
+3. **Faucet attempt** (`POST /api/faucet/gas`)  
+   - Calls GoodDollar faucet API first.  
+   - Falls back to on-chain top-up if API fails.
+4. **On-chain fallback** (`POST /api/faucet/onchain`)  
+   - Uses `GAMES_KEY` server-side to call faucet `topWallet(address)`.
+5. **Balance poll + claim tx**  
+   - Frontend waits for CELO balance increase, then prompts user to approve `claim()`.
+
+### Sequence diagram
+
+```mermaid
+sequenceDiagram
+    participant FE as wallet.html
+    participant BE as Flask API
+    participant CH as Celo/GoodDollar
+
+    FE->>BE: GET /api/ubi-entitlement
+    BE->>CH: isWhitelisted + checkEntitlement
+    CH-->>BE: eligibility/entitlement
+    BE-->>FE: can_claim + entitlement
+
+    FE->>BE: POST /api/faucet/status
+    BE->>CH: estimateGas + gasPrice + getBalance
+    CH-->>BE: gas readiness
+    BE-->>FE: gas_ready?
+
+    alt gas insufficient
+      FE->>BE: POST /api/faucet/gas
+      BE->>CH: GoodServer API topWallet
+      alt API fails/declines
+        BE->>CH: POST /api/faucet/onchain (GAMES_KEY signs tx)
+      end
+      FE->>BE: poll /api/faucet/status
+      BE->>CH: getBalance
+      CH-->>BE: updated balance
+      BE-->>FE: gas_ready=true
+    end
+
+    FE->>CH: claim() tx (user approves in wallet)
+```
+
+### Basic test checklist
+
+- Happy path: verified wallet + enough CELO → direct claim prompt.
+- Happy path: verified wallet + low CELO → faucet API top-up → claim succeeds.
+- Fallback path: faucet API fails → on-chain fallback tx via `GAMES_KEY` succeeds.
+- Failure: wrong connected wallet → user gets actionable wallet mismatch error.
+- Failure: not verified / no entitlement → claim button disabled with clear reason.
+- Failure: faucet unavailable or timeout → clear retry/support message.
+- Failure: user rejects signature or tx → cancellation message shown.
+- Duplicate protection: repeated refill attempts within 30 minutes are blocked.
+
 ## Deployment
 
 ### Replit Autoscale

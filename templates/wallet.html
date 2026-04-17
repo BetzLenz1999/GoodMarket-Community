@@ -1585,6 +1585,7 @@
         };
 
         function fetchEntitlement() {
+            setStatus('Checking entitlement…', 'var(--text-dim)');
             // Always force-bypass the backend cache on the first check.
             // Stale cache (up to 3 min) caused "Already Claimed Today" to appear for
             // wallets whose face-verification status had just changed.
@@ -1697,21 +1698,21 @@
         function setClaimGasUiState(stage) {
             const stateMap = {
                 checking_balance: {
-                    label: 'Checking balance…',
+                    label: 'Checking wallet gas…',
                     icon: '🔎',
-                    status: 'Checking balance',
+                    status: 'Checking wallet gas…',
                     color: 'var(--text-dim)'
                 },
                 requesting_faucet: {
-                    label: 'Requesting faucet…',
+                    label: 'Requesting faucet top-up…',
                     icon: '🚰',
-                    status: 'Requesting GoodDollar faucet top-up',
+                    status: 'Requesting faucet top-up…',
                     color: '#60a5fa'
                 },
                 waiting_credit: {
-                    label: 'Waiting for credit…',
+                    label: 'Waiting for gas to arrive…',
                     icon: '⏳',
-                    status: 'Waiting for credit',
+                    status: 'Waiting for gas to arrive…',
                     color: '#34d399'
                 },
                 gas_ready: {
@@ -1723,7 +1724,7 @@
                 approve_wallet: {
                     label: 'Approve in wallet',
                     icon: '🪙',
-                    status: 'Approve in wallet',
+                    status: 'Approve claim in wallet…',
                     color: 'var(--text-dim)'
                 }
             };
@@ -1734,66 +1735,73 @@
             setStatus(state.status, state.color);
         }
 
-        async function ensureGasReadyBeforeClaim() {
-            const maxPolls = 12;
-            const pollDelayMs = 3000;
-            let hasRequestedFaucet = false;
-            let lastReason = '';
+        async function getProviderGasSnapshot(provider) {
+            const gasLimitHex = await provider.request({
+                method: 'eth_estimateGas',
+                params: [{ from: WALLET, to: UBI_CONTRACT, data: CLAIM_DATA, value: '0x0' }]
+            });
+            const gasPriceHex = await provider.request({ method: 'eth_gasPrice' });
+            const balanceHex = await provider.request({ method: 'eth_getBalance', params: [WALLET, 'latest'] });
+            const gasLimit = BigInt(gasLimitHex);
+            const gasPrice = BigInt(gasPriceHex);
+            const balance = BigInt(balanceHex);
+            const required = (gasLimit * gasPrice * 135n) / 100n;
+            return { gasLimit, gasPrice, balance, required, gasReady: balance >= required };
+        }
 
+        async function pollForGasArrival(maxPolls, pollDelayMs) {
             for (let i = 0; i < maxPolls; i++) {
-                setClaimGasUiState('checking_balance');
-                let faucetData = null;
-                try {
-                    const faucetRes = await fetch('/api/gas-faucet', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ wallet: WALLET })
-                    });
-                    faucetData = await faucetRes.json();
-                } catch (networkErr) {
-                    const lastTry = i === (maxPolls - 1);
-                    if (lastTry) {
-                        throw new Error('Gas check timeout. Please retry.');
-                    }
-                    setStatus('Network issue while checking gas. Retrying…', '#fbbf24');
-                    await new Promise(resolve => setTimeout(resolve, pollDelayMs));
-                    continue;
-                }
-
-                if (!faucetData.success) {
-                    throw new Error(faucetData.reason || faucetData.error || 'Gas faucet request failed');
-                }
-                lastReason = faucetData.reason || '';
-
-                if (String(faucetData.reason || '').toLowerCase().includes('not configured')) {
-                    throw new Error('Faucet not configured (missing GAMES_KEY).');
-                }
-
-                if (faucetData.gas_ready) {
-                    setClaimGasUiState('gas_ready');
-                    return {
-                        gasReady: true,
-                        toppedUp: !!faucetData.topped_up,
-                        reason: lastReason
-                    };
-                }
-
-                if (faucetData.topped_up && !hasRequestedFaucet) {
-                    hasRequestedFaucet = true;
-                    setClaimGasUiState('requesting_faucet');
-                } else {
-                    setClaimGasUiState('waiting_credit');
-                }
-
-                const lastTry = i === (maxPolls - 1);
-                if (lastTry) {
-                    throw new Error(
-                        faucetData.reason || 'Timeout waiting for CELO gas credit. Please retry.'
-                    );
-                }
-
                 await new Promise(resolve => setTimeout(resolve, pollDelayMs));
+                const statusRes = await fetch('/api/faucet/status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wallet: WALLET })
+                });
+                const statusData = await statusRes.json();
+                if (statusData.success && statusData.gas_ready) {
+                    return statusData;
+                }
+                setClaimGasUiState('waiting_credit');
             }
+            return null;
+        }
+
+        async function ensureGasReadyBeforeClaim() {
+            const maxPolls = 10;
+            const pollDelayMs = 3000;
+            setClaimGasUiState('checking_balance');
+
+            const statusRes = await fetch('/api/faucet/status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ wallet: WALLET })
+            });
+            const statusData = await statusRes.json();
+            if (!statusData.success) {
+                throw new Error(statusData.error || 'Unable to check wallet gas.');
+            }
+            if (statusData.gas_ready) {
+                setClaimGasUiState('gas_ready');
+                return { gasReady: true, toppedUp: false, source: 'wallet_balance' };
+            }
+
+            setClaimGasUiState('requesting_faucet');
+            const gasRes = await fetch('/api/faucet/gas', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ wallet: WALLET })
+            });
+            const gasData = await gasRes.json();
+            if (!gasData.success && !gasData.gas_ready) {
+                throw new Error(gasData.error || gasData.reason || 'Faucet unavailable.');
+            }
+
+            const postFaucet = await pollForGasArrival(maxPolls, pollDelayMs);
+            if (postFaucet && postFaucet.gas_ready) {
+                setClaimGasUiState('gas_ready');
+                return { gasReady: true, toppedUp: true, source: gasData.topup_source || 'faucet' };
+            }
+            throw new Error('Gas top-up did not arrive in time. Please retry in a few minutes.');
         }
 
         async function ensureInjectedWalletClaim() {
@@ -1807,21 +1815,24 @@
             setClaimGasUiState('checking_balance');
 
             try {
-                // Important UX fix:
-                // Wait for faucet top-up to actually make gas ready first,
-                // BEFORE triggering wallet approvals/transaction prompts.
-                const gasState = await ensureGasReadyBeforeClaim();
-
-                setClaimGasUiState('gas_ready');
-                if (gasState && gasState.toppedUp) {
-                    setStatus('Gas ready from GoodDollar faucet. Connecting to wallet…', 'var(--text-dim)');
+                const gasSnap = await getProviderGasSnapshot(provider);
+                if (!gasSnap.gasReady) {
+                    setStatus('Checking wallet gas…', 'var(--text-dim)');
+                    await ensureGasReadyBeforeClaim();
                 } else {
-                    setStatus('Gas ready (wallet already had CELO). Connecting to wallet…', 'var(--text-dim)');
+                    setClaimGasUiState('gas_ready');
                 }
+
+                // Important UX fix:
+                // faucet top-up check is completed before transaction prompt.
+                setStatus('Gas ready. Connecting to wallet…', 'var(--text-dim)');
 
                 const accounts = await provider.request({ method: 'eth_requestAccounts' });
                 if (!accounts || !accounts.length) throw new Error('No wallet account available.');
                 const from = accounts[0];
+                if (from.toLowerCase() !== WALLET.toLowerCase()) {
+                    throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+                }
 
                 const currentChain = await provider.request({ method: 'eth_chainId' });
                 const celoChainHex = '0xa4ec';
@@ -1894,7 +1905,7 @@
         })();
 
         // Init
-        if (btn) { btn.disabled = true; label.textContent = 'Checking…'; icon.textContent = '⏳'; }
+        if (btn) { btn.disabled = true; label.textContent = 'Checking entitlement…'; icon.textContent = '⏳'; }
         fetchEntitlement();
     })();
 

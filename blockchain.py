@@ -680,6 +680,10 @@ _entitlement_cache: dict = {}
 _entitlement_cache_lock = threading.Lock()
 ENTITLEMENT_CACHE_TTL = 180  # 3 minutes — short enough to reflect claim/status changes
 
+def get_ubi_claim_calldata() -> str:
+    """Return encoded calldata for UBIScheme claim()."""
+    return "0x4e71d92d"
+
 
 def get_ubi_entitlement(wallet_address: str) -> dict:
     """Check how much G$ the wallet can claim right now from the UBIScheme contract."""
@@ -756,6 +760,7 @@ def get_ubi_entitlement(wallet_address: str) -> dict:
             "entitlement": float(entitlement_g),
             "entitlement_formatted": f"{entitlement_g:.2f}",
             "can_claim": entitlement_g > 0,
+            "claim_calldata": get_ubi_claim_calldata(),
             "ubi_contract": GOODDOLLAR_CONTRACTS["UBI_PROXY"]
         }
         with _entitlement_cache_lock:

@@ -535,7 +535,7 @@ def verify_ubi():
             "reason": "no_recent_claim"
         }), 400
 
-@app.route("/api/faucet/gas", methods=["POST"])
+@app.route("/api/faucet/gas-proxy", methods=["POST"])
 def faucet_gas():
     """Proxy the GoodDollar topWallet faucet call server-side to avoid CORS
     and to properly inspect the response body for errors."""
@@ -564,7 +564,7 @@ def faucet_gas():
         return jsonify({"ok": -1, "error": str(e)})
 
 
-@app.route("/api/faucet/onchain", methods=["POST"])
+@app.route("/api/faucet/onchain-proxy", methods=["POST"])
 def faucet_onchain():
     """On-chain fallback: use GAMES_KEY to call topWallet(user) on the GoodDollar
     Faucet contract directly, bypassing the goodserver API rate-limits."""
