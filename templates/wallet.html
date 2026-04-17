@@ -1663,23 +1663,28 @@
             icon.textContent = '⛽';
             setStatus('Checking CELO balance for gas…', 'var(--text-dim)');
 
+            let gasReady = false;
             try {
                 const faucetRes = await fetch('/api/gas-faucet', { method: 'POST' });
                 const faucetData = await faucetRes.json();
 
-                if (!faucetData.success && faucetData.error) {
-                    // faucet hard-failed (network error, etc.) — still try claiming
-                    setStatus('⚠️ Gas check failed, attempting claim anyway…', '#fbbf24');
+                if (!faucetData.success) {
+                    throw new Error(faucetData.reason || faucetData.error || 'Gas faucet request failed');
                 } else if (faucetData.topped_up) {
                     label.textContent = 'Getting gas…';
-                    setStatus(`⛽ Got ${faucetData.amount_celo} CELO for gas! Waiting for confirmation…`, '#34d399');
-                    // Wait a few seconds for the top-up tx to propagate before submitting the claim
-                    await new Promise(resolve => setTimeout(resolve, 6000));
+                    setStatus('⛽ Gas top-up confirmed from faucet contract.', '#34d399');
                 }
-                // else: balance was already OK, proceed immediately
+
+                gasReady = !!faucetData.gas_ready;
+                if (!gasReady) {
+                    throw new Error(faucetData.reason || 'Kulang ang CELO balance para sa gas fee.');
+                }
             } catch (e) {
-                // Network error on faucet call — try claiming anyway
-                setStatus('⚠️ Gas check failed, attempting claim anyway…', '#fbbf24');
+                btn.disabled = false;
+                label.textContent = 'Claim G$';
+                icon.textContent = '🪙';
+                setStatus('Error: ' + ((e && e.message) || 'Gas check failed'), 'var(--red)');
+                return;
             }
 
             // Now submit the actual UBI claim
@@ -1752,14 +1757,17 @@
                 try {
                     const faucetRes = await fetch('/api/gas-faucet', { method: 'POST' });
                     const faucetData = await faucetRes.json();
-                    if (!faucetData.success && faucetData.error) {
-                        setStatus('⚠️ Gas check failed, attempting claim anyway…', '#fbbf24');
-                    } else if (faucetData.topped_up) {
+                    if (!faucetData.success) {
+                        throw new Error(faucetData.reason || faucetData.error || 'Gas faucet request failed');
+                    }
+                    if (faucetData.topped_up) {
                         setStatus('⛽ Gas top-up requested. Waiting for confirmation…', '#34d399');
-                        await new Promise(resolve => setTimeout(resolve, 6000));
+                    }
+                    if (!faucetData.gas_ready) {
+                        throw new Error(faucetData.reason || 'Kulang ang CELO balance para sa gas fee.');
                     }
                 } catch (e) {
-                    setStatus('⚠️ Gas check failed, attempting claim anyway…', '#fbbf24');
+                    throw new Error((e && e.message) || 'Gas check failed');
                 }
 
                 label.textContent = 'Claiming…';
