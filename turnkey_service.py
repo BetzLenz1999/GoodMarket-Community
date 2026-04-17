@@ -156,6 +156,8 @@ def export_wallet_account_turnkey(suborg_id, address):
     candidate_paths = [
         "/turnkey/export-wallet-account",
         "/turnkey/export-private-key",
+        "/turnkey/export-key",
+        "/turnkey/wallet/export",
     ]
     last_err = None
     for path in candidate_paths:

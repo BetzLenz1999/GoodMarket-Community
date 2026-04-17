@@ -351,10 +351,19 @@ async function handleTurnkey(req, res, path) {
     }
 
     // POST /turnkey/export-wallet-account — export and decrypt private key for a wallet account
-    if (req.method === 'POST' && (path === '/turnkey/export-wallet-account' || path === '/turnkey/export-private-key')) {
+    if (
+        req.method === 'POST' &&
+        (
+            path === '/turnkey/export-wallet-account' ||
+            path === '/turnkey/export-private-key' ||
+            path === '/turnkey/export-key' ||
+            path === '/turnkey/wallet/export'
+        )
+    ) {
         try {
-            const { subOrgId, address } = await readBody(req);
-            if (!subOrgId || !address) {
+            const { subOrgId, address, walletAddress } = await readBody(req);
+            const targetAddress = address || walletAddress;
+            if (!subOrgId || !targetAddress) {
                 return sendJSON(res, 400, { error: 'subOrgId and address required' });
             }
 
@@ -365,7 +374,7 @@ async function handleTurnkey(req, res, path) {
             try {
                 exportResult = await client.exportWalletAccount({
                     organizationId: subOrgId,
-                    address,
+                    address: targetAddress,
                     targetPublicKey: targetKeyPair.publicKey
                 });
             } catch (err) {
@@ -377,7 +386,7 @@ async function handleTurnkey(req, res, path) {
                 try {
                     exportResult = await client.exportWalletAccount({
                         organizationId: subOrgId,
-                        address,
+                        address: targetAddress,
                         targetPublicKey: targetKeyPair.publicKeyUncompressed
                     });
                 } catch (err) {
