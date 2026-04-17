@@ -7,6 +7,7 @@ from web3 import Web3
 import json
 import logging
 import os
+import secrets
 import threading
 import time
 import urllib.request
@@ -5378,6 +5379,52 @@ def _turnkey_export_recently_verified(email: str, max_age_seconds: int = 10 * 60
     return int(time.time()) - verified_at <= max_age_seconds
 
 
+def _check_export_rate_limit(action: str, limit: int, window_seconds: int):
+    """Session-scoped sliding-window rate limiter for private-key export actions."""
+    now = int(time.time())
+    key = f"turnkey_export_rate_{action}"
+    history = session.get(key) or []
+    if not isinstance(history, list):
+        history = []
+    history = [int(ts) for ts in history if int(ts) > now - window_seconds]
+    if len(history) >= limit:
+        retry_in = max(1, window_seconds - (now - history[0]))
+        return False, retry_in
+    history.append(now)
+    session[key] = history
+    session.permanent = True
+    return True, 0
+
+
+def _issue_turnkey_export_token(email: str, ttl_seconds: int = 120) -> str:
+    """Create a one-time token after OTP verification for key export."""
+    token = secrets.token_urlsafe(24)
+    session["turnkey_export_token"] = token
+    session["turnkey_export_token_email"] = _normalize_email(email)
+    session["turnkey_export_token_expires"] = int(time.time()) + ttl_seconds
+    session["turnkey_export_token_used"] = False
+    session.permanent = True
+    return token
+
+
+def _validate_turnkey_export_token(email: str, token: str) -> tuple[bool, str]:
+    saved = session.get("turnkey_export_token")
+    saved_email = session.get("turnkey_export_token_email")
+    expires_at = int(session.get("turnkey_export_token_expires") or 0)
+    used = bool(session.get("turnkey_export_token_used"))
+    now = int(time.time())
+
+    if not saved or not token or token != saved:
+        return False, "Missing or invalid export token. Verify OTP again."
+    if not saved_email or saved_email != _normalize_email(email):
+        return False, "Export token email mismatch. Verify OTP again."
+    if used:
+        return False, "Export token already used. Verify OTP again."
+    if not expires_at or now > expires_at:
+        return False, "Export token expired. Verify OTP again."
+    return True, ""
+
+
 @routes.route("/api/turnkey/login", methods=["POST"])
 def turnkey_login():
     """Login with a private key — derives address locally, stores encrypted key in session."""
@@ -5757,6 +5804,13 @@ def turnkey_export_send_code():
     if session.get("login_method") != "turnkey":
         return jsonify({"success": False, "error": "Only available for Turnkey wallets"}), 403
     try:
+        allowed, retry_in = _check_export_rate_limit("send_code", limit=5, window_seconds=15 * 60)
+        if not allowed:
+            return jsonify({
+                "success": False,
+                "error": f"Too many code requests. Please wait {retry_in} seconds and try again."
+            }), 429
+
         from turnkey_service import send_email_otp_turnkey
         data = request.get_json() or {}
         email = _normalize_email(data.get("email", ""))
@@ -5784,6 +5838,13 @@ def turnkey_export_verify_code():
     if session.get("login_method") != "turnkey":
         return jsonify({"success": False, "error": "Only available for Turnkey wallets"}), 403
     try:
+        allowed, retry_in = _check_export_rate_limit("verify_code", limit=8, window_seconds=15 * 60)
+        if not allowed:
+            return jsonify({
+                "success": False,
+                "error": f"Too many verification attempts. Please wait {retry_in} seconds."
+            }), 429
+
         from turnkey_service import verify_email_otp_turnkey
         data = request.get_json() or {}
         email = _normalize_email(data.get("email", ""))
@@ -5802,8 +5863,15 @@ def turnkey_export_verify_code():
         session["turnkey_export_email_pending"] = email
         session["turnkey_export_email_verified"] = email
         session["turnkey_export_email_verified_at"] = int(time.time())
+        export_token = _issue_turnkey_export_token(email)
         session.permanent = True
-        return jsonify({"success": True, "email": email, "result": result or {}})
+        return jsonify({
+            "success": True,
+            "email": email,
+            "result": result or {},
+            "export_token": export_token,
+            "expires_in_seconds": 120
+        })
     except Exception as e:
         logger.error(f"turnkey_export_verify_code error: {e}")
         return jsonify({"success": False, "error": "Code verification failed"}), 500
@@ -6559,13 +6627,24 @@ def export_private_key():
 
     if login_method == "turnkey":
         try:
+            allowed, retry_in = _check_export_rate_limit("export_key", limit=3, window_seconds=10 * 60)
+            if not allowed:
+                return jsonify({
+                    "success": False,
+                    "error": f"Too many export attempts. Please wait {retry_in} seconds."
+                }), 429
+
             data = request.get_json(silent=True) or {}
             email = _normalize_email(data.get("email", session.get("turnkey_export_email_verified", "")))
+            export_token = str(data.get("export_token", "")).strip()
             if not email or not _turnkey_export_recently_verified(email):
                 return jsonify({
                     "success": False,
                     "error": "Please verify your email code first to export this key."
                 }), 403
+            valid_token, token_err = _validate_turnkey_export_token(email, export_token)
+            if not valid_token:
+                return jsonify({"success": False, "error": token_err}), 403
 
             suborg_id = session.get("turnkey_suborg_id")
             wallet = session.get("wallet")
@@ -6576,6 +6655,8 @@ def export_private_key():
             private_key, err = export_wallet_account_turnkey(suborg_id, wallet)
             if err:
                 return jsonify({"success": False, "error": _format_turnkey_export_error(err)}), 500
+            session["turnkey_export_token_used"] = True
+            session.permanent = True
             return jsonify({"success": True, "private_key": private_key})
         except Exception as e:
             logger.error(f"export-key (turnkey) error: {e}")
