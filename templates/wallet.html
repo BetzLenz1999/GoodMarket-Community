@@ -1722,7 +1722,10 @@
 
                 const currentChain = await provider.request({ method: 'eth_chainId' });
                 const celoChainHex = '0xa4ec';
-                if ((currentChain || '').toLowerCase() !== celoChainHex) {
+                const normalizedCurrentChain = (typeof currentChain === 'string')
+                    ? currentChain.toLowerCase()
+                    : ('0x' + Number(currentChain || 0).toString(16));
+                if (normalizedCurrentChain !== celoChainHex) {
                     try {
                         await provider.request({
                             method: 'wallet_switchEthereumChain',
@@ -1740,6 +1743,23 @@
                             }]
                         });
                     }
+                }
+
+                label.textContent = 'Checking gas…';
+                icon.textContent = '⛽';
+                setStatus('Checking CELO balance for gas…', 'var(--text-dim)');
+
+                try {
+                    const faucetRes = await fetch('/api/gas-faucet', { method: 'POST' });
+                    const faucetData = await faucetRes.json();
+                    if (!faucetData.success && faucetData.error) {
+                        setStatus('⚠️ Gas check failed, attempting claim anyway…', '#fbbf24');
+                    } else if (faucetData.topped_up) {
+                        setStatus('⛽ Gas top-up requested. Waiting for confirmation…', '#34d399');
+                        await new Promise(resolve => setTimeout(resolve, 6000));
+                    }
+                } catch (e) {
+                    setStatus('⚠️ Gas check failed, attempting claim anyway…', '#fbbf24');
                 }
 
                 label.textContent = 'Claiming…';
