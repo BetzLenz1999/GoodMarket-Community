@@ -198,8 +198,67 @@
             border-color: rgba(var(--accent-rgb),0.38);
         }
         .action-circle.claim-circle {
-            background: rgba(var(--accent-rgb),0.11);
-            border-color: rgba(var(--accent-rgb),0.34);
+            position: relative;
+            background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.28), rgba(var(--accent-rgb),0.2) 30%, rgba(83,42,182,0.45) 90%);
+            border-color: rgba(var(--accent-rgb),0.5);
+            box-shadow: 0 0 0 1px rgba(var(--accent-rgb),0.24), 0 0 16px rgba(var(--accent-rgb),0.35);
+            overflow: visible;
+            animation: claimPulse 2.15s ease-in-out infinite;
+        }
+        .action-circle.claim-circle::before {
+            content: '';
+            position: absolute;
+            inset: -8px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(var(--accent-rgb),0.18) 0%, rgba(var(--accent-rgb),0.08) 42%, transparent 72%);
+            z-index: -1;
+            animation: claimHalo 2.6s ease-out infinite;
+        }
+        .claim-glyph {
+            font-size: 1.1rem;
+            font-weight: 900;
+            letter-spacing: -0.2px;
+            color: #d8ddff;
+            text-shadow: 0 0 10px rgba(var(--accent-rgb),0.55);
+            transform: translateY(-1px);
+        }
+        .claim-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 0.25rem;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #22d3ee, #a78bfa);
+            color: #041225;
+            font-size: 0.53rem;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 3px 10px rgba(34,211,238,0.4);
+            animation: claimBadgeFloat 1.7s ease-in-out infinite;
+        }
+        .action-item:hover .action-circle.claim-circle {
+            transform: translateY(-2px) scale(1.04);
+            box-shadow: 0 0 0 1px rgba(var(--accent-rgb),0.4), 0 0 20px rgba(var(--accent-rgb),0.55);
+        }
+        .action-item:hover .claim-glyph {
+            color: #ffffff;
+        }
+        @keyframes claimPulse {
+            0%, 100% { box-shadow: 0 0 0 1px rgba(var(--accent-rgb),0.24), 0 0 14px rgba(var(--accent-rgb),0.3); }
+            50% { box-shadow: 0 0 0 1px rgba(var(--accent-rgb),0.42), 0 0 22px rgba(var(--accent-rgb),0.62); }
+        }
+        @keyframes claimHalo {
+            0% { transform: scale(0.92); opacity: 0.45; }
+            70% { transform: scale(1.12); opacity: 0.18; }
+            100% { transform: scale(1.14); opacity: 0.04; }
+        }
+        @keyframes claimBadgeFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-1.5px); }
         }
         .action-label {
             font-size: 0.72rem;
@@ -716,10 +775,8 @@
         </div>
         <div class="action-item" onclick="openModal('claimModal');">
             <div class="action-circle claim-circle">
-                <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
-                    <circle cx="16" cy="16" r="16" fill="rgba(127,140,255,0.28)"/>
-                    <text x="16" y="21" text-anchor="middle" font-size="14" fill="#b9c4ff" font-weight="900" font-family="Inter,sans-serif">G$</text>
-                </svg>
+                <span class="claim-glyph">G$</span>
+                <span class="claim-badge">✨</span>
             </div>
             <span class="action-label">Claim</span>
         </div>
