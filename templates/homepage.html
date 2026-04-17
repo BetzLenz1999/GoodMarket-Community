@@ -1802,10 +1802,10 @@
                     <div style="font-weight:700; color:#b45309; font-size:0.88rem; margin-bottom:0.45rem;">⚠️ Important — Please Read Before Choosing</div>
                     <div style="font-size:0.8rem; color:#374151; line-height:1.65;">
                         <div style="margin-bottom:0.45rem;">✅ <strong style="color:#059669;">Brand new to GoodDollar?</strong> — Go ahead and <em>Create New GoodDollar Wallet</em>.</div>
-                        <div style="background:#fff7ed; border:1px solid #fdba74; border-radius:8px; padding:0.5rem 0.7rem;">
-                            📧 <strong style="color:#c2410c;">Already have a GoodMarket account?</strong><br>
+                        <div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; padding:0.5rem 0.7rem;">
+                            🚫 <strong style="color:#dc2626;">Already have an old GoodDollar wallet?</strong><br>
                             <span style="font-size:0.78rem; color:#4b5563;">
-                                Choose <em>Login via Email OTP</em> below to continue with your Turnkey-powered email flow.
+                                For security reasons, private key import is disabled in this page.
                             </span>
                         </div>
                     </div>
@@ -1821,16 +1821,6 @@
                     <span class="option-arrow" style="color:#10b981;">→</span>
                 </button>
 
-                <!-- Option 2: Login via Email OTP -->
-                <button class="wallet-option-card" onclick="showCreateWalletForm('login')" style="border-color: rgba(139,92,246,0.45); background: linear-gradient(135deg, rgba(139,92,246,0.12), rgba(124,58,237,0.06));">
-                    <div class="option-icon">📧</div>
-                    <div class="option-text">
-                        <div class="option-title" style="color:#7c3aed;">Login via Email OTP</div>
-                        <p class="option-desc">Already registered? Send and verify your email code to continue.</p>
-                    </div>
-                    <span class="option-arrow" style="color:#7c3aed;">→</span>
-                </button>
-
                 <div style="text-align:center; padding-top: 0.25rem;">
                     <a href="https://t.me/GoodDollarX" target="_blank" rel="noopener noreferrer" style="color:#7c3aed; font-size:0.82rem; text-decoration:none;">
                         💬 Join our Telegram community t.me/GoodDollarX ↗
@@ -1843,49 +1833,11 @@
                 <button class="back-btn" onclick="showWalletOptions()">← Back</button>
 
                 <div style="background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.06)); border: 1px solid rgba(16,185,129,0.35); border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 1.2rem;">
-                    <div id="emailFlowTitle" style="font-weight:700; color:#10b981; font-size:0.9rem; margin-bottom:0.4rem;">🆕 Create Your GoodDollar Wallet</div>
-                    <div id="emailFlowSubtitle" style="font-size:0.82rem; color:#1f2937; line-height:1.6;">
+                    <div style="font-weight:700; color:#10b981; font-size:0.9rem; margin-bottom:0.4rem;">🆕 Create Your GoodDollar Wallet</div>
+                    <div style="font-size:0.82rem; color:#1f2937; line-height:1.6;">
                         We'll create a new Celo wallet for you. Your wallet address will be ready in seconds — no app or seed phrase needed to get started.
                     </div>
                 </div>
-
-                <div class="wallet-input-group">
-                    <label class="wallet-label" for="createEmail">Email Address</label>
-                    <div style="display:flex; gap:8px;">
-                        <input
-                            type="email"
-                            id="createEmail"
-                            class="wallet-input"
-                            placeholder="you@example.com"
-                            autocomplete="email"
-                            style="flex:1;"
-                        />
-                        <button type="button" class="connect-btn" id="sendCodeBtn" onclick="sendEmailCode()" style="width:auto; padding:0 14px; margin:0; background:linear-gradient(135deg,#6366f1,#4f46e5);">
-                            Send Code
-                        </button>
-                    </div>
-                </div>
-
-                <div class="wallet-input-group">
-                    <label class="wallet-label" for="createEmailCode">Email Code</label>
-                    <div style="display:flex; gap:8px;">
-                        <input
-                            type="text"
-                            id="createEmailCode"
-                            class="wallet-input"
-                            placeholder="6-digit code"
-                            autocomplete="one-time-code"
-                            maxlength="6"
-                            inputmode="numeric"
-                            style="flex:1;"
-                        />
-                        <button type="button" class="connect-btn" id="verifyCodeBtn" onclick="verifyEmailCode()" style="width:auto; padding:0 14px; margin:0; background:linear-gradient(135deg,#8b5cf6,#7c3aed);">
-                            Verify
-                        </button>
-                    </div>
-                </div>
-
-                <div id="emailCodeStatus" class="status-message"></div>
 
                 <div class="wallet-input-group">
                     <label class="wallet-label" for="createReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
@@ -1909,9 +1861,6 @@
     </div>
 
     <script>
-        let emailCodeVerified = false;
-        let emailFlowMode = 'create';
-
         // Check if user should return to community stories after login
         window.addEventListener('load', function() {
             const returnToCommunityStories = sessionStorage.getItem('return_to_community_stories');
@@ -1969,100 +1918,10 @@
             });
         }
 
-        function showCreateWalletForm(mode = 'create') {
+        function showCreateWalletForm() {
             document.getElementById('walletOptions').style.display = 'none';
             const f = document.getElementById('createWalletForm');
             if (f) f.classList.add('visible');
-            emailFlowMode = mode;
-            const title = document.getElementById('emailFlowTitle');
-            const subtitle = document.getElementById('emailFlowSubtitle');
-            const btnText = document.getElementById('createWalletBtnText');
-            if (emailFlowMode === 'login') {
-                if (title) title.textContent = '📧 Login via Email OTP';
-                if (subtitle) subtitle.textContent = 'Verify your email code to continue with your Turnkey-powered access.';
-                if (btnText) btnText.textContent = 'Continue with Email';
-            } else {
-                if (title) title.textContent = '🆕 Create Your GoodDollar Wallet';
-                if (subtitle) subtitle.textContent = "We'll create a new Celo wallet for you. Your wallet address will be ready in seconds — no app or seed phrase needed to get started.";
-                if (btnText) btnText.textContent = 'Create My Wallet';
-            }
-            emailCodeVerified = false;
-            const codeStatus = document.getElementById('emailCodeStatus');
-            if (codeStatus) {
-                codeStatus.className = 'status-message';
-                codeStatus.textContent = '';
-            }
-        }
-
-        function updateEmailStatus(message, type = '') {
-            const statusDiv = document.getElementById('emailCodeStatus');
-            if (!statusDiv) return;
-            statusDiv.className = type ? `status-message ${type}` : 'status-message';
-            statusDiv.textContent = message;
-        }
-
-        async function sendEmailCode() {
-            const email = (document.getElementById('createEmail') || {}).value?.trim() || '';
-            const sendBtn = document.getElementById('sendCodeBtn');
-            if (!email || !email.includes('@')) {
-                updateEmailStatus('Please enter a valid email address.', 'error');
-                return;
-            }
-
-            if (sendBtn) sendBtn.disabled = true;
-            updateEmailStatus('⏳ Sending verification code to your email…', 'info');
-
-            try {
-                const resp = await fetch('/api/turnkey/email/send-code', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
-                });
-                const data = await resp.json();
-                if (data.success) {
-                    emailCodeVerified = false;
-                    updateEmailStatus('✅ Code sent. Check your inbox and enter the 6-digit code.', 'success');
-                } else {
-                    updateEmailStatus(data.message || 'Failed to send code.', 'error');
-                }
-            } catch (err) {
-                updateEmailStatus('Network error while sending code.', 'error');
-            } finally {
-                if (sendBtn) sendBtn.disabled = false;
-            }
-        }
-
-        async function verifyEmailCode() {
-            const email = (document.getElementById('createEmail') || {}).value?.trim() || '';
-            const code = (document.getElementById('createEmailCode') || {}).value?.trim() || '';
-            const verifyBtn = document.getElementById('verifyCodeBtn');
-            if (!email || !code) {
-                updateEmailStatus('Enter your email and the verification code.', 'error');
-                return;
-            }
-            if (verifyBtn) verifyBtn.disabled = true;
-            updateEmailStatus('⏳ Verifying email code…', 'info');
-
-            try {
-                const resp = await fetch('/api/turnkey/email/verify-code', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, code })
-                });
-                const data = await resp.json();
-                if (data.success) {
-                    emailCodeVerified = true;
-                    updateEmailStatus('✅ Email verified. You can now create your wallet.', 'success');
-                } else {
-                    emailCodeVerified = false;
-                    updateEmailStatus(data.message || 'Invalid verification code.', 'error');
-                }
-            } catch (err) {
-                emailCodeVerified = false;
-                updateEmailStatus('Network error while verifying code.', 'error');
-            } finally {
-                if (verifyBtn) verifyBtn.disabled = false;
-            }
         }
 
         async function createTurnkeyWallet() {
@@ -2070,13 +1929,6 @@
             const btnText = document.getElementById('createWalletBtnText');
             const btn = btnText ? btnText.closest('button') : null;
             const referral = (document.getElementById('createReferralCode') || {}).value || '';
-            const email = (document.getElementById('createEmail') || {}).value?.trim() || '';
-
-            if (!emailCodeVerified) {
-                statusDiv.className = 'status-message error';
-                statusDiv.textContent = 'Please verify your email code first.';
-                return;
-            }
 
             if (btn) btn.disabled = true;
             btnText.textContent = 'Creating wallet…';
@@ -2087,27 +1939,25 @@
                 const resp = await fetch('/api/turnkey/create-wallet', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ referral_code: referral || null, email, require_email_code: true })
+                    body: JSON.stringify({ referral_code: referral || null })
                 });
                 const data = await resp.json();
 
                 if (data.status === 'success' && data.wallet) {
                     statusDiv.className = 'status-message success';
-                    statusDiv.textContent = emailFlowMode === 'login'
-                        ? `✅ Email verified. Logged in as ${data.wallet.slice(0,8)}…${data.wallet.slice(-4)} — Redirecting…`
-                        : `✅ Wallet created: ${data.wallet.slice(0,8)}…${data.wallet.slice(-4)} — Redirecting…`;
+                    statusDiv.textContent = `✅ Wallet created: ${data.wallet.slice(0,8)}…${data.wallet.slice(-4)} — Redirecting…`;
                     setTimeout(() => { window.location.href = '/wallet'; }, 1500);
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = data.message || 'Wallet creation failed. Please try again.';
                     if (btn) btn.disabled = false;
-                    btnText.textContent = emailFlowMode === 'login' ? 'Continue with Email' : 'Create My Wallet';
+                    btnText.textContent = 'Create My Wallet';
                 }
             } catch (err) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = 'Network error. Please try again.';
                 if (btn) btn.disabled = false;
-                btnText.textContent = emailFlowMode === 'login' ? 'Continue with Email' : 'Create My Wallet';
+                btnText.textContent = 'Create My Wallet';
             }
         }
 
