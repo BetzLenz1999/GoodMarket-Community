@@ -410,7 +410,7 @@ const GD_CONTRACT = "{{ gd_contract }}";
 const GD_DECIMALS = 18;
 const CELO_CHAIN_ID = 42220;
 const WC_PROJECT_ID = "{{ walletconnect_project_id }}";
-window.isCustodialMode = {{ (login_method == 'custodial') | tojson }};
+window.isCustodialMode = {{ (login_method in ['custodial', 'turnkey']) | tojson }};
 
 // ─── Live G$ price refresh (every 5 min from CoinGecko via backend) ──────────
 async function refreshGdPrice() {
@@ -544,10 +544,10 @@ async function dappSendPayment() {
 
         const data = encodeGdTransfer(MERCHANT_ADDRESS, gdNeeded);
 
-        // ── Custodial mode: sign server-side, no wallet popup ──
+        // ── Server-side mode (custodial + managed wallets): sign server-side, no wallet popup ──
         if (window.isCustodialMode) {
             setDappStatus('info', '<i class="fas fa-spinner spin"></i> Signing payment server-side…');
-            const custRes = await fetch('/api/custodial/sign-tx', {
+            const custRes = await fetch('/api/server/sign-tx', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ to: GD_CONTRACT, data: data, value: '0x0', chain_id: CELO_CHAIN_ID })

@@ -403,14 +403,14 @@
     const GD_CONTRACT = "{{ gd_contract }}";
     const CHAIN_ID = {{ chain_id }};
     const CELO_RPC = "https://forno.celo.org";
-    window.isCustodialMode = {{ (login_method == 'custodial') | tojson }};
+    window.isCustodialMode = {{ (login_method in ['custodial', 'turnkey']) | tojson }};
 
-    // ── Custodial helper: encode calldata client-side, sign server-side ──
-    async function custodialTx(toAddr, abiFragment, args, alertId) {
+    // ── Server-sign helper (custodial + managed wallets): encode calldata client-side, sign server-side ──
+    async function serverSignedTx(toAddr, abiFragment, args, alertId) {
         const iface = new ethers.Interface([abiFragment]);
         const fnName = abiFragment.match(/function (\w+)/)[1];
         const data = iface.encodeFunctionData(fnName, args);
-        const res = await fetch('/api/custodial/sign-tx', {
+        const res = await fetch('/api/server/sign-tx', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ to: toAddr, data, value: '0x0', chain_id: CHAIN_ID })
@@ -580,7 +580,7 @@
 
             if (window.isCustodialMode) {
                 showAlert('saveAlert', 'info', '<span class="spinner"></span> Approving G$ spending server-side…');
-                const txHash = await custodialTx(GD_CONTRACT,
+                const txHash = await serverSignedTx(GD_CONTRACT,
                     "function approve(address spender, uint256 amount) returns (bool)",
                     [SAVINGS_CONTRACT, amtWei]);
                 showAlert('saveAlert', 'success',
@@ -633,7 +633,7 @@
 
             if (window.isCustodialMode) {
                 showAlert('saveAlert', 'info', '<span class="spinner"></span> Locking G$ server-side — no wallet needed…');
-                const txHash = await custodialTx(SAVINGS_CONTRACT,
+                const txHash = await serverSignedTx(SAVINGS_CONTRACT,
                     "function depositSavings(uint256 amount, uint256 lockDays) external",
                     [amtWei, BigInt(selectedDays)]);
                 const unlockDate = new Date();
@@ -690,7 +690,7 @@
         try {
             if (window.isCustodialMode) {
                 showAlert('depositsAlert', 'info', '<span class="spinner"></span> Signing withdrawal server-side…');
-                const txHash = await custodialTx(SAVINGS_CONTRACT,
+                const txHash = await serverSignedTx(SAVINGS_CONTRACT,
                     "function withdraw(uint256 depositId) external",
                     [BigInt(depositId)]);
                 showAlert('depositsAlert', 'success',
@@ -858,7 +858,7 @@
 
             if (window.isCustodialMode) {
                 showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Approving G$ spending server-side…');
-                const txHash = await custodialTx(GD_CONTRACT,
+                const txHash = await serverSignedTx(GD_CONTRACT,
                     "function approve(address spender, uint256 amount) returns (bool)",
                     [SAVINGS_CONTRACT, amtWei]);
                 showAlert('sponsorAlert', 'success',
@@ -906,7 +906,7 @@
 
             if (window.isCustodialMode) {
                 showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Funding reward pool server-side…');
-                const txHash = await custodialTx(SAVINGS_CONTRACT,
+                const txHash = await serverSignedTx(SAVINGS_CONTRACT,
                     "function fundRewardPool(uint256 amount) external",
                     [amtWei]);
                 showAlert('sponsorAlert', 'success',
