@@ -5110,6 +5110,145 @@ def _get_fernet():
     return Fernet(fernet_key)
 
 
+def _is_turnkey_unavailable_error(err) -> bool:
+    err_lower = str(err or "").lower()
+    unavailable_markers = (
+        "turnkey service unavailable",
+        "turnkey not configured",
+        "connection refused",
+        "failed to establish a new connection",
+        "name or service not known",
+        "connection reset",
+        "timed out",
+        "timeout",
+    )
+    return any(marker in err_lower for marker in unavailable_markers)
+
+
+_email_wallet_links_ready = False
+
+
+def _normalize_email(email: str) -> str:
+    return str(email or "").strip().lower()
+
+
+def _email_link_hash(email: str) -> str:
+    import hashlib
+    return hashlib.sha256(_normalize_email(email).encode()).hexdigest()
+
+
+def _ensure_email_wallet_links_table():
+    global _email_wallet_links_ready
+    if _email_wallet_links_ready:
+        return True
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        return False
+    try:
+        import psycopg
+        sql = """
+        CREATE TABLE IF NOT EXISTS email_wallet_links (
+            id SERIAL PRIMARY KEY,
+            email_hash VARCHAR(64) UNIQUE NOT NULL,
+            wallet_address VARCHAR(42) NOT NULL,
+            login_method VARCHAR(30) NOT NULL DEFAULT 'custodial',
+            custodial_key_enc TEXT,
+            turnkey_suborg_id TEXT,
+            turnkey_sign_with TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_email_wallet_links_wallet ON email_wallet_links(wallet_address);
+        """
+        with psycopg.connect(database_url, connect_timeout=10) as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+            conn.commit()
+        _email_wallet_links_ready = True
+        return True
+    except Exception as err:
+        logger.warning(f"Could not initialize email wallet recovery table: {err}")
+        return False
+
+
+def _get_email_wallet_link(email: str):
+    if not email or not _ensure_email_wallet_links_table():
+        return None
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+        with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT email_hash, wallet_address, login_method, custodial_key_enc, turnkey_suborg_id, turnkey_sign_with
+                    FROM email_wallet_links
+                    WHERE email_hash = %s
+                    LIMIT 1
+                    """,
+                    (_email_link_hash(email),)
+                )
+                return cur.fetchone()
+    except Exception as err:
+        logger.warning(f"Could not get email wallet recovery link: {err}")
+    return None
+
+
+def _save_email_wallet_link(email: str, wallet_address: str, login_method: str, custodial_key_enc: str = None, turnkey_suborg_id: str = None, turnkey_sign_with: str = None):
+    if not email or not wallet_address or not _ensure_email_wallet_links_table():
+        return False
+    try:
+        import psycopg
+        with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO email_wallet_links (
+                        email_hash, wallet_address, login_method, custodial_key_enc,
+                        turnkey_suborg_id, turnkey_sign_with, updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (email_hash) DO UPDATE SET
+                        wallet_address = EXCLUDED.wallet_address,
+                        login_method = EXCLUDED.login_method,
+                        custodial_key_enc = EXCLUDED.custodial_key_enc,
+                        turnkey_suborg_id = EXCLUDED.turnkey_suborg_id,
+                        turnkey_sign_with = EXCLUDED.turnkey_sign_with,
+                        updated_at = NOW()
+                    """,
+                    (
+                        _email_link_hash(email),
+                        wallet_address,
+                        login_method or "custodial",
+                        custodial_key_enc,
+                        turnkey_suborg_id,
+                        turnkey_sign_with
+                    )
+                )
+            conn.commit()
+        return True
+    except Exception as err:
+        logger.warning(f"Could not save email wallet recovery link: {err}")
+        return False
+
+
+def _email_recently_verified(email: str) -> bool:
+    email = _normalize_email(email)
+    verified_email = session.get("turnkey_email_pending")
+    verified_flag = bool(session.get("turnkey_email_verified"))
+    verified_at = int(session.get("turnkey_email_verified_at") or 0)
+    return verified_flag and verified_email == email and int(time.time()) - verified_at <= 15 * 60
+
+
+def _clear_email_onboarding_session():
+    session.pop("turnkey_email_pending", None)
+    session.pop("turnkey_email_verified", None)
+    session.pop("turnkey_email_verified_at", None)
+    session.pop("turnkey_email_fallback", None)
+    session.pop("turnkey_email_fallback_allowed", None)
+    session.pop("turnkey_email_fallback_at", None)
+
+
 @routes.route("/api/turnkey/login", methods=["POST"])
 def turnkey_login():
     """Login with a private key — derives address locally, stores encrypted key in session."""
@@ -5190,33 +5329,57 @@ def turnkey_create_wallet():
     try:
         from turnkey_service import create_turnkey_wallet
         data = request.get_json() or {}
-        user_id = data.get("userId") or session.get("wallet") or f"new_{int(time.time())}"
-        user_name = data.get("userName", user_id)
         referral_code = data.get("referral_code", None)
         email = str(data.get("email", "")).strip().lower()
+        user_id = data.get("userId") or email or session.get("wallet") or f"new_{int(time.time())}"
+        user_name = data.get("userName") or user_id
 
-        # If email is supplied, require a recent verified OTP session for that email.
         if email:
             verified_email = session.get("turnkey_email_pending")
             verified_flag = bool(session.get("turnkey_email_verified"))
             verified_at = int(session.get("turnkey_email_verified_at") or 0)
-            if not verified_flag or verified_email != email:
-                return jsonify({"status": "error", "message": "Please verify your email code first."}), 400
-            if int(time.time()) - verified_at > 15 * 60:
-                session["turnkey_email_verified"] = False
-                return jsonify({"status": "error", "message": "Verification expired. Request a new code."}), 400
+            fallback_email = session.get("turnkey_email_fallback")
+            fallback_flag = bool(session.get("turnkey_email_fallback_allowed"))
+            fallback_at = int(session.get("turnkey_email_fallback_at") or 0)
+            fallback_valid = (
+                fallback_flag
+                and fallback_email == email
+                and int(time.time()) - fallback_at <= 15 * 60
+            )
+            if not fallback_valid:
+                if not verified_flag or verified_email != email:
+                    return jsonify({"status": "error", "message": "Please verify your email code first."}), 400
+                if int(time.time()) - verified_at > 15 * 60:
+                    session["turnkey_email_verified"] = False
+                    return jsonify({"status": "error", "message": "Verification expired. Request a new code."}), 400
+                existing_link = _get_email_wallet_link(email)
+                if existing_link and existing_link.get("wallet_address"):
+                    wallet_address = existing_link.get("wallet_address")
+                    if wallet_address and Web3.is_address(wallet_address):
+                        wallet_address = Web3.to_checksum_address(wallet_address)
+                    session["wallet"] = wallet_address
+                    session["verified"] = True
+                    session["login_method"] = existing_link.get("login_method") or "custodial"
+                    if existing_link.get("custodial_key_enc"):
+                        session["custodial_key_enc"] = existing_link.get("custodial_key_enc")
+                    if existing_link.get("turnkey_suborg_id"):
+                        session["turnkey_suborg_id"] = existing_link.get("turnkey_suborg_id")
+                    if existing_link.get("turnkey_sign_with"):
+                        session["turnkey_sign_with"] = existing_link.get("turnkey_sign_with")
+                    session.permanent = True
+                    analytics.track_verification_attempt(wallet_address, True)
+                    analytics.track_user_session(wallet_address)
+                    _clear_email_onboarding_session()
+                    return jsonify({
+                        "status": "success",
+                        "wallet": wallet_address,
+                        "mode": "email_recovery",
+                        "message": "Existing email-linked wallet recovered."
+                    })
 
         result, err = create_turnkey_wallet(user_id, user_name)
         if err:
-            # Vercel/serverless fallback: if local Turnkey sidecar is unavailable,
-            # create a custodial wallet in-session so "Create My Wallet" still works.
-            err_lower = str(err).lower()
-            is_sidecar_unavailable = (
-                "turnkey service unavailable" in err_lower
-                or "connection refused" in err_lower
-                or "failed to establish a new connection" in err_lower
-            )
-            if not is_sidecar_unavailable:
+            if not _is_turnkey_unavailable_error(err):
                 return jsonify({"status": "error", "message": err}), 500
 
             from eth_account import Account
@@ -5251,6 +5414,14 @@ def turnkey_create_wallet():
             except Exception as db_err:
                 logger.warning(f"Could not save fallback wallet to Supabase: {db_err}")
 
+            if email:
+                _save_email_wallet_link(
+                    email=email,
+                    wallet_address=wallet_address,
+                    login_method="custodial",
+                    custodial_key_enc=encrypted_key
+                )
+
             if referral_code and str(referral_code).strip():
                 try:
                     from referral_program.referral_service import referral_service
@@ -5264,9 +5435,7 @@ def turnkey_create_wallet():
                 except Exception as ref_err:
                     logger.warning(f"Referral processing error in fallback wallet creation: {ref_err}")
 
-            session.pop("turnkey_email_pending", None)
-            session.pop("turnkey_email_verified", None)
-            session.pop("turnkey_email_verified_at", None)
+            _clear_email_onboarding_session()
 
             return jsonify({
                 "status": "success",
@@ -5289,6 +5458,15 @@ def turnkey_create_wallet():
         session["login_method"] = "turnkey"
         session.permanent = True
 
+        if email:
+            _save_email_wallet_link(
+                email=email,
+                wallet_address=wallet_address,
+                login_method="turnkey",
+                turnkey_suborg_id=suborg_id,
+                turnkey_sign_with=sign_with
+            )
+
         if referral_code and str(referral_code).strip():
             try:
                 from referral_program.referral_service import referral_service
@@ -5302,9 +5480,7 @@ def turnkey_create_wallet():
             except Exception as ref_err:
                 logger.warning(f"Referral processing error in turnkey wallet creation: {ref_err}")
 
-        session.pop("turnkey_email_pending", None)
-        session.pop("turnkey_email_verified", None)
-        session.pop("turnkey_email_verified_at", None)
+        _clear_email_onboarding_session()
 
         return jsonify({
             "status": "success",
@@ -5328,16 +5504,25 @@ def turnkey_email_send_code():
 
         result, err = send_email_otp_turnkey(email)
         if err:
-            if "turnkey service unavailable" in str(err).lower():
+            if _is_turnkey_unavailable_error(err):
+                session["turnkey_email_pending"] = email
+                session["turnkey_email_verified"] = False
+                session["turnkey_email_fallback"] = email
+                session["turnkey_email_fallback_allowed"] = True
+                session["turnkey_email_fallback_at"] = int(time.time())
+                session.permanent = True
                 return jsonify({
                     "success": False,
-                    "error": err,
+                    "error": "Email OTP is unavailable on this deployment. You can still create a wallet with this email.",
                     "code": "otp_unavailable"
                 }), 503
             return jsonify({"success": False, "error": err}), 400
 
         session["turnkey_email_pending"] = email
         session["turnkey_email_verified"] = False
+        session.pop("turnkey_email_fallback", None)
+        session.pop("turnkey_email_fallback_allowed", None)
+        session.pop("turnkey_email_fallback_at", None)
         session.pop("turnkey_email_verified_at", None)
         session.permanent = True
 
@@ -5364,10 +5549,10 @@ def turnkey_email_verify_code():
 
         result, err = verify_email_otp_turnkey(email, code)
         if err:
-            if "turnkey service unavailable" in str(err).lower():
+            if _is_turnkey_unavailable_error(err):
                 return jsonify({
                     "success": False,
-                    "error": err,
+                    "error": "Email OTP is unavailable on this deployment. Please create a wallet directly.",
                     "code": "otp_unavailable"
                 }), 503
             return jsonify({"success": False, "error": err}), 400
@@ -5375,12 +5560,65 @@ def turnkey_email_verify_code():
         session["turnkey_email_pending"] = email
         session["turnkey_email_verified"] = True
         session["turnkey_email_verified_at"] = int(time.time())
+        session.pop("turnkey_email_fallback", None)
+        session.pop("turnkey_email_fallback_allowed", None)
+        session.pop("turnkey_email_fallback_at", None)
         session.permanent = True
 
         return jsonify({"success": True, "email": email, "result": result or {}})
     except Exception as e:
         logger.error(f"turnkey_email_verify_code error: {e}")
         return jsonify({"success": False, "error": "Code verification failed"}), 500
+
+
+@routes.route("/api/turnkey/email/recover-wallet", methods=["POST"])
+def turnkey_email_recover_wallet():
+    """Recover an email-linked wallet after successful email OTP verification."""
+    try:
+        data = request.get_json() or {}
+        email = _normalize_email(data.get("email", ""))
+        if not email or "@" not in email:
+            return jsonify({"success": False, "error": "Valid email required"}), 400
+        if not _email_recently_verified(email):
+            return jsonify({"success": False, "error": "Please verify your email code first."}), 400
+
+        link = _get_email_wallet_link(email)
+        if not link or not link.get("wallet_address"):
+            return jsonify({"success": False, "error": "No wallet is linked to this email yet. Create a new wallet first."}), 404
+
+        wallet_address = link.get("wallet_address")
+        if wallet_address and Web3.is_address(wallet_address):
+            wallet_address = Web3.to_checksum_address(wallet_address)
+
+        login_method = link.get("login_method") or "custodial"
+        session["wallet"] = wallet_address
+        session["verified"] = True
+        session["login_method"] = login_method
+        if login_method == "custodial":
+            enc_key = link.get("custodial_key_enc")
+            if not enc_key:
+                return jsonify({"success": False, "error": "This wallet cannot be recovered automatically. Please contact support."}), 409
+            session["custodial_key_enc"] = enc_key
+            session.pop("turnkey_suborg_id", None)
+            session.pop("turnkey_sign_with", None)
+        else:
+            session["turnkey_suborg_id"] = link.get("turnkey_suborg_id")
+            session["turnkey_sign_with"] = link.get("turnkey_sign_with")
+            session.pop("custodial_key_enc", None)
+        session.permanent = True
+
+        analytics.track_verification_attempt(wallet_address, True)
+        analytics.track_user_session(wallet_address)
+        _clear_email_onboarding_session()
+
+        return jsonify({
+            "success": True,
+            "wallet": wallet_address,
+            "redirect_to": "/wallet"
+        })
+    except Exception as e:
+        logger.error(f"turnkey_email_recover_wallet error: {e}")
+        return jsonify({"success": False, "error": "Wallet recovery failed"}), 500
 
 
 @routes.route("/api/turnkey/sign-tx", methods=["POST"])
