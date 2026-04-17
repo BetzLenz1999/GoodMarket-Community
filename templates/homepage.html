@@ -1955,6 +1955,8 @@
             if (f) f.classList.add('visible');
         }
 
+        let otpBypassAllowed = false;
+
         async function sendTurnkeyEmailCode() {
             const statusDiv = document.getElementById('createWalletStatus');
             const btnText = document.getElementById('sendCodeBtnText');
@@ -1981,9 +1983,17 @@
                 const data = await resp.json();
 
                 if (resp.ok && data.success) {
+                    otpBypassAllowed = false;
                     statusDiv.className = 'status-message success';
                     statusDiv.textContent = '✅ Code sent! Check your email inbox, then enter the 6-digit code below.';
                 } else {
+                    const serverError = (data.error || data.message || '').toString();
+                    if (data.code === 'otp_unavailable' || serverError.toLowerCase().includes('turnkey service unavailable')) {
+                        otpBypassAllowed = true;
+                        statusDiv.className = 'status-message info';
+                        statusDiv.textContent = 'ℹ️ Email OTP is unavailable on this deployment. You can still create a wallet directly below.';
+                        return;
+                    }
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = data.error || data.message || 'Could not send code. Please try again.';
                     if (btn) btn.disabled = false;
@@ -2007,52 +2017,61 @@
             const referral = (document.getElementById('createReferralCode') || {}).value || '';
             const email = ((document.getElementById('createEmail') || {}).value || '').trim().toLowerCase();
             const code = ((document.getElementById('createEmailCode') || {}).value || '').trim();
+            const createPayload = {
+                referral_code: referral || null
+            };
 
-            if (!email || !email.includes('@')) {
+            if (!otpBypassAllowed && (!email || !email.includes('@'))) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = 'Please enter a valid email address.';
                 return;
             }
 
-            if (!/^\d{6}$/.test(code)) {
+            if (!otpBypassAllowed && !/^\d{6}$/.test(code)) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = 'Please enter the 6-digit code from your email.';
                 return;
             }
 
             if (btn) btn.disabled = true;
-            btnText.textContent = 'Verifying code…';
-            statusDiv.className = 'status-message info';
-            statusDiv.textContent = '⏳ Verifying your code...';
-
-            try {
-                const verifyResp = await fetch('/api/turnkey/email/verify-code', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, code })
-                });
-                const verifyData = await verifyResp.json();
-                if (!(verifyResp.ok && verifyData.success)) {
-                    statusDiv.className = 'status-message error';
-                    statusDiv.textContent = verifyData.error || verifyData.message || 'Invalid code. Please try again.';
-                    if (btn) btn.disabled = false;
-                    btnText.textContent = 'Verify Code & Create Wallet';
-                    return;
-                }
-
+            if (otpBypassAllowed) {
                 btnText.textContent = 'Creating wallet…';
                 statusDiv.className = 'status-message info';
-                statusDiv.textContent = '⏳ Code verified. Creating your wallet on Celo...';
+                statusDiv.textContent = '⏳ Creating your wallet (OTP fallback mode)...';
+            } else {
+                btnText.textContent = 'Verifying code…';
+                statusDiv.className = 'status-message info';
+                statusDiv.textContent = '⏳ Verifying your code...';
+            }
+
+            try {
+                if (!otpBypassAllowed) {
+                    const verifyResp = await fetch('/api/turnkey/email/verify-code', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, code })
+                    });
+                    const verifyData = await verifyResp.json();
+                    if (!(verifyResp.ok && verifyData.success)) {
+                        statusDiv.className = 'status-message error';
+                        statusDiv.textContent = verifyData.error || verifyData.message || 'Invalid code. Please try again.';
+                        if (btn) btn.disabled = false;
+                        btnText.textContent = 'Verify Code & Create Wallet';
+                        return;
+                    }
+
+                    createPayload.userId = email;
+                    createPayload.userName = email;
+                    createPayload.email = email;
+                    btnText.textContent = 'Creating wallet…';
+                    statusDiv.className = 'status-message info';
+                    statusDiv.textContent = '⏳ Code verified. Creating your wallet on Celo...';
+                }
 
                 const createResp = await fetch('/api/turnkey/create-wallet', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        userId: email,
-                        userName: email,
-                        email,
-                        referral_code: referral || null
-                    })
+                    body: JSON.stringify(createPayload)
                 });
                 const createData = await createResp.json();
 
