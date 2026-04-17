@@ -6049,17 +6049,41 @@ def gas_faucet():
         from eth_account import Account
         from blockchain import CELO_RPC, CELO_CHAIN_ID
 
-        wallet = session.get("wallet")
-        if not wallet:
+        session_wallet = session.get("wallet")
+        if not session_wallet:
             return jsonify({"success": False, "error": "Not logged in"}), 401
+
+        req = request.get_json(silent=True) or {}
+        requested_wallet = (req.get("wallet_address") or "").strip()
+        if requested_wallet:
+            try:
+                requested_wallet = Web3.to_checksum_address(requested_wallet)
+            except Exception:
+                return jsonify({
+                    "success": False,
+                    "topped_up": False,
+                    "gas_ready": False,
+                    "reason": "Invalid wallet address"
+                }), 200
+        wallet = requested_wallet or session_wallet
+        wallet = Web3.to_checksum_address(wallet)
+
+        # Prevent abuse: only allow topping up the logged-in user's own wallet.
+        if wallet.lower() != Web3.to_checksum_address(session_wallet).lower():
+            return jsonify({
+                "success": False,
+                "topped_up": False,
+                "gas_ready": False,
+                "reason": "Wallet mismatch"
+            }), 200
 
         faucet_key = os.getenv("GAMES_KEY")
         if not faucet_key:
             return jsonify({"success": False, "topped_up": False,
-                            "reason": "Gas faucet not configured"}), 200
+                            "reason": "GAMES_KEY not configured for gas faucet"}), 200
 
         w3 = Web3(Web3.HTTPProvider(CELO_RPC, request_kwargs={"timeout": 15}))
-        checksum_wallet = Web3.to_checksum_address(wallet)
+        checksum_wallet = wallet
 
         # Check current balance
         celo_wei = w3.eth.get_balance(checksum_wallet)
