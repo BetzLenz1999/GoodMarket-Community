@@ -13,8 +13,7 @@ const TURNKEY_API_PUBLIC_KEY = process.env.TURNKEY_API_PUBLIC_KEY;
 const TURNKEY_API_PRIVATE_KEY = process.env.TURNKEY_API_PRIVATE_KEY;
 
 if (!PROJECT_ID) {
-    console.error('WC_ERROR: WALLETCONNECT_PROJECT_ID not set');
-    process.exit(1);
+    console.warn('WC_WARN: WALLETCONNECT_PROJECT_ID not set — WalletConnect QR disabled');
 }
 
 let turnkey = null;
@@ -44,6 +43,10 @@ function pruneExpiredOtpSessions() {
 }
 
 async function initClient() {
+    if (!PROJECT_ID) {
+        console.warn('WC_WARN: Skipping WalletConnect init');
+        return;
+    }
     signClient = await SignClient.init({
         projectId: PROJECT_ID,
         metadata: {
