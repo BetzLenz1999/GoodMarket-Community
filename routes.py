@@ -5984,16 +5984,7 @@ def turnkey_status():
 @auth_required
 def export_private_key():
     """Return the decrypted private key for custodial-mode users (session only)."""
-    login_method = session.get("login_method")
-    if login_method != "custodial":
-        if login_method == "turnkey":
-            return jsonify({
-                "success": False,
-                "error": (
-                    "Turnkey-managed wallets do not expose raw private keys in this app. "
-                    "Use a custodial private-key login if you need key export for MetaMask/Trust Wallet import."
-                )
-            }), 403
+    if session.get("login_method") != "custodial":
         return jsonify({"success": False, "error": "Only available for custodial wallets"}), 403
     enc_key = session.get("custodial_key_enc")
     if not enc_key:
