@@ -101,6 +101,8 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
     <script>
+        const LOGIN_METHOD = "{{ login_method | default('walletconnect') }}";
+        const SESSION_WALLET = "{{ wallet | default('') }}";
         const CELO_CHAIN_ID = 42220;
         const CELO_RPC = "https://forno.celo.org";
         const GD_ADDRESS = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A";
@@ -178,36 +180,57 @@
             el.innerHTML = "";
         }
 
+        function isServerSigningLoginMethod() {
+            return LOGIN_METHOD === "custodial" || LOGIN_METHOD === "turnkey";
+        }
+
         async function claimPayment() {
             if (!paymentWallet || !paymentAmount) return;
-            if (!window.ethereum) {
-                showAlert("alert-error", "⚠️ No Web3 wallet detected. Please open this page in MetaMask, MiniPay, or a Celo-compatible wallet.");
-                return;
-            }
             clearAlert();
 
             const btn = document.getElementById("claimBtn");
             try {
+                const ethers = window.ethers;
+                const iface = new ethers.Interface(OTP_ABI);
                 btn.disabled = true;
-                btn.innerHTML = '<span class="spinner-inline"></span> Connecting wallet...';
-                await window.ethereum.request({ method: "eth_requestAccounts" });
+                let receiverAddr = "";
+                let txHash = "";
+                let otpCheck = null;
+                let signer = null;
 
-                const chainIdHex = await window.ethereum.request({ method: "eth_chainId" });
-                if (parseInt(chainIdHex, 16) !== CELO_CHAIN_ID) {
-                    try {
-                        await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x" + CELO_CHAIN_ID.toString(16) }] });
-                    } catch {
-                        await window.ethereum.request({ method: "wallet_addEthereumChain", params: [{ chainId: "0x" + CELO_CHAIN_ID.toString(16), chainName: "Celo Mainnet", nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 }, rpcUrls: ["https://forno.celo.org"], blockExplorerUrls: ["https://celoscan.io"] }] });
+                if (isServerSigningLoginMethod()) {
+                    if (!SESSION_WALLET || SESSION_WALLET.length < 42) {
+                        throw new Error("No active logged-in wallet found. Please sign in first, then try again.");
                     }
-                }
+                    receiverAddr = SESSION_WALLET;
+                    const provider = new ethers.JsonRpcProvider(CELO_RPC);
+                    otpCheck = new ethers.Contract(OTP_ADDRESS, OTP_ABI, provider);
+                } else {
+                    if (!window.ethereum) {
+                        showAlert("alert-error", "⚠️ No Web3 wallet detected. Please open this page in MetaMask, MiniPay, or a Celo-compatible wallet.");
+                        return;
+                    }
 
-                const provider = new ethers.BrowserProvider(window.ethereum);
-                const signer = await provider.getSigner();
-                const receiverAddr = await signer.getAddress();
+                    btn.innerHTML = '<span class="spinner-inline"></span> Connecting wallet...';
+                    await window.ethereum.request({ method: "eth_requestAccounts" });
+
+                    const chainIdHex = await window.ethereum.request({ method: "eth_chainId" });
+                    if (parseInt(chainIdHex, 16) !== CELO_CHAIN_ID) {
+                        try {
+                            await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x" + CELO_CHAIN_ID.toString(16) }] });
+                        } catch {
+                            await window.ethereum.request({ method: "wallet_addEthereumChain", params: [{ chainId: "0x" + CELO_CHAIN_ID.toString(16), chainName: "Celo Mainnet", nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 }, rpcUrls: ["https://forno.celo.org"], blockExplorerUrls: ["https://celoscan.io"] }] });
+                        }
+                    }
+
+                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    signer = await provider.getSigner();
+                    receiverAddr = await signer.getAddress();
+                    otpCheck = new ethers.Contract(OTP_ADDRESS, OTP_ABI, provider);
+                }
 
                 // Check payment still exists
                 btn.innerHTML = '<span class="spinner-inline"></span> Verifying payment...';
-                const otpCheck = new ethers.Contract(OTP_ADDRESS, OTP_ABI, provider);
                 const stillActive = await otpCheck.hasPayment(paymentWallet.address);
                 if (!stillActive) {
                     showAlert("alert-error", "❌ This payment has already been claimed or cancelled.");
@@ -222,18 +245,41 @@
                 const messageHash = ethers.keccak256(ethers.solidityPacked(['address'], [receiverAddr]));
                 const signature = await paymentWallet.signMessage(ethers.getBytes(messageHash));
 
-                // Call withdraw
-                btn.innerHTML = '<span class="spinner-inline"></span> Confirm in wallet...';
-                showAlert("alert-info", '<span class="spinner-inline"></span> Confirm the claim transaction in your wallet.');
-                const otpSigner = new ethers.Contract(OTP_ADDRESS, OTP_ABI, signer);
-                const tx = await otpSigner.withdraw(paymentWallet.address, signature);
+                if (isServerSigningLoginMethod()) {
+                    btn.innerHTML = '<span class="spinner-inline"></span> Submitting claim...';
+                    showAlert("alert-info", '<span class="spinner-inline"></span> Signing and sending transaction via your secure wallet session...');
+                    const callData = iface.encodeFunctionData("withdraw", [paymentWallet.address, signature]);
+                    const signRes = await fetch("/api/server/sign-tx", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            to: OTP_ADDRESS,
+                            data: callData,
+                            value: "0x0",
+                            chain_id: CELO_CHAIN_ID,
+                            wait_receipt: true
+                        })
+                    });
+                    const signData = await signRes.json();
+                    if (!signRes.ok || !signData.success || !signData.tx_hash) {
+                        throw new Error(signData.error || "Server signing failed");
+                    }
+                    txHash = signData.tx_hash;
+                } else {
+                    // Call withdraw
+                    btn.innerHTML = '<span class="spinner-inline"></span> Confirm in wallet...';
+                    showAlert("alert-info", '<span class="spinner-inline"></span> Confirm the claim transaction in your wallet.');
+                    const otpSigner = new ethers.Contract(OTP_ADDRESS, OTP_ABI, signer);
+                    const tx = await otpSigner.withdraw(paymentWallet.address, signature);
 
-                btn.innerHTML = '<span class="spinner-inline"></span> Waiting for confirmation...';
-                showAlert("alert-info", '<span class="spinner-inline"></span> Transaction submitted. Waiting for confirmation on Celo...');
-                const receipt = await tx.wait();
+                    btn.innerHTML = '<span class="spinner-inline"></span> Waiting for confirmation...';
+                    showAlert("alert-info", '<span class="spinner-inline"></span> Transaction submitted. Waiting for confirmation on Celo...');
+                    const receipt = await tx.wait();
+                    txHash = receipt.hash;
+                }
 
                 const humanAmount = parseFloat(ethers.formatUnits(paymentAmount, GD_DECIMALS)).toFixed(GD_DISPLAY_DECIMALS);
-                const explorerUrl = `https://celoscan.io/tx/${receipt.hash}`;
+                const explorerUrl = `https://celoscan.io/tx/${txHash}`;
                 showAlert("alert-success",
                     `✅ Successfully claimed <strong>${humanAmount} G$</strong> to your wallet! ` +
                     `<a href="${explorerUrl}" target="_blank" style="color:#86efac;text-decoration:underline;">View on CeloScan ↗</a>`
