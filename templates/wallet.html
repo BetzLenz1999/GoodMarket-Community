@@ -985,8 +985,8 @@
                 <button class="btn-secondary" id="pkSendCodeBtn" onclick="sendTurnkeyExportCode()" style="width:auto;flex-shrink:0;margin-top:0;white-space:nowrap;padding:0 0.9rem;">Send Code</button>
             </div>
             <div class="form-group">
-                <label class="form-label">Type <strong>EXPORT MY KEY</strong> to continue</label>
-                <input class="form-input" id="pkRiskConfirmInput" type="text" placeholder="EXPORT MY KEY" autocomplete="off" spellcheck="false">
+                <label class="form-label">Type <strong>I UNDERSTAND THAT IF I EXPORT MY PRIVATE KEY AND SHARE IT WITH ANYONE, MY FUNDS CAN BE LOST</strong> to continue</label>
+                <input class="form-input" id="pkRiskConfirmInput" type="text" placeholder="I UNDERSTAND THAT IF I EXPORT MY PRIVATE KEY AND SHARE IT WITH ANYONE, MY FUNDS CAN BE LOST" autocomplete="off" spellcheck="false">
             </div>
 
             <div class="pk-box" id="pkDisplay"></div>
@@ -1468,7 +1468,7 @@
         try {
             let requestBody = {};
             if (LOGIN_METHOD === 'turnkey') {
-                const dangerAck = "EXPORT MY KEY";
+                const dangerAck = "I UNDERSTAND THAT IF I EXPORT MY PRIVATE KEY AND SHARE IT WITH ANYONE, MY FUNDS CAN BE LOST";
                 const confirmInput = (document.getElementById('pkRiskConfirmInput')?.value || '').trim();
                 if (confirmInput !== dangerAck) {
                     showAlert('pkAlert', 'alert-error', `❌ Type "${dangerAck}" exactly to continue`);
