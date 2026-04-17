@@ -5125,6 +5125,29 @@ def _is_turnkey_unavailable_error(err) -> bool:
     return any(marker in err_lower for marker in unavailable_markers)
 
 
+def _format_turnkey_export_error(err) -> str:
+    """Normalize Turnkey export failures into actionable user-facing messages."""
+    raw = str(err or "").strip()
+    text = raw.lower()
+
+    if "route not found" in text or ("not found" in text and "/turnkey/" in text):
+        return (
+            "Turnkey export endpoint is unavailable on this deployment. "
+            "Please contact support to redeploy/update the wallet sidecar "
+            "and verify WC_SERVICE_URL points to the latest /api/wc service."
+        )
+    if "no active otp" in text:
+        return "Your verification code expired. Tap Send Code, verify a new OTP, then try export again."
+    if "invalid otp" in text or "verification" in text:
+        return "Invalid verification code. Request a new OTP and try again."
+    if _is_turnkey_unavailable_error(raw):
+        return (
+            "Turnkey service is temporarily unavailable. "
+            "Please retry in a minute. If it keeps failing, contact support."
+        )
+    return raw or "Could not export Turnkey key. Please retry and contact support if the issue continues."
+
+
 _email_wallet_links_ready = False
 
 
@@ -5628,7 +5651,7 @@ def turnkey_export_send_code():
 
         result, err = send_email_otp_turnkey(email)
         if err:
-            return jsonify({"success": False, "error": err}), 400
+            return jsonify({"success": False, "error": _format_turnkey_export_error(err)}), 400
 
         session["turnkey_export_email_pending"] = email
         session["turnkey_export_email_verified"] = None
@@ -5660,7 +5683,7 @@ def turnkey_export_verify_code():
 
         result, err = verify_email_otp_turnkey(email, code)
         if err:
-            return jsonify({"success": False, "error": err}), 400
+            return jsonify({"success": False, "error": _format_turnkey_export_error(err)}), 400
 
         session["turnkey_export_email_pending"] = email
         session["turnkey_export_email_verified"] = email
@@ -6084,7 +6107,7 @@ def export_private_key():
             from turnkey_service import export_wallet_account_turnkey
             private_key, err = export_wallet_account_turnkey(suborg_id, wallet)
             if err:
-                return jsonify({"success": False, "error": err}), 500
+                return jsonify({"success": False, "error": _format_turnkey_export_error(err)}), 500
             return jsonify({"success": True, "private_key": private_key})
         except Exception as e:
             logger.error(f"export-key (turnkey) error: {e}")
