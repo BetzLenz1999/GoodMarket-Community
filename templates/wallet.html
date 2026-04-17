@@ -1685,7 +1685,7 @@
             // Now submit the actual UBI claim
             label.textContent = 'Claiming…';
             icon.textContent = '⏳';
-            setStatus('Signing and submitting claim via Turnkey…', 'var(--text-dim)');
+            setStatus('Signing and submitting claim via GoodMarket wallet…', 'var(--text-dim)');
             fetch('/api/server/sign-tx', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1703,12 +1703,71 @@
             });
         }
 
+        async function ensureInjectedWalletClaim() {
+            const provider = _getEthProvider();
+            if (!provider) {
+                setStatus('⚠️ No wallet detected. Open in MetaMask, Trust Wallet, MiniPay, or use WalletConnect.', '#fbbf24');
+                return;
+            }
+
+            btn.disabled = true;
+            label.textContent = 'Connecting wallet…';
+            icon.textContent = '🔐';
+            setStatus('Connecting to wallet and requesting account access…', 'var(--text-dim)');
+
+            try {
+                const accounts = await provider.request({ method: 'eth_requestAccounts' });
+                if (!accounts || !accounts.length) throw new Error('No wallet account available.');
+                const from = accounts[0];
+
+                const currentChain = await provider.request({ method: 'eth_chainId' });
+                const celoChainHex = '0xa4ec';
+                if ((currentChain || '').toLowerCase() !== celoChainHex) {
+                    try {
+                        await provider.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ chainId: celoChainHex }]
+                        });
+                    } catch (switchErr) {
+                        await provider.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: celoChainHex,
+                                chainName: 'Celo Mainnet',
+                                nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+                                rpcUrls: ['https://forno.celo.org'],
+                                blockExplorerUrls: ['https://celoscan.io']
+                            }]
+                        });
+                    }
+                }
+
+                label.textContent = 'Claiming…';
+                icon.textContent = '⏳';
+                setStatus('Please confirm the transaction in your connected wallet…', 'var(--text-dim)');
+                const txHash = await provider.request({
+                    method: 'eth_sendTransaction',
+                    params: [{ from, to: UBI_CONTRACT, data: CLAIM_DATA, value: '0x0' }]
+                });
+                label.textContent = 'Confirming…';
+                setStatus('Transaction sent! Waiting for confirmation…', 'var(--text-dim)');
+                pollReceipt(txHash, 20);
+            } catch (err) {
+                btn.disabled = false;
+                label.textContent = 'Claim G$';
+                icon.textContent = '🪙';
+                const raw = (err && (err.shortMessage || err.message)) || 'Claim failed';
+                const msg = (raw || '').toLowerCase().includes('user rejected') ? 'Transaction cancelled.' : raw;
+                setStatus('Error: ' + msg, 'var(--red)');
+            }
+        }
+
         window.doUbiClaim = function() {
             if (claimed || btn.disabled) return;
             if (needsVerification) { startFV(); return; }
 
             if (!window.isCustodialMode) {
-                setStatus('⚠️ Turnkey wallet required. Please login using a Turnkey wallet to claim.', '#fbbf24');
+                ensureInjectedWalletClaim();
                 return;
             }
 

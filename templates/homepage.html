@@ -1821,7 +1821,7 @@
 
                 <div class="wallet-options">
                     <button class="wallet-option-card" id="injectedWalletBtn" onclick="connectInjectedWallet()" style="border-color: rgba(249,115,22,0.5);">
-                        <div class="option-icon">🦊</div>
+                        <div class="option-icon" id="injectedWalletIcon">👛</div>
                         <div class="option-text">
                             <div class="option-title" id="injectedWalletTitle">Injected Wallet</div>
                             <p class="option-desc" id="injectedWalletDesc">Detecting MetaMask / Trust Wallet / MiniPay...</p>
@@ -2130,6 +2130,14 @@
             return 'Injected Wallet';
         }
 
+        function getInjectedProviderIcon(provider) {
+            if (!provider) return '👛';
+            if (provider.isMiniPay) return '📱';
+            if (provider.isTrust) return '🛡️';
+            if (provider.isMetaMask && !provider.isBraveWallet) return '🦊';
+            return '👛';
+        }
+
         function getPreferredInjectedProvider() {
             const providers = getAllInjectedProviders();
             if (!providers.length) return null;
@@ -2151,9 +2159,11 @@
             const title = document.getElementById('injectedWalletTitle');
             const desc = document.getElementById('injectedWalletDesc');
             const btn = document.getElementById('injectedWalletBtn');
+            const icon = document.getElementById('injectedWalletIcon');
             if (!title || !desc || !btn) return;
             if (!provider) {
                 title.textContent = 'Injected Wallet';
+                if (icon) icon.textContent = '👛';
                 if (isMobileDappContext()) {
                     desc.textContent = 'No injected wallet detected. Open in MiniPay/MetaMask/Trust Wallet dapp browser, or use WalletConnect.';
                 } else {
@@ -2164,6 +2174,7 @@
             }
             const name = getInjectedProviderLabel(provider);
             title.textContent = name;
+            if (icon) icon.textContent = getInjectedProviderIcon(provider);
             desc.textContent = `${name} detected — connect wallet, then approve signature to login`;
             btn.style.opacity = '1';
         }
