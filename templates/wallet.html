@@ -168,35 +168,41 @@
         /* ── Action Buttons ── */
         .action-row {
             display: flex;
-            gap: 0.5rem;
-            padding: 0 1.25rem;
-            overflow-x: auto;
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-            margin-bottom: 1.5rem;
+            flex-direction: column;
+            gap: 0.55rem;
+            padding: 0;
+            overflow: visible;
+            margin-bottom: 0;
         }
         .action-row::-webkit-scrollbar { display: none; }
         .action-item {
             display: flex;
-            flex-direction: column;
+            width: 100%;
+            flex-direction: row;
             align-items: center;
-            gap: 0.45rem;
-            flex-shrink: 0;
+            justify-content: flex-start;
+            gap: 0.7rem;
+            padding: 0.5rem 0.65rem;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.02);
             cursor: pointer;
         }
         .action-circle {
-            width: 58px; height: 58px;
+            width: 42px; height: 42px;
             border-radius: 50%;
             background: rgba(255,255,255,0.06);
             border: 1px solid rgba(255,255,255,0.12);
             display: flex; align-items: center; justify-content: center;
-            font-size: 1.35rem;
+            font-size: 1rem;
             transition: all 0.2s;
+            flex-shrink: 0;
         }
         .action-item:hover .action-circle {
             background: rgba(var(--accent-rgb),0.13);
             border-color: rgba(var(--accent-rgb),0.38);
         }
+        .action-item:hover { border-color: rgba(var(--accent-rgb),0.35); }
         .action-circle.claim-circle {
             position: relative;
             background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.28), rgba(var(--accent-rgb),0.2) 30%, rgba(83,42,182,0.45) 90%);
@@ -261,13 +267,25 @@
             50% { transform: translateY(-1.5px); }
         }
         .action-label {
-            font-size: 0.72rem;
+            font-size: 0.78rem;
             font-weight: 600;
             color: var(--text-dim);
-            white-space: nowrap;
+            white-space: normal;
+            line-height: 1.2;
         }
-        .wallet-layout { display: block; }
+        .wallet-layout {
+            display: grid;
+            grid-template-columns: 98px minmax(0, 1fr);
+            gap: 0.8rem;
+            align-items: start;
+            padding: 0 0.75rem;
+        }
         .wallet-main { min-width: 0; }
+        .sidebar-nav {
+            position: sticky;
+            top: 82px;
+            align-self: start;
+        }
 
         /* ── Tabs ── */
         .tab-bar {
@@ -731,46 +749,16 @@
 
         @media (min-width: 992px) {
             .wallet-layout {
-                display: grid;
                 grid-template-columns: 220px minmax(0, 1fr);
                 gap: 1rem;
-                align-items: start;
                 padding: 0 1.25rem;
             }
-            .sidebar-nav {
-                position: sticky;
-                top: 82px;
-                align-self: start;
-            }
-            .action-row {
-                flex-direction: column;
-                gap: 0.55rem;
-                padding: 0;
-                margin-bottom: 0;
-                overflow: visible;
-            }
-            .action-item {
-                width: 100%;
-                flex-direction: row;
-                justify-content: flex-start;
-                gap: 0.7rem;
-                padding: 0.5rem 0.65rem;
-                border-radius: 14px;
-                border: 1px solid rgba(255,255,255,0.08);
-                background: rgba(255,255,255,0.02);
-            }
-            .action-item:hover { border-color: rgba(var(--accent-rgb),0.35); }
-            .action-circle {
-                width: 42px;
-                height: 42px;
-                font-size: 1rem;
-                flex-shrink: 0;
-            }
             .action-label { font-size: 0.86rem; }
-            .tab-bar { margin: 0 0 1rem; }
-            .token-list, .tx-list { padding: 0; }
-            .section-label { padding-left: 0; padding-right: 0; }
         }
+
+        .tab-bar { margin: 0 0 1rem; }
+        .token-list, .tx-list { padding: 0; }
+        .section-label { padding-left: 0; padding-right: 0; }
 
         @media (min-width: 481px) {
             body { border-left: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05); }
