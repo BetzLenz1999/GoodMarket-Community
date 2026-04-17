@@ -1738,6 +1738,7 @@
             const maxPolls = 12;
             const pollDelayMs = 3000;
             let hasRequestedFaucet = false;
+            let lastReason = '';
 
             for (let i = 0; i < maxPolls; i++) {
                 setClaimGasUiState('checking_balance');
@@ -1762,6 +1763,7 @@
                 if (!faucetData.success) {
                     throw new Error(faucetData.reason || faucetData.error || 'Gas faucet request failed');
                 }
+                lastReason = faucetData.reason || '';
 
                 if (String(faucetData.reason || '').toLowerCase().includes('not configured')) {
                     throw new Error('Faucet not configured (missing GAMES_KEY).');
@@ -1769,7 +1771,11 @@
 
                 if (faucetData.gas_ready) {
                     setClaimGasUiState('gas_ready');
-                    return true;
+                    return {
+                        gasReady: true,
+                        toppedUp: !!faucetData.topped_up,
+                        reason: lastReason
+                    };
                 }
 
                 if (faucetData.topped_up && !hasRequestedFaucet) {
@@ -1804,10 +1810,14 @@
                 // Important UX fix:
                 // Wait for faucet top-up to actually make gas ready first,
                 // BEFORE triggering wallet approvals/transaction prompts.
-                await ensureGasReadyBeforeClaim();
+                const gasState = await ensureGasReadyBeforeClaim();
 
                 setClaimGasUiState('gas_ready');
-                setStatus('Gas ready. Connecting to wallet…', 'var(--text-dim)');
+                if (gasState && gasState.toppedUp) {
+                    setStatus('Gas ready from GoodDollar faucet. Connecting to wallet…', 'var(--text-dim)');
+                } else {
+                    setStatus('Gas ready (wallet already had CELO). Connecting to wallet…', 'var(--text-dim)');
+                }
 
                 const accounts = await provider.request({ method: 'eth_requestAccounts' });
                 if (!accounts || !accounts.length) throw new Error('No wallet account available.');
