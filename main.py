@@ -1384,25 +1384,23 @@ def verify_identity():
         # Verify signature to prove wallet ownership
         signature = data.get('signature', '').strip()
         login_message = data.get('message', '').strip()
-        allow_manual_fallback = bool(data.get('allow_manual_fallback'))
-        if signature and login_message:
-            try:
-                from eth_account.messages import encode_defunct
-                from eth_account import Account as EthAccount
-                msg_obj = encode_defunct(text=login_message)
-                recovered = EthAccount.recover_message(msg_obj, signature=signature)
-                if recovered.lower() != wallet_address.lower():
-                    logger.warning(f"❌ Signature mismatch for {wallet_address}: recovered {recovered}")
-                    return jsonify({'success': False, 'error': 'Signature verification failed — wrong wallet?'}), 400
-                logger.info(f"✅ Signature verified for {wallet_address}")
-            except Exception as sig_err:
-                logger.warning(f"⚠️ Signature check error for {wallet_address}: {sig_err}")
-                return jsonify({'success': False, 'error': 'Invalid signature'}), 400
-        elif allow_manual_fallback:
-            logger.info(f"ℹ️ Manual wallet fallback used (no signature): {wallet_address}")
-        else:
-            logger.info(f"⚠️ No signature provided for {wallet_address} — rejecting login")
-            return jsonify({'success': False, 'error': 'Signature required to log in'}), 400
+        if not signature or not login_message:
+            logger.info(f"⚠️ Missing signature payload for {wallet_address} — rejecting login")
+            return jsonify({'success': False, 'error': 'Signature and login message are required'}), 400
+
+        try:
+            from eth_account.messages import encode_defunct
+            from eth_account import Account as EthAccount
+            msg_obj = encode_defunct(text=login_message)
+            recovered = EthAccount.recover_message(msg_obj, signature=signature)
+            recovered_checksum = Web3.to_checksum_address(recovered)
+            if recovered_checksum != wallet_address:
+                logger.warning(f"❌ Signature mismatch for {wallet_address}: recovered {recovered_checksum}")
+                return jsonify({'success': False, 'error': 'Signature verification failed — wrong wallet?'}), 400
+            logger.info(f"✅ Signature verified for {wallet_address}")
+        except Exception as sig_err:
+            logger.warning(f"⚠️ Signature check error for {wallet_address}: {sig_err}")
+            return jsonify({'success': False, 'error': 'Invalid signature'}), 400
 
         # ── NEW USER CHECK (before any DB write) ────────────────────────────────
         # We must determine whether this wallet is brand-new to the platform

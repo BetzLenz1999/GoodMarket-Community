@@ -14,7 +14,8 @@ const TURNKEY_API_PUBLIC_KEY = process.env.TURNKEY_API_PUBLIC_KEY;
 const TURNKEY_API_PRIVATE_KEY = process.env.TURNKEY_API_PRIVATE_KEY;
 
 if (!PROJECT_ID) {
-    console.warn('WC_WARN: WALLETCONNECT_PROJECT_ID not set — WalletConnect QR disabled');
+    console.error('WC_FATAL: WALLETCONNECT_PROJECT_ID is required for WalletConnect service');
+    process.exit(1);
 }
 
 let turnkey = null;
@@ -521,8 +522,10 @@ const server = http.createServer(async (req, res) => {
                 res.writeHead(200);
                 res.end(JSON.stringify({ signature }));
             } catch (err) {
-                res.writeHead(200);
-                res.end(JSON.stringify({ error: err.message || 'Signing failed or cancelled' }));
+                const message = err && err.message ? err.message : 'Signing failed or cancelled';
+                const rejected = /reject|denied|cancel/i.test(message);
+                res.writeHead(rejected ? 400 : 500);
+                res.end(JSON.stringify({ error: message }));
             }
         });
         return;
