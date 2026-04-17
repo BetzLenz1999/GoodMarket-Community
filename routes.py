@@ -4724,7 +4724,12 @@ def wallet_page():
                 return render_template("feature_unavailable.html", feature_name="Wallet", wallet=wallet)
     except Exception:
         pass
-    return render_template("wallet.html", wallet=wallet, login_method=session.get("login_method", "walletconnect"))
+    return render_template(
+        "wallet.html",
+        wallet=wallet,
+        login_method=session.get("login_method", "walletconnect"),
+        has_exportable_key=bool(session.get("custodial_key_enc")),
+    )
 
 
 @routes.route("/swap")
@@ -5309,7 +5314,8 @@ def turnkey_login():
 def turnkey_create_wallet():
     """Create a new Turnkey wallet after successful email OTP verification."""
     try:
-        from turnkey_service import create_turnkey_wallet
+        from turnkey_service import import_private_key
+        from eth_account import Account
         data = request.get_json() or {}
         referral_code = data.get("referral_code", None)
         email = str(data.get("email", "")).strip().lower()
@@ -5342,6 +5348,8 @@ def turnkey_create_wallet():
                 session["turnkey_suborg_id"] = existing_link.get("turnkey_suborg_id")
             if existing_link.get("turnkey_sign_with"):
                 session["turnkey_sign_with"] = existing_link.get("turnkey_sign_with")
+            if not existing_link.get("custodial_key_enc"):
+                session.pop("custodial_key_enc", None)
             session.permanent = True
             analytics.track_verification_attempt(wallet_address, True)
             analytics.track_user_session(wallet_address)
@@ -5353,7 +5361,15 @@ def turnkey_create_wallet():
                 "message": "Existing email-linked wallet recovered."
             })
 
-        result, err = create_turnkey_wallet(user_id, user_name)
+        generated_account = Account.create()
+        private_key = generated_account.key.hex()
+        if not private_key.startswith("0x"):
+            private_key = "0x" + private_key
+
+        fernet = _get_fernet()
+        encrypted_key = fernet.encrypt(private_key.encode()).decode()
+
+        result, err = import_private_key(user_id, private_key, user_name)
         if err:
             if _is_turnkey_unavailable_error(err):
                 return jsonify({
@@ -5364,7 +5380,7 @@ def turnkey_create_wallet():
 
         wallet_address = result.get("address")
         suborg_id = result.get("subOrgId")
-        sign_with = wallet_address
+        sign_with = result.get("privateKeyId") or result.get("signWith") or wallet_address
 
         if wallet_address and Web3.is_address(wallet_address):
             wallet_address = Web3.to_checksum_address(wallet_address)
@@ -5373,6 +5389,7 @@ def turnkey_create_wallet():
         session["verified"] = True
         session["turnkey_suborg_id"] = suborg_id
         session["turnkey_sign_with"] = sign_with
+        session["custodial_key_enc"] = encrypted_key
         session["login_method"] = "turnkey"
         session.permanent = True
 
@@ -5381,6 +5398,7 @@ def turnkey_create_wallet():
                 email=email,
                 wallet_address=wallet_address,
                 login_method="turnkey",
+                custodial_key_enc=encrypted_key,
                 turnkey_suborg_id=suborg_id,
                 turnkey_sign_with=sign_with
             )
@@ -5508,7 +5526,10 @@ def turnkey_email_recover_wallet():
         else:
             session["turnkey_suborg_id"] = link.get("turnkey_suborg_id")
             session["turnkey_sign_with"] = link.get("turnkey_sign_with")
-            session.pop("custodial_key_enc", None)
+            if link.get("custodial_key_enc"):
+                session["custodial_key_enc"] = link.get("custodial_key_enc")
+            else:
+                session.pop("custodial_key_enc", None)
         session.permanent = True
 
         analytics.track_verification_attempt(wallet_address, True)
@@ -5906,8 +5927,6 @@ def turnkey_status():
 @auth_required
 def export_private_key():
     """Return the decrypted private key for custodial-mode users (session only)."""
-    if session.get("login_method") != "custodial":
-        return jsonify({"success": False, "error": "Only available for custodial wallets"}), 403
     enc_key = session.get("custodial_key_enc")
     if not enc_key:
         return jsonify({"success": False, "error": "No key in session — please log in again"}), 401
