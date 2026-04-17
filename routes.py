@@ -5328,6 +5328,12 @@ def turnkey_email_send_code():
 
         result, err = send_email_otp_turnkey(email)
         if err:
+            if "turnkey service unavailable" in str(err).lower():
+                return jsonify({
+                    "success": False,
+                    "error": err,
+                    "code": "otp_unavailable"
+                }), 503
             return jsonify({"success": False, "error": err}), 400
 
         session["turnkey_email_pending"] = email
@@ -5358,6 +5364,12 @@ def turnkey_email_verify_code():
 
         result, err = verify_email_otp_turnkey(email, code)
         if err:
+            if "turnkey service unavailable" in str(err).lower():
+                return jsonify({
+                    "success": False,
+                    "error": err,
+                    "code": "otp_unavailable"
+                }), 503
             return jsonify({"success": False, "error": err}), 400
 
         session["turnkey_email_pending"] = email
