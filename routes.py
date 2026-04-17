@@ -6030,15 +6030,15 @@ def server_sign_tx():
 _faucet_last_sent: dict = {}
 _faucet_lock = threading.Lock()
 FAUCET_MIN_CELO = 0.002        # top-up if user has less than this
-FAUCET_SEND_CELO = 0.005       # amount to send (covers ~5-10 txns at Celo gas prices)
 FAUCET_COOLDOWN_HOURS = 24     # one top-up per wallet per 24 hours
+GOODDOLLAR_FAUCET_CONTRACT = "0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84"
 
 @routes.route("/api/gas-faucet", methods=["POST"])
 @auth_required
 def gas_faucet():
     """
-    Check user's CELO balance. If below FAUCET_MIN_CELO, send a small top-up
-    from the platform wallet (LEARN_WALLET_PRIVATE_KEY) so the user can pay gas.
+    Check user's CELO balance. If below FAUCET_MIN_CELO, call the GoodDollar
+    Faucet contract topWallet(user) from GAMES_KEY so user can pay gas.
     Rate-limited to once per 24 h per wallet.
     """
     import time
@@ -6051,7 +6051,7 @@ def gas_faucet():
         if not wallet:
             return jsonify({"success": False, "error": "Not logged in"}), 401
 
-        faucet_key = os.getenv("LEARN_WALLET_PRIVATE_KEY")
+        faucet_key = os.getenv("GAMES_KEY")
         if not faucet_key:
             return jsonify({"success": False, "topped_up": False,
                             "reason": "Gas faucet not configured"}), 200
@@ -6076,28 +6076,40 @@ def gas_faucet():
                 return jsonify({"success": True, "topped_up": False,
                                 "reason": f"Already topped up recently. Try again in {remaining_h:.1f}h."})
 
-        # Build faucet wallet
+        # Build faucet wallet (GAMES_KEY)
         key = faucet_key if faucet_key.startswith("0x") else "0x" + faucet_key
         faucet_acct = Account.from_key(key)
         faucet_bal_wei = w3.eth.get_balance(faucet_acct.address)
         faucet_bal = float(w3.from_wei(faucet_bal_wei, "ether"))
 
-        if faucet_bal < FAUCET_SEND_CELO + 0.001:
+        if faucet_bal < 0.001:
             logger.warning(f"Gas faucet wallet low: {faucet_bal:.4f} CELO — cannot top up {wallet[:8]}...")
             return jsonify({"success": False, "topped_up": False,
                             "reason": "Faucet wallet is low on funds. Contact support."}), 200
 
         nonce = w3.eth.get_transaction_count(faucet_acct.address, "pending")
-        gas_price = w3.eth.gas_price
-        send_wei = w3.to_wei(FAUCET_SEND_CELO, "ether")
+        gas_price = int(w3.eth.gas_price * 1.2)
+        faucet_contract = Web3.to_checksum_address(GOODDOLLAR_FAUCET_CONTRACT)
+        # topWallet(address) selector: 0x3771dcf8
+        call_data = "0x3771dcf8" + "000000000000000000000000" + checksum_wallet[2:].lower()
+
+        try:
+            gas_est = w3.eth.estimate_gas({
+                "from": faucet_acct.address,
+                "to": faucet_contract,
+                "data": call_data,
+            })
+        except Exception:
+            gas_est = 140000
+
         tx = {
             "chainId": CELO_CHAIN_ID,
             "nonce": nonce,
             "gasPrice": gas_price,
-            "gas": 21000,
-            "to": checksum_wallet,
-            "value": send_wei,
-            "data": b"",
+            "gas": int(gas_est * 1.2),
+            "to": faucet_contract,
+            "value": 0,
+            "data": call_data,
         }
         signed = faucet_acct.sign_transaction(tx)
         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
@@ -6106,11 +6118,18 @@ def gas_faucet():
         with _faucet_lock:
             _faucet_last_sent[checksum_wallet.lower()] = now
 
-        logger.info(f"Gas faucet sent {FAUCET_SEND_CELO} CELO to {wallet[:8]}... tx={tx_hash_hex[:12]}...")
+        logger.info(f"Gas faucet topWallet() requested for {wallet[:8]}... tx={tx_hash_hex[:12]}...")
         return jsonify({"success": True, "topped_up": True,
-                        "tx_hash": tx_hash_hex, "amount_celo": FAUCET_SEND_CELO})
+                        "tx_hash": tx_hash_hex})
 
     except Exception as e:
+        err_text = str(e).lower()
+        if "low toTop".lower() in err_text or "lowtotop" in err_text:
+            return jsonify({
+                "success": True,
+                "topped_up": False,
+                "reason": "Balance already above faucet threshold"
+            }), 200
         logger.error(f"gas_faucet error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
