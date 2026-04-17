@@ -9,6 +9,8 @@ import logging
 import os
 import threading
 import time
+import urllib.request
+import urllib.error
 
 # Initialize notification service
 notification_service = NotificationService()
@@ -965,7 +967,8 @@ def index():
     # If already logged in, redirect to wallet
     if session.get("verified") and session.get("wallet"):
         return redirect("/wallet")
-    return render_template("homepage.html")
+    wc_project_id = os.environ.get("WALLETCONNECT_PROJECT_ID", "")
+    return render_template("homepage.html", walletconnect_project_id=wc_project_id)
 
 @routes.route("/login")
 def login_page():
@@ -4661,6 +4664,89 @@ def check_identity():
     from blockchain import is_identity_verified
     result = is_identity_verified(wallet_address)
     return jsonify(result)
+
+
+def _wc_service_url():
+    base = os.getenv("WC_SERVICE_URL")
+    if base:
+        return base.rstrip("/")
+    return f"http://127.0.0.1:{os.getenv('WC_SERVICE_PORT', '3001')}"
+
+
+def _wc_proxy(method: str, path: str, body: dict = None, timeout: int = 30):
+    url = f"{_wc_service_url()}{path}"
+    payload = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method=method.upper(),
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+            data = json.loads(raw) if raw else {}
+            return data, resp.status, None
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = e.read().decode("utf-8")
+            err_json = json.loads(err_body) if err_body else {}
+            return err_json, e.code, None
+        except Exception:
+            return {"error": f"HTTP {e.code}"}, e.code, None
+    except urllib.error.URLError as e:
+        reason = getattr(e, "reason", e)
+        return None, 503, f"WalletConnect service unavailable: {reason}"
+    except Exception as e:
+        return None, 500, str(e)
+
+
+@routes.route("/api/wc-uri", methods=["GET"])
+def wc_uri():
+    data, status, err = _wc_proxy("GET", "/uri", timeout=35)
+    if err:
+        return jsonify({"success": False, "error": err}), status
+    if status >= 400:
+        return jsonify({"success": False, **(data or {})}), status
+    return jsonify({"success": True, **(data or {})}), 200
+
+
+@routes.route("/api/wc-session/<session_id>", methods=["GET"])
+def wc_session(session_id):
+    safe_id = str(session_id).strip()
+    if not safe_id:
+        return jsonify({"success": False, "error": "session_id required"}), 400
+    data, status, err = _wc_proxy("GET", f"/session/{safe_id}", timeout=20)
+    if err:
+        return jsonify({"success": False, "error": err}), status
+    if status >= 400:
+        return jsonify({"success": False, **(data or {})}), status
+    return jsonify({"success": True, **(data or {})}), 200
+
+
+@routes.route("/api/wc-sign/<session_id>", methods=["POST"])
+def wc_sign(session_id):
+    safe_id = str(session_id).strip()
+    if not safe_id:
+        return jsonify({"success": False, "error": "session_id required"}), 400
+
+    body = request.get_json(silent=True) or {}
+    message = (body.get("message") or "").strip()
+    address = (body.get("address") or "").strip()
+    if not message or not address:
+        return jsonify({"success": False, "error": "message and address are required"}), 400
+
+    data, status, err = _wc_proxy(
+        "POST",
+        f"/sign/{safe_id}",
+        body={"message": message, "address": address},
+        timeout=45,
+    )
+    if err:
+        return jsonify({"success": False, "error": err}), status
+    if status >= 400:
+        return jsonify({"success": False, **(data or {})}), status
+    return jsonify({"success": True, **(data or {})}), 200
 
 
 
