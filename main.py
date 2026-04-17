@@ -644,7 +644,13 @@ def dashboard():
     dashboard_data = analytics.get_dashboard_stats(wallet)
 
     wc_project_id = os.environ.get("WALLETCONNECT_PROJECT_ID", "")
-    return render_template("dashboard.html", wallet=wallet, data=dashboard_data, wc_project_id=wc_project_id)
+    return render_template(
+        "dashboard.html",
+        wallet=wallet,
+        data=dashboard_data,
+        wc_project_id=wc_project_id,
+        login_method=session.get("login_method", "walletconnect")
+    )
 
 @app.route("/overview")
 def overview():

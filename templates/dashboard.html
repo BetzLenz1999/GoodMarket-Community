@@ -3889,6 +3889,8 @@
     <script>
         (function() {
             var voucherCheckInterval = null;
+            const LOGIN_METHOD = "{{ login_method | default('walletconnect') }}";
+            const SESSION_WALLET = "{{ wallet | default('') }}";
 
             async function checkDailyVoucher() {
                 try {
@@ -3960,6 +3962,10 @@
                 el.innerHTML = html;
             }
 
+            function isServerSigningLoginMethod() {
+                return LOGIN_METHOD === 'custodial' || LOGIN_METHOD === 'turnkey';
+            }
+
             async function voucherInitDapp() {
                 try {
                     var ethers = window.ethers;
@@ -3997,28 +4003,43 @@
                 var btn = document.getElementById('voucherDappClaimBtn');
                 var spinner = '<span style="display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:6px;"></span>';
 
-                var ep = _vGetEthProvider();
                 try {
                     btn.disabled = true;
-                    btn.innerHTML = spinner + ' Connecting wallet...';
-                    if (!ep) throw new Error('No Web3 wallet detected. Install MetaMask or use a Celo-compatible wallet.');
-                    await ep.request({ method: 'eth_requestAccounts' });
+                    var receiverAddr = '';
+                    var txHash = '';
+                    var otpCheck = null;
+                    var signer = null;
+                    var iface = new ethers.Interface(VOTP_ABI);
 
-                    var chainHex = await ep.request({ method: 'eth_chainId' });
-                    if (parseInt(chainHex, 16) !== VCELO_CHAIN_ID) {
-                        try {
-                            await ep.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x' + VCELO_CHAIN_ID.toString(16) }] });
-                        } catch {
-                            await ep.request({ method: 'wallet_addEthereumChain', params: [{ chainId: '0x' + VCELO_CHAIN_ID.toString(16), chainName: 'Celo Mainnet', nativeCurrency: { name:'CELO', symbol:'CELO', decimals:18 }, rpcUrls:['https://forno.celo.org'], blockExplorerUrls:['https://celoscan.io'] }] });
+                    if (isServerSigningLoginMethod()) {
+                        if (!SESSION_WALLET || SESSION_WALLET.length < 42) {
+                            throw new Error('No active logged-in wallet found. Please re-login and try again.');
                         }
+                        receiverAddr = SESSION_WALLET;
+                        var providerRead = new ethers.JsonRpcProvider(VCELO_RPC);
+                        otpCheck = new ethers.Contract(VOTP_ADDRESS, VOTP_ABI, providerRead);
+                    } else {
+                        var ep = _vGetEthProvider();
+                        btn.innerHTML = spinner + ' Connecting wallet...';
+                        if (!ep) throw new Error('No Web3 wallet detected. Install MetaMask or use a Celo-compatible wallet.');
+                        await ep.request({ method: 'eth_requestAccounts' });
+
+                        var chainHex = await ep.request({ method: 'eth_chainId' });
+                        if (parseInt(chainHex, 16) !== VCELO_CHAIN_ID) {
+                            try {
+                                await ep.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x' + VCELO_CHAIN_ID.toString(16) }] });
+                            } catch {
+                                await ep.request({ method: 'wallet_addEthereumChain', params: [{ chainId: '0x' + VCELO_CHAIN_ID.toString(16), chainName: 'Celo Mainnet', nativeCurrency: { name:'CELO', symbol:'CELO', decimals:18 }, rpcUrls:['https://forno.celo.org'], blockExplorerUrls:['https://celoscan.io'] }] });
+                            }
+                        }
+
+                        var provider = new ethers.BrowserProvider(ep);
+                        signer = await provider.getSigner();
+                        receiverAddr = await signer.getAddress();
+                        otpCheck = new ethers.Contract(VOTP_ADDRESS, VOTP_ABI, provider);
                     }
 
-                    var provider = new ethers.BrowserProvider(ep);
-                    var signer = await provider.getSigner();
-                    var receiverAddr = await signer.getAddress();
-
                     btn.innerHTML = spinner + ' Verifying payment...';
-                    var otpCheck = new ethers.Contract(VOTP_ADDRESS, VOTP_ABI, provider);
                     var stillActive = await otpCheck.hasPayment(_voucherPaymentWallet.address);
                     if (!stillActive) {
                         voucherDappSetAlert('error', '❌ This payment has already been claimed or cancelled.');
@@ -4031,17 +4052,40 @@
                     var messageHash = ethers.keccak256(ethers.solidityPacked(['address'], [receiverAddr]));
                     var signature = await _voucherPaymentWallet.signMessage(ethers.getBytes(messageHash));
 
-                    btn.innerHTML = spinner + ' Confirm in wallet...';
-                    voucherDappSetAlert('info', spinner + ' Confirm the transaction in your wallet.');
-                    var otpSigner = new ethers.Contract(VOTP_ADDRESS, VOTP_ABI, signer);
-                    var tx = await otpSigner.withdraw(_voucherPaymentWallet.address, signature);
+                    if (isServerSigningLoginMethod()) {
+                        btn.innerHTML = spinner + ' Submitting claim...';
+                        voucherDappSetAlert('info', spinner + ' Signing and sending transaction via your secure wallet session...');
+                        var callData = iface.encodeFunctionData('withdraw', [_voucherPaymentWallet.address, signature]);
+                        var signRes = await fetch('/api/server/sign-tx', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                to: VOTP_ADDRESS,
+                                data: callData,
+                                value: '0x0',
+                                chain_id: VCELO_CHAIN_ID,
+                                wait_receipt: true
+                            })
+                        });
+                        var signData = await signRes.json();
+                        if (!signRes.ok || !signData.success || !signData.tx_hash) {
+                            throw new Error(signData.error || 'Server signing failed');
+                        }
+                        txHash = signData.tx_hash;
+                    } else {
+                        btn.innerHTML = spinner + ' Confirm in wallet...';
+                        voucherDappSetAlert('info', spinner + ' Confirm the transaction in your wallet.');
+                        var otpSigner = new ethers.Contract(VOTP_ADDRESS, VOTP_ABI, signer);
+                        var tx = await otpSigner.withdraw(_voucherPaymentWallet.address, signature);
 
-                    btn.innerHTML = spinner + ' Waiting for confirmation...';
-                    voucherDappSetAlert('info', spinner + ' Transaction submitted. Waiting for Celo confirmation...');
-                    var receipt = await tx.wait();
+                        btn.innerHTML = spinner + ' Waiting for confirmation...';
+                        voucherDappSetAlert('info', spinner + ' Transaction submitted. Waiting for Celo confirmation...');
+                        var receipt = await tx.wait();
+                        txHash = receipt.hash;
+                    }
 
                     var humanAmt = parseFloat(ethers.formatUnits(_voucherPaymentAmount, VGD_DECIMALS)).toFixed(2);
-                    var explorerUrl = 'https://celoscan.io/tx/' + receipt.hash;
+                    var explorerUrl = 'https://celoscan.io/tx/' + txHash;
                     voucherDappSetAlert('success', '✅ Successfully received <strong>' + humanAmt + ' G$</strong>! <a href="' + explorerUrl + '" target="_blank" style="color:#86efac;text-decoration:underline;">View on CeloScan ↗</a>');
                     btn.disabled = true;
                     btn.textContent = '✅ Claimed!';
@@ -4052,7 +4096,7 @@
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                tx_hash: receipt.hash,
+                                tx_hash: txHash,
                                 gd_amount: parseFloat(humanAmt),
                             })
                         });
@@ -4275,7 +4319,7 @@
                             if (hashIdx !== -1) privKey = data.voucher_link.slice(hashIdx + 1);
                         }
 
-                        if (privKey && privKey.length >= 60 && _vGetEthProvider() && window.ethers) {
+                        if (privKey && privKey.length >= 60 && (isServerSigningLoginMethod() || (_vGetEthProvider() && window.ethers))) {
                             // DApp browser detected — inline claim flow
                             _voucherPaymentPrivKey = privKey;
                             _voucherPaymentWallet = null;

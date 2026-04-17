@@ -4872,7 +4872,11 @@ def send_link_page():
 @routes.route("/claim")
 def claim_page():
     """Claim page for one-time payment links — no login required"""
-    return render_template("claim.html")
+    return render_template(
+        "claim.html",
+        login_method=session.get("login_method", "walletconnect"),
+        wallet=session.get("wallet", "")
+    )
 
 
 # ── Payment Link helpers ────────────────────────────────────────────────────
