@@ -972,6 +972,9 @@
                 ⚠️ <strong>Never share your private key with anyone.</strong><br>
                 Turnkey export requires an email OTP for security. GoodMarket staff will never ask for your private key.
             </div>
+            <div style="background:rgba(255,82,82,0.08);border:1px solid rgba(255,82,82,0.25);border-radius:10px;padding:0.7rem 0.8rem;font-size:0.78rem;color:#fecaca;margin:-0.2rem 0 0.85rem;line-height:1.45;">
+                🔐 <strong>High-risk action:</strong> Exporting your key removes Turnkey protection. Anyone who gets this key can instantly control your funds.
+            </div>
 
             <div class="form-group">
                 <label class="form-label">Email for OTP Verification</label>
@@ -980,6 +983,10 @@
             <div class="form-group" style="display:flex;gap:0.5rem;">
                 <input class="form-input" id="pkOtpInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6-digit code" autocomplete="one-time-code" spellcheck="false" style="flex:1;">
                 <button class="btn-secondary" id="pkSendCodeBtn" onclick="sendTurnkeyExportCode()" style="width:auto;flex-shrink:0;margin-top:0;white-space:nowrap;padding:0 0.9rem;">Send Code</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Type <strong>EXPORT MY KEY</strong> to continue</label>
+                <input class="form-input" id="pkRiskConfirmInput" type="text" placeholder="EXPORT MY KEY" autocomplete="off" spellcheck="false">
             </div>
 
             <div class="pk-box" id="pkDisplay"></div>
@@ -1408,6 +1415,7 @@
     // ── Private Key Export ───────────────────────────────────
     let pkRevealed = false;
     let turnkeyExportOtpVerified = false;
+    let turnkeyExportToken = null;
 
     async function sendTurnkeyExportCode() {
         clearAlert('pkAlert');
@@ -1435,6 +1443,7 @@
                 return;
             }
             turnkeyExportOtpVerified = false;
+            turnkeyExportToken = null;
             showAlert('pkAlert', 'alert-success', '✅ Code sent. Enter the 6-digit code then tap export.');
         } catch (e) {
             showAlert('pkAlert', 'alert-error', '❌ ' + (e.message || 'Network error'));
@@ -1459,6 +1468,20 @@
         try {
             let requestBody = {};
             if (LOGIN_METHOD === 'turnkey') {
+                const dangerAck = "EXPORT MY KEY";
+                const confirmInput = (document.getElementById('pkRiskConfirmInput')?.value || '').trim();
+                if (confirmInput !== dangerAck) {
+                    showAlert('pkAlert', 'alert-error', `❌ Type "${dangerAck}" exactly to continue`);
+                    return;
+                }
+                const finalConfirm = window.confirm(
+                    'Final warning: exporting your private key can permanently expose your wallet.\n\nContinue export?'
+                );
+                if (!finalConfirm) {
+                    showAlert('pkAlert', 'alert-info', 'ℹ️ Export cancelled for safety.');
+                    return;
+                }
+
                 const email = (document.getElementById('pkEmailInput')?.value || '').trim().toLowerCase();
                 const code = (document.getElementById('pkOtpInput')?.value || '').trim();
                 if (!email || !email.includes('@')) {
@@ -1481,8 +1504,15 @@
                         return;
                     }
                     turnkeyExportOtpVerified = true;
+                    turnkeyExportToken = verifyData.export_token || null;
+                }
+                if (!turnkeyExportToken) {
+                    showAlert('pkAlert', 'alert-error', '❌ Export session missing. Verify OTP again.');
+                    turnkeyExportOtpVerified = false;
+                    return;
                 }
                 requestBody.email = email;
+                requestBody.export_token = turnkeyExportToken;
                 btn.textContent = 'Exporting…';
             }
 
@@ -1508,6 +1538,10 @@
             pkBox.style.display = 'block';
             btn.textContent = '🙈 Hide Private Key';
             pkRevealed = true;
+            if (LOGIN_METHOD === 'turnkey') {
+                turnkeyExportToken = null;
+                turnkeyExportOtpVerified = false;
+            }
         } catch (e) {
             showAlert('pkAlert', 'alert-error', '❌ ' + (e.message || 'Network error retrieving key'));
         } finally {
