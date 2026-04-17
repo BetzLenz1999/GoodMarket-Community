@@ -6045,6 +6045,7 @@ def gas_faucet():
     """
     import time
     try:
+        data = request.get_json(silent=True) or {}
         from web3 import Web3
         from eth_account import Account
         from blockchain import CELO_RPC, CELO_CHAIN_ID
@@ -6053,10 +6054,24 @@ def gas_faucet():
         if not wallet:
             return jsonify({"success": False, "error": "Not logged in"}), 401
 
+        # Anti-abuse: allow faucet only for the logged-in user wallet.
+        requested_wallet = (data.get("wallet") or "").strip()
+        if requested_wallet:
+            if requested_wallet.lower() != wallet.lower():
+                return jsonify({
+                    "success": False,
+                    "gas_ready": False,
+                    "error": "Invalid wallet for faucet top-up. Only your own wallet can be topped up."
+                }), 403
+
         faucet_key = os.getenv("GAMES_KEY")
         if not faucet_key:
-            return jsonify({"success": False, "topped_up": False,
-                            "reason": "Gas faucet not configured"}), 200
+            return jsonify({
+                "success": False,
+                "topped_up": False,
+                "gas_ready": False,
+                "reason": "Faucet not configured (missing GAMES_KEY)"
+            }), 200
 
         w3 = Web3(Web3.HTTPProvider(CELO_RPC, request_kwargs={"timeout": 15}))
         checksum_wallet = Web3.to_checksum_address(wallet)
