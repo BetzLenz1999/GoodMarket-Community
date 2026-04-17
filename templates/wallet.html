@@ -759,7 +759,7 @@
             </div>
             <button class="copy-btn" onclick="copyAddress()" title="Copy address">⧉</button>
         </div>
-        <div class="balance-amount" id="totalBalanceUSD">$—</div>
+        <div class="balance-amount" id="totalBalanceUSD">— G$</div>
         <div class="balance-sub">Total Balance · Celo Network</div>
     </div>
 
@@ -1094,6 +1094,7 @@
     // ── Token state ──────────────────────────────────────────
     let gdBal = 0, celoBal = 0, cusdBal = 0, usdtBal = 0;
     let xdcBal = 0, xdcGdBal = 0;
+    let gdUsdPrice = 0;
     let selectedToken = 'GD';
 
     // ── Helpers ──────────────────────────────────────────────
@@ -1111,6 +1112,20 @@
     function fmt(n, decimals=4) {
         if (n === undefined || n === null) return '—';
         return Number(n).toLocaleString('en', { minimumFractionDigits: 0, maximumFractionDigits: decimals });
+    }
+
+    function updateTotalBalanceInGd() {
+        const totalBalanceEl = document.getElementById('totalBalanceUSD');
+        if (!totalBalanceEl) return;
+
+        // Convert non-G$ balances into G$ units using live G$/USD price when available.
+        // cUSD and USDT are treated as ~1 USD; CELO uses an existing rough USD estimate.
+        const celoUsdEstimate = (celoBal || 0) * 0.75;
+        const stableUsdTotal = (cusdBal || 0) + (usdtBal || 0);
+        const convertedToGd = gdUsdPrice > 0 ? (celoUsdEstimate + stableUsdTotal) / gdUsdPrice : 0;
+        const totalGd = (gdBal || 0) + (xdcGdBal || 0) + convertedToGd;
+
+        totalBalanceEl.textContent = fmt(totalGd, 4) + ' G$';
     }
 
     // ── Modal ────────────────────────────────────────────────
@@ -1161,11 +1176,13 @@
 
             if (data.gd && data.gd.success) {
                 gdBal = data.gd.balance || 0;
+                gdUsdPrice = Number(data.gd.gd_usd_price) || 0;
                 document.getElementById('gdBal').textContent = fmt(gdBal, 4) + ' G$';
                 document.getElementById('gdBalUSD').textContent = data.gd.usd_formatted || 'GoodDollar';
             } else {
                 document.getElementById('gdBal').textContent = '0 G$';
                 document.getElementById('gdBalUSD').textContent = 'GoodDollar';
+                gdUsdPrice = 0;
             }
 
             if (data.celo && data.celo.success) {
@@ -1191,11 +1208,7 @@
                 document.getElementById('usdtBal').textContent = '0 USDT';
             }
 
-            // Approximate total in USD (includes G$ if price is available)
-            const gdUSD = (data.gd && data.gd.usd_value) ? Number(data.gd.usd_value) : 0;
-            const totalUSD = (cusdBal || 0) + (usdtBal || 0) + (celoBal || 0) * 0.75 + gdUSD;
-            document.getElementById('totalBalanceUSD').textContent =
-                totalUSD > 0 ? '$' + fmt(totalUSD, 2) : '$0.00';
+            updateTotalBalanceInGd();
 
         } catch (e) {
             document.getElementById('gdBal').textContent = 'Error';
@@ -1230,6 +1243,7 @@
                 document.getElementById('xdcGdBal').textContent = '0 G$';
                 document.getElementById('xdcGdBalSub').textContent = 'GoodDollar on XDC';
             }
+            updateTotalBalanceInGd();
         } catch (e) {
             document.getElementById('xdcBal').textContent = '—';
             document.getElementById('xdcGdBal').textContent = '—';
