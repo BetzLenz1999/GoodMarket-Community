@@ -53,9 +53,9 @@ def get_supabase_client():
     global supabase, supabase_enabled
 
     if not SUPABASE_URL or not SUPABASE_KEY or SUPABASE_URL == "your-supabase-url":
-        logger.error("❌ SUPABASE NOT CONFIGURED!")
-        logger.error(f"   SUPABASE_URL exists: {bool(SUPABASE_URL)}")
-        logger.error(f"   SUPABASE_KEY exists: {bool(SUPABASE_KEY)}")
+        logger.warning("SUPABASE is not configured.")
+        logger.warning(f"SUPABASE_URL exists: {bool(SUPABASE_URL)}")
+        logger.warning(f"SUPABASE_KEY exists: {bool(SUPABASE_KEY)}")
         logger.warning("⚠️ Supabase not configured - using local analytics only")
         logger.info("💡 Set SUPABASE_URL and SUPABASE_ANON_KEY environment variables to enable Supabase logging")
         return None
@@ -175,6 +175,19 @@ CREATE TABLE IF NOT EXISTS user_data (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS email_wallet_links (
+    id SERIAL PRIMARY KEY,
+    email_hash VARCHAR(64) UNIQUE NOT NULL,
+    wallet_address VARCHAR(42) NOT NULL,
+    login_method VARCHAR(30) NOT NULL DEFAULT 'custodial',
+    custodial_key_enc TEXT,
+    turnkey_suborg_id TEXT,
+    turnkey_sign_with TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_email_wallet_links_wallet ON email_wallet_links(wallet_address);
 
 -- 1.1 Create news_articles table for news feed system
 CREATE TABLE IF NOT EXISTS news_articles (
