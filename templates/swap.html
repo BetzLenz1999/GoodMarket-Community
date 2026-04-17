@@ -723,6 +723,44 @@
             return window.ethereum;
         }
 
+        async function getConnectedSwapSigner() {
+            const ethProvider = _getEthProvider();
+            if (!ethProvider) throw new Error("No wallet detected. Please connect your GoodMarket wallet.");
+
+            const accounts = await ethProvider.request({ method: "eth_requestAccounts" });
+            if (!accounts || !accounts.length) throw new Error("No wallet account available.");
+            const account = accounts[0];
+            if (account.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+                throw new Error("Wrong wallet connected. Please switch to your GoodMarket wallet.");
+            }
+
+            const celoChainHex = "0xa4ec";
+            const currentChain = await ethProvider.request({ method: "eth_chainId" });
+            if ((currentChain || "").toLowerCase() !== celoChainHex) {
+                try {
+                    await ethProvider.request({
+                        method: "wallet_switchEthereumChain",
+                        params: [{ chainId: celoChainHex }]
+                    });
+                } catch (switchErr) {
+                    await ethProvider.request({
+                        method: "wallet_addEthereumChain",
+                        params: [{
+                            chainId: celoChainHex,
+                            chainName: "Celo Mainnet",
+                            nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
+                            rpcUrls: ["https://forno.celo.org"],
+                            blockExplorerUrls: ["https://celoscan.io"]
+                        }]
+                    });
+                }
+            }
+
+            const browserProvider = new ethers.BrowserProvider(ethProvider);
+            const signer = await browserProvider.getSigner();
+            return signer;
+        }
+
         // Token addresses on Celo mainnet
         const TOKENS = {
             GD: {
@@ -1453,9 +1491,111 @@
                 return;
             }
 
-            showAlert("alert-error", "⚠️ Turnkey wallet required. Please login using a Turnkey wallet to use Swap.");
-            if (currentQuote) setSwapBtnState("ready");
-            else setSwapBtnState("enter");
+            try {
+                const signer = await getConnectedSwapSigner();
+                const effSlip = effectiveSlippage(currentQuote);
+                const slippageBps = BigInt(Math.floor(effSlip * 100));
+                let amountIn = currentQuote.amountIn;
+
+                if (fromToken === "CELO") {
+                    const GAS_BUFFER_CELO = ethers.parseUnits("0.01", 18);
+                    const provider = signer.provider;
+                    const celoWei = await provider.getBalance(WALLET_ADDRESS);
+                    const maxSafe = celoWei > GAS_BUFFER_CELO ? celoWei - GAS_BUFFER_CELO : 0n;
+                    if (amountIn > maxSafe) {
+                        if (maxSafe <= 0n) {
+                            showAlert("alert-error", "❌ Insufficient CELO — need at least 0.01 CELO for gas fees.");
+                            setSwapBtnState("ready");
+                            return;
+                        }
+                        amountIn = maxSafe;
+                        showAlert("alert-info", "ℹ️ Swap amount reduced slightly to reserve 0.01 CELO for gas fees.");
+                    }
+                }
+
+                stepIndicators.className = "step-indicators show";
+                step1.className = "step active";
+                step2.className = "step";
+                setSwapBtnState("loading", "Approving token...");
+                showAlert("alert-info", `<span class="spinner-inline"></span> Step 1/2 — Approving ${from.symbol} in your wallet…`);
+
+                const tokenContract = new ethers.Contract(from.address, ERC20_ABI, signer);
+                const allowance = await tokenContract.allowance(WALLET_ADDRESS, UNISWAP_ROUTER);
+                if (allowance < amountIn) {
+                    const approveTx = await tokenContract.approve(UNISWAP_ROUTER, amountIn * 2n);
+                    await approveTx.wait();
+                }
+                step1.className = "step done";
+
+                let freshAmountOut = currentQuote.amountOut;
+                try {
+                    const freshProvider = new ethers.JsonRpcProvider(CELO_RPC);
+                    const freshQuoter = new ethers.Contract(UNISWAP_QUOTER, QUOTER_ABI, freshProvider);
+                    if (currentQuote.isMulti && currentQuote.path) {
+                        const [newOut] = await freshQuoter.quoteExactInput.staticCall(currentQuote.path, amountIn);
+                        freshAmountOut = newOut;
+                    } else {
+                        const [newOut] = await freshQuoter.quoteExactInputSingle.staticCall({
+                            tokenIn: from.address,
+                            tokenOut: to.address,
+                            amountIn: amountIn,
+                            fee: currentQuote.fee,
+                            sqrtPriceLimitX96: 0n
+                        });
+                        freshAmountOut = newOut;
+                    }
+                } catch (reQuoteErr) {
+                    console.warn("[swap] wallet mode re-quote failed, using original quote:", reQuoteErr.message);
+                }
+                const amountOutMin = freshAmountOut * (10000n - slippageBps) / 10000n;
+
+                step2.className = "step active";
+                setSwapBtnState("loading", "Executing swap...");
+                showAlert("alert-info", `<span class="spinner-inline"></span> Step 2/2 — Confirm swap in your wallet…`);
+
+                const router = new ethers.Contract(UNISWAP_ROUTER, ROUTER_ABI, signer);
+                const swapTx = currentQuote.isMulti && currentQuote.path
+                    ? await router.exactInput({
+                        path: currentQuote.path,
+                        recipient: WALLET_ADDRESS,
+                        amountIn: amountIn,
+                        amountOutMinimum: amountOutMin
+                    })
+                    : await router.exactInputSingle({
+                        tokenIn: from.address,
+                        tokenOut: to.address,
+                        fee: currentQuote.fee,
+                        recipient: WALLET_ADDRESS,
+                        amountIn: amountIn,
+                        amountOutMinimum: amountOutMin,
+                        sqrtPriceLimitX96: 0n
+                    });
+                await swapTx.wait();
+                step2.className = "step done";
+
+                const outHuman = parseFloat(ethers.formatUnits(currentQuote.amountOut, to.decimals));
+                const inHuman  = parseFloat(ethers.formatUnits(amountIn, from.decimals));
+                showAlert("alert-success",
+                    `✅ Swap submitted! ${inHuman.toFixed(from.displayDecimals)} ${from.symbol} → ≈${outHuman.toFixed(to.displayDecimals)} ${to.symbol}. ` +
+                    `<a href="https://celoscan.io/tx/${swapTx.hash}" target="_blank" rel="noopener" style="color:#86efac;text-decoration:underline;">View on CeloScan ↗</a>`
+                );
+                document.getElementById("amountIn").value  = "";
+                document.getElementById("amountOut").value = "";
+                currentQuote = null;
+                document.getElementById("quoteBox").classList.add("hidden");
+                setSwapBtnState("enter");
+                stepIndicators.className = "step-indicators";
+                await loadBalances();
+            } catch (err) {
+                stepIndicators.className = "step-indicators";
+                const rawMsg = err?.shortMessage || err?.message || "Unknown error";
+                const msg = rawMsg.toLowerCase().includes("user rejected")
+                    ? "Transaction cancelled in wallet."
+                    : rawMsg;
+                showAlert("alert-error", `❌ Swap failed: ${msg.substring(0, 150)}`);
+                if (currentQuote) setSwapBtnState("ready");
+                else setSwapBtnState("enter");
+            }
         }
     </script>
 </body>

@@ -1327,18 +1327,67 @@
                 return;
             }
 
+            let txHash = null;
             if (!window.isCustodialMode) {
-                showAlert('sendAlert', 'alert-error', '❌ Custodial or Turnkey wallet required to send.');
-                return;
+                const provider = _getEthProvider();
+                if (!provider) throw new Error('No wallet detected. Please connect your GoodMarket wallet.');
+
+                const accounts = await provider.request({ method: 'eth_requestAccounts' });
+                if (!accounts || !accounts.length) throw new Error('No wallet account available.');
+                const from = accounts[0];
+                if (from.toLowerCase() !== WALLET.toLowerCase()) {
+                    throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+                }
+
+                const targetChainId = Number(txData.chain_id || (isXdcToken ? 50 : 42220));
+                const targetChainHex = '0x' + targetChainId.toString(16);
+                const currentChain = await provider.request({ method: 'eth_chainId' });
+                if ((currentChain || '').toLowerCase() !== targetChainHex.toLowerCase()) {
+                    try {
+                        await provider.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ chainId: targetChainHex }]
+                        });
+                    } catch (switchErr) {
+                        if (targetChainId === 42220) {
+                            await provider.request({
+                                method: 'wallet_addEthereumChain',
+                                params: [{
+                                    chainId: '0xa4ec',
+                                    chainName: 'Celo Mainnet',
+                                    nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+                                    rpcUrls: ['https://forno.celo.org'],
+                                    blockExplorerUrls: ['https://celoscan.io']
+                                }]
+                            });
+                        } else {
+                            throw new Error('Please switch your wallet network before sending.');
+                        }
+                    }
+                }
+
+                const txParams = {
+                    from,
+                    to: txData.to,
+                    data: txData.data || '0x',
+                    value: txData.value || '0x0'
+                };
+                if (txData.gas) txParams.gas = txData.gas;
+                if (txData.gasPrice) txParams.gasPrice = txData.gasPrice;
+                txHash = await provider.request({
+                    method: 'eth_sendTransaction',
+                    params: [txParams]
+                });
+            } else {
+                const custRes = await fetch('/api/server/sign-tx', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ to: txData.to, data: txData.data, value: txData.value || '0x0', chain_id: txData.chain_id })
+                });
+                const custData = await custRes.json();
+                if (!custData.success) throw new Error(custData.error || 'Signing failed');
+                txHash = custData.tx_hash;
             }
-            const custRes = await fetch('/api/server/sign-tx', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ to: txData.to, data: txData.data, value: txData.value || '0x0', chain_id: txData.chain_id })
-            });
-            const custData = await custRes.json();
-            if (!custData.success) throw new Error(custData.error || 'Signing failed');
-            let txHash = custData.tx_hash;
 
             const explorerUrl = isXdcToken
                 ? `https://xdcscan.io/tx/${txHash}`
