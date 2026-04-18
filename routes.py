@@ -6603,10 +6603,47 @@ def _execute_onchain_faucet_topup(w3, checksum_wallet: str, correlation_id: str 
         "data": call_data,
     }
 
-    signed = faucet_acct.sign_transaction(tx)
-    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    tx_hash_hex = "0x" + tx_hash.hex()
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+    # Preflight signer CELO balance to avoid opaque RPC failures.
+    signer_balance_wei = int(w3.eth.get_balance(faucet_acct.address))
+    estimated_tx_cost_wei = int(tx["gas"] * tx["gasPrice"] + tx.get("value", 0))
+    if signer_balance_wei < estimated_tx_cost_wei:
+        logger.error(
+            f"❌ Faucet onchain insufficient signer funds wallet={checksum_wallet.lower()} source=onchain "
+            f"signer={signer_masked} signer_balance_wei={signer_balance_wei} tx_cost_wei={estimated_tx_cost_wei} "
+            f"shortfall_wei={estimated_tx_cost_wei - signer_balance_wei} correlation_id={correlation_id}"
+        )
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": "signer_insufficient_funds",
+            "error": "On-chain faucet signer has insufficient CELO for gas",
+            "signer_balance_wei": str(signer_balance_wei),
+            "estimated_tx_cost_wei": str(estimated_tx_cost_wei),
+            "shortfall_wei": str(estimated_tx_cost_wei - signer_balance_wei),
+        }
+
+    try:
+        signed = faucet_acct.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        tx_hash_hex = "0x" + tx_hash.hex()
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+    except Exception as e:
+        err = str(e)
+        reason = "rpc_error"
+        if "insufficient funds for gas" in err.lower():
+            reason = "signer_insufficient_funds"
+        logger.error(
+            f"❌ Faucet onchain exception wallet={checksum_wallet.lower()} source=onchain reason={reason} "
+            f"error={err} correlation_id={correlation_id}"
+        )
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": reason,
+            "error": err,
+            "signer_balance_wei": str(signer_balance_wei),
+            "estimated_tx_cost_wei": str(estimated_tx_cost_wei),
+        }
 
     if receipt and receipt.get("status") == 1:
         logger.info(
@@ -6711,6 +6748,12 @@ def faucet_gas():
         data = request.get_json(silent=True) or {}
         correlation_id = _get_faucet_correlation_id(data)
         force_onchain = _coerce_bool(data.get("force_onchain"))
+        diagnostics = {
+            "correlation_id": correlation_id,
+            "force_onchain": force_onchain,
+            "duplicate_window_minutes": FAUCET_DUPLICATE_WINDOW_MIN,
+            "stage": "init",
+        }
         checksum_wallet, err_resp, status_code = _validate_and_authorize_wallet(data)
         if err_resp:
             return err_resp, status_code
@@ -6742,14 +6785,20 @@ def faucet_gas():
             })
 
         recent_refill, seconds_remaining = _has_recent_refill(checksum_wallet)
+        diagnostics.update({
+            "recent_refill": bool(recent_refill),
+            "recent_refill_cooldown_seconds": int(seconds_remaining),
+        })
         if recent_refill and not force_onchain:
             flow_result["terminal_status"] = "recent_refill"
+            diagnostics["stage"] = "blocked_recent_refill"
             return jsonify({
                 "success": True,
                 "topped_up": False,
                 "status": "recent_refill",
                 "reason": f"Recent refill detected. Retry after ~{seconds_remaining}s.",
                 "recent_refill_cooldown_seconds": seconds_remaining,
+                "diagnostics": diagnostics,
                 **flow_result,
                 "debug": {
                     "pre_balance_wei": str(pre_balance_wei),
@@ -6772,6 +6821,7 @@ def faucet_gas():
         api_error = None
         if not force_onchain:
             flow_result["attempted_api"] = True
+            diagnostics["stage"] = "api_faucet"
             try:
                 payload = json.dumps({"chainId": 42220, "account": checksum_wallet}).encode("utf-8")
                 req = urllib.request.Request(
@@ -6792,6 +6842,11 @@ def faucet_gas():
                 "tx_hash": api_tx_hash,
                 "error": api_error,
             }
+            diagnostics.update({
+                "api_ok": bool(api_ok),
+                "api_tx_hash": api_tx_hash,
+                "api_error": api_error,
+            })
         else:
             api_error = "force_onchain_requested"
             onchain_fallback_reason = "forced_onchain"
@@ -6800,6 +6855,11 @@ def faucet_gas():
                 "tx_hash": None,
                 "error": api_error,
             }
+            diagnostics.update({
+                "api_ok": False,
+                "api_tx_hash": None,
+                "api_error": api_error,
+            })
 
         onchain_result = None
         topup_source = None
@@ -6838,6 +6898,10 @@ def faucet_gas():
                     "terminal_status": "gas_ready" if status_after_api["gas_ready"] else "api_accepted_pending",
                     "correlation_id": correlation_id,
                     "wallet": checksum_wallet.lower(),
+                    "diagnostics": {
+                        **diagnostics,
+                        "stage": "api_success",
+                    },
                     "debug": {
                         "pre_balance_wei": str(pre_balance_wei),
                         "post_balance_wei": str(post_balance_wei),
@@ -6861,6 +6925,7 @@ def faucet_gas():
         flow_result["attempted_onchain"] = True
         onchain_attempts = FAUCET_ONCHAIN_MAX_ATTEMPTS if force_onchain else 1
         onchain_attempt_history = []
+        diagnostics["stage"] = "onchain_fallback"
         for attempt in range(onchain_attempts):
             onchain_result = _execute_onchain_faucet_topup(w3, checksum_wallet, correlation_id=correlation_id)
             onchain_attempt_history.append({
@@ -6872,6 +6937,9 @@ def faucet_gas():
             })
             if onchain_result.get("success"):
                 break
+            if (onchain_result or {}).get("reason") == "signer_insufficient_funds":
+                # Retrying without replenishing signer CELO will not help.
+                break
         flow_result["onchain_result"] = onchain_result
         flow_result["onchain_attempt_history"] = onchain_attempt_history
         flow_result["onchain_attempts"] = len(onchain_attempt_history)
@@ -6879,10 +6947,12 @@ def faucet_gas():
             topup_source = "onchain"
             flow_result["topup_source"] = topup_source
             _clear_api_pending(checksum_wallet)
+            diagnostics["stage"] = "onchain_success"
         else:
             if api_ok:
                 # Keep pending marker visible for status polling/troubleshooting.
                 _set_api_pending(checksum_wallet, api_tx_hash, pre_balance_wei)
+            diagnostics["stage"] = "onchain_failed"
 
         status_after = _get_gas_status(w3, checksum_wallet)
         post_balance_wei = int(status_after["balance_wei"])
@@ -6912,6 +6982,14 @@ def faucet_gas():
                 "gas_ready" if status_after["gas_ready"] else
                 ("onchain_sent" if topped_up else ("api_failed" if onchain_fallback_reason == "api_failed" else "onchain_failed"))
             ),
+            "diagnostics": {
+                **diagnostics,
+                "fallback_reason": onchain_fallback_reason,
+                "onchain_success": bool((onchain_result or {}).get("success")),
+                "onchain_reason": (onchain_result or {}).get("reason"),
+                "onchain_tx_hash": (onchain_result or {}).get("tx_hash"),
+                "onchain_attempts": len(onchain_attempt_history),
+            },
             "attempted_api": flow_result["attempted_api"],
             "attempted_onchain": flow_result["attempted_onchain"],
             "api_result": flow_result["api_result"],
