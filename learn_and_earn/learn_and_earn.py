@@ -2949,7 +2949,7 @@ def list_nft_for_sale(current_user):
     try:
         from .nft_service import achievement_nft_service
 
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         token_id = int(data.get('token_id', 0))
         price_g = float(data.get('price_g', 0))
 
@@ -3031,7 +3031,7 @@ def delist_nft(current_user):
     try:
         from .nft_service import achievement_nft_service
 
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         token_id = int(data.get('token_id', 0))
 
         if token_id <= 0:
@@ -3100,7 +3100,7 @@ def burn_nft(current_user):
     try:
         from .nft_service import achievement_nft_service
 
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         token_id = int(data.get('token_id', 0))
 
         if token_id <= 0:
@@ -3122,6 +3122,12 @@ def burn_nft(current_user):
         nft = _sync_nft_owner_from_chain(supabase, nft_res.data[0], achievement_nft_service)
         if not _wallets_match(nft.get('owner_wallet'), current_user):
             return jsonify({'success': False, 'error': 'This NFT is currently owned by another wallet. Please refresh My NFTs.'}), 403
+
+        if nft.get('is_listed'):
+            return jsonify({
+                'success': False,
+                'error': 'This NFT is listed on the marketplace. Please delist it first before burning.'
+            }), 409
 
         score = int(nft.get('score', 0))
         total = int(nft.get('total', 1))
@@ -3192,7 +3198,6 @@ def burn_nft(current_user):
         supabase.table('achievement_nft_mints')\
             .delete()\
             .eq('token_id', token_id)\
-            .eq('owner_wallet', current_user)\
             .execute()
 
         # Invalidate caches after successful burn
