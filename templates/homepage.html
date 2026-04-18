@@ -2193,6 +2193,13 @@
             return `Login to GoodMarket\nWallet: ${address}\nTime: ${new Date().toISOString()}`;
         }
 
+        function utf8ToHex(message) {
+            if (typeof message !== 'string') return '0x';
+            return '0x' + Array.from(new TextEncoder().encode(message))
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('');
+        }
+
         async function postVerifyIdentity(walletAddress, signature, message, referralCode = '') {
             const resp = await fetch('/verify-identity', {
                 method: 'POST',
@@ -2223,8 +2230,9 @@
                 if (!accounts || !accounts.length) throw new Error('No wallet account found.');
                 const wallet = accounts[0];
                 const message = makeLoginMessage(wallet);
+                const messageHex = utf8ToHex(message);
                 showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve the login message in your wallet.', 'info');
-                const signature = await provider.request({ method: 'personal_sign', params: [message, wallet] });
+                const signature = await provider.request({ method: 'personal_sign', params: [messageHex, wallet] });
                 await postVerifyIdentity(wallet, signature, message, getPendingReferralCode());
                 showWalletStatus('walletConnectStatus', '✅ Signature verified. Redirecting...', 'success');
                 setTimeout(() => { window.location.href = '/wallet'; }, 900);
