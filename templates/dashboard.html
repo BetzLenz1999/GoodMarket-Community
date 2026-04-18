@@ -2888,6 +2888,8 @@
         // Track auto-dismiss timers so we can clear them if needed
         var _broadcastAutoTimers = {};
         var _broadcastCountdownTimers = {};
+        var _broadcastNotificationIds = {};
+        var _broadcastReadMarked = {};
 
         function _removeBannerEl(broadcastId) {
             const idStr = String(broadcastId);
@@ -2897,11 +2899,20 @@
                 dismissed.push(idStr);
                 localStorage.setItem('dismissedBroadcasts', JSON.stringify(dismissed));
             }
+
+            // Persist as read on backend so it stays dismissed across logins/devices
+            const notifId = _broadcastNotificationIds[idStr];
+            if (notifId && !_broadcastReadMarked[idStr]) {
+                _broadcastReadMarked[idStr] = true;
+                markAsRead(notifId, true);
+            }
+
             // Clear timers
             if (_broadcastAutoTimers[idStr]) clearTimeout(_broadcastAutoTimers[idStr]);
             if (_broadcastCountdownTimers[idStr]) clearInterval(_broadcastCountdownTimers[idStr]);
             delete _broadcastAutoTimers[idStr];
             delete _broadcastCountdownTimers[idStr];
+            delete _broadcastNotificationIds[idStr];
             // Remove element
             const el = document.getElementById('broadcastBanner_' + idStr);
             if (el) {
@@ -2919,7 +2930,7 @@
             if (!container) return;
 
             const dismissed = JSON.parse(localStorage.getItem('dismissedBroadcasts') || '[]');
-            const broadcasts = notifications.filter(n => n.type === 'admin_broadcast');
+            const broadcasts = notifications.filter(n => n.type === 'admin_broadcast' && !n.read);
 
             if (broadcasts.length === 0) {
                 container.innerHTML = '';
@@ -2931,6 +2942,7 @@
             broadcasts.forEach(notif => {
                 const broadcastId = notif.broadcast_id || notif.id;
                 if (dismissed.includes(String(broadcastId))) return;
+                _broadcastNotificationIds[String(broadcastId)] = notif.id;
 
                 const rawMessage = notif.message || '';
                 const firstSentence = getFirstSentence(rawMessage);
