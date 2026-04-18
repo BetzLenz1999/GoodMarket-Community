@@ -515,6 +515,7 @@ def verify_ubi():
         session["wallet"] = wallet # Keep this for backward compatibility if needed
         session["verified"] = True
         session["ubi_verified"] = True # Add this for clarity
+        session["login_method"] = "walletconnect"
         session.permanent = True
         analytics.track_verification_attempt(wallet, True)
         analytics.track_user_session(wallet)
@@ -1450,6 +1451,7 @@ def verify_identity():
         session['wallet_address'] = wallet_address
         session['verified'] = True
         session['ubi_verified'] = True
+        session['login_method'] = 'walletconnect'
         session['verification_time'] = datetime.now().isoformat()
 
         # Record unverified visit or log face-verified status for attribution
@@ -1561,6 +1563,55 @@ def verify_identity():
     except Exception as e:
         logger.error(f"❌ Identity verification error: {e}")
         return jsonify({'error': 'Verification failed'}), 500
+
+
+@app.route('/manual-wallet-login', methods=['POST'])
+def manual_wallet_login():
+    """
+    Fallback login using only a pasted wallet address (no signature).
+    This mode is convenient but weaker than signature-based login because
+    the server cannot cryptographically prove wallet ownership.
+    """
+    try:
+        data = request.get_json() or {}
+        wallet_address = (data.get('wallet_address') or '').strip()
+
+        if not wallet_address:
+            return jsonify({'success': False, 'error': 'Wallet address is required'}), 400
+
+        if not Web3.is_address(wallet_address):
+            return jsonify({'success': False, 'error': 'Invalid wallet address format'}), 400
+
+        try:
+            wallet_address = Web3.to_checksum_address(wallet_address)
+        except Exception:
+            return jsonify({'success': False, 'error': 'Could not normalize wallet address'}), 400
+
+        session.permanent = True
+        session['wallet'] = wallet_address
+        session['wallet_address'] = wallet_address
+        session['verified'] = True
+        session['ubi_verified'] = False
+        session['login_method'] = 'manual'
+        session['verification_time'] = datetime.now().isoformat()
+
+        logger.info(f"📝 Manual wallet login started for {wallet_address[:10]}... (signature skipped)")
+
+        return jsonify({
+            'success': True,
+            'message': 'Manual wallet login successful',
+            'wallet': wallet_address,
+            'login_method': 'manual',
+            'signature_required': False,
+            'security_note': (
+                'Signature login is more private and secure because it proves wallet ownership. '
+                'Manual mode is supported as a convenience fallback.'
+            ),
+            'redirect_to': '/wallet'
+        })
+    except Exception as e:
+        logger.error(f"❌ Manual wallet login error: {e}")
+        return jsonify({'success': False, 'error': 'Manual wallet login failed'}), 500
 
 
 @app.route('/fv-callback')
