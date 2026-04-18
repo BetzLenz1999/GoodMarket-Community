@@ -2219,6 +2219,7 @@
 
     // ── FV Link Generator (mirrors ClaimSDK.generateFVLink from @gooddollar/web3sdk-v2) ─────
     const LOGIN_METHOD = '{{ login_method }}';
+    const PREFER_WC_SIGNING = ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
     window._fvGenerateLink = null;
     (function() {
         if (typeof LZString === 'undefined') return;
@@ -2285,6 +2286,9 @@
                 if (!sig) throw new Error('Wallet did not return a signature.');
                 return sig.startsWith('0x') ? sig : '0x' + sig;
             } catch (personalErr) {
+                if (personalErr && (personalErr.code === 4001 || personalErr.code === 5000)) {
+                    throw personalErr;
+                }
                 const sig = await provider.request({
                     method: 'eth_sign',
                     params: [connected, msg]
@@ -2294,10 +2298,90 @@
             }
         }
 
+        function _toUtf8Hex(msg) {
+            return '0x' + Array.from(new TextEncoder().encode(msg))
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('');
+        }
+
+        function _isUserRejectedSigning(err) {
+            const code = err && err.code;
+            if (code === 4001 || code === 5000) return true;
+            const msg = String((err && (err.shortMessage || err.message)) || '').toLowerCase();
+            return msg.includes('user rejected') || msg.includes('rejected') || msg.includes('cancelled') || msg.includes('canceled');
+        }
+
+        function _getWalletConnectProvider() {
+            if (!window.ethereum) return null;
+            const providers = (window.ethereum.providers && window.ethereum.providers.length)
+                ? window.ethereum.providers
+                : [window.ethereum];
+            return providers.find(p =>
+                p && (
+                    p.isWalletConnect ||
+                    p.isMiniPay
+                )
+            ) || null;
+        }
+
+        async function signWithWalletConnect(address) {
+            const provider = _getWalletConnectProvider() || _getEthProvider();
+            if (!provider) {
+                throw new Error('WalletConnect signer unavailable. Reconnect your wallet and try again.');
+            }
+
+            const accounts = await provider.request({ method: 'eth_requestAccounts' });
+            if (!accounts || !accounts.length) {
+                throw new Error('No WalletConnect account available for signing.');
+            }
+            const connected = accounts[0];
+            if (connected.toLowerCase() !== address.toLowerCase()) {
+                throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet and try again.');
+            }
+
+            const msg = FV_IDENTIFIER_MSG2.replace('<account>', address);
+            const msgHex = _toUtf8Hex(msg);
+            const attempts = [
+                { method: 'personal_sign', params: [msgHex, connected], label: 'personal_sign(hex,address)' },
+                { method: 'personal_sign', params: [connected, msgHex], label: 'personal_sign(address,hex)' },
+                { method: 'personal_sign', params: [msg, connected], label: 'personal_sign(text,address)' },
+                { method: 'personal_sign', params: [connected, msg], label: 'personal_sign(address,text)' },
+                { method: 'eth_sign', params: [connected, msgHex], label: 'eth_sign(address,hex)' },
+                { method: 'eth_sign', params: [msgHex, connected], label: 'eth_sign(hex,address)' }
+            ];
+
+            let lastErr = null;
+            for (const attempt of attempts) {
+                try {
+                    const sig = await provider.request({
+                        method: attempt.method,
+                        params: attempt.params
+                    });
+                    if (!sig) throw new Error('Wallet did not return a signature.');
+                    console.log('✅ FV signed via WalletConnect using', attempt.label);
+                    return sig.startsWith('0x') ? sig : '0x' + sig;
+                } catch (err) {
+                    if (_isUserRejectedSigning(err)) {
+                        throw new Error('Signature cancelled in wallet.');
+                    }
+                    lastErr = err;
+                }
+            }
+
+            const raw = String((lastErr && (lastErr.shortMessage || lastErr.message)) || '').trim();
+            throw new Error(raw || 'WalletConnect signing failed. Please reconnect your wallet and try again.');
+        }
+
         window._fvGenerateLink = async function(address) {
+            const hasMiniPayInjected = !!(window.ethereum && (
+                window.ethereum.isMiniPay ||
+                (Array.isArray(window.ethereum.providers) && window.ethereum.providers.some(p => p && p.isMiniPay))
+            ));
             const sig = window.isCustodialMode
                 ? await signServerSide(address)
-                : await signWithWallet(address);
+                : ((PREFER_WC_SIGNING || hasMiniPayInjected)
+                    ? await signWithWalletConnect(address)
+                    : await signWithWallet(address));
             return buildFVLink(address, sig);
         };
 
