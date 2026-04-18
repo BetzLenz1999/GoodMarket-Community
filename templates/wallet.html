@@ -2106,6 +2106,24 @@
                 body: JSON.stringify({ wallet: WALLET })
             });
             const gasData = await gasRes.json();
+
+            // Defensive fallback: if /api/faucet/gas returns api_failed without attempting
+            // on-chain top-up, explicitly call /api/faucet/onchain (GAMES_KEY signer path).
+            if (gasData.status === 'api_failed' && !gasData.gas_ready && !gasData.onchain_result) {
+                const onchainRes = await fetch('/api/faucet/onchain', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wallet: WALLET })
+                });
+                const onchainData = await onchainRes.json();
+                gasData.onchain_result = onchainData;
+                if (onchainData && onchainData.success) {
+                    gasData.success = true;
+                    gasData.status = onchainData.status || 'onchain_sent';
+                    gasData.topup_source = 'onchain';
+                }
+            }
+
             if (!gasData.success && !gasData.gas_ready) {
                 throw new Error(gasData.error || gasData.reason || 'Faucet unavailable.');
             }
