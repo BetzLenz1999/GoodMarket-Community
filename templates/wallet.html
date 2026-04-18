@@ -2243,6 +2243,26 @@
             return 'https://goodid.gooddollar.org?lz=' + compressed;
         }
 
+        async function signWithInjectedWallet(address) {
+            const provider = _getEthProvider();
+            if (!provider) {
+                throw new Error('No wallet detected for signature. Re-open GoodMarket in your wallet browser or reconnect WalletConnect.');
+            }
+            const accounts = await provider.request({ method: 'eth_requestAccounts' });
+            if (!accounts || !accounts.length) {
+                throw new Error('No wallet account available for signature.');
+            }
+            const selected = accounts[0];
+            if ((selected || '').toLowerCase() !== (address || '').toLowerCase()) {
+                throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet and try again.');
+            }
+            const msg = FV_IDENTIFIER_MSG2.replace('<account>', address);
+            const messageHex = '0x' + Array.from(new TextEncoder().encode(msg)).map(b => b.toString(16).padStart(2, '0')).join('');
+            const signature = await provider.request({ method: 'personal_sign', params: [messageHex, selected] });
+            if (!signature) throw new Error('Wallet signature failed');
+            return signature.startsWith('0x') ? signature : ('0x' + signature);
+        }
+
         async function signServerSide(address) {
             // Use address as-is (checksummed) in the message — GoodID verifies against checksummed form.
             // Matches ethers.js signer.getAddress() behaviour in the SDK's getFvSig().
@@ -2261,7 +2281,10 @@
         }
 
         window._fvGenerateLink = async function(address) {
-            const sig = await signServerSide(address);
+            const method = (LOGIN_METHOD || '').toLowerCase();
+            const sig = (method === 'custodial' || method === 'turnkey')
+                ? await signServerSide(address)
+                : await signWithInjectedWallet(address);
             return buildFVLink(address, sig);
         };
 
