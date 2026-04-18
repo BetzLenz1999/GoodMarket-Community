@@ -1865,7 +1865,7 @@
                     <label class="wallet-label" for="manualReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
                     <input type="text" id="manualReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" />
                 </div>
-                <button class="connect-btn" onclick="verifyManualAddress()">Continue Without Signature</button>
+                <button class="connect-btn" onclick="verifyManualAddress()">Continue to Wallet (Manual Mode)</button>
                 <div id="manualAddressStatus" class="status-message"></div>
                 <div style="margin-top:0.7rem;font-size:0.8rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.7rem 0.8rem;line-height:1.6;">
                     ⚠️ Please use MetaMask / TrustWallet dapp wallet browser to access goodmarket.live full features.
@@ -2242,15 +2242,37 @@
                 showWalletStatus('manualAddressStatus', 'Please enter a valid EVM address (0x...)', 'error');
                 return;
             }
-            sessionStorage.setItem('manual_wallet_address', raw);
-            if (referral) {
-                sessionStorage.setItem('pending_referral_code', referral);
+            showWalletStatus('manualAddressStatus', '⏳ Logging in using manual wallet mode…', 'info');
+            try {
+                const resp = await fetch('/manual-wallet-login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        wallet_address: raw,
+                        referral_code: referral || ''
+                    })
+                });
+                const data = await resp.json();
+                if (!(resp.ok && data.success)) {
+                    throw new Error(data.error || data.message || 'Manual login failed');
+                }
+                sessionStorage.setItem('manual_wallet_address', raw);
+                if (referral) {
+                    sessionStorage.setItem('pending_referral_code', referral);
+                }
+                showWalletStatus('manualAddressStatus', '✅ Manual login successful. Redirecting to wallet page…', 'success');
+                showWalletStatus(
+                    'walletConnectStatus',
+                    'ℹ️ You are in manual mode (no signature proof). For best security/privacy and ownership proof, use signature login via injected wallet or WalletConnect.',
+                    'warning'
+                );
+                setTimeout(() => {
+                    window.location.href = data.redirect_to || '/wallet';
+                }, 700);
+            } catch (err) {
+                const msg = (err && err.message) ? err.message : 'Manual wallet login failed';
+                showWalletStatus('manualAddressStatus', `❌ ${msg}`, 'error');
             }
-            showWalletStatus('manualAddressStatus', '✅ Address saved. Please use MetaMask / TrustWallet dapp wallet browser to access goodmarket.live full features, then continue with injected wallet or WalletConnect signature login.', 'warning');
-            showWalletStatus('walletConnectStatus', '⚠️ Manual address is saved, but login still requires wallet signature. Please use MetaMask / TrustWallet dapp wallet browser to access goodmarket.live full features.', 'warning');
-            setTimeout(() => {
-                showWalletConnectOptions();
-            }, 800);
         }
 
         window._wcSignClient = null;

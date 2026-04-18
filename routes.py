@@ -1103,6 +1103,7 @@ def verify_ubi():
             # Store in session
             session["wallet"] = wallet_address
             session["verified"] = True
+            session["login_method"] = "walletconnect"
 
             # Check actual GoodDollar face verification status.
             # Even though we allow all wallets in, we still want to track
