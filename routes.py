@@ -6603,10 +6603,47 @@ def _execute_onchain_faucet_topup(w3, checksum_wallet: str, correlation_id: str 
         "data": call_data,
     }
 
-    signed = faucet_acct.sign_transaction(tx)
-    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    tx_hash_hex = "0x" + tx_hash.hex()
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+    # Preflight signer CELO balance to avoid opaque RPC failures.
+    signer_balance_wei = int(w3.eth.get_balance(faucet_acct.address))
+    estimated_tx_cost_wei = int(tx["gas"] * tx["gasPrice"] + tx.get("value", 0))
+    if signer_balance_wei < estimated_tx_cost_wei:
+        logger.error(
+            f"❌ Faucet onchain insufficient signer funds wallet={checksum_wallet.lower()} source=onchain "
+            f"signer={signer_masked} signer_balance_wei={signer_balance_wei} tx_cost_wei={estimated_tx_cost_wei} "
+            f"shortfall_wei={estimated_tx_cost_wei - signer_balance_wei} correlation_id={correlation_id}"
+        )
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": "signer_insufficient_funds",
+            "error": "On-chain faucet signer has insufficient CELO for gas",
+            "signer_balance_wei": str(signer_balance_wei),
+            "estimated_tx_cost_wei": str(estimated_tx_cost_wei),
+            "shortfall_wei": str(estimated_tx_cost_wei - signer_balance_wei),
+        }
+
+    try:
+        signed = faucet_acct.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        tx_hash_hex = "0x" + tx_hash.hex()
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+    except Exception as e:
+        err = str(e)
+        reason = "rpc_error"
+        if "insufficient funds for gas" in err.lower():
+            reason = "signer_insufficient_funds"
+        logger.error(
+            f"❌ Faucet onchain exception wallet={checksum_wallet.lower()} source=onchain reason={reason} "
+            f"error={err} correlation_id={correlation_id}"
+        )
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": reason,
+            "error": err,
+            "signer_balance_wei": str(signer_balance_wei),
+            "estimated_tx_cost_wei": str(estimated_tx_cost_wei),
+        }
 
     if receipt and receipt.get("status") == 1:
         logger.info(
@@ -6899,6 +6936,9 @@ def faucet_gas():
                 "tx_hash": (onchain_result or {}).get("tx_hash"),
             })
             if onchain_result.get("success"):
+                break
+            if (onchain_result or {}).get("reason") == "signer_insufficient_funds":
+                # Retrying without replenishing signer CELO will not help.
                 break
         flow_result["onchain_result"] = onchain_result
         flow_result["onchain_attempt_history"] = onchain_attempt_history
