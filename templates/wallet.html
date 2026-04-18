@@ -43,7 +43,8 @@
                 linear-gradient(180deg, var(--bg2) 0%, var(--bg) 60%, #050910 100%);
             color: var(--text);
             min-height: 100vh;
-            max-width: 480px;
+            width: 100%;
+            max-width: 1180px;
             margin: 0 auto;
             position: relative;
         }
@@ -168,29 +169,38 @@
         /* ── Action Buttons ── */
         .action-row {
             display: flex;
-            gap: 0.5rem;
-            padding: 0 1.25rem;
-            overflow-x: auto;
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-            margin-bottom: 1.5rem;
+            flex-direction: column;
+            gap: 0.55rem;
+            padding: 0;
+            margin-bottom: 0;
+            overflow: visible;
         }
-        .action-row::-webkit-scrollbar { display: none; }
         .action-item {
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             align-items: center;
-            gap: 0.45rem;
-            flex-shrink: 0;
+            justify-content: flex-start;
+            gap: 0.72rem;
+            width: 100%;
+            padding: 0.5rem 0.65rem;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.02);
             cursor: pointer;
+            transition: border-color 0.2s ease, background 0.2s ease;
+        }
+        .action-item:hover {
+            border-color: rgba(var(--accent-rgb),0.35);
+            background: rgba(var(--accent-rgb),0.04);
         }
         .action-circle {
-            width: 58px; height: 58px;
+            width: 42px; height: 42px;
             border-radius: 50%;
             background: rgba(255,255,255,0.06);
             border: 1px solid rgba(255,255,255,0.12);
             display: flex; align-items: center; justify-content: center;
-            font-size: 1.35rem;
+            font-size: 1rem;
+            flex-shrink: 0;
             transition: all 0.2s;
         }
         .action-item:hover .action-circle {
@@ -261,18 +271,29 @@
             50% { transform: translateY(-1.5px); }
         }
         .action-label {
-            font-size: 0.72rem;
+            font-size: 0.86rem;
             font-weight: 600;
             color: var(--text-dim);
             white-space: nowrap;
         }
-        .wallet-layout { display: block; }
+        .wallet-layout {
+            display: grid;
+            grid-template-columns: minmax(140px, 38%) minmax(0, 1fr);
+            gap: 0.9rem;
+            align-items: start;
+            padding: 0 1.25rem;
+        }
+        .sidebar-nav {
+            position: sticky;
+            top: 82px;
+            align-self: start;
+        }
         .wallet-main { min-width: 0; }
 
         /* ── Tabs ── */
         .tab-bar {
             display: flex;
-            margin: 0 1.25rem 1rem;
+            margin: 0 0 1rem;
             border-bottom: 1px solid rgba(255,255,255,0.07);
         }
         .tab {
@@ -296,7 +317,7 @@
         }
 
         /* ── Token List ── */
-        .token-list { padding: 0 1.25rem; }
+        .token-list { padding: 0; }
         .token-item {
             display: flex;
             align-items: center;
@@ -340,7 +361,7 @@
         }
 
         /* ── Transaction History ── */
-        .tx-list { padding: 0 1.25rem; }
+        .tx-list { padding: 0; }
         .tx-item {
             display: flex;
             align-items: center;
@@ -726,50 +747,42 @@
             color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            padding: 0.75rem 1.25rem 0.4rem;
+            padding: 0.75rem 0 0.4rem;
         }
 
         @media (min-width: 992px) {
             .wallet-layout {
-                display: grid;
-                grid-template-columns: 220px minmax(0, 1fr);
+                grid-template-columns: 230px minmax(0, 1fr);
                 gap: 1rem;
-                align-items: start;
-                padding: 0 1.25rem;
             }
-            .sidebar-nav {
-                position: sticky;
-                top: 82px;
-                align-self: start;
+        }
+
+        @media (max-width: 560px) {
+            .wallet-layout {
+                grid-template-columns: minmax(124px, 41%) minmax(0, 1fr);
+                gap: 0.72rem;
+                padding: 0 0.9rem;
             }
-            .action-row {
-                flex-direction: column;
-                gap: 0.55rem;
-                padding: 0;
-                margin-bottom: 0;
-                overflow: visible;
+            .balance-card {
+                margin-left: 0.9rem;
+                margin-right: 0.9rem;
+            }
+            .top-bar {
+                padding-left: 0.9rem;
+                padding-right: 0.9rem;
             }
             .action-item {
-                width: 100%;
-                flex-direction: row;
-                justify-content: flex-start;
-                gap: 0.7rem;
-                padding: 0.5rem 0.65rem;
-                border-radius: 14px;
-                border: 1px solid rgba(255,255,255,0.08);
-                background: rgba(255,255,255,0.02);
+                gap: 0.58rem;
+                padding: 0.45rem 0.52rem;
             }
-            .action-item:hover { border-color: rgba(var(--accent-rgb),0.35); }
             .action-circle {
-                width: 42px;
-                height: 42px;
-                font-size: 1rem;
-                flex-shrink: 0;
+                width: 40px;
+                height: 40px;
+                font-size: 0.95rem;
             }
-            .action-label { font-size: 0.86rem; }
-            .tab-bar { margin: 0 0 1rem; }
-            .token-list, .tx-list { padding: 0; }
-            .section-label { padding-left: 0; padding-right: 0; }
+            .action-label {
+                font-size: 0.8rem;
+            }
         }
 
         @media (min-width: 481px) {
@@ -941,7 +954,7 @@
 
             <!-- Activity Tab -->
             <div id="activityPanel" style="display:none;">
-                <div class="section-label" style="display:flex;justify-content:space-between;align-items:center;padding-right:1.25rem;">
+                <div class="section-label" style="display:flex;justify-content:space-between;align-items:center;">
                     <span>Transaction History</span>
                     <button onclick="loadHistory(true)" style="background:none;border:none;color:var(--blue);font-size:0.78rem;cursor:pointer;font-weight:600;">↻ Refresh</button>
                 </div>
