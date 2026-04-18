@@ -57,9 +57,22 @@ def _load_deployment():
         return None, None
 
     if DEPLOYMENT_FILE.exists():
-        with open(DEPLOYMENT_FILE) as f:
-            data = json.load(f)
-        return data.get("contract_address"), data.get("abi")
+        try:
+            with open(DEPLOYMENT_FILE) as f:
+                data = json.load(f)
+            return data.get("contract_address"), data.get("abi")
+        except Exception as e:
+            # Keep the dashboard usable even if the local deployment artifact
+            # is missing/corrupted/non-JSON (e.g., accidental overwrite).
+            logger.warning(
+                "⚠️ Could not parse %s as deployment JSON: %s. "
+                "Falling back to UNIFIED_TREASURY_ADDRESS.",
+                DEPLOYMENT_FILE,
+                e,
+            )
+            if env_address:
+                return env_address, None
+            return None, None
 
     return env_address, None
 
