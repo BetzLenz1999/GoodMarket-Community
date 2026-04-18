@@ -827,12 +827,15 @@
             <div class="top-bar-subtitle">Powered by Community Moderators</div>
         </div>
         <div style="display:flex;gap:0.3rem;align-items:center;">
-            <a href="/dashboard" class="icon-btn" title="Dashboard" style="text-decoration:none;font-size:1rem;">📊</a>
+            <a href="/dashboard" class="icon-btn" title="Dashboard" style="text-decoration:none;font-size:1rem;" onclick="return handleDashboardFromWallet(event)">📊</a>
             <a href="/overview" class="icon-btn" title="Overview" style="text-decoration:none;font-size:1rem;">🏠</a>
         </div>
     </div>
     <div id="walletReminderBanner" class="wallet-reminder-banner hidden">
         ⚠️ Swap, claim G$, and send are supported only on dApp wallet browsers like MiniPay, Trust Wallet, and MetaMask (desktop users need the MetaMask extension).
+    </div>
+    <div id="walletDashboardFVMsg" class="alert alert-info" style="display:none;margin:0.9rem 1rem 0;padding:0.75rem 0.9rem;text-align:center;border-radius:12px;">
+        Please click <strong>Claim G$</strong> button to start your face verification to start G$ daily claiming and using GoodMarket full features.
     </div>
 
     <!-- Balance Card -->
@@ -874,7 +877,7 @@
                     <div class="action-circle">🏦</div>
                     <span class="action-label">Savings</span>
                 </div>
-                <div class="action-item" onclick="window.location.href='/dashboard'">
+                <div class="action-item" onclick="handleDashboardFromWallet(event)">
                     <div class="action-circle">📊</div>
                     <span class="action-label">Dashboard</span>
                 </div>
@@ -1458,6 +1461,19 @@
         el.className = `alert ${cls} show`;
         el.innerHTML = html;
     }
+    function handleDashboardFromWallet(event) {
+        if (window._walletNeedsFV) {
+            if (event) event.preventDefault();
+            const msg = document.getElementById('walletDashboardFVMsg');
+            if (msg) {
+                msg.style.display = 'block';
+                msg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            return false;
+        }
+        window.location.href = '/dashboard';
+        return false;
+    }
     function clearAlert(id) {
         const el = document.getElementById(id);
         el.className = 'alert';
@@ -1733,6 +1749,7 @@
         const SESSION_WALLET = WALLET.toLowerCase();
         let claimed = false;
         let needsVerification = false;
+        window._walletNeedsFV = false;
         let _countdownInterval = null;
 
         const btn    = document.getElementById('ubiClaimBtn');
@@ -1789,6 +1806,7 @@
             if (needsVerify) {
                 _hideReVerifyHint();
                 needsVerification = true;
+                window._walletNeedsFV = true;
                 btn.style.background = 'linear-gradient(135deg,#7c3aed,#6d28d9)';
                 icon.textContent = '🪪';
                 label.textContent = isReverify ? 'Re-verify Face ID to Claim' : 'Verify Face ID to Claim';
@@ -1803,6 +1821,7 @@
             } else if (d.success && d.can_claim) {
                 _hideReVerifyHint();
                 needsVerification = false;
+                window._walletNeedsFV = false;
                 label.textContent = 'Claim ' + d.entitlement_formatted + ' G$';
                 icon.textContent = '🪙';
                 btn.style.background = '';
@@ -1812,6 +1831,7 @@
             } else if (d.success && !d.can_claim) {
                 _hideReVerifyHint();
                 needsVerification = false;
+                window._walletNeedsFV = false;
                 label.textContent = 'Already Claimed Today';
                 icon.textContent = '✅';
                 btn.disabled = true;
@@ -1820,6 +1840,7 @@
                 window._celoCanClaim = false;
             } else {
                 needsVerification = false;
+                window._walletNeedsFV = false;
                 label.textContent = 'Claim G$';
                 icon.textContent = '🪙';
                 btn.disabled = false;
@@ -1831,6 +1852,7 @@
         // Expose re-verify trigger so the "Re-verify" button can call it from global scope
         window._triggerReVerify = function() {
             needsVerification = true;
+            window._walletNeedsFV = true;
             btn.disabled = false;
             icon.textContent = '🪪';
             label.textContent = 'Re-verify Face ID to Claim';
