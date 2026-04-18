@@ -12,6 +12,8 @@ import threading
 import time
 import urllib.request
 import urllib.error
+from datetime import datetime, timedelta, timezone
+import re
 
 # Initialize notification service
 notification_service = NotificationService()
@@ -55,6 +57,22 @@ def admin_required(f):
         return f(*args, **kwargs)
     wrapper.__name__ = f.__name__
     return wrapper
+
+
+def _parse_iso_datetime(value):
+    """Safely parse ISO datetime strings to timezone-aware UTC datetime."""
+    if not value:
+        return None
+    try:
+        normalized = value.replace("Z", "+00:00") if isinstance(value, str) else value
+        dt = datetime.fromisoformat(normalized) if isinstance(normalized, str) else None
+        if not dt:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
 
 @routes.route('/api/daily-task/claim', methods=['POST'])
 @auth_required
@@ -1284,6 +1302,176 @@ def dashboard():
 
     import os as _os
     return render_template("dashboard.html", wallet=wallet)
+
+
+@routes.route("/api/user/username", methods=["GET"])
+@auth_required
+def get_user_username():
+    """Get current username and edit eligibility (once per year)."""
+    try:
+        wallet = session.get("wallet")
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({"success": False, "error": "Database unavailable"}), 500
+
+        user_result = safe_supabase_operation(
+            lambda: supabase.table("user_data")
+                .select("wallet_address, username, username_set_at, username_last_edited")
+                .ilike("wallet_address", wallet)
+                .limit(1)
+                .execute(),
+            operation_name="fetch username profile"
+        )
+
+        if not user_result or not user_result.data:
+            return jsonify({
+                "success": True,
+                "username": None,
+                "can_edit": True,
+                "next_edit_at": None,
+                "days_until_edit": 0
+            })
+
+        user = user_result.data[0]
+        username = user.get("username")
+        last_edit_dt = _parse_iso_datetime(user.get("username_last_edited")) or _parse_iso_datetime(user.get("username_set_at"))
+
+        can_edit = True
+        next_edit_at = None
+        days_until_edit = 0
+
+        if username and last_edit_dt:
+            next_allowed_dt = last_edit_dt + timedelta(days=365)
+            now_utc = datetime.now(timezone.utc)
+            if now_utc < next_allowed_dt:
+                can_edit = False
+                next_edit_at = next_allowed_dt.isoformat()
+                delta = next_allowed_dt - now_utc
+                days_until_edit = max(1, int((delta.total_seconds() + 86399) // 86400))
+
+        return jsonify({
+            "success": True,
+            "username": username,
+            "can_edit": can_edit,
+            "next_edit_at": next_edit_at,
+            "days_until_edit": days_until_edit
+        })
+    except Exception as e:
+        logger.error(f"❌ Error getting username: {e}")
+        return jsonify({"success": False, "error": "Failed to load username"}), 500
+
+
+@routes.route("/api/user/username", methods=["POST"])
+@auth_required
+def update_user_username():
+    """Set or update username with once-per-year edit limit."""
+    try:
+        wallet = session.get("wallet")
+        data = request.get_json() or {}
+        raw_username = (data.get("username") or "").strip()
+
+        if not raw_username:
+            return jsonify({"success": False, "error": "Username is required"}), 400
+
+        if not re.fullmatch(r"[A-Za-z0-9_]{3,24}", raw_username):
+            return jsonify({
+                "success": False,
+                "error": "Username must be 3-24 characters and contain only letters, numbers, and underscore (_)"
+            }), 400
+
+        normalized_username = raw_username.lower()
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({"success": False, "error": "Database unavailable"}), 500
+
+        existing_username = safe_supabase_operation(
+            lambda: supabase.table("user_data")
+                .select("wallet_address, username")
+                .ilike("username", normalized_username)
+                .limit(1)
+                .execute(),
+            operation_name="check username uniqueness"
+        )
+
+        if existing_username and existing_username.data:
+            owner_wallet = (existing_username.data[0].get("wallet_address") or "").lower()
+            if owner_wallet != (wallet or "").lower():
+                return jsonify({"success": False, "error": "Username is already taken"}), 409
+
+        user_result = safe_supabase_operation(
+            lambda: supabase.table("user_data")
+                .select("id, wallet_address, username, username_set_at, username_last_edited")
+                .ilike("wallet_address", wallet)
+                .limit(1)
+                .execute(),
+            operation_name="fetch user for username update"
+        )
+
+        now_utc = datetime.now(timezone.utc)
+        now_iso = now_utc.isoformat()
+
+        if user_result and user_result.data:
+            user = user_result.data[0]
+            current_username = (user.get("username") or "").strip()
+            if current_username.lower() == normalized_username:
+                return jsonify({
+                    "success": True,
+                    "username": current_username,
+                    "message": "Username is already set to that value"
+                })
+
+            if current_username:
+                last_edit_dt = _parse_iso_datetime(user.get("username_last_edited")) or _parse_iso_datetime(user.get("username_set_at"))
+                if last_edit_dt:
+                    next_allowed_dt = last_edit_dt + timedelta(days=365)
+                    if now_utc < next_allowed_dt:
+                        return jsonify({
+                            "success": False,
+                            "error": "Username can only be edited once per year",
+                            "next_edit_at": next_allowed_dt.isoformat()
+                        }), 429
+
+            update_data = {
+                "username": normalized_username,
+                "username_last_edited": now_iso
+            }
+            if not user.get("username_set_at"):
+                update_data["username_set_at"] = now_iso
+            if current_username:
+                update_data["username_edited"] = True
+
+            update_result = safe_supabase_operation(
+                lambda: supabase.table("user_data")
+                    .update(update_data)
+                    .eq("id", user["id"])
+                    .execute(),
+                operation_name="update username"
+            )
+            if not update_result:
+                return jsonify({"success": False, "error": "Failed to update username"}), 500
+        else:
+            insert_data = {
+                "wallet_address": wallet,
+                "username": normalized_username,
+                "username_set_at": now_iso,
+                "username_last_edited": now_iso
+            }
+            insert_result = safe_supabase_operation(
+                lambda: supabase.table("user_data").insert(insert_data).execute(),
+                operation_name="create user with username"
+            )
+            if not insert_result:
+                return jsonify({"success": False, "error": "Failed to save username"}), 500
+
+        session["username"] = normalized_username
+        return jsonify({
+            "success": True,
+            "username": normalized_username,
+            "message": "Username updated successfully"
+        })
+    except Exception as e:
+        logger.error(f"❌ Error updating username: {e}")
+        return jsonify({"success": False, "error": "Failed to update username"}), 500
 
 @routes.route("/track-analytics", methods=["POST"])
 def track_analytics_endpoint(): # Renamed to avoid conflict with analytics_service
