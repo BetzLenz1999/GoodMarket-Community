@@ -5541,8 +5541,13 @@ def _save_email_wallet_link(email: str, wallet_address: str, login_method: str, 
         return False
 
 
-def _upsert_user_wallet_record(wallet_address: str, login_method: str = None):
-    """Best-effort insert/update of core user_data fields after login/wallet creation."""
+def _upsert_user_wallet_record(wallet_address: str, login_method: str = None, extra_fields: dict = None):
+    """Best-effort insert/update of core user_data fields after login/wallet creation.
+
+    We first try writing the richer payload (login method + optional turnkey fields).
+    If older Supabase schemas do not have those columns yet, we gracefully fall back
+    to writing only wallet_address so analytics and overview counters still work.
+    """
     if not wallet_address:
         return False
     try:
@@ -5554,16 +5559,65 @@ def _upsert_user_wallet_record(wallet_address: str, login_method: str = None):
         payload = {"wallet_address": wallet_address}
         if login_method:
             payload["login_method"] = login_method
+        if isinstance(extra_fields, dict):
+            for key, value in extra_fields.items():
+                if value is not None:
+                    payload[key] = value
 
-        safe_supabase_operation(
+        result = safe_supabase_operation(
             lambda: supabase.table("user_data").upsert(payload, on_conflict="wallet_address").execute(),
             fallback_result=None,
             operation_name="upsert user_data wallet record"
         )
-        return True
+
+        if result:
+            return True
+
+        # Fallback for environments where newer columns (e.g. login_method, turnkey_*)
+        # are not yet present in user_data.
+        if len(payload.keys()) > 1:
+            logger.warning(
+                "⚠️ Rich user_data upsert failed; retrying with wallet_address only "
+                f"for {wallet_address[:10]}..."
+            )
+            fallback_result = safe_supabase_operation(
+                lambda: supabase.table("user_data").upsert(
+                    {"wallet_address": wallet_address},
+                    on_conflict="wallet_address"
+                ).execute(),
+                fallback_result=None,
+                operation_name="fallback user_data wallet-only upsert"
+            )
+            return bool(fallback_result)
+
+        return False
     except Exception as db_err:
         logger.warning(f"Could not save wallet record to Supabase: {db_err}")
         return False
+
+
+def _sync_user_verification_tracking(wallet_address: str):
+    """Keep user_data verification attribution fields in sync for dashboard metrics."""
+    if not wallet_address:
+        return
+    try:
+        from blockchain import is_identity_verified
+
+        fv_result = is_identity_verified(wallet_address)
+        if fv_result.get("verified", False):
+            if supabase_logger:
+                supabase_logger.log_verification_attempt(
+                    wallet_address,
+                    success=True,
+                    face_verified=True
+                )
+                logger.info(f"✅ Turnkey user already face-verified: {wallet_address[:8]}...")
+        else:
+            if supabase_logger:
+                supabase_logger.record_unverified_visit(wallet_address)
+                logger.info(f"📝 Turnkey unverified visitor recorded: {wallet_address[:8]}...")
+    except Exception as sync_err:
+        logger.warning(f"⚠️ Could not sync turnkey verification tracking: {sync_err}")
 
 
 def _email_recently_verified(email: str) -> bool:
@@ -5781,6 +5835,7 @@ def turnkey_create_wallet():
             analytics.track_user_session(wallet_address)
 
             _upsert_user_wallet_record(wallet_address, login_method="custodial")
+            _sync_user_verification_tracking(wallet_address)
 
             if email:
                 _save_email_wallet_link(
@@ -5826,7 +5881,15 @@ def turnkey_create_wallet():
         session["login_method"] = "turnkey"
         session.permanent = True
 
-        _upsert_user_wallet_record(wallet_address, login_method="turnkey")
+        _upsert_user_wallet_record(
+            wallet_address,
+            login_method="turnkey",
+            extra_fields={
+                "turnkey_suborg_id": suborg_id,
+                "turnkey_sign_with": sign_with
+            }
+        )
+        _sync_user_verification_tracking(wallet_address)
 
         if email:
             _save_email_wallet_link(
