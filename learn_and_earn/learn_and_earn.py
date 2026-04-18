@@ -2414,14 +2414,21 @@ def mint_achievement_nft(current_user):
             except Exception:
                 pass  # If we can't parse, allow through — backend already verified quiz_id ownership
 
+        # Prevent duplicate mints per achievement card even if NFT ownership
+        # has already been transferred to another wallet.
         existing = supabase.table('achievement_nft_mints')\
-            .select('token_id')\
-            .eq('owner_wallet', current_user)\
+            .select('token_id, owner_wallet')\
             .eq('quiz_id', quiz_id)\
+            .limit(1)\
             .execute()
 
         if existing.data and len(existing.data) > 0:
-            return jsonify({'success': True, 'already_minted': True, 'token_id': existing.data[0]['token_id']}), 200
+            return jsonify({
+                'success': True,
+                'already_minted': True,
+                'token_id': existing.data[0]['token_id'],
+                'current_owner': existing.data[0].get('owner_wallet')
+            }), 200
 
         if not achievement_nft_service.is_configured:
             return jsonify({'success': False, 'not_deployed': True, 'error': 'NFT contract not deployed yet. Contact admin.'}), 503
@@ -2514,10 +2521,13 @@ def check_nft_minted(current_user):
                 except Exception:
                     pass
 
+        # Achievement card can only be minted once globally per quiz attempt.
+        # Query by quiz_id only so users who already minted then transferred/sold
+        # still see this as already minted in UI.
         existing = supabase.table('achievement_nft_mints')\
-            .select('token_id, minted_at')\
-            .eq('owner_wallet', current_user)\
+            .select('token_id, minted_at, owner_wallet')\
             .eq('quiz_id', quiz_id)\
+            .limit(1)\
             .execute()
 
         if existing.data and len(existing.data) > 0:
@@ -2526,7 +2536,8 @@ def check_nft_minted(current_user):
                 'already_minted': True,
                 'not_eligible': False,
                 'token_id': existing.data[0]['token_id'],
-                'minted_at': existing.data[0].get('minted_at')
+                'minted_at': existing.data[0].get('minted_at'),
+                'current_owner': existing.data[0].get('owner_wallet')
             }), 200
 
         return jsonify({'success': True, 'already_minted': False, 'not_eligible': False}), 200
