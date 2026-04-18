@@ -231,59 +231,81 @@ class AchievementNFTService:
         return self._escrow_address or ''
 
     def _send_transaction(self, txn_builder, gas_limit=500000) -> dict:
-        try:
-            nonce = self.w3.eth.get_transaction_count(self.operator_account.address)
-            gas_price = int(self.w3.eth.gas_price * 1.2)
-            gas_balance = self.w3.eth.get_balance(self.operator_account.address)
-            estimated_gas_cost = gas_limit * gas_price
+        last_error = None
 
-            if gas_balance < estimated_gas_cost:
+        for attempt in range(3):
+            try:
+                # Use pending nonce to avoid reusing the latest confirmed nonce while
+                # another tx from the same operator wallet is still pending.
+                nonce = self.w3.eth.get_transaction_count(self.operator_account.address, 'pending')
+                gas_price = int(self.w3.eth.gas_price * (1.2 + (attempt * 0.15)))
+                gas_balance = self.w3.eth.get_balance(self.operator_account.address)
+                estimated_gas_cost = gas_limit * gas_price
+
+                if gas_balance < estimated_gas_cost:
+                    return {
+                        "success": False,
+                        "error": "Ang GoodMarket app gas ay 0 balance. Please contact the GoodMarket team."
+                    }
+
+                txn = txn_builder.build_transaction({
+                    'chainId': self.chain_id,
+                    'gas': gas_limit,
+                    'gasPrice': gas_price,
+                    'nonce': nonce,
+                })
+
+                signed = self.w3.eth.account.sign_transaction(txn, self._wallet_key)
+                tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
+                tx_hash_hex = tx_hash.hex()
+
+                if not tx_hash_hex.startswith('0x'):
+                    tx_hash_hex = '0x' + tx_hash_hex
+
+                receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+
+                if receipt.status != 1:
+                    logger.error(f"❌ Transaction REVERTED on-chain: tx={tx_hash_hex} status={receipt.status} gasUsed={receipt.gasUsed}")
+                    return {
+                        "success": False,
+                        "tx_hash": tx_hash_hex,
+                        "error": f"Transaction reverted on-chain (tx={tx_hash_hex[:18]}...). Check celoscan.io for details.",
+                        "gas_used": receipt.gasUsed,
+                    }
+
                 return {
-                    "success": False,
-                    "error": "Ang GoodMarket app gas ay 0 balance. Please contact the GoodMarket team."
-                }
-
-            txn = txn_builder.build_transaction({
-                'chainId': self.chain_id,
-                'gas': gas_limit,
-                'gasPrice': gas_price,
-                'nonce': nonce,
-            })
-
-            signed = self.w3.eth.account.sign_transaction(txn, self._wallet_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
-            tx_hash_hex = tx_hash.hex()
-
-            if not tx_hash_hex.startswith('0x'):
-                tx_hash_hex = '0x' + tx_hash_hex
-
-            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
-
-            if receipt.status != 1:
-                logger.error(f"❌ Transaction REVERTED on-chain: tx={tx_hash_hex} status={receipt.status} gasUsed={receipt.gasUsed}")
-                return {
-                    "success": False,
+                    "success": True,
                     "tx_hash": tx_hash_hex,
-                    "error": f"Transaction reverted on-chain (tx={tx_hash_hex[:18]}...). Check celoscan.io for details.",
                     "gas_used": receipt.gasUsed,
+                    "block_number": receipt.blockNumber,
+                    "explorer_url": f"https://celoscan.io/tx/{tx_hash_hex}"
                 }
 
-            return {
-                "success": True,
-                "tx_hash": tx_hash_hex,
-                "gas_used": receipt.gasUsed,
-                "block_number": receipt.blockNumber,
-                "explorer_url": f"https://celoscan.io/tx/{tx_hash_hex}"
-            }
+            except Exception as e:
+                last_error = e
+                error_text = str(e).lower()
+                logger.error(f"NFT transaction error (attempt {attempt + 1}/3): {e}", exc_info=True)
 
-        except Exception as e:
-            logger.error(f"NFT transaction error: {e}", exc_info=True)
-            if "insufficient funds" in str(e).lower():
-                return {
-                    "success": False,
-                    "error": "Ang GoodMarket app gas ay 0 balance. Please contact the GoodMarket team."
-                }
-            return {"success": False, "error": str(e)}
+                if "insufficient funds" in error_text:
+                    return {
+                        "success": False,
+                        "error": "Ang GoodMarket app gas ay 0 balance. Please contact the GoodMarket team."
+                    }
+
+                # Transient mempool pricing/nonce race condition:
+                # retry with fresh pending nonce and a higher gas price.
+                if any(msg in error_text for msg in [
+                    "replacement transaction underpriced",
+                    "nonce too low",
+                    "already known",
+                    "transaction with the same hash was already imported"
+                ]) and attempt < 2:
+                    logger.warning("Retrying NFT transaction with refreshed nonce and higher gas price...")
+                    continue
+
+                return {"success": False, "error": str(e)}
+
+        return {"success": False, "error": str(last_error) if last_error else "Unknown transaction error"}
 
     def mint_nft(self, to_address: str, quiz_id: str, score: int, total: int,
                  quiz_name: str) -> dict:
