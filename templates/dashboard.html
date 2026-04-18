@@ -1142,8 +1142,30 @@
                 </div>
             </div>
             <button id="editUsernameBtn" class="claim-btn" style="display: none; margin-top: 1rem;" onclick="showEditUsernameModal()">
-                ✏️ Edit Username (One-time only)
+                ✏️ Edit Username (Once per year)
             </button>
+        </div>
+
+        <div id="editUsernameModal">
+            <div class="modal-content">
+                <h3>✏️ Update Username</h3>
+                <div class="warning-box">
+                    <small>
+                        You can edit your username only <strong>once every 365 days</strong>.
+                        Choose carefully.
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="usernameInput">Username</label>
+                    <input id="usernameInput" type="text" maxlength="24" placeholder="e.g. goodmarket_user" />
+                    <small style="display:block; margin-top:0.5rem; color: rgba(241,245,249,0.7);">
+                        3-24 characters, letters/numbers/underscore only.
+                    </small>
+                </div>
+                <div id="usernameModalError" style="display:none; color:#ef4444; font-size:0.9rem; margin-bottom:0.9rem;"></div>
+                <button class="btn-primary" id="saveUsernameBtn" onclick="saveUsername()">Save Username</button>
+                <button class="btn-secondary" style="margin-top:0.75rem;" onclick="closeEditUsernameModal()">Cancel</button>
+            </div>
         </div>
 
         <!-- GoodDollar Balance Card (always visible) -->
@@ -3457,7 +3479,138 @@
             }
         }
 
+        function showEditUsernameModal() {
+            const modal = document.getElementById('editUsernameModal');
+            const input = document.getElementById('usernameInput');
+            const currentName = (document.getElementById('usernameDisplay')?.textContent || '').trim();
+            const errorEl = document.getElementById('usernameModalError');
+
+            if (input && currentName && currentName.toLowerCase() !== 'user') {
+                input.value = currentName;
+            }
+            if (errorEl) {
+                errorEl.style.display = 'none';
+                errorEl.textContent = '';
+            }
+            if (modal) modal.style.display = 'flex';
+        }
+
+        function closeEditUsernameModal() {
+            const modal = document.getElementById('editUsernameModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        function formatEditDate(isoString) {
+            if (!isoString) return '';
+            try {
+                const dt = new Date(isoString);
+                return dt.toLocaleDateString(undefined, {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+            } catch (e) {
+                return isoString;
+            }
+        }
+
+        async function loadUsername() {
+            const displayEl = document.getElementById('usernameDisplay');
+            const editBtn = document.getElementById('editUsernameBtn');
+            if (!displayEl || !editBtn) return;
+
+            try {
+                const response = await fetch('/api/user/username');
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Failed to load username');
+
+                displayEl.textContent = data.username || 'User';
+
+                if (data.can_edit) {
+                    editBtn.style.display = 'inline-block';
+                    editBtn.textContent = data.username
+                        ? '✏️ Edit Username (Once per year)'
+                        : '✏️ Set Username';
+                    editBtn.title = data.username
+                        ? 'You can edit your username now (next edit after 365 days).'
+                        : 'Set your username.';
+                } else {
+                    editBtn.style.display = 'none';
+                    if (data.next_edit_at) {
+                        displayEl.title = `Next username edit available on ${formatEditDate(data.next_edit_at)}.`;
+                    }
+                }
+            } catch (error) {
+                console.error('❌ Error loading username:', error);
+                displayEl.textContent = 'User';
+                editBtn.style.display = 'none';
+            }
+        }
+
+        async function saveUsername() {
+            const input = document.getElementById('usernameInput');
+            const saveBtn = document.getElementById('saveUsernameBtn');
+            const errorEl = document.getElementById('usernameModalError');
+            if (!input || !saveBtn || !errorEl) return;
+
+            const username = (input.value || '').trim();
+            errorEl.style.display = 'none';
+            errorEl.textContent = '';
+
+            if (!/^[A-Za-z0-9_]{3,24}$/.test(username)) {
+                errorEl.textContent = 'Username must be 3-24 characters and use letters, numbers, or underscore only.';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            const originalText = saveBtn.textContent;
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+
+            try {
+                const response = await fetch('/api/user/username', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    errorEl.textContent = data.next_edit_at
+                        ? `You can edit username again on ${formatEditDate(data.next_edit_at)}.`
+                        : (data.error || 'Failed to update username');
+                    errorEl.style.display = 'block';
+                    return;
+                }
+
+                const displayEl = document.getElementById('usernameDisplay');
+                if (displayEl) displayEl.textContent = data.username || username.toLowerCase();
+
+                showNotification('✅ Username updated successfully!', 'success');
+                closeEditUsernameModal();
+                await loadUsername();
+            } catch (error) {
+                console.error('❌ Error saving username:', error);
+                errorEl.textContent = 'Network error while saving username. Please try again.';
+                errorEl.style.display = 'block';
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalText;
+            }
+        }
+
+        window.showEditUsernameModal = showEditUsernameModal;
+        window.closeEditUsernameModal = closeEditUsernameModal;
+        window.saveUsername = saveUsername;
+
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('editUsernameModal');
+            if (modal && event.target === modal) closeEditUsernameModal();
+        });
+
         // Initial load - prioritize critical data
+        loadUsername();
         loadGoodDollarBalance();
         loadGdPrices();
         checkDailyTaskStatus().then(updateDailyTaskUI);
