@@ -1068,8 +1068,19 @@ class SupabaseLogger:
             except Exception:
                 pending_verification_users = 0
 
+            # Ensure GoodMarket-attributed buckets are reflected in overall totals,
+            # even when legacy flags are delayed/incomplete for some records.
+            total_users_adjusted = max(
+                total_users,
+                face_verified_total + pending_verification_users,
+                goodmarket_verified_users + pending_verification_users
+            )
+
             # Calculate verification rate
-            verification_rate = f"{(verified_users / total_users * 100):.1f}%" if total_users > 0 else "0%"
+            verification_rate = (
+                f"{(face_verified_total / total_users_adjusted * 100):.1f}%"
+                if total_users_adjusted > 0 else "0%"
+            )
 
             # Calculate GoodMarket attribution rate (of unverified users who eventually verified)
             unverified_first_seen = goodmarket_verified_users + pending_verification_users
@@ -1083,10 +1094,14 @@ class SupabaseLogger:
                 logger.warning(f"⚠️ Could not calculate total page views: {pv_error}")
                 total_page_views = 0
 
-            logger.info(f"📊 Analytics Summary: {total_users} total users, {face_verified_total} face-verified ({verification_rate}), {goodmarket_verified_users} via GoodMarket")
+            logger.info(
+                f"📊 Analytics Summary: {total_users_adjusted} total users, "
+                f"{face_verified_total} face-verified ({verification_rate}), "
+                f"{goodmarket_verified_users} via GoodMarket"
+            )
 
             return {
-                "total_users": total_users,
+                "total_users": total_users_adjusted,
                 "verified_users": verified_users,
                 "face_verified_total": face_verified_total,
                 "total_page_views": total_page_views,
@@ -1112,9 +1127,35 @@ class SupabaseLogger:
         try:
             from datetime import datetime, timedelta
 
-            # Get total verified users count more efficiently
+            # Build a resilient verified-user total from legacy + current flags.
             verified_response = self.client.table("user_data").select("*", count="exact").eq("ubi_verified", True).execute()
-            total_verified = verified_response.count if hasattr(verified_response, 'count') else (len(verified_response.data) if verified_response.data else 0)
+            ubi_verified_count = (
+                verified_response.count
+                if hasattr(verified_response, 'count')
+                else (len(verified_response.data) if verified_response.data else 0)
+            )
+
+            try:
+                face_verified_response = self.client.table("user_data").select("*", count="exact").eq("face_verified", True).execute()
+                face_verified_count = (
+                    face_verified_response.count
+                    if hasattr(face_verified_response, 'count')
+                    else (len(face_verified_response.data) if face_verified_response.data else 0)
+                )
+            except Exception:
+                face_verified_count = ubi_verified_count
+
+            try:
+                gm_verified_response = self.client.table("user_data").select("*", count="exact").eq("verified_after_goodmarket", True).execute()
+                goodmarket_verified_count = (
+                    gm_verified_response.count
+                    if hasattr(gm_verified_response, 'count')
+                    else (len(gm_verified_response.data) if gm_verified_response.data else 0)
+                )
+            except Exception:
+                goodmarket_verified_count = 0
+
+            total_verified = max(ubi_verified_count, face_verified_count, goodmarket_verified_count)
 
             # Get today's logins as proxy for active claims
             today = datetime.now().strftime("%Y-%m-%d")
