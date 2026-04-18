@@ -1211,6 +1211,21 @@
         return Number(n).toLocaleString('en', { minimumFractionDigits: 0, maximumFractionDigits: decimals });
     }
 
+    function _normalizeChainIdHex(chainId) {
+        if (chainId === null || chainId === undefined) return '';
+        if (typeof chainId === 'number' && Number.isFinite(chainId)) {
+            return '0x' + chainId.toString(16);
+        }
+        if (typeof chainId === 'bigint') {
+            return '0x' + chainId.toString(16);
+        }
+        const raw = String(chainId).trim().toLowerCase();
+        if (!raw) return '';
+        if (raw.startsWith('0x')) return raw;
+        if (/^\d+$/.test(raw)) return '0x' + Number(raw).toString(16);
+        return raw;
+    }
+
     function updateTotalBalanceInGd() {
         const totalBalanceEl = document.getElementById('totalBalanceUSD');
         if (!totalBalanceEl) return;
@@ -1538,7 +1553,7 @@
                 const targetChainId = Number(txData.chain_id || (isXdcToken ? 50 : 42220));
                 const targetChainHex = '0x' + targetChainId.toString(16);
                 const currentChain = await provider.request({ method: 'eth_chainId' });
-                if ((currentChain || '').toLowerCase() !== targetChainHex.toLowerCase()) {
+                if (_normalizeChainIdHex(currentChain) !== targetChainHex.toLowerCase()) {
                     try {
                         await provider.request({
                             method: 'wallet_switchEthereumChain',
@@ -2144,9 +2159,7 @@
 
                 const currentChain = await provider.request({ method: 'eth_chainId' });
                 const celoChainHex = '0xa4ec';
-                const normalizedCurrentChain = (typeof currentChain === 'string')
-                    ? currentChain.toLowerCase()
-                    : ('0x' + Number(currentChain || 0).toString(16));
+                const normalizedCurrentChain = _normalizeChainIdHex(currentChain);
                 if (normalizedCurrentChain !== celoChainHex) {
                     try {
                         await provider.request({
