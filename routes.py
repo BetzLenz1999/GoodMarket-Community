@@ -6391,6 +6391,7 @@ FAUCET_BUFFER_MULTIPLIER = float(os.getenv("FAUCET_BUFFER_MULTIPLIER", "1.35"))
 FAUCET_DUPLICATE_WINDOW_MIN = int(os.getenv("FAUCET_DUPLICATE_WINDOW_MIN", "30"))
 FAUCET_API_GRACE_SECONDS = int(os.getenv("FAUCET_API_GRACE_SECONDS", "30"))
 FAUCET_PENDING_TTL_SECONDS = int(os.getenv("FAUCET_PENDING_TTL_SECONDS", "180"))
+FAUCET_ONCHAIN_MAX_ATTEMPTS = max(1, int(os.getenv("FAUCET_ONCHAIN_MAX_ATTEMPTS", "3")))
 GOODDOLLAR_FAUCET_CONTRACT = os.getenv(
     "GOODDOLLAR_FAUCET_CONTRACT",
     "0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84"
@@ -6694,6 +6695,7 @@ def faucet_gas():
     try:
         data = request.get_json(silent=True) or {}
         correlation_id = _get_faucet_correlation_id(data)
+        force_onchain = bool(data.get("force_onchain"))
         checksum_wallet, err_resp, status_code = _validate_and_authorize_wallet(data)
         if err_resp:
             return err_resp, status_code
@@ -6725,7 +6727,7 @@ def faucet_gas():
             })
 
         recent_refill, seconds_remaining = _has_recent_refill(checksum_wallet)
-        if recent_refill:
+        if recent_refill and not force_onchain:
             flow_result["terminal_status"] = "recent_refill"
             return jsonify({
                 "success": True,
@@ -6743,38 +6745,52 @@ def faucet_gas():
                 },
                 **status_before,
             })
+        if recent_refill and force_onchain:
+            logger.warning(
+                f"⚠️ Faucet cooldown bypass wallet={checksum_wallet.lower()} source=force_onchain "
+                f"cooldown_remaining={seconds_remaining}s correlation_id={correlation_id}"
+            )
 
         # Step B: GoodDollar API faucet
         api_ok = False
         api_tx_hash = None
         api_error = None
-        flow_result["attempted_api"] = True
-        try:
-            payload = json.dumps({"chainId": 42220, "account": checksum_wallet}).encode("utf-8")
-            req = urllib.request.Request(
-                GOODDOLLAR_FAUCET_API_URL,
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
-            api_ok = body.get("ok", -1) == 1
-            api_tx_hash = body.get("txHash") or body.get("tx_hash")
-            api_error = None if api_ok else (body.get("error") or "API faucet declined")
-        except Exception as e:
-            api_error = str(e)
-        flow_result["api_result"] = {
-            "success": bool(api_ok),
-            "tx_hash": api_tx_hash,
-            "error": api_error,
-        }
+        if not force_onchain:
+            flow_result["attempted_api"] = True
+            try:
+                payload = json.dumps({"chainId": 42220, "account": checksum_wallet}).encode("utf-8")
+                req = urllib.request.Request(
+                    GOODDOLLAR_FAUCET_API_URL,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                api_ok = body.get("ok", -1) == 1
+                api_tx_hash = body.get("txHash") or body.get("tx_hash")
+                api_error = None if api_ok else (body.get("error") or "API faucet declined")
+            except Exception as e:
+                api_error = str(e)
+            flow_result["api_result"] = {
+                "success": bool(api_ok),
+                "tx_hash": api_tx_hash,
+                "error": api_error,
+            }
+        else:
+            api_error = "force_onchain_requested"
+            onchain_fallback_reason = "forced_onchain"
+            flow_result["api_result"] = {
+                "success": False,
+                "tx_hash": None,
+                "error": api_error,
+            }
 
         onchain_result = None
         topup_source = None
-        onchain_fallback_reason = None
+        onchain_fallback_reason = "forced_onchain" if force_onchain else None
 
-        if api_ok:
+        if api_ok and not force_onchain:
             _set_api_pending(checksum_wallet, api_tx_hash, pre_balance_wei)
             logger.info(
                 f"✅ Faucet API accepted wallet={checksum_wallet.lower()} source=api tx={api_tx_hash or 'n/a'} "
@@ -6823,13 +6839,27 @@ def faucet_gas():
                 f"post_balance_wei={post_balance_wei} fallback=onchain reason={onchain_fallback_reason} "
                 f"correlation_id={correlation_id}"
             )
-        else:
+        elif not force_onchain:
             onchain_fallback_reason = "api_failed"
 
         # Step C: on-chain fallback
         flow_result["attempted_onchain"] = True
-        onchain_result = _execute_onchain_faucet_topup(w3, checksum_wallet, correlation_id=correlation_id)
+        onchain_attempts = FAUCET_ONCHAIN_MAX_ATTEMPTS if force_onchain else 1
+        onchain_attempt_history = []
+        for attempt in range(onchain_attempts):
+            onchain_result = _execute_onchain_faucet_topup(w3, checksum_wallet, correlation_id=correlation_id)
+            onchain_attempt_history.append({
+                "attempt": attempt + 1,
+                "success": bool((onchain_result or {}).get("success")),
+                "status": (onchain_result or {}).get("status"),
+                "reason": (onchain_result or {}).get("reason"),
+                "tx_hash": (onchain_result or {}).get("tx_hash"),
+            })
+            if onchain_result.get("success"):
+                break
         flow_result["onchain_result"] = onchain_result
+        flow_result["onchain_attempt_history"] = onchain_attempt_history
+        flow_result["onchain_attempts"] = len(onchain_attempt_history)
         if onchain_result.get("success"):
             topup_source = "onchain"
             flow_result["topup_source"] = topup_source
@@ -6870,6 +6900,8 @@ def faucet_gas():
             "attempted_api": flow_result["attempted_api"],
             "attempted_onchain": flow_result["attempted_onchain"],
             "api_result": flow_result["api_result"],
+            "onchain_attempts": flow_result.get("onchain_attempts", 0),
+            "onchain_attempt_history": flow_result.get("onchain_attempt_history", []),
             "terminal_status": terminal_status,
             "correlation_id": correlation_id,
             "debug": {
@@ -6880,6 +6912,7 @@ def faucet_gas():
                 "required_gas_reserve_wei": status_after["required_gas_wei"],
                 "required_gas_reserve_celo": status_after["required_gas_celo"],
                 "fallback_reason": onchain_fallback_reason,
+                "force_onchain": force_onchain,
             },
             **status_after,
         })
