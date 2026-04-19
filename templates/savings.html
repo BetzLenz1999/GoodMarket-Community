@@ -1033,10 +1033,9 @@ window._savingsStartWc = function() {
     statusEl.textContent = 'Initializing…';
     window._wcGetClient().then(function(client) {
         return client.connect({
-            requiredNamespaces: {},
-            optionalNamespaces: {
+            requiredNamespaces: {
                 eip155: {
-                    methods: ['eth_accounts', 'eth_sendTransaction', 'personal_sign'],
+                    methods: ['eth_accounts', 'eth_requestAccounts', 'eth_sendTransaction', 'eth_chainId', 'personal_sign'],
                     chains: ['eip155:42220'],
                     events: ['chainChanged', 'accountsChanged']
                 }
@@ -1061,7 +1060,7 @@ window._savingsStartWc = function() {
     }).then(function(session) {
         window._wcSession = session;
         var section = document.getElementById('savingsWcSection');
-        section.innerHTML = '<div style="color:#86efac; font-weight:700;">✅ Wallet Connected! You can now approve and save G$.</div>';
+        section.innerHTML = '<div style="color:#86efac; font-weight:700;">✅ Wallet Connected! You can now approve, save, and withdraw G$.</div>';
         console.log('✅ WC session established in savings');
     }).catch(function(err) {
         statusEl.textContent = 'Connection failed: ' + (err.message || 'Unknown error');
