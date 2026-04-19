@@ -404,6 +404,22 @@
     const CHAIN_ID = {{ chain_id }};
     const CELO_RPC = "https://forno.celo.org";
     const LOGIN_METHOD = "{{ login_method }}";
+    // MiniPay gas abstraction — Celo CIP-64 feeCurrency. MiniPay may override
+    // and pick whichever stablecoin the user holds the most of, but passing one
+    // explicitly makes the tx a valid CIP-64 payload even when MiniPay's auto
+    // selector refuses to sponsor an unfamiliar contract call.
+    // Tokens listed in MiniPay's official fee-currency table:
+    //   https://docs.minipay.xyz/technical-references/send-transaction.html
+    const MINIPAY_FEE_CURRENCIES = [
+        // Mento Dollar (cUSD / USDm) — no adapter needed
+        "0x765DE816845861e75A25fCA122bb6898B8B1282a",
+        // USDC adapter
+        "0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B",
+        // USDT adapter
+        "0x0E2A3e05bc9A16F5292A6170456A710cb89C6f72",
+        // Mento Euro (cEUR / EURm) — no adapter needed
+        "0xD8763CBa276a3738E6DE85b4b3bF5FDed6D6cA73"
+    ];
     window.isCustodialMode = {{ (login_method in ['custodial', 'turnkey']) | tojson }};
 
     // ── Server-sign helper (custodial + managed wallets): encode calldata client-side, sign server-side ──
@@ -550,9 +566,26 @@
 
     // MiniPay injects its own provider but does not cooperate well with the
     // eth_sendTransaction payload ethers.js produces (pre-populated `gas`,
-    // EIP-1559 fields). Sending a minimal payload lets MiniPay select the
-    // feeCurrency automatically for the user and avoids a -32604 "Permission
-    // denied" rejection from its security layer.
+    // EIP-1559 fields). We build a minimal payload and, for MiniPay users,
+    // walk through their available `feeCurrency` stablecoins so the tx becomes
+    // a valid Celo CIP-64 call — avoiding the `-32604 Permission denied`
+    // rejection MiniPay returns when it refuses to auto-sponsor an unfamiliar
+    // contract call.
+    // MiniPay returns -32604 both for explicit user-rejections ("User rejected
+    // the request") *and* for its security layer's silent auto-rejection
+    // ("Permission denied"). We only want to retry on the auto-rejection case;
+    // retrying after a genuine user-cancel would spam them with multiple sheets.
+    function _miniPayAutoRejected(err) {
+        if (!err) return false;
+        const msg = (err.message || err.reason || '').toLowerCase();
+        if (/user rejected/.test(msg) || /user denied/.test(msg) || /user cancelled|user canceled/.test(msg)) {
+            return false;
+        }
+        if (err.code === -32604 && /permission denied/.test(msg)) return true;
+        if (/fee.?currency/.test(msg)) return true;
+        return false;
+    }
+
     async function _sendDirectTx(ep, toAddr, data, value) {
         const accounts = await ep.request({ method: 'eth_requestAccounts' });
         const active = (accounts && accounts[0] || '').toLowerCase();
@@ -566,15 +599,53 @@
                 WALLET.slice(0,6) + '…' + WALLET.slice(-4) + ' and try again.'
             );
         }
-        return await ep.request({
-            method: 'eth_sendTransaction',
-            params: [{
-                from: WALLET,
-                to: toAddr,
-                data: data,
-                value: value || '0x0'
-            }]
-        });
+
+        const baseParams = {
+            from: WALLET,
+            to: toAddr,
+            data: data,
+            value: value || '0x0'
+        };
+
+        // Non-MiniPay providers: one-shot send, no feeCurrency.
+        if (!ep.isMiniPay) {
+            return await ep.request({
+                method: 'eth_sendTransaction',
+                params: [baseParams]
+            });
+        }
+
+        // MiniPay path: try each whitelisted fee currency in order, and fall
+        // back to no-feeCurrency as a last resort. We surface the final error
+        // if every attempt is rejected, so callers see the real reason.
+        const attempts = MINIPAY_FEE_CURRENCIES.map(fc => ({ feeCurrency: fc }));
+        attempts.push({}); // final attempt with no feeCurrency (legacy path)
+
+        let lastErr = null;
+        for (let i = 0; i < attempts.length; i++) {
+            const extra = attempts[i];
+            const params = Object.assign({}, baseParams, extra);
+            try {
+                return await ep.request({
+                    method: 'eth_sendTransaction',
+                    params: [params]
+                });
+            } catch (err) {
+                lastErr = err;
+                try {
+                    console.warn('[MiniPay] send attempt failed',
+                        { feeCurrency: extra.feeCurrency || '(none)', code: err && err.code, message: err && err.message });
+                } catch (_) { /* ignore */ }
+                // If MiniPay refuses for gas/security reasons, try the next
+                // candidate. For other errors (user explicitly cancelled via
+                // reject, network errors, contract reverts), bail out early so
+                // we don't spam the user with multiple MiniPay prompts.
+                if (!_miniPayAutoRejected(err)) {
+                    throw err;
+                }
+            }
+        }
+        throw lastErr || new Error('MiniPay refused all fee-currency attempts');
     }
 
     // Poll Celo RPC for the receipt since MiniPay's provider doesn't always
@@ -839,11 +910,16 @@
         } catch (err) {
             console.error(err);
             const raw = (err && (err.reason || err.message)) || 'Unknown error';
+            const code = (err && err.code);
             let msg = raw;
-            if (/-?32604/.test(raw) || /Permission denied/i.test(raw)) {
-                msg = 'Your wallet refused the transaction. If you are on MiniPay, ' +
-                    'make sure you have a supported stablecoin (cUSD / USDC / USDT / cEUR) ' +
-                    'for gas, then try again. Raw error: ' + raw;
+            if (/permission denied/i.test(raw) && !/user rejected|user denied/i.test(raw)) {
+                msg = 'MiniPay blocked this withdrawal (Permission denied). ' +
+                    'This usually means MiniPay\'s security layer flagged the call. ' +
+                    'Try opening this page in Chrome/Opera normal browser with MetaMask on Celo, ' +
+                    'or contact support. Raw error: ' + raw +
+                    (code ? ' (code ' + code + ')' : '');
+            } else if (/user rejected|user denied|user cancelled|user canceled/i.test(raw)) {
+                msg = 'You cancelled the withdrawal in your wallet. Tap Withdraw again if you want to retry.';
             }
             showAlert('depositsAlert', 'error', '❌ Withdrawal failed: ' + msg);
         }
