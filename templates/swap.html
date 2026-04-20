@@ -753,6 +753,27 @@
 
         function _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+        // ── MiniPay diagnostics ──────────────────────────────────────────────
+        // Accumulates every step & error on the MiniPay swap path so the user
+        // can copy/paste a single blob from the browser console for debugging.
+        window.__miniPaySwapDebug = window.__miniPaySwapDebug || [];
+        function _mpLog(stage, detail) {
+            try {
+                const entry = {
+                    t: new Date().toISOString(),
+                    stage,
+                    detail: detail && typeof detail === "object"
+                        ? JSON.parse(JSON.stringify(detail, (_, v) =>
+                            typeof v === "bigint" ? v.toString() : v))
+                        : detail
+                };
+                window.__miniPaySwapDebug.push(entry);
+                console.log(`[minipay-swap][${stage}]`, detail ?? "");
+            } catch (e) {
+                console.log(`[minipay-swap][${stage}]`, detail);
+            }
+        }
+
         function _isMiniPayWallet(ethProvider) {
             if (!ethProvider) return false;
             if (ethProvider.isMiniPay || ethProvider.isOperaMiniPay) return true;
@@ -862,25 +883,67 @@
             return data;
         }
 
-        async function _sendWalletTx(ethProvider, txParams, rpcProviderForReceipt) {
+        async function _sendWalletTx(ethProvider, txParams, rpcProviderForReceipt, context = {}) {
+            const stage = context.stage || "wallet-tx";
+            const isMiniPay = _isMiniPayWallet(ethProvider);
             const txReq = { ...txParams };
-            if (!txReq.gas) {
+
+            _mpLog(`${stage}:prepare`, {
+                isMiniPay,
+                to: txReq.to,
+                from: txReq.from,
+                value: txReq.value,
+                dataLen: (txReq.data || "").length
+            });
+
+            // MiniPay uses Celo fee abstraction and does NOT accept the standard
+            // eth_estimateGas RPC for arbitrary contract calls — it returns
+            // "Permission denied" for unknown targets. Skip the pre-flight gas
+            // estimate for MiniPay and let the wallet itself size the tx; other
+            // injected wallets still benefit from the hint.
+            if (!txReq.gas && !isMiniPay) {
                 try {
+                    _mpLog(`${stage}:estimateGas:start`, { to: txReq.to });
                     const estimated = await ethProvider.request({ method: "eth_estimateGas", params: [txReq] });
                     if (estimated) txReq.gas = estimated;
-                } catch (_) {
+                    _mpLog(`${stage}:estimateGas:ok`, { gas: estimated });
+                } catch (estErr) {
                     // Some wallets/RPCs are strict or flaky on estimateGas. Let wallet choose gas.
+                    _mpLog(`${stage}:estimateGas:skip`, {
+                        code: estErr?.code,
+                        message: estErr?.message || estErr?.data?.message || String(estErr)
+                    });
                 }
+            } else if (isMiniPay) {
+                _mpLog(`${stage}:estimateGas:minipay-skip`, {
+                    note: "Letting MiniPay compute gas via its fee-abstraction path."
+                });
             }
 
-            const txHash = await ethProvider.request({
-                method: "eth_sendTransaction",
-                params: [txReq]
-            });
+            let txHash;
+            try {
+                _mpLog(`${stage}:sendTransaction:start`, { params: txReq });
+                txHash = await ethProvider.request({
+                    method: "eth_sendTransaction",
+                    params: [txReq]
+                });
+                _mpLog(`${stage}:sendTransaction:ok`, { txHash });
+            } catch (sendErr) {
+                _mpLog(`${stage}:sendTransaction:err`, {
+                    code: sendErr?.code || sendErr?.error?.code,
+                    message: sendErr?.message,
+                    data: sendErr?.data || sendErr?.error?.data,
+                    nested: sendErr?.error?.message || sendErr?.info?.error?.message
+                });
+                throw sendErr;
+            }
+
             if (!txHash) throw new Error("No transaction hash returned by wallet.");
+            _mpLog(`${stage}:waitReceipt:start`, { txHash });
             const receipt = await rpcProviderForReceipt.waitForTransaction(txHash);
             if (!receipt) throw new Error("Transaction not found on-chain yet.");
             if (receipt.status !== 1) throw new Error("Transaction reverted on-chain.");
+            _mpLog(`${stage}:waitReceipt:ok`, { txHash, blockNumber: receipt.blockNumber });
             return txHash;
         }
 
@@ -1745,6 +1808,23 @@
             try {
                 const { signer, signerMode, ethProvider } = await getConnectedSwapSigner();
                 const useMiniPayInjectedPath = signerMode === "injected-minipay";
+                if (useMiniPayInjectedPath) {
+                    // Fresh debug buffer for every attempt so the user can grab
+                    // the full log via `JSON.stringify(window.__miniPaySwapDebug)`.
+                    window.__miniPaySwapDebug = [];
+                    _mpLog("start", {
+                        signerMode,
+                        wallet: WALLET_ADDRESS,
+                        fromToken, toToken,
+                        providerFlags: {
+                            isMiniPay: !!(ethProvider && ethProvider.isMiniPay),
+                            isOperaMiniPay: !!(ethProvider && ethProvider.isOperaMiniPay),
+                            isTrust: !!(ethProvider && ethProvider.isTrust),
+                            isMetaMask: !!(ethProvider && ethProvider.isMetaMask)
+                        },
+                        ua: navigator.userAgent
+                    });
+                }
                 const effSlip = effectiveSlippage(currentQuote);
                 const slippageBps = BigInt(Math.floor(effSlip * 100));
                 let amountIn = currentQuote.amountIn;
@@ -1781,6 +1861,13 @@
                         // confirmation flow (approve first, then swap).
                         const approveIface = new ethers.Interface(ERC20_ABI);
                         const approveData = approveIface.encodeFunctionData("approve", [UNISWAP_ROUTER, amountIn * 2n]);
+                        _mpLog("approve:build", {
+                            token: from.address,
+                            symbol: from.symbol,
+                            spender: UNISWAP_ROUTER,
+                            amount: amountIn.toString(),
+                            currentAllowance: allowance.toString()
+                        });
                         await _sendWalletTx(
                             ethProvider,
                             {
@@ -1789,7 +1876,8 @@
                                 data: approveData,
                                 value: "0x0"
                             },
-                            new ethers.JsonRpcProvider(CELO_RPC)
+                            new ethers.JsonRpcProvider(CELO_RPC),
+                            { stage: "approve" }
                         );
                     } else {
                         const approveTx = await tokenContract.approve(UNISWAP_ROUTER, amountIn * 2n);
@@ -1844,6 +1932,13 @@
                             amountOutMinimum: amountOutMin,
                             sqrtPriceLimitX96: 0n
                         }]);
+                    _mpLog("swap:build", {
+                        router: UNISWAP_ROUTER,
+                        isMulti: !!currentQuote.isMulti,
+                        fee: currentQuote.fee,
+                        amountIn: amountIn.toString(),
+                        amountOutMin: amountOutMin.toString()
+                    });
                     swapTxHash = await _sendWalletTx(
                         ethProvider,
                         {
@@ -1852,7 +1947,8 @@
                             data: swapData,
                             value: "0x0"
                         },
-                        new ethers.JsonRpcProvider(CELO_RPC)
+                        new ethers.JsonRpcProvider(CELO_RPC),
+                        { stage: "swap" }
                     );
                 } else {
                     const router = new ethers.Contract(UNISWAP_ROUTER, ROUTER_ABI, signer);
@@ -1893,13 +1989,22 @@
             } catch (err) {
                 stepIndicators.className = "step-indicators";
                 _debugSwapError("wallet", "approve_or_swap", err, { wallet: WALLET_ADDRESS, from: fromToken, to: toToken });
+                _mpLog("fatal", {
+                    code: err?.code || err?.error?.code,
+                    message: err?.message,
+                    nested: err?.error?.message || err?.info?.error?.message,
+                    data: err?.data || err?.error?.data
+                });
                 const msg = _formatSwapErrorForUser({
                     source: "wallet",
                     stage: "approve/swap",
                     err,
                     fallback: "Wallet swap failed."
                 });
-                showAlert("alert-error", `❌ ${_truncateMsg(msg, 260)}`);
+                const debugHint = (window.__miniPaySwapDebug && window.__miniPaySwapDebug.length)
+                    ? `<br><span style="font-size:0.78rem;opacity:0.75">🔍 Detailed log sa browser console (<code>__miniPaySwapDebug</code>).</span>`
+                    : "";
+                showAlert("alert-error", `❌ ${_truncateMsg(msg, 260)}${debugHint}`);
                 if (currentQuote) setSwapBtnState("ready");
                 else setSwapBtnState("enter");
             }
