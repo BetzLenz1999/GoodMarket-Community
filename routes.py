@@ -5555,11 +5555,21 @@ def _upsert_user_wallet_record(wallet_address: str, login_method: str = None):
         if login_method:
             payload["login_method"] = login_method
 
-        safe_supabase_operation(
+        result = safe_supabase_operation(
             lambda: supabase.table("user_data").upsert(payload, on_conflict="wallet_address").execute(),
             fallback_result=None,
             operation_name="upsert user_data wallet record"
         )
+
+        if result is None and login_method:
+            logger.info("Retrying user_data upsert without login_method column")
+            payload_minimal = {"wallet_address": wallet_address}
+            safe_supabase_operation(
+                lambda: supabase.table("user_data").upsert(payload_minimal, on_conflict="wallet_address").execute(),
+                fallback_result=None,
+                operation_name="upsert user_data wallet record (minimal)"
+            )
+
         return True
     except Exception as db_err:
         logger.warning(f"Could not save wallet record to Supabase: {db_err}")
