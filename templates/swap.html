@@ -1854,34 +1854,39 @@
                 const tokenContract = new ethers.Contract(from.address, ERC20_ABI, signer);
                 const allowance = await tokenContract.allowance(WALLET_ADDRESS, UNISWAP_ROUTER);
                 if (allowance < amountIn) {
+                    // Use the ethers signer path for every wallet — MetaMask,
+                    // Trust, and MiniPay. Ethers.js populates the full tx
+                    // (chainId, gasLimit, type) before calling
+                    // eth_sendTransaction, which MiniPay expects. Sending a
+                    // raw minimal payload via ethProvider.request triggers
+                    // MiniPay's "Permission denied" gate.
                     if (useMiniPayInjectedPath) {
-                        if (!ethProvider) throw new Error("MiniPay provider unavailable.");
-                        // MiniPay is most reliable when we send explicit eth_sendTransaction
-                        // requests for each step, so the wallet shows a clear step-by-step
-                        // confirmation flow (approve first, then swap).
-                        const approveIface = new ethers.Interface(ERC20_ABI);
-                        const approveData = approveIface.encodeFunctionData("approve", [UNISWAP_ROUTER, amountIn * 2n]);
                         _mpLog("approve:build", {
+                            mode: "signer.approve",
                             token: from.address,
                             symbol: from.symbol,
                             spender: UNISWAP_ROUTER,
                             amount: amountIn.toString(),
                             currentAllowance: allowance.toString()
                         });
-                        await _sendWalletTx(
-                            ethProvider,
-                            {
-                                from: WALLET_ADDRESS,
-                                to: from.address,
-                                data: approveData,
-                                value: "0x0"
-                            },
-                            new ethers.JsonRpcProvider(CELO_RPC),
-                            { stage: "approve" }
-                        );
-                    } else {
-                        const approveTx = await tokenContract.approve(UNISWAP_ROUTER, amountIn * 2n);
-                        await approveTx.wait();
+                    }
+                    let approveTx, approveReceipt;
+                    try {
+                        approveTx = await tokenContract.approve(UNISWAP_ROUTER, amountIn * 2n);
+                        if (useMiniPayInjectedPath) _mpLog("approve:sent", { hash: approveTx?.hash });
+                        approveReceipt = await approveTx.wait();
+                        if (useMiniPayInjectedPath) _mpLog("approve:confirmed", {
+                            hash: approveReceipt?.hash,
+                            status: approveReceipt?.status
+                        });
+                    } catch (approveErr) {
+                        if (useMiniPayInjectedPath) _mpLog("approve:err", {
+                            code: approveErr?.code || approveErr?.error?.code,
+                            message: approveErr?.message,
+                            nested: approveErr?.error?.message || approveErr?.info?.error?.message,
+                            data: approveErr?.data || approveErr?.error?.data
+                        });
+                        throw approveErr;
                     }
                 }
                 step1.className = "step done";
@@ -1913,63 +1918,56 @@
                 showAlert("alert-info", `<span class="spinner-inline"></span> Step 2/2 — Confirm swap in your wallet…`);
 
                 let swapTxHash = "";
+                // Same signer-based path for all injected wallets including
+                // MiniPay. Keeping identical code paths avoids MiniPay's
+                // "Permission denied" rejection that the raw-request flow
+                // triggered (see PR #110 regression).
                 if (useMiniPayInjectedPath) {
-                    if (!ethProvider) throw new Error("MiniPay provider unavailable.");
-                    const routerIface = new ethers.Interface(ROUTER_ABI);
-                    const swapData = currentQuote.isMulti && currentQuote.path
-                        ? routerIface.encodeFunctionData("exactInput", [{
-                            path: currentQuote.path,
-                            recipient: WALLET_ADDRESS,
-                            amountIn: amountIn,
-                            amountOutMinimum: amountOutMin
-                        }])
-                        : routerIface.encodeFunctionData("exactInputSingle", [{
-                            tokenIn: from.address,
-                            tokenOut: to.address,
-                            fee: currentQuote.fee,
-                            recipient: WALLET_ADDRESS,
-                            amountIn: amountIn,
-                            amountOutMinimum: amountOutMin,
-                            sqrtPriceLimitX96: 0n
-                        }]);
                     _mpLog("swap:build", {
+                        mode: "signer.contract",
                         router: UNISWAP_ROUTER,
                         isMulti: !!currentQuote.isMulti,
                         fee: currentQuote.fee,
                         amountIn: amountIn.toString(),
                         amountOutMin: amountOutMin.toString()
                     });
-                    swapTxHash = await _sendWalletTx(
-                        ethProvider,
-                        {
-                            from: WALLET_ADDRESS,
-                            to: UNISWAP_ROUTER,
-                            data: swapData,
-                            value: "0x0"
-                        },
-                        new ethers.JsonRpcProvider(CELO_RPC),
-                        { stage: "swap" }
-                    );
-                } else {
+                }
+                {
                     const router = new ethers.Contract(UNISWAP_ROUTER, ROUTER_ABI, signer);
-                    const swapTx = currentQuote.isMulti && currentQuote.path
-                        ? await router.exactInput({
-                            path: currentQuote.path,
-                            recipient: WALLET_ADDRESS,
-                            amountIn: amountIn,
-                            amountOutMinimum: amountOutMin
-                        })
-                        : await router.exactInputSingle({
-                            tokenIn: from.address,
-                            tokenOut: to.address,
-                            fee: currentQuote.fee,
-                            recipient: WALLET_ADDRESS,
-                            amountIn: amountIn,
-                            amountOutMinimum: amountOutMin,
-                            sqrtPriceLimitX96: 0n
+                    let swapTx;
+                    try {
+                        swapTx = currentQuote.isMulti && currentQuote.path
+                            ? await router.exactInput({
+                                path: currentQuote.path,
+                                recipient: WALLET_ADDRESS,
+                                amountIn: amountIn,
+                                amountOutMinimum: amountOutMin
+                            })
+                            : await router.exactInputSingle({
+                                tokenIn: from.address,
+                                tokenOut: to.address,
+                                fee: currentQuote.fee,
+                                recipient: WALLET_ADDRESS,
+                                amountIn: amountIn,
+                                amountOutMinimum: amountOutMin,
+                                sqrtPriceLimitX96: 0n
+                            });
+                        if (useMiniPayInjectedPath) _mpLog("swap:sent", { hash: swapTx?.hash });
+                        const swapReceipt = await swapTx.wait();
+                        if (useMiniPayInjectedPath) _mpLog("swap:confirmed", {
+                            hash: swapReceipt?.hash,
+                            status: swapReceipt?.status
                         });
-                    await swapTx.wait();
-                    swapTxHash = swapTx.hash;
+                        swapTxHash = swapTx.hash;
+                    } catch (swapErr) {
+                        if (useMiniPayInjectedPath) _mpLog("swap:err", {
+                            code: swapErr?.code || swapErr?.error?.code,
+                            message: swapErr?.message,
+                            nested: swapErr?.error?.message || swapErr?.info?.error?.message,
+                            data: swapErr?.data || swapErr?.error?.data
+                        });
+                        throw swapErr;
+                    }
                 }
                 step2.className = "step done";
 
@@ -2001,10 +1999,53 @@
                     err,
                     fallback: "Wallet swap failed."
                 });
-                const debugHint = (window.__miniPaySwapDebug && window.__miniPaySwapDebug.length)
-                    ? `<br><span style="font-size:0.78rem;opacity:0.75">🔍 Detailed log sa browser console (<code>__miniPaySwapDebug</code>).</span>`
-                    : "";
-                showAlert("alert-error", `❌ ${_truncateMsg(msg, 260)}${debugHint}`);
+                let debugBlock = "";
+                if (useMiniPayInjectedPath && window.__miniPaySwapDebug && window.__miniPaySwapDebug.length) {
+                    const logJson = JSON.stringify(window.__miniPaySwapDebug, null, 2);
+                    const escaped = logJson
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;");
+                    debugBlock = `
+                        <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(239,68,68,0.25);font-size:0.78rem">
+                            <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+                                <strong style="color:#fca5a5">MiniPay debug log</strong>
+                                <button type="button" id="mpCopyLogBtn" style="background:#7c3aed;color:#fff;border:0;border-radius:6px;padding:4px 10px;font-size:0.72rem;cursor:pointer">📋 Copy log</button>
+                                <span id="mpCopyStatus" style="font-size:0.72rem;opacity:0.7"></span>
+                            </div>
+                            <pre style="max-height:220px;overflow:auto;background:rgba(0,0,0,0.4);padding:8px;border-radius:6px;font-size:0.7rem;line-height:1.3;white-space:pre-wrap;word-break:break-all;color:#e2e8f0;margin:0;user-select:text;-webkit-user-select:text">${escaped}</pre>
+                            <div style="margin-top:6px;opacity:0.65;font-size:0.7rem">If "Copy log" doesn't work in MiniPay, long-press the block above and select all.</div>
+                        </div>`;
+                }
+                showAlert("alert-error", `❌ ${_truncateMsg(msg, 260)}${debugBlock}`);
+                if (useMiniPayInjectedPath) {
+                    const copyBtn = document.getElementById("mpCopyLogBtn");
+                    if (copyBtn) {
+                        copyBtn.addEventListener("click", async () => {
+                            const logText = JSON.stringify(window.__miniPaySwapDebug || [], null, 2);
+                            const status = document.getElementById("mpCopyStatus");
+                            try {
+                                if (navigator.clipboard && navigator.clipboard.writeText) {
+                                    await navigator.clipboard.writeText(logText);
+                                } else {
+                                    // Fallback: temporary textarea
+                                    const ta = document.createElement("textarea");
+                                    ta.value = logText;
+                                    ta.setAttribute("readonly", "");
+                                    ta.style.position = "absolute";
+                                    ta.style.left = "-9999px";
+                                    document.body.appendChild(ta);
+                                    ta.select();
+                                    document.execCommand("copy");
+                                    document.body.removeChild(ta);
+                                }
+                                if (status) status.textContent = "✓ Copied to clipboard — paste mo na sa chat";
+                            } catch (copyErr) {
+                                if (status) status.textContent = "⚠️ Hindi nag-copy. Long-press manually ang log.";
+                            }
+                        });
+                    }
+                }
                 if (currentQuote) setSwapBtnState("ready");
                 else setSwapBtnState("enter");
             }
