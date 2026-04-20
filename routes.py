@@ -5085,6 +5085,18 @@ def claim_page():
     )
 
 
+@routes.route("/legal/terms")
+def legal_terms_page():
+    """Terms of Service (static, no login required)."""
+    return render_template("legal_terms.html")
+
+
+@routes.route("/legal/privacy")
+def legal_privacy_page():
+    """Privacy Policy (static, no login required)."""
+    return render_template("legal_privacy.html")
+
+
 # ── Payment Link helpers ────────────────────────────────────────────────────
 # Payment link private keys are NOT stored server-side.
 # The ephemeral key lives only in the browser (localStorage + URL hash).

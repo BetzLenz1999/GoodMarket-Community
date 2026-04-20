@@ -1012,6 +1012,8 @@
                 attempts.push({}); // final attempt: legacy tx, no feeCurrency
                 let lastErr = null;
                 let sawInsufficientFunds = false;
+                let sawPermissionDenied = false;
+                let sawTimeout = false;
                 for (let i = 0; i < attempts.length; i++) {
                     const params = Object.assign({}, txReq, attempts[i]);
                     const fcLabel = attempts[i].feeCurrency || "(none)";
@@ -1051,6 +1053,10 @@
                             timedOut: !!sendErr?.isMiniPayAttemptTimeout
                         });
                         if (_isInsufficientFundsErr(sendErr)) sawInsufficientFunds = true;
+                        if (sendErr?.isMiniPayAttemptTimeout) sawTimeout = true;
+                        const errMsg = (sendErr?.message || sendErr?.error?.message || "").toLowerCase();
+                        const errCode = sendErr?.code || sendErr?.error?.code;
+                        if (errCode === -32604 && /permission denied/.test(errMsg)) sawPermissionDenied = true;
                         // User cancelled intentionally / real revert / network
                         // error — bail immediately so we don't re-prompt.
                         // Treat timeouts like an auto-reject so we still cycle
@@ -1064,7 +1070,9 @@
                         attempted: attempts.length,
                         lastCode: lastErr?.code || lastErr?.error?.code,
                         lastMessage: lastErr?.message,
-                        sawInsufficientFunds
+                        sawInsufficientFunds,
+                        sawPermissionDenied,
+                        sawTimeout
                     });
                     if (sawInsufficientFunds) {
                         const friendly = new Error(
@@ -1072,6 +1080,24 @@
                             "Top up at least ~0.50 cUSD, USDC, USDT, or cEUR in your MiniPay wallet and try again."
                         );
                         friendly.code = "MINIPAY_INSUFFICIENT_FEE_FUNDS";
+                        friendly.cause = lastErr;
+                        throw friendly;
+                    }
+                    // Permission-denied on every attempt, or every attempt
+                    // timed out with no sign sheet — classic symptom of
+                    // MiniPay's contract allowlist silently blocking the
+                    // target contract (e.g. Uniswap V3 router). Surface an
+                    // actionable message pointing users to an unblocked
+                    // wallet path instead of the raw RPC error or an
+                    // infinite spinner.
+                    if (sawPermissionDenied || sawTimeout) {
+                        const friendly = new Error(
+                            "MiniPay currently blocks this contract (not yet on MiniPay's allowlist). " +
+                            "Please open https://goodmarket.live in Chrome or Valora, or log in via " +
+                            "WalletConnect on the login screen, and try the swap again from there. " +
+                            "We're working with the MiniPay team to get this whitelisted."
+                        );
+                        friendly.code = "MINIPAY_CONTRACT_BLOCKED";
                         friendly.cause = lastErr;
                         throw friendly;
                     }

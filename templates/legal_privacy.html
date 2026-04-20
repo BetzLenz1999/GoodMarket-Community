@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy — GoodMarket</title>
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            line-height: 1.65;
+        }
+        .legal-wrap {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 2rem 1.25rem 4rem;
+        }
+        .legal-wrap h1 {
+            font-size: 1.85rem;
+            margin: 0 0 0.4rem;
+            color: #f8fafc;
+        }
+        .legal-wrap .updated {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-bottom: 2rem;
+        }
+        .legal-wrap h2 {
+            font-size: 1.15rem;
+            color: #a78bfa;
+            margin-top: 2rem;
+            margin-bottom: 0.5rem;
+        }
+        .legal-wrap p, .legal-wrap li {
+            font-size: 0.95rem;
+            color: #cbd5e1;
+        }
+        .legal-wrap ul {
+            padding-left: 1.2rem;
+        }
+        .legal-wrap a {
+            color: #a78bfa;
+            text-decoration: none;
+        }
+        .legal-wrap a:hover { text-decoration: underline; }
+        .legal-wrap .back {
+            display: inline-block;
+            margin-bottom: 1.25rem;
+            color: #94a3b8;
+            font-size: 0.88rem;
+        }
+        .legal-wrap table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.88rem;
+        }
+        .legal-wrap th, .legal-wrap td {
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            padding: 0.5rem 0.7rem;
+            text-align: left;
+            vertical-align: top;
+        }
+        .legal-wrap th {
+            background: rgba(167, 139, 250, 0.08);
+            color: #cbd5e1;
+        }
+    </style>
+</head>
+<body>
+    <div class="legal-wrap">
+        <a href="/" class="back">← Back to GoodMarket</a>
+        <h1>Privacy Policy</h1>
+        <p class="updated">Last updated: April 20, 2026</p>
+
+        <p>
+            This Privacy Policy describes what information GoodMarket
+            (<a href="https://goodmarket.live">goodmarket.live</a>, the "Service") collects
+            when you use it, how we use that information, and the choices you have.
+            GoodMarket is operated by the GoodMarket project author ("we", "us", "our"). By
+            using the Service, you agree to this Policy.
+        </p>
+
+        <h2>1. Information we collect</h2>
+        <p>
+            GoodMarket is designed to minimize the personal data it handles. Because the
+            Service is wallet-based, your primary identifier is the Celo wallet address you
+            connect with. Specifically, we collect:
+        </p>
+
+        <table>
+            <tr>
+                <th>Data</th>
+                <th>Purpose</th>
+                <th>Retention</th>
+            </tr>
+            <tr>
+                <td>Wallet address (EVM / Celo)</td>
+                <td>Identify your account, track reward eligibility, gate access to features.</td>
+                <td>Stored while the account is active.</td>
+            </tr>
+            <tr>
+                <td>Username (optional, user-chosen)</td>
+                <td>Community leaderboards, public profile.</td>
+                <td>Stored while the account is active; you can change or clear it.</td>
+            </tr>
+            <tr>
+                <td>Task completion records (quiz scores, game results, social-task submissions, referral codes used)</td>
+                <td>Compute earned rewards, prevent duplicate claims, fraud detection.</td>
+                <td>Retained indefinitely for audit and anti-abuse purposes.</td>
+            </tr>
+            <tr>
+                <td>On-chain transaction hashes</td>
+                <td>Display earning history, verify UBI claims, reconcile rewards with blockchain state.</td>
+                <td>Retained indefinitely; also permanently public on the Celo blockchain.</td>
+            </tr>
+            <tr>
+                <td>Optional linked identifiers you choose to connect (Telegram ID, Twitter/X handle, Discourse handle)</td>
+                <td>Verify that you completed the corresponding social task.</td>
+                <td>Stored while you keep the integration connected.</td>
+            </tr>
+            <tr>
+                <td>Session cookie</td>
+                <td>Keep you logged in between page loads.</td>
+                <td>Session-lifetime; cleared on logout or session expiry.</td>
+            </tr>
+            <tr>
+                <td>Server logs (IP address, timestamp, request path, user-agent)</td>
+                <td>Security, abuse detection, debugging.</td>
+                <td>Rotated; typically ≤ 30 days.</td>
+            </tr>
+        </table>
+
+        <p>
+            We do <strong>not</strong> collect or ask for: passwords, seed phrases, private
+            keys, government IDs, real-name information, home addresses, phone numbers
+            (outside of optional integrations you initiate), or payment card data. GoodMarket
+            is non-custodial — your wallet's private key never leaves your wallet provider.
+        </p>
+
+        <h2>2. How we use your information</h2>
+        <ul>
+            <li>Operate the core features (UBI, savings, swap, learn-and-earn, tasks, referrals).</li>
+            <li>Calculate and disburse rewards, prevent double-spending, and enforce daily / cooldown limits.</li>
+            <li>Detect and prevent fraud, sybil attacks, and bot farming.</li>
+            <li>Communicate important updates (e.g. via Telegram channel announcements or in-app banners).</li>
+            <li>Improve the Service using aggregated / anonymized analytics.</li>
+        </ul>
+
+        <h2>3. Third-party services we use</h2>
+        <p>
+            Your data may flow through these third parties as necessary for the Service to
+            function. They process data under their own terms and privacy policies:
+        </p>
+        <ul>
+            <li><strong>Supabase (PostgreSQL)</strong> — database hosting for account records, task completions, rewards.</li>
+            <li><strong>Vercel</strong> — web hosting and CDN.</li>
+            <li><strong>Celo / Forno</strong> — blockchain RPC endpoints (<a href="https://forno.celo.org" target="_blank" rel="noopener noreferrer">forno.celo.org</a>), Celoscan explorer.</li>
+            <li><strong>WalletConnect</strong> — wallet-connection relay used when you link an external wallet.</li>
+            <li><strong>Opera MiniPay</strong> — when you use GoodMarket inside the MiniPay dApp browser.</li>
+            <li><strong>Telegram</strong> — Mini App SDK, bot integration for task verification and notifications.</li>
+            <li><strong>Twitter/X</strong> — embeds and API calls for verifying Twitter social tasks.</li>
+            <li><strong>Discourse (GoodDollar forum)</strong> — verifying Discourse task participation.</li>
+            <li><strong>ImgBB</strong> — image uploads (profile pictures, community stories).</li>
+            <li><strong>Reloadly</strong> — gift-card / top-up API (only if you use that feature).</li>
+            <li><strong>Turnkey</strong> — embedded-wallet infrastructure for users who create a new wallet in-app.</li>
+            <li><strong>GoodDollar protocol</strong> — identity verification and UBI claim mechanics.</li>
+            <li><strong>Uniswap (on Celo)</strong> — on-chain swap routing.</li>
+        </ul>
+
+        <h2>4. Cookies and local storage</h2>
+        <p>
+            GoodMarket uses a Flask session cookie to maintain login state. We may also use
+            <code>localStorage</code> / <code>sessionStorage</code> to cache your wallet
+            address, preferences, and onboarding progress so you don't have to reconnect on
+            every visit. We do not use third-party advertising cookies.
+        </p>
+
+        <h2>5. Public information</h2>
+        <p>
+            Some information is inherently public: on-chain transactions, wallet addresses,
+            token balances, leaderboard rankings, community story posts, and any profile
+            data you publish. Do not share on GoodMarket anything you do not want publicly
+            visible.
+        </p>
+
+        <h2>6. Data security</h2>
+        <p>
+            We take reasonable technical and organizational measures to protect account
+            records (HTTPS everywhere, encrypted database connections, access controls on
+            admin endpoints). However, no system is perfectly secure, and you are
+            responsible for securing your wallet, recovery phrase, and devices.
+        </p>
+
+        <h2>7. Your rights</h2>
+        <ul>
+            <li><strong>Access / export:</strong> You may request a copy of the account data associated with your wallet.</li>
+            <li><strong>Deletion:</strong> You may request deletion of account metadata (username, linked handles, task records). Note that on-chain transaction history cannot be deleted because it lives on the public Celo blockchain.</li>
+            <li><strong>Correction:</strong> You may update optional profile fields yourself from within the app.</li>
+            <li><strong>Withdraw consent:</strong> You may disconnect your wallet or stop using the Service at any time.</li>
+        </ul>
+        <p>
+            To exercise any of these rights, email
+            <a href="mailto:chadtreb1999@gmail.com">chadtreb1999@gmail.com</a> from an
+            address you can verify, and reference the wallet address involved.
+        </p>
+
+        <h2>8. Children</h2>
+        <p>
+            GoodMarket is not directed at children under 13. If you believe a child under 13
+            has connected a wallet, contact us and we will remove the associated records.
+        </p>
+
+        <h2>9. International transfers</h2>
+        <p>
+            Our infrastructure and third-party providers may process data in jurisdictions
+            other than yours (including the United States and the European Union). By using
+            the Service you consent to such transfers.
+        </p>
+
+        <h2>10. Changes to this Policy</h2>
+        <p>
+            We may update this Policy from time to time. Material changes will be announced
+            in-app or on <a href="https://goodmarket.live">goodmarket.live</a>. Continued use
+            after changes take effect constitutes acceptance of the revised Policy.
+        </p>
+
+        <h2>11. Contact</h2>
+        <p>
+            For privacy questions or data-rights requests, email
+            <a href="mailto:chadtreb1999@gmail.com">chadtreb1999@gmail.com</a>
+            or reach us on Telegram at
+            <a href="https://t.me/GoodDollarX" target="_blank" rel="noopener noreferrer">t.me/GoodDollarX</a>.
+        </p>
+
+        <p style="margin-top: 2.5rem; font-size: 0.85rem; color: #64748b;">
+            See also our <a href="/legal/terms">Terms of Service</a>.
+        </p>
+    </div>
+</body>
+</html>
