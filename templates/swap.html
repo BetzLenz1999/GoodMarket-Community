@@ -746,8 +746,35 @@
             }
             const code = err.code || err?.error?.code;
             if (code === -32604 && /permission denied/.test(msg)) return true;
+            // -32000 "insufficient funds for gas ... feeCurrency 0x…" —
+            // current fee currency has too little balance to cover gas; try
+            // the next candidate.
+            if (code === -32000 && /insufficient funds/.test(msg) && /feecurrency|fee.?currency/.test(msg)) return true;
             if (/fee.?currency/.test(msg)) return true;
             return false;
+        }
+
+        function _isInsufficientFundsErr(err) {
+            if (!err) return false;
+            const msg = (err.message || err.reason || err?.data?.message || err?.error?.message || "").toLowerCase();
+            const code = err.code || err?.error?.code;
+            return code === -32000 && /insufficient funds/.test(msg);
+        }
+
+        // Marker thrown internally when a MiniPay request hangs past the
+        // per-attempt timeout. Caller treats it like an auto-reject and moves
+        // on to the next feeCurrency so the UI never sits forever without
+        // feedback.
+        const _MINIPAY_ATTEMPT_TIMEOUT_MS = 45000;
+        function _minipayAttemptTimeout(ms) {
+            return new Promise((_, reject) => {
+                setTimeout(() => {
+                    const err = new Error(`MiniPay did not respond within ${Math.round(ms / 1000)}s`);
+                    err.code = "MINIPAY_ATTEMPT_TIMEOUT";
+                    err.isMiniPayAttemptTimeout = true;
+                    reject(err);
+                }, ms);
+            });
         }
 
         // Handles EIP-5749 multi-wallet: prefer MetaMask over Brave Wallet
@@ -984,6 +1011,7 @@
                 const attempts = MINIPAY_FEE_CURRENCIES.map(fc => ({ feeCurrency: fc }));
                 attempts.push({}); // final attempt: legacy tx, no feeCurrency
                 let lastErr = null;
+                let sawInsufficientFunds = false;
                 for (let i = 0; i < attempts.length; i++) {
                     const params = Object.assign({}, txReq, attempts[i]);
                     const fcLabel = attempts[i].feeCurrency || "(none)";
@@ -993,10 +1021,18 @@
                             feeCurrency: fcLabel,
                             params
                         });
-                        txHash = await ethProvider.request({
-                            method: "eth_sendTransaction",
-                            params: [params]
-                        });
+                        // Race the request against a per-attempt timeout so a
+                        // MiniPay silent hang is surfaced instead of blocking
+                        // the UI forever. The timeout is treated like an
+                        // auto-reject and the loop moves on to the next
+                        // feeCurrency candidate.
+                        txHash = await Promise.race([
+                            ethProvider.request({
+                                method: "eth_sendTransaction",
+                                params: [params]
+                            }),
+                            _minipayAttemptTimeout(_MINIPAY_ATTEMPT_TIMEOUT_MS)
+                        ]);
                         _mpLog(`${stage}:sendTransaction:ok`, {
                             txHash,
                             attempt: i,
@@ -1011,19 +1047,34 @@
                             code: sendErr?.code || sendErr?.error?.code,
                             message: sendErr?.message,
                             data: sendErr?.data || sendErr?.error?.data,
-                            nested: sendErr?.error?.message || sendErr?.info?.error?.message
+                            nested: sendErr?.error?.message || sendErr?.info?.error?.message,
+                            timedOut: !!sendErr?.isMiniPayAttemptTimeout
                         });
+                        if (_isInsufficientFundsErr(sendErr)) sawInsufficientFunds = true;
                         // User cancelled intentionally / real revert / network
                         // error — bail immediately so we don't re-prompt.
-                        if (!_miniPayAutoRejected(sendErr)) throw sendErr;
+                        // Treat timeouts like an auto-reject so we still cycle
+                        // forward instead of surfacing a stale error.
+                        const keepTrying = _miniPayAutoRejected(sendErr) || sendErr?.isMiniPayAttemptTimeout;
+                        if (!keepTrying) throw sendErr;
                     }
                 }
                 if (!txHash) {
                     _mpLog(`${stage}:sendTransaction:all-rejected`, {
                         attempted: attempts.length,
                         lastCode: lastErr?.code || lastErr?.error?.code,
-                        lastMessage: lastErr?.message
+                        lastMessage: lastErr?.message,
+                        sawInsufficientFunds
                     });
+                    if (sawInsufficientFunds) {
+                        const friendly = new Error(
+                            "Not enough stablecoin balance in MiniPay to pay gas. " +
+                            "Top up at least ~0.50 cUSD, USDC, USDT, or cEUR in your MiniPay wallet and try again."
+                        );
+                        friendly.code = "MINIPAY_INSUFFICIENT_FEE_FUNDS";
+                        friendly.cause = lastErr;
+                        throw friendly;
+                    }
                     throw lastErr || new Error("MiniPay refused all fee-currency attempts.");
                 }
             }
