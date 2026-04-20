@@ -766,6 +766,96 @@
             return nested || "Unknown wallet error";
         }
 
+        function _truncateMsg(msg, maxLen = 220) {
+            const text = String(msg || "Unknown error").replace(/\s+/g, " ").trim();
+            return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
+        }
+
+        function _debugSwapError(source, stage, err, extra = {}) {
+            const raw = _extractRpcErrorMessage(err);
+            console.error(`[swap][${source}][${stage}]`, {
+                message: raw,
+                code: err?.code || err?.error?.code || null,
+                data: err?.data || err?.error?.data || null,
+                details: err?.details || null,
+                ...extra
+            });
+        }
+
+        function _formatSwapErrorForUser({ source, stage, err, fallback = "Swap failed." }) {
+            const raw = _extractRpcErrorMessage(err);
+            const msg = (raw || "").toLowerCase();
+            const label = source === "backend" ? "Backend" : "Wallet";
+            const where = stage ? ` (${stage})` : "";
+
+            if (/user rejected|user denied|user cancelled|user canceled/.test(msg)) {
+                return `${label}${where}: transaction cancelled by user.`;
+            }
+            if (/permission denied/.test(msg) && source === "wallet") {
+                return `${label}${where}: MiniPay/provider blocked this request (Permission denied). Try again, or use MetaMask/Trust Wallet on Celo.`;
+            }
+            if (/insufficient funds|insufficient balance/.test(msg)) {
+                return `${label}${where}: insufficient balance for amount + gas.`;
+            }
+            if (/allowance too low/.test(msg)) {
+                return `${label}${where}: token approval is not confirmed yet. Wait a moment and retry.`;
+            }
+            if (/too little received|stf|execution reverted/.test(msg)) {
+                return `${label}${where}: on-chain swap reverted (price moved or amount too tight). Try lower amount or higher slippage.`;
+            }
+            if (/network|fetch|timeout|timed out/.test(msg)) {
+                return `${label}${where}: network timeout while talking to RPC/backend.`;
+            }
+            if (/could not coalesce error/.test(msg)) {
+                return `${label}${where}: wallet returned invalid RPC response. Please retry.`;
+            }
+            return `${label}${where}: ${_truncateMsg(raw || fallback)}`;
+        }
+
+        async function _serverSignTx(payload, stage) {
+            let res;
+            try {
+                res = await fetch('/api/server/sign-tx', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            } catch (networkErr) {
+                const wrapped = new Error(`Backend request failed during ${stage}: ${_extractRpcErrorMessage(networkErr)}`);
+                wrapped.code = networkErr?.code || "BACKEND_NETWORK_ERROR";
+                wrapped.swapSource = "backend";
+                wrapped.swapStage = stage;
+                throw wrapped;
+            }
+
+            let data = null;
+            try {
+                data = await res.json();
+            } catch (_) {
+                // keep null; handled below
+            }
+
+            if (!res.ok) {
+                const msg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
+                const httpErr = new Error(`Backend HTTP ${res.status} during ${stage}: ${msg}`);
+                httpErr.code = res.status;
+                httpErr.swapSource = "backend";
+                httpErr.swapStage = stage;
+                httpErr.backendPayload = data;
+                throw httpErr;
+            }
+
+            if (!data || !data.success) {
+                const backendErr = new Error((data && (data.error || data.message)) || `Backend ${stage} failed`);
+                backendErr.code = (data && data.code) || "BACKEND_TX_FAILED";
+                backendErr.swapSource = "backend";
+                backendErr.swapStage = stage;
+                backendErr.backendPayload = data || {};
+                throw backendErr;
+            }
+            return data;
+        }
+
         async function _sendWalletTx(ethProvider, txParams, rpcProviderForReceipt) {
             const txReq = { ...txParams };
             if (!txReq.gas) {
@@ -1505,18 +1595,10 @@
 
                     const approveIface = new ethers.Interface(ERC20_ABI);
                     const approveData = approveIface.encodeFunctionData("approve", [UNISWAP_ROUTER, amountIn * 2n]);
-                    const approveRes = await fetch('/api/server/sign-tx', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ to: from.address, data: approveData, value: '0x0', chain_id: CELO_CHAIN_ID, wait_receipt: true })
-                    });
-                    const approveData2 = await approveRes.json();
-                    if (!approveData2.success) {
-                        const approveErrMsg = approveData2.error || 'Approval failed';
-                        const approveTxLink = approveData2.tx_hash
-                            ? ` <a href="https://celoscan.io/tx/${approveData2.tx_hash}" target="_blank" rel="noopener" style="color:#f87171;text-decoration:underline;">View on CeloScan ↗</a>`
-                            : '';
-                        throw new Error(`Approval reverted: ${approveErrMsg}${approveTxLink}`);
-                    }
+                    const approveData2 = await _serverSignTx(
+                        { to: from.address, data: approveData, value: '0x0', chain_id: CELO_CHAIN_ID, wait_receipt: true },
+                        'approve'
+                    );
                     step1.className = "step done";
 
                     // ── Re-fetch quote after approval to get a fresh amountOutMin ──
@@ -1592,22 +1674,10 @@
                             sqrtPriceLimitX96: 0n
                         }]);
                     }
-                    const swapRes = await fetch('/api/server/sign-tx', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ to: UNISWAP_ROUTER, data: swapData, value: '0x0', chain_id: CELO_CHAIN_ID, wait_receipt: true })
-                    });
-                    const swapResult = await swapRes.json();
-                    if (!swapResult.success) {
-                        const errMsg = swapResult.error || 'Swap failed';
-                        const txLink = swapResult.tx_hash
-                            ? ` <a href="https://celoscan.io/tx/${swapResult.tx_hash}" target="_blank" rel="noopener" style="color:#f87171;text-decoration:underline;">View on CeloScan ↗</a>`
-                            : '';
-                        stepIndicators.className = "step-indicators";
-                        showAlert("alert-error", `❌ Swap reverted on-chain: ${errMsg.substring(0,150)}${txLink}`);
-                        if (currentQuote) setSwapBtnState("ready");
-                        else setSwapBtnState("enter");
-                        return;
-                    }
+                    const swapResult = await _serverSignTx(
+                        { to: UNISWAP_ROUTER, data: swapData, value: '0x0', chain_id: CELO_CHAIN_ID, wait_receipt: true },
+                        'swap'
+                    );
                     step2.className = "step done";
 
                     const outHuman = parseFloat(ethers.formatUnits(currentQuote.amountOut, to.decimals));
@@ -1625,8 +1695,19 @@
                     await loadBalances();
                 } catch (err) {
                     stepIndicators.className = "step-indicators";
-                    const msg = err?.message || "Unknown error";
-                    showAlert("alert-error", `❌ Swap failed: ${msg.substring(0, 150)}`);
+                    const stage = err?.swapStage || "custodial";
+                    _debugSwapError("backend", stage, err, { wallet: WALLET_ADDRESS, from: fromToken, to: toToken });
+                    const msg = _formatSwapErrorForUser({
+                        source: "backend",
+                        stage,
+                        err,
+                        fallback: "Server-side swap failed."
+                    });
+                    const txHash = err?.backendPayload?.tx_hash;
+                    const txLink = txHash
+                        ? ` <a href="https://celoscan.io/tx/${txHash}" target="_blank" rel="noopener" style="color:#f87171;text-decoration:underline;">View on CeloScan ↗</a>`
+                        : "";
+                    showAlert("alert-error", `❌ ${_truncateMsg(msg, 260)}${txLink}`);
                     if (currentQuote) setSwapBtnState("ready");
                     else setSwapBtnState("enter");
                 }
@@ -1774,13 +1855,14 @@
                 await loadBalances();
             } catch (err) {
                 stepIndicators.className = "step-indicators";
-                const rawMsg = _extractRpcErrorMessage(err);
-                const msg = rawMsg.toLowerCase().includes("user rejected")
-                    ? "Transaction cancelled in wallet."
-                    : rawMsg.toLowerCase().includes("could not coalesce error")
-                        ? "MiniPay returned an invalid RPC response. Please retry, and if needed lower amount/slippage."
-                    : rawMsg;
-                showAlert("alert-error", `❌ Swap failed: ${msg.substring(0, 150)}`);
+                _debugSwapError("wallet", "approve_or_swap", err, { wallet: WALLET_ADDRESS, from: fromToken, to: toToken });
+                const msg = _formatSwapErrorForUser({
+                    source: "wallet",
+                    stage: "approve/swap",
+                    err,
+                    fallback: "Wallet swap failed."
+                });
+                showAlert("alert-error", `❌ ${_truncateMsg(msg, 260)}`);
                 if (currentQuote) setSwapBtnState("ready");
                 else setSwapBtnState("enter");
             }
