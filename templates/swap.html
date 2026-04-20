@@ -948,6 +948,17 @@
             return _celoJsonRpc(method, params || []);
         }
 
+        async function _getWalletConnectSwapSigner() {
+            const wcBridgeProvider = { request: _wcBridgeRequest };
+            const wcProvider = new ethers.BrowserProvider(wcBridgeProvider);
+            const wcSigner = await wcProvider.getSigner();
+            const wcAddr = await wcSigner.getAddress();
+            if (wcAddr.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+                throw new Error("Wrong WalletConnect wallet connected. Please switch to your GoodMarket wallet.");
+            }
+            return wcSigner;
+        }
+
         async function getConnectedSwapSigner() {
             if (window.isCustodialMode || LOGIN_METHOD === 'custodial' || LOGIN_METHOD === 'turnkey') {
                 throw new Error('This account uses custodial/Turnkey signing. Please use automatic server signing mode.');
@@ -955,14 +966,8 @@
             const ethProvider = _getEthProvider();
             if (!ethProvider) {
                 if (!PREFER_WC_SIGNING) throw new Error("No wallet detected. Please connect your GoodMarket wallet.");
-                const wcBridgeProvider = { request: _wcBridgeRequest };
-                const wcProvider = new ethers.BrowserProvider(wcBridgeProvider);
-                const wcSigner = await wcProvider.getSigner();
-                const wcAddr = await wcSigner.getAddress();
-                if (wcAddr.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
-                    throw new Error("Wrong WalletConnect wallet connected. Please switch to your GoodMarket wallet.");
-                }
-                return wcSigner;
+                const signer = await _getWalletConnectSwapSigner();
+                return { signer, signerMode: "walletconnect" };
             }
 
             const accounts = await ethProvider.request({ method: "eth_requestAccounts" });
@@ -999,8 +1004,23 @@
             }
 
             const browserProvider = new ethers.BrowserProvider(ethProvider);
-            const signer = await browserProvider.getSigner();
-            return signer;
+            const injectedSigner = await browserProvider.getSigner();
+            const miniPayProvider = _isMiniPayWallet(ethProvider);
+
+            if (miniPayProvider && PREFER_WC_SIGNING) {
+                try {
+                    const signer = await _getWalletConnectSwapSigner();
+                    return { signer, signerMode: "walletconnect" };
+                } catch (wcErr) {
+                    console.warn("[swap] WalletConnect signer unavailable for MiniPay; falling back to injected signer.", _extractRpcErrorMessage(wcErr));
+                    return { signer: injectedSigner, signerMode: "injected-minipay" };
+                }
+            }
+
+            return {
+                signer: injectedSigner,
+                signerMode: miniPayProvider ? "injected-minipay" : "injected"
+            };
         }
 
         // Token addresses on Celo mainnet
@@ -1725,9 +1745,9 @@
             }
 
             try {
-                const signer = await getConnectedSwapSigner();
+                const { signer, signerMode } = await getConnectedSwapSigner();
                 const ethProvider = _getEthProvider();
-                const isMiniPay = _isMiniPayWallet(ethProvider);
+                const useMiniPayInjectedPath = signerMode === "injected-minipay";
                 const effSlip = effectiveSlippage(currentQuote);
                 const slippageBps = BigInt(Math.floor(effSlip * 100));
                 let amountIn = currentQuote.amountIn;
@@ -1757,7 +1777,7 @@
                 const tokenContract = new ethers.Contract(from.address, ERC20_ABI, signer);
                 const allowance = await tokenContract.allowance(WALLET_ADDRESS, UNISWAP_ROUTER);
                 if (allowance < amountIn) {
-                    if (isMiniPay && ethProvider) {
+                    if (useMiniPayInjectedPath && ethProvider) {
                         try {
                             const publicProvider = new ethers.JsonRpcProvider(CELO_RPC);
                             const approveIface = new ethers.Interface(ERC20_ABI);
@@ -1812,7 +1832,7 @@
                 showAlert("alert-info", `<span class="spinner-inline"></span> Step 2/2 — Confirm swap in your wallet…`);
 
                 let swapTxHash = "";
-                if (isMiniPay && ethProvider) {
+                if (useMiniPayInjectedPath && ethProvider) {
                     try {
                         const publicProvider = new ethers.JsonRpcProvider(CELO_RPC);
                         const routerIface = new ethers.Interface(ROUTER_ABI);
