@@ -1934,6 +1934,23 @@
                 }
                 {
                     const router = new ethers.Contract(UNISWAP_ROUTER, ROUTER_ABI, signer);
+
+                    // MiniPay's JSON-RPC gateway rejects eth_estimateGas for
+                    // arbitrary contract calls like Uniswap V3's exactInput.
+                    // When ethers tries to estimate during populateTransaction
+                    // the wallet either returns "Permission denied" or hangs
+                    // silently — the user never sees the native sign sheet.
+                    // Supplying gasLimit + chainId overrides makes ethers skip
+                    // the estimate and fires eth_sendTransaction directly with
+                    // a fully-populated payload, which MiniPay's fee-abstraction
+                    // layer can handle. MetaMask / Trust Wallet ignore overrides
+                    // if unnecessary, so leaving these in for all injected
+                    // wallets is safe, but we only set them for MiniPay to keep
+                    // the other paths byte-for-byte identical.
+                    const overrides = useMiniPayInjectedPath
+                        ? { gasLimit: 800000n, chainId: 42220n }
+                        : {};
+
                     let swapTx;
                     try {
                         swapTx = currentQuote.isMulti && currentQuote.path
@@ -1942,7 +1959,7 @@
                                 recipient: WALLET_ADDRESS,
                                 amountIn: amountIn,
                                 amountOutMinimum: amountOutMin
-                            })
+                            }, overrides)
                             : await router.exactInputSingle({
                                 tokenIn: from.address,
                                 tokenOut: to.address,
@@ -1951,7 +1968,7 @@
                                 amountIn: amountIn,
                                 amountOutMinimum: amountOutMin,
                                 sqrtPriceLimitX96: 0n
-                            });
+                            }, overrides);
                         if (useMiniPayInjectedPath) _mpLog("swap:sent", { hash: swapTx?.hash });
                         const swapReceipt = await swapTx.wait();
                         if (useMiniPayInjectedPath) _mpLog("swap:confirmed", {
