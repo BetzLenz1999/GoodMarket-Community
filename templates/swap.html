@@ -747,6 +747,47 @@
 
         function _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+        function _isMiniPayWallet(ethProvider) {
+            if (!ethProvider) return false;
+            if (ethProvider.isMiniPay || ethProvider.isOperaMiniPay) return true;
+            const ua = (navigator.userAgent || "").toLowerCase();
+            return ua.includes("minipay") || ua.includes("opera mini");
+        }
+
+        function _extractRpcErrorMessage(err) {
+            if (!err) return "Unknown wallet error";
+            if (typeof err === "string") return err;
+            const nested =
+                err?.info?.error?.message ||
+                err?.error?.message ||
+                err?.data?.message ||
+                err?.shortMessage ||
+                err?.message;
+            return nested || "Unknown wallet error";
+        }
+
+        async function _sendWalletTx(ethProvider, txParams, rpcProviderForReceipt) {
+            const txReq = { ...txParams };
+            if (!txReq.gas) {
+                try {
+                    const estimated = await ethProvider.request({ method: "eth_estimateGas", params: [txReq] });
+                    if (estimated) txReq.gas = estimated;
+                } catch (_) {
+                    // Some wallets/RPCs are strict or flaky on estimateGas. Let wallet choose gas.
+                }
+            }
+
+            const txHash = await ethProvider.request({
+                method: "eth_sendTransaction",
+                params: [txReq]
+            });
+            if (!txHash) throw new Error("No transaction hash returned by wallet.");
+            const receipt = await rpcProviderForReceipt.waitForTransaction(txHash);
+            if (!receipt) throw new Error("Transaction not found on-chain yet.");
+            if (receipt.status !== 1) throw new Error("Transaction reverted on-chain.");
+            return txHash;
+        }
+
         async function _celoJsonRpc(method, params) {
             const resp = await fetch(CELO_RPC, {
                 method: 'POST',
@@ -1594,6 +1635,8 @@
 
             try {
                 const signer = await getConnectedSwapSigner();
+                const ethProvider = _getEthProvider();
+                const isMiniPay = _isMiniPayWallet(ethProvider);
                 const effSlip = effectiveSlippage(currentQuote);
                 const slippageBps = BigInt(Math.floor(effSlip * 100));
                 let amountIn = currentQuote.amountIn;
@@ -1623,8 +1666,20 @@
                 const tokenContract = new ethers.Contract(from.address, ERC20_ABI, signer);
                 const allowance = await tokenContract.allowance(WALLET_ADDRESS, UNISWAP_ROUTER);
                 if (allowance < amountIn) {
-                    const approveTx = await tokenContract.approve(UNISWAP_ROUTER, amountIn * 2n);
-                    await approveTx.wait();
+                    if (isMiniPay && ethProvider) {
+                        const publicProvider = new ethers.JsonRpcProvider(CELO_RPC);
+                        const approveIface = new ethers.Interface(ERC20_ABI);
+                        const approveData = approveIface.encodeFunctionData("approve", [UNISWAP_ROUTER, amountIn * 2n]);
+                        await _sendWalletTx(ethProvider, {
+                            from: WALLET_ADDRESS,
+                            to: from.address,
+                            data: approveData,
+                            value: "0x0"
+                        }, publicProvider);
+                    } else {
+                        const approveTx = await tokenContract.approve(UNISWAP_ROUTER, amountIn * 2n);
+                        await approveTx.wait();
+                    }
                 }
                 step1.className = "step done";
 
@@ -1654,31 +1709,61 @@
                 setSwapBtnState("loading", "Executing swap...");
                 showAlert("alert-info", `<span class="spinner-inline"></span> Step 2/2 — Confirm swap in your wallet…`);
 
-                const router = new ethers.Contract(UNISWAP_ROUTER, ROUTER_ABI, signer);
-                const swapTx = currentQuote.isMulti && currentQuote.path
-                    ? await router.exactInput({
-                        path: currentQuote.path,
-                        recipient: WALLET_ADDRESS,
-                        amountIn: amountIn,
-                        amountOutMinimum: amountOutMin
-                    })
-                    : await router.exactInputSingle({
-                        tokenIn: from.address,
-                        tokenOut: to.address,
-                        fee: currentQuote.fee,
-                        recipient: WALLET_ADDRESS,
-                        amountIn: amountIn,
-                        amountOutMinimum: amountOutMin,
-                        sqrtPriceLimitX96: 0n
-                    });
-                await swapTx.wait();
+                let swapTxHash = "";
+                if (isMiniPay && ethProvider) {
+                    const publicProvider = new ethers.JsonRpcProvider(CELO_RPC);
+                    const routerIface = new ethers.Interface(ROUTER_ABI);
+                    const swapData = currentQuote.isMulti && currentQuote.path
+                        ? routerIface.encodeFunctionData("exactInput", [{
+                            path: currentQuote.path,
+                            recipient: WALLET_ADDRESS,
+                            amountIn: amountIn,
+                            amountOutMinimum: amountOutMin
+                        }])
+                        : routerIface.encodeFunctionData("exactInputSingle", [{
+                            tokenIn: from.address,
+                            tokenOut: to.address,
+                            fee: currentQuote.fee,
+                            recipient: WALLET_ADDRESS,
+                            amountIn: amountIn,
+                            amountOutMinimum: amountOutMin,
+                            sqrtPriceLimitX96: 0n
+                        }]);
+
+                    swapTxHash = await _sendWalletTx(ethProvider, {
+                        from: WALLET_ADDRESS,
+                        to: UNISWAP_ROUTER,
+                        data: swapData,
+                        value: "0x0"
+                    }, publicProvider);
+                } else {
+                    const router = new ethers.Contract(UNISWAP_ROUTER, ROUTER_ABI, signer);
+                    const swapTx = currentQuote.isMulti && currentQuote.path
+                        ? await router.exactInput({
+                            path: currentQuote.path,
+                            recipient: WALLET_ADDRESS,
+                            amountIn: amountIn,
+                            amountOutMinimum: amountOutMin
+                        })
+                        : await router.exactInputSingle({
+                            tokenIn: from.address,
+                            tokenOut: to.address,
+                            fee: currentQuote.fee,
+                            recipient: WALLET_ADDRESS,
+                            amountIn: amountIn,
+                            amountOutMinimum: amountOutMin,
+                            sqrtPriceLimitX96: 0n
+                        });
+                    await swapTx.wait();
+                    swapTxHash = swapTx.hash;
+                }
                 step2.className = "step done";
 
                 const outHuman = parseFloat(ethers.formatUnits(currentQuote.amountOut, to.decimals));
                 const inHuman  = parseFloat(ethers.formatUnits(amountIn, from.decimals));
                 showAlert("alert-success",
                     `✅ Swap submitted! ${inHuman.toFixed(from.displayDecimals)} ${from.symbol} → ≈${outHuman.toFixed(to.displayDecimals)} ${to.symbol}. ` +
-                    `<a href="https://celoscan.io/tx/${swapTx.hash}" target="_blank" rel="noopener" style="color:#86efac;text-decoration:underline;">View on CeloScan ↗</a>`
+                    `<a href="https://celoscan.io/tx/${swapTxHash}" target="_blank" rel="noopener" style="color:#86efac;text-decoration:underline;">View on CeloScan ↗</a>`
                 );
                 document.getElementById("amountIn").value  = "";
                 document.getElementById("amountOut").value = "";
@@ -1689,9 +1774,11 @@
                 await loadBalances();
             } catch (err) {
                 stepIndicators.className = "step-indicators";
-                const rawMsg = err?.shortMessage || err?.message || "Unknown error";
+                const rawMsg = _extractRpcErrorMessage(err);
                 const msg = rawMsg.toLowerCase().includes("user rejected")
                     ? "Transaction cancelled in wallet."
+                    : rawMsg.toLowerCase().includes("could not coalesce error")
+                        ? "MiniPay returned an invalid RPC response. Please retry, and if needed lower amount/slippage."
                     : rawMsg;
                 showAlert("alert-error", `❌ Swap failed: ${msg.substring(0, 150)}`);
                 if (currentQuote) setSwapBtnState("ready");
