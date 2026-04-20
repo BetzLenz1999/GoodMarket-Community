@@ -719,7 +719,13 @@
         function _getEthProvider() {
             if (!window.ethereum) return null;
             if (window.ethereum.providers && window.ethereum.providers.length) {
-                const mm = window.ethereum.providers.find(p => p.isMetaMask && !p.isBraveWallet);
+                // Mobile dApp browsers can inject multiple providers.
+                // Prefer MiniPay / Trust first for in-app users, then MetaMask.
+                const miniPay = window.ethereum.providers.find(p => p && (p.isMiniPay || p.isOperaMiniPay));
+                if (miniPay) return miniPay;
+                const trust = window.ethereum.providers.find(p => p && p.isTrust);
+                if (trust) return trust;
+                const mm = window.ethereum.providers.find(p => p && p.isMetaMask && !p.isBraveWallet);
                 if (mm) return mm;
                 return window.ethereum.providers[0];
             }
@@ -942,6 +948,17 @@
             return _celoJsonRpc(method, params || []);
         }
 
+        async function _getWalletConnectSwapSigner() {
+            const wcBridgeProvider = { request: _wcBridgeRequest };
+            const wcProvider = new ethers.BrowserProvider(wcBridgeProvider);
+            const wcSigner = await wcProvider.getSigner();
+            const wcAddr = await wcSigner.getAddress();
+            if (wcAddr.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+                throw new Error("Wrong WalletConnect wallet connected. Please switch to your GoodMarket wallet.");
+            }
+            return wcSigner;
+        }
+
         async function getConnectedSwapSigner() {
             if (window.isCustodialMode || LOGIN_METHOD === 'custodial' || LOGIN_METHOD === 'turnkey') {
                 throw new Error('This account uses custodial/Turnkey signing. Please use automatic server signing mode.');
@@ -949,14 +966,20 @@
             const ethProvider = _getEthProvider();
             if (!ethProvider) {
                 if (!PREFER_WC_SIGNING) throw new Error("No wallet detected. Please connect your GoodMarket wallet.");
-                const wcBridgeProvider = { request: _wcBridgeRequest };
-                const wcProvider = new ethers.BrowserProvider(wcBridgeProvider);
-                const wcSigner = await wcProvider.getSigner();
-                const wcAddr = await wcSigner.getAddress();
-                if (wcAddr.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
-                    throw new Error("Wrong WalletConnect wallet connected. Please switch to your GoodMarket wallet.");
+                const wcSigner = await _getWalletConnectSwapSigner();
+                return { signer: wcSigner, signerMode: "walletconnect" };
+            }
+
+            const isMiniPay = _isMiniPayWallet(ethProvider);
+            // MiniPay injected providers can block signing RPCs in some app contexts.
+            // If WalletConnect signing is available for this login method, prefer it.
+            if (isMiniPay && PREFER_WC_SIGNING) {
+                try {
+                    const wcSigner = await _getWalletConnectSwapSigner();
+                    return { signer: wcSigner, signerMode: "walletconnect" };
+                } catch (wcErr) {
+                    console.warn("[swap] WalletConnect signer unavailable for MiniPay, falling back to injected provider:", _extractRpcErrorMessage(wcErr));
                 }
-                return wcSigner;
             }
 
             const accounts = await ethProvider.request({ method: "eth_requestAccounts" });
@@ -975,6 +998,10 @@
                         params: [{ chainId: celoChainHex }]
                     });
                 } catch (switchErr) {
+                    // MiniPay may block chain management RPC methods.
+                    if (_isMiniPayWallet(ethProvider)) {
+                        throw switchErr;
+                    }
                     await ethProvider.request({
                         method: "wallet_addEthereumChain",
                         params: [{
@@ -990,7 +1017,7 @@
 
             const browserProvider = new ethers.BrowserProvider(ethProvider);
             const signer = await browserProvider.getSigner();
-            return signer;
+            return { signer, signerMode: isMiniPay ? "injected-minipay" : "injected" };
         }
 
         // Token addresses on Celo mainnet
@@ -1715,9 +1742,9 @@
             }
 
             try {
-                const signer = await getConnectedSwapSigner();
+                const { signer, signerMode } = await getConnectedSwapSigner();
                 const ethProvider = _getEthProvider();
-                const isMiniPay = _isMiniPayWallet(ethProvider);
+                const useMiniPayInjectedPath = signerMode === "injected-minipay";
                 const effSlip = effectiveSlippage(currentQuote);
                 const slippageBps = BigInt(Math.floor(effSlip * 100));
                 let amountIn = currentQuote.amountIn;
@@ -1747,16 +1774,27 @@
                 const tokenContract = new ethers.Contract(from.address, ERC20_ABI, signer);
                 const allowance = await tokenContract.allowance(WALLET_ADDRESS, UNISWAP_ROUTER);
                 if (allowance < amountIn) {
-                    if (isMiniPay && ethProvider) {
-                        const publicProvider = new ethers.JsonRpcProvider(CELO_RPC);
-                        const approveIface = new ethers.Interface(ERC20_ABI);
-                        const approveData = approveIface.encodeFunctionData("approve", [UNISWAP_ROUTER, amountIn * 2n]);
-                        await _sendWalletTx(ethProvider, {
-                            from: WALLET_ADDRESS,
-                            to: from.address,
-                            data: approveData,
-                            value: "0x0"
-                        }, publicProvider);
+                    if (useMiniPayInjectedPath && ethProvider) {
+                        try {
+                            const publicProvider = new ethers.JsonRpcProvider(CELO_RPC);
+                            const approveIface = new ethers.Interface(ERC20_ABI);
+                            const approveData = approveIface.encodeFunctionData("approve", [UNISWAP_ROUTER, amountIn * 2n]);
+                            await _sendWalletTx(ethProvider, {
+                                from: WALLET_ADDRESS,
+                                to: from.address,
+                                data: approveData,
+                                value: "0x0"
+                            }, publicProvider);
+                        } catch (miniApproveErr) {
+                            const miniMsg = (_extractRpcErrorMessage(miniApproveErr) || "").toLowerCase();
+                            if (/permission denied/.test(miniMsg)) {
+                                // Fallback: let ethers/browser provider build and submit the tx.
+                                const approveTx = await tokenContract.approve(UNISWAP_ROUTER, amountIn * 2n);
+                                await approveTx.wait();
+                            } else {
+                                throw miniApproveErr;
+                            }
+                        }
                     } else {
                         const approveTx = await tokenContract.approve(UNISWAP_ROUTER, amountIn * 2n);
                         await approveTx.wait();
@@ -1791,32 +1829,60 @@
                 showAlert("alert-info", `<span class="spinner-inline"></span> Step 2/2 — Confirm swap in your wallet…`);
 
                 let swapTxHash = "";
-                if (isMiniPay && ethProvider) {
-                    const publicProvider = new ethers.JsonRpcProvider(CELO_RPC);
-                    const routerIface = new ethers.Interface(ROUTER_ABI);
-                    const swapData = currentQuote.isMulti && currentQuote.path
-                        ? routerIface.encodeFunctionData("exactInput", [{
-                            path: currentQuote.path,
-                            recipient: WALLET_ADDRESS,
-                            amountIn: amountIn,
-                            amountOutMinimum: amountOutMin
-                        }])
-                        : routerIface.encodeFunctionData("exactInputSingle", [{
-                            tokenIn: from.address,
-                            tokenOut: to.address,
-                            fee: currentQuote.fee,
-                            recipient: WALLET_ADDRESS,
-                            amountIn: amountIn,
-                            amountOutMinimum: amountOutMin,
-                            sqrtPriceLimitX96: 0n
-                        }]);
+                if (useMiniPayInjectedPath && ethProvider) {
+                    try {
+                        const publicProvider = new ethers.JsonRpcProvider(CELO_RPC);
+                        const routerIface = new ethers.Interface(ROUTER_ABI);
+                        const swapData = currentQuote.isMulti && currentQuote.path
+                            ? routerIface.encodeFunctionData("exactInput", [{
+                                path: currentQuote.path,
+                                recipient: WALLET_ADDRESS,
+                                amountIn: amountIn,
+                                amountOutMinimum: amountOutMin
+                            }])
+                            : routerIface.encodeFunctionData("exactInputSingle", [{
+                                tokenIn: from.address,
+                                tokenOut: to.address,
+                                fee: currentQuote.fee,
+                                recipient: WALLET_ADDRESS,
+                                amountIn: amountIn,
+                                amountOutMinimum: amountOutMin,
+                                sqrtPriceLimitX96: 0n
+                            }]);
 
-                    swapTxHash = await _sendWalletTx(ethProvider, {
-                        from: WALLET_ADDRESS,
-                        to: UNISWAP_ROUTER,
-                        data: swapData,
-                        value: "0x0"
-                    }, publicProvider);
+                        swapTxHash = await _sendWalletTx(ethProvider, {
+                            from: WALLET_ADDRESS,
+                            to: UNISWAP_ROUTER,
+                            data: swapData,
+                            value: "0x0"
+                        }, publicProvider);
+                    } catch (miniSwapErr) {
+                        const miniMsg = (_extractRpcErrorMessage(miniSwapErr) || "").toLowerCase();
+                        if (/permission denied/.test(miniMsg)) {
+                            // Fallback path for MiniPay wallets that block direct eth_sendTransaction calls.
+                            const router = new ethers.Contract(UNISWAP_ROUTER, ROUTER_ABI, signer);
+                            const swapTx = currentQuote.isMulti && currentQuote.path
+                                ? await router.exactInput({
+                                    path: currentQuote.path,
+                                    recipient: WALLET_ADDRESS,
+                                    amountIn: amountIn,
+                                    amountOutMinimum: amountOutMin
+                                })
+                                : await router.exactInputSingle({
+                                    tokenIn: from.address,
+                                    tokenOut: to.address,
+                                    fee: currentQuote.fee,
+                                    recipient: WALLET_ADDRESS,
+                                    amountIn: amountIn,
+                                    amountOutMinimum: amountOutMin,
+                                    sqrtPriceLimitX96: 0n
+                                });
+                            await swapTx.wait();
+                            swapTxHash = swapTx.hash;
+                        } else {
+                            throw miniSwapErr;
+                        }
+                    }
                 } else {
                     const router = new ethers.Contract(UNISWAP_ROUTER, ROUTER_ABI, signer);
                     const swapTx = currentQuote.isMulti && currentQuote.path
