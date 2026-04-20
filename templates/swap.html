@@ -1007,14 +1007,11 @@
             const injectedSigner = await browserProvider.getSigner();
             const miniPayProvider = _isMiniPayWallet(ethProvider);
 
-            if (miniPayProvider && PREFER_WC_SIGNING) {
-                try {
-                    const signer = await _getWalletConnectSwapSigner();
-                    return { signer, signerMode: "walletconnect" };
-                } catch (wcErr) {
-                    console.warn("[swap] WalletConnect signer unavailable for MiniPay; falling back to injected signer.", _extractRpcErrorMessage(wcErr));
-                    return { signer: injectedSigner, signerMode: "injected-minipay" };
-                }
+            // IMPORTANT: For MiniPay we always use the injected provider first so
+            // users get the native in-app transaction approval/sign flow (same UX
+            // expectation as MetaMask/Trust Wallet dApp browsers).
+            if (miniPayProvider) {
+                return { signer: injectedSigner, signerMode: "injected-minipay" };
             }
 
             return {
@@ -1746,7 +1743,6 @@
 
             try {
                 const { signer, signerMode } = await getConnectedSwapSigner();
-                const ethProvider = _getEthProvider();
                 const useMiniPayInjectedPath = signerMode === "injected-minipay";
                 const effSlip = effectiveSlippage(currentQuote);
                 const slippageBps = BigInt(Math.floor(effSlip * 100));
@@ -1777,27 +1773,11 @@
                 const tokenContract = new ethers.Contract(from.address, ERC20_ABI, signer);
                 const allowance = await tokenContract.allowance(WALLET_ADDRESS, UNISWAP_ROUTER);
                 if (allowance < amountIn) {
-                    if (useMiniPayInjectedPath && ethProvider) {
-                        try {
-                            const publicProvider = new ethers.JsonRpcProvider(CELO_RPC);
-                            const approveIface = new ethers.Interface(ERC20_ABI);
-                            const approveData = approveIface.encodeFunctionData("approve", [UNISWAP_ROUTER, amountIn * 2n]);
-                            await _sendWalletTx(ethProvider, {
-                                from: WALLET_ADDRESS,
-                                to: from.address,
-                                data: approveData,
-                                value: "0x0"
-                            }, publicProvider);
-                        } catch (miniApproveErr) {
-                            const miniMsg = (_extractRpcErrorMessage(miniApproveErr) || "").toLowerCase();
-                            if (/permission denied/.test(miniMsg)) {
-                                // Fallback: let ethers/browser provider build and submit the tx.
-                                const approveTx = await tokenContract.approve(UNISWAP_ROUTER, amountIn * 2n);
-                                await approveTx.wait();
-                            } else {
-                                throw miniApproveErr;
-                            }
-                        }
+                    if (useMiniPayInjectedPath) {
+                        // For MiniPay, always use signer-backed contract calls so the
+                        // wallet handles tx construction and shows native approval UI.
+                        const approveTx = await tokenContract.approve(UNISWAP_ROUTER, amountIn * 2n);
+                        await approveTx.wait();
                     } else {
                         const approveTx = await tokenContract.approve(UNISWAP_ROUTER, amountIn * 2n);
                         await approveTx.wait();
@@ -1832,60 +1812,26 @@
                 showAlert("alert-info", `<span class="spinner-inline"></span> Step 2/2 — Confirm swap in your wallet…`);
 
                 let swapTxHash = "";
-                if (useMiniPayInjectedPath && ethProvider) {
-                    try {
-                        const publicProvider = new ethers.JsonRpcProvider(CELO_RPC);
-                        const routerIface = new ethers.Interface(ROUTER_ABI);
-                        const swapData = currentQuote.isMulti && currentQuote.path
-                            ? routerIface.encodeFunctionData("exactInput", [{
-                                path: currentQuote.path,
-                                recipient: WALLET_ADDRESS,
-                                amountIn: amountIn,
-                                amountOutMinimum: amountOutMin
-                            }])
-                            : routerIface.encodeFunctionData("exactInputSingle", [{
-                                tokenIn: from.address,
-                                tokenOut: to.address,
-                                fee: currentQuote.fee,
-                                recipient: WALLET_ADDRESS,
-                                amountIn: amountIn,
-                                amountOutMinimum: amountOutMin,
-                                sqrtPriceLimitX96: 0n
-                            }]);
-
-                        swapTxHash = await _sendWalletTx(ethProvider, {
-                            from: WALLET_ADDRESS,
-                            to: UNISWAP_ROUTER,
-                            data: swapData,
-                            value: "0x0"
-                        }, publicProvider);
-                    } catch (miniSwapErr) {
-                        const miniMsg = (_extractRpcErrorMessage(miniSwapErr) || "").toLowerCase();
-                        if (/permission denied/.test(miniMsg)) {
-                            // Fallback path for MiniPay wallets that block direct eth_sendTransaction calls.
-                            const router = new ethers.Contract(UNISWAP_ROUTER, ROUTER_ABI, signer);
-                            const swapTx = currentQuote.isMulti && currentQuote.path
-                                ? await router.exactInput({
-                                    path: currentQuote.path,
-                                    recipient: WALLET_ADDRESS,
-                                    amountIn: amountIn,
-                                    amountOutMinimum: amountOutMin
-                                })
-                                : await router.exactInputSingle({
-                                    tokenIn: from.address,
-                                    tokenOut: to.address,
-                                    fee: currentQuote.fee,
-                                    recipient: WALLET_ADDRESS,
-                                    amountIn: amountIn,
-                                    amountOutMinimum: amountOutMin,
-                                    sqrtPriceLimitX96: 0n
-                                });
-                            await swapTx.wait();
-                            swapTxHash = swapTx.hash;
-                        } else {
-                            throw miniSwapErr;
-                        }
-                    }
+                if (useMiniPayInjectedPath) {
+                    const router = new ethers.Contract(UNISWAP_ROUTER, ROUTER_ABI, signer);
+                    const swapTx = currentQuote.isMulti && currentQuote.path
+                        ? await router.exactInput({
+                            path: currentQuote.path,
+                            recipient: WALLET_ADDRESS,
+                            amountIn: amountIn,
+                            amountOutMinimum: amountOutMin
+                        })
+                        : await router.exactInputSingle({
+                            tokenIn: from.address,
+                            tokenOut: to.address,
+                            fee: currentQuote.fee,
+                            recipient: WALLET_ADDRESS,
+                            amountIn: amountIn,
+                            amountOutMinimum: amountOutMin,
+                            sqrtPriceLimitX96: 0n
+                        });
+                    await swapTx.wait();
+                    swapTxHash = swapTx.hash;
                 } else {
                     const router = new ethers.Contract(UNISWAP_ROUTER, ROUTER_ABI, signer);
                     const swapTx = currentQuote.isMulti && currentQuote.path
