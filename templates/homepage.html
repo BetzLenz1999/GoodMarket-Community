@@ -200,17 +200,16 @@
         }
 
         .hero-disclaimer {
-            font-size: 1rem;
-            color: rgba(255, 220, 100, 0.95);
-            margin-bottom: 0.6rem;
+            font-size: 0.72rem;
+            color: rgba(255, 220, 100, 0.75);
+            margin-top: 0.8rem;
             font-style: italic;
-            font-weight: 700;
-            background: rgba(255, 180, 0, 0.1);
-            border: 1px solid rgba(255, 200, 50, 0.3);
-            border-radius: 8px;
-            padding: 0.45rem 0.9rem;
+            font-weight: 500;
+            background: rgba(255, 180, 0, 0.06);
+            border: 1px solid rgba(255, 200, 50, 0.18);
+            border-radius: 6px;
+            padding: 0.35rem 0.7rem;
             display: inline-block;
-            animation: disclaimerPulse 3s ease-in-out infinite;
         }
 
         .hero-buttons {
@@ -274,11 +273,6 @@
         @keyframes tabGlow {
             0%, 100% { text-shadow: 0 0 0px transparent; }
             50%       { text-shadow: 0 0 18px rgba(124, 58, 237, 0.45); }
-        }
-
-        @keyframes disclaimerPulse {
-            0%, 100% { color: rgba(255,255,255,0.75); text-shadow: none; }
-            50%       { color: rgba(167, 139, 250, 1); text-shadow: 0 0 14px rgba(167, 139, 250, 0.6); }
         }
 
         .submenu-wrapper {
@@ -644,9 +638,10 @@
             }
 
             .hero-disclaimer {
-                font-size: 0.88rem;
-                margin-bottom: 0.4rem;
-                padding: 0.35rem 0.7rem;
+                font-size: 0.68rem;
+                margin-top: 0.6rem;
+                margin-bottom: 0;
+                padding: 0.3rem 0.6rem;
             }
 
             .hero-buttons {
@@ -1369,10 +1364,9 @@
             <nav class="nav-links">
                 <a href="/overview" class="active">Overview</a>
                 <a href="/news">News</a>
-                <div style="display: flex; gap: 0.35rem; align-items: center; font-size: 0.75rem;">
+                <div style="display: flex; gap: 0.4rem; align-items: center; font-size: 0.85rem;">
                     <a href="https://t.me/GoodDollarX" target="_blank" style="text-decoration: none;" title="Join our Telegram">💬</a>
-                    <a href="https://twitter.com/gooddollarorg" target="_blank" style="text-decoration: none;" title="Follow @gooddollarorg">🐦</a>
-                    <a href="https://twitter.com/GoodDollarTeam" target="_blank" style="text-decoration: none;" title="Follow @GoodDollarTeam">🐦</a>
+                    <a href="https://twitter.com/gooddollarorg" target="_blank" style="text-decoration: none;" title="Follow @gooddollarorg on X">𝕏</a>
                 </div>
                 <button class="connect-wallet-btn" onclick="openWalletModal()">
                     <span class="wallet-icon">🚀</span>
@@ -1386,18 +1380,22 @@
     <section class="hero-section" id="overview">
         <div class="hero-content">
             <h1 class="hero-title">
-                Learn & Earn with<br>
-                <span class="highlight">GoodMarket</span>
+                Earn up to <span class="highlight">5,000 G$</span> monthly<br>
+                with GoodMarket
             </h1>
             <p class="hero-description">
-                Earn G$ cryptocurrency rewards by completing social tasks, quizzes, games, and community stories — no experience needed.
-            </p>
-            <p class="hero-disclaimer">
-                ⚠️ GoodMarket is a community initiative &mdash; not an official product of GoodDollar.
+                Complete social tasks, daily quizzes, at minigames. Rewards sent directly sa wallet mo on-chain sa Celo. Walang experience needed — first reward in under 5 minutes.
             </p>
             <div class="hero-buttons">
-                <button class="btn-secondary main-menu-btn" onclick="toggleMainMenu()">☰ Main Menu</button>
+                <button class="btn-primary" onclick="openWalletModal()">
+                    <span class="wallet-icon">🚀</span>
+                    <span>Start Earning G$</span>
+                </button>
+                <button class="btn-secondary main-menu-btn" onclick="toggleMainMenu()">📋 See All Ways to Earn</button>
             </div>
+            <p class="hero-disclaimer">
+                ⚠️ Community initiative &mdash; not an official product of GoodDollar.
+            </p>
         </div>
     </section>
 
@@ -1406,13 +1404,13 @@
         <div class="submenu-label">Select a section:</div>
         <nav class="section-nav submenu-nav">
             <button class="section-tab" id="tab-what-is" onclick="showSection('what-is')">💰 What is GoodMarket?</button>
-            <button class="section-tab" id="tab-learn-earn" onclick="showSection('learn-earn')">🎓 Learn &amp; Earn</button>
+            <button class="section-tab" id="tab-community-stories" onclick="showSection('community-stories')">🌟 Community Stories (up to 5,000 G$)</button>
             <button class="section-tab" id="tab-daily-tasks" onclick="showSection('daily-tasks')">📱 Daily Social Tasks</button>
+            <button class="section-tab" id="tab-learn-earn" onclick="showSection('learn-earn')">🎓 Learn &amp; Earn</button>
             <button class="section-tab" id="tab-minigames" onclick="showSection('minigames')">🎮 Play &amp; Earn</button>
-            <button class="section-tab" id="tab-community-stories" onclick="showSection('community-stories')">🌟 Community Stories</button>
             <button class="section-tab" id="tab-referral" onclick="showSection('referral')">🔗 Referral Program</button>
-            <button class="section-tab" id="tab-ubi-tracker" onclick="showSection('ubi-tracker')">📊 UBI Tracker</button>
             <button class="section-tab" id="tab-why-choose" onclick="showSection('why-choose')">⭐ Why Choose GoodMarket?</button>
+            <button class="section-tab" id="tab-ubi-tracker" onclick="showSection('ubi-tracker')">📊 UBI Tracker</button>
             <button class="section-tab" id="tab-developers" onclick="showSection('developers')">👨‍💻 Meet our Developers</button>
         </nav>
     </div>
@@ -1443,19 +1441,24 @@
                     <li>🟢 <strong style="color:#10b981;">100 G$</strong> — Twitter/X tasks</li>
                     <li>🟢 <strong style="color:#10b981;">100 G$</strong> — Facebook tasks</li>
                 </ul>
-                <p class="earn-card-note">⏰ New tasks reset every 24 hours</p>
+                <p class="earn-card-note">⏰ Twitter/Telegram share a 24h cooldown · Facebook is a separate task per admin-posted link</p>
             </div>
             <div class="earn-card">
                 <div class="earn-card-icon">🎓</div>
                 <div class="earn-card-title">Learn & Earn Quizzes</div>
-                <span class="earn-card-badge" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:white;">Daily Quizzes</span>
+                <span class="earn-card-badge" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:white;">Every 5 Days</span>
                 <p class="earn-card-desc">Test your knowledge about GoodDollar and blockchain technology and get rewarded.</p>
                 <ul class="earn-card-list">
                     <li>🟡 <strong style="color:#f59e0b;">200 G$</strong> — Per correct answer</li>
                     <li>🟡 <strong style="color:#f59e0b;">2,000 G$</strong> — Maximum per quiz</li>
                 </ul>
-                <p class="earn-card-note">📚 One quiz available every 24 hours</p>
+                <p class="earn-card-note">📚 One quiz every 5 days (120h cooldown)</p>
             </div>
+        </div>
+        <div style="text-align:center; margin-top:1.5rem;">
+            <button class="btn-primary" onclick="openWalletModal()">
+                🚀 Claim Your First Reward
+            </button>
         </div>
     </div>
 
@@ -1486,6 +1489,11 @@
                 <p class="earn-card-note">🎯 Requires UBI verification to participate</p>
             </div>
         </div>
+        <div style="text-align:center; margin-top:1.5rem;">
+            <button class="btn-primary" onclick="openWalletModal()">
+                🎓 Start a Quiz (+200 G$ per correct answer)
+            </button>
+        </div>
     </div>
 
     <!-- Panel: Daily Social Tasks -->
@@ -1499,7 +1507,7 @@
                 <p class="earn-card-desc">Post about GoodDollar on Twitter/X — share a tweet, retweet, or tag the community. Submit your post link in GoodMarket to claim your reward.</p>
                 <ul class="earn-card-list">
                     <li>🟢 <strong style="color:#10b981;">100 G$</strong> per completed task</li>
-                    <li>🟢 Resets every 24 hours</li>
+                    <li>🟢 Shared 24h cooldown with Telegram (pick one per day)</li>
                 </ul>
             </div>
             <div class="earn-card">
@@ -1508,24 +1516,29 @@
                 <p class="earn-card-desc">Engage in the GoodDollar Telegram community. Post a message in an approved group or channel mentioning GoodDollar, then submit your message link to earn.</p>
                 <ul class="earn-card-list">
                     <li>🟢 <strong style="color:#10b981;">100 G$</strong> per completed task</li>
-                    <li>🟢 Shared cooldown with Twitter task</li>
+                    <li>🟢 Shared 24h cooldown with Twitter (pick one per day)</li>
                 </ul>
             </div>
             <div class="earn-card">
                 <div class="earn-card-icon">📘</div>
                 <div class="earn-card-title">Facebook Tasks</div>
-                <p class="earn-card-desc">Share GoodDollar content on Facebook — post in groups, share updates, or tag friends. Submit your Facebook post link to claim your daily G$ reward.</p>
+                <p class="earn-card-desc">Share GoodDollar content on Facebook via the admin-posted link. Submit your Facebook engagement to claim your G$ reward — separate from the Twitter/Telegram daily task.</p>
                 <ul class="earn-card-list">
                     <li>🟢 <strong style="color:#10b981;">100 G$</strong> per completed task</li>
-                    <li>🟢 New task available every day</li>
+                    <li>🟢 New task each time admin posts a new Facebook link (independent track)</li>
                 </ul>
             </div>
             <div class="earn-card">
                 <div class="earn-card-icon">⚙️</div>
                 <div class="earn-card-title">How Verification Works</div>
                 <p class="earn-card-desc">After submitting your social task link, our team reviews your submission. Approved tasks are rewarded with G$ sent directly to your wallet. Keep your posts genuine and on-topic.</p>
-                <p class="earn-card-note">⏰ Tasks reset every 24 hours. Completing one platform task uses your daily slot.</p>
+                <p class="earn-card-note">⏰ Twitter & Telegram share a 24h slot (isa kada araw). Facebook is a separate task na nag-a-available pag may bagong admin link.</p>
             </div>
+        </div>
+        <div style="text-align:center; margin-top:1.5rem;">
+            <button class="btn-primary" onclick="openWalletModal()">
+                📱 Do Today's Task (+100 G$)
+            </button>
         </div>
     </div>
 
@@ -1543,7 +1556,7 @@
             <div class="earn-card">
                 <div class="earn-card-icon">🔤</div>
                 <div class="earn-card-title">Jumble Words</div>
-                <p class="earn-card-desc">Unscramble words related to GoodDollar, blockchain, and Web3. Each correct answer earns you virtual tokens. Challenge your vocabulary while learning about the ecosystem.</p>
+                <p class="earn-card-desc">Unscramble words related to GoodDollar, blockchain, at Web3. Each correct answer earns you <strong>GM Points</strong> (convertible to G$). Challenge your vocabulary while learning about the ecosystem.</p>
                 <ul class="earn-card-list">
                     <li>🟣 Up to <strong style="color:#7c3aed;">10 wins</strong> per day</li>
                     <li>🟣 Words get harder as you progress</li>
@@ -1552,15 +1565,20 @@
             <div class="earn-card">
                 <div class="earn-card-icon">🔮</div>
                 <div class="earn-card-title">Price Prediction</div>
-                <p class="earn-card-desc">Predict whether crypto prices (BTC, ETH, and more) will go <strong>UP ⬆️ or DOWN ⬇️</strong> over a chosen timeframe — 5 minutes, 15 minutes, or 1 hour. Get it right and win virtual tokens.</p>
+                <p class="earn-card-desc">Predict kung ang crypto prices (BTC, ETH, at iba pa) ay <strong>UP ⬆️ or DOWN ⬇️</strong> over 5 minutes, 15 minutes, or 1 hour. Tama ang prediction mo? Manalo ng <strong>GM Points</strong> (convertible to G$).</p>
                 <p class="earn-card-note">📊 Uses live market data. Predict wisely!</p>
             </div>
             <div class="earn-card">
                 <div class="earn-card-icon">💸</div>
                 <div class="earn-card-title">Withdrawals</div>
-                <p class="earn-card-desc">All game winnings accumulate as virtual tokens in your GoodMarket balance. Once you reach the <strong>minimum withdrawal threshold</strong>, you can convert them to real G$ tokens sent on-chain to your wallet.</p>
+                <p class="earn-card-desc">Lahat ng game winnings nako-collect bilang <strong>GM Points</strong> sa GoodMarket balance mo. Pag-abot sa <strong>minimum withdrawal threshold</strong>, i-convert sa real G$ na direct na padadalhan sa wallet mo on-chain.</p>
                 <p class="earn-card-note">✅ Withdrawals require UBI verification.</p>
             </div>
+        </div>
+        <div style="text-align:center; margin-top:1.5rem;">
+            <button class="btn-primary" onclick="openWalletModal()">
+                🎮 Play & Earn GM Points
+            </button>
         </div>
     </div>
 
@@ -1596,6 +1614,11 @@
                 <p class="earn-card-desc">Post your GoodDollar story on Twitter/X, then come to GoodMarket during the open window, paste your post link or upload a screenshot, and our team will review and approve it for your G$ reward.</p>
             </div>
         </div>
+        <div style="text-align:center; margin-top:1.5rem;">
+            <button class="btn-primary" onclick="openWalletModal()">
+                🌟 Submit Your Story (26th–30th, up to 5,000 G$)
+            </button>
+        </div>
     </div>
 
     <!-- Panel: Referral Program -->
@@ -1628,6 +1651,11 @@
                 <div class="earn-card-title">Track Your Referrals</div>
                 <p class="earn-card-desc">Log into GoodMarket and check your <strong>Referral Dashboard</strong> to see how many friends you've referred, how many have verified, and your total referral earnings so far.</p>
             </div>
+        </div>
+        <div style="text-align:center; margin-top:1.5rem;">
+            <button class="btn-primary" onclick="openWalletModal()">
+                🔗 Get Your Referral Link (Earn 1,000 G$ / Friend)
+            </button>
         </div>
     </div>
 
@@ -1674,7 +1702,7 @@
             <div class="feature-card">
                 <div class="feature-icon">🎓</div>
                 <h3 class="feature-title">Learn & Earn</h3>
-                <p class="feature-description">Complete daily educational quizzes about GoodDollar and blockchain. Earn up to 2,000 G$ per quiz with instant on-chain rewards.</p>
+                <p class="feature-description">Take educational quizzes every 5 days about GoodDollar and blockchain. Earn up to 2,000 G$ per quiz — 200 G$ per correct answer, instantly on-chain.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">🎮</div>
@@ -1989,11 +2017,26 @@
                 btn.textContent = '✕ Close Menu';
             } else {
                 submenu.style.display = 'none';
-                btn.innerHTML = '☰ Main Menu';
+                btn.innerHTML = '📋 See All Ways to Earn';
                 document.querySelectorAll('.section-panel').forEach(p => p.classList.remove('active'));
                 document.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
             }
         }
+
+        // Auto-open "Multiple Ways to Earn" panel so first-time visitors see
+        // earning options immediately, without needing to click Main Menu.
+        // We do NOT call showSection() here (which scrolls) — just activate
+        // the tab + panel so the hero stays in view on load.
+        document.addEventListener('DOMContentLoaded', function() {
+            const submenu = document.getElementById('main-menu-submenu');
+            const btn = document.querySelector('.main-menu-btn');
+            if (submenu) submenu.style.display = 'block';
+            if (btn) btn.textContent = '✕ Close Menu';
+            const panel = document.getElementById('panel-what-is');
+            const tab = document.getElementById('tab-what-is');
+            if (panel) panel.classList.add('active');
+            if (tab) tab.classList.add('active');
+        });
 
         function showSection(name) {
             document.querySelectorAll('.section-panel').forEach(p => p.classList.remove('active'));
