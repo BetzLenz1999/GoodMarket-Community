@@ -15,8 +15,12 @@
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
+      // Register from root URL so the default max scope covers the whole
+      // site. The Flask route in main.py serves the file that physically
+      // lives at /static/service-worker.js and sends Service-Worker-Allowed
+      // as a backup for any cached registrations still pointing at /static/.
       navigator.serviceWorker
-        .register('/static/service-worker.js', { scope: '/' })
+        .register('/service-worker.js', { scope: '/' })
         .then(function (registration) {
           // Poll for updates every 60s so long-lived tabs pick up new versions.
           setInterval(function () {
