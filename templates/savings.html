@@ -539,6 +539,119 @@
         return window.ethereum;
     }
 
+    // ── MiniPay detection + CIP-64 fee-abstracted tx helper ──
+    // MiniPay docs state that Ethers.js does NOT support MiniPay's Custom Fee
+    // Abstraction (CIP-64) transactions — viem/wagmi or a raw eth_sendTransaction
+    // call must be used. For MiniPay users we therefore bypass ethers entirely for
+    // tx submission: we still encode calldata with ethers.Interface, but submit
+    // via window.ethereum.request({ method: 'eth_sendTransaction' }) so MiniPay
+    // can apply its own fee-currency selection. See:
+    //   https://docs.minipay.xyz/faq.html
+    //   https://docs.minipay.xyz/technical-references/send-transaction.md
+    function _isMiniPay() {
+        const ep = _getEthProvider();
+        if (ep && ep.isMiniPay) return true;
+        if (window.ethereum && window.ethereum.isMiniPay) return true;
+        if (window.ethereum && window.ethereum.providers
+            && window.ethereum.providers.some(p => p && p.isMiniPay)) return true;
+        if (typeof navigator !== 'undefined' && /minipay/i.test(navigator.userAgent || '')) return true;
+        return false;
+    }
+
+    // Celo Mainnet fee-currency addresses accepted by MiniPay as the
+    // `feeCurrency` field on eth_sendTransaction. USDT and USDC require their
+    // adapter address (NOT the token address). USDm/cUSD is used as-is.
+    // Source: https://docs.minipay.xyz/technical-references/send-transaction.md
+    const MINIPAY_FEE_CURRENCY = {
+        USDM:         '0x765DE816845861e75A25fCA122bb6898B8B1282a', // USDm / cUSD (token addr)
+        USDT_ADAPTER: '0x0E2A3e05bc9A16F5292A6170456A710cb89C6f72', // USD₮ fee adapter
+        USDC_ADAPTER: '0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B', // USDC fee adapter
+    };
+
+    async function _miniPayWaitForReceipt(ep, txHash, maxAttempts = 60) {
+        for (let i = 0; i < maxAttempts; i++) {
+            try {
+                const receipt = await ep.request({
+                    method: 'eth_getTransactionReceipt',
+                    params: [txHash],
+                });
+                if (receipt) {
+                    if (receipt.status === '0x0') {
+                        throw new Error('Transaction reverted on-chain.');
+                    }
+                    return receipt;
+                }
+            } catch (e) {
+                if (e && e.message && /reverted/i.test(e.message)) throw e;
+                // transient RPC error — keep polling
+            }
+            await new Promise(r => setTimeout(r, 2000));
+        }
+        // Don't throw on timeout — the tx may still land. Caller will show a
+        // "view on CeloScan" link so the user can verify.
+        return null;
+    }
+
+    // Submit a contract call from inside MiniPay. We try `feeCurrency` values
+    // in order (USDm → USDT adapter → USDC adapter → no hint) and stop on the
+    // first success. MiniPay is documented to possibly ignore the hint and
+    // choose the token the user holds the most of, so passing a hint is safe.
+    // User-rejection errors bubble up immediately — we never re-prompt.
+    async function _miniPayTx(toAddr, abiFragment, args, valueHex) {
+        const ep = _getEthProvider();
+        if (!ep) throw new Error('No injected wallet provider available.');
+
+        const accounts = await ep.request({ method: 'eth_requestAccounts' });
+        const from = (accounts && accounts[0]) || WALLET;
+        if (from && WALLET && from.toLowerCase() !== WALLET.toLowerCase()) {
+            throw new Error(
+                'Wrong MiniPay account. Please switch to ' +
+                WALLET.slice(0, 6) + '…' + WALLET.slice(-4) + ' and try again.'
+            );
+        }
+
+        const iface = new ethers.Interface([abiFragment]);
+        const fnName = abiFragment.match(/function (\w+)/)[1];
+        const data = iface.encodeFunctionData(fnName, args);
+        const value = valueHex || '0x0';
+
+        const attempts = [
+            MINIPAY_FEE_CURRENCY.USDM,
+            MINIPAY_FEE_CURRENCY.USDT_ADAPTER,
+            MINIPAY_FEE_CURRENCY.USDC_ADAPTER,
+            null, // let MiniPay pick the fee currency itself
+        ];
+
+        let lastErr;
+        for (const fc of attempts) {
+            const txParams = { from, to: toAddr, data, value };
+            if (fc) txParams.feeCurrency = fc;
+            try {
+                const txHash = await ep.request({
+                    method: 'eth_sendTransaction',
+                    params: [txParams],
+                });
+                await _miniPayWaitForReceipt(ep, txHash);
+                return txHash;
+            } catch (err) {
+                lastErr = err;
+                const code = err && err.code;
+                const msg = ((err && (err.message || err.data && err.data.message)) || '').toLowerCase();
+                // User explicitly rejected — never retry (no double-signing prompts).
+                if (code === 4001 || /reject|denied by user|user denied/i.test(msg)) {
+                    throw err;
+                }
+                // On-chain revert — no point retrying with a different fee currency.
+                if (/revert/i.test(msg)) {
+                    throw err;
+                }
+                console.warn('[MiniPay] tx attempt failed with feeCurrency=' + fc + ':', msg || err);
+                // Fall through and try the next feeCurrency option.
+            }
+        }
+        throw lastErr || new Error('MiniPay transaction failed.');
+    }
+
     async function getSigner() {
         if (window.isCustodialMode || LOGIN_METHOD === 'custodial' || LOGIN_METHOD === 'turnkey') {
             throw new Error('This account uses custodial/Turnkey signing. Please continue with automatic server signing.');
@@ -585,6 +698,18 @@
             if (window.isCustodialMode) {
                 showAlert('saveAlert', 'info', '<span class="spinner"></span> Approving G$ spending server-side…');
                 const txHash = await serverSignedTx(GD_CONTRACT,
+                    "function approve(address spender, uint256 amount) returns (bool)",
+                    [SAVINGS_CONTRACT, amtWei]);
+                showAlert('saveAlert', 'success',
+                    `✅ Approved! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View ↗</a><br>Now click "Lock & Save G$".`);
+                document.getElementById('saveBtn').disabled = false;
+                btn.innerHTML = '<i class="fas fa-check-circle"></i> Approved ✓';
+                return;
+            }
+
+            if (_isMiniPay()) {
+                showAlert('saveAlert', 'info', '<span class="spinner"></span> Approve G$ spending in MiniPay…');
+                const txHash = await _miniPayTx(GD_CONTRACT,
                     "function approve(address spender, uint256 amount) returns (bool)",
                     [SAVINGS_CONTRACT, amtWei]);
                 showAlert('saveAlert', 'success',
@@ -657,6 +782,28 @@
                 return;
             }
 
+            if (_isMiniPay()) {
+                showAlert('saveAlert', 'info', '<span class="spinner"></span> Confirm the save transaction in MiniPay…');
+                const txHash = await _miniPayTx(SAVINGS_CONTRACT,
+                    "function depositSavings(uint256 amount, uint256 lockDays) external",
+                    [amtWei, BigInt(selectedDays)]);
+                const unlockDate = new Date();
+                unlockDate.setDate(unlockDate.getDate() + selectedDays);
+                showAlert('saveAlert', 'success',
+                    `🎉 Successfully saved ${parseFloat(amtStr).toLocaleString()} G$ for ${selectedDays} days!<br>` +
+                    `Unlocks: <strong>${unlockDate.toDateString()}</strong><br>` +
+                    `<a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
+                );
+                document.getElementById('saveAmount').value = '';
+                updateSummary();
+                document.getElementById('approveBtn').disabled = false;
+                document.getElementById('approveBtn').innerHTML = '<i class="fas fa-check-circle"></i> Step 1 — Approve G$ Spending';
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-lock"></i> Step 2 — Lock & Save G$';
+                loadStats();
+                return;
+            }
+
             const signer = await getSigner();
             await ensureCeloNetwork();
 
@@ -699,6 +846,18 @@
                     [BigInt(depositId)]);
                 showAlert('depositsAlert', 'success',
                     `✅ Withdrawn! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
+                );
+                loadDeposits(); loadStats();
+                return;
+            }
+
+            if (_isMiniPay()) {
+                showAlert('depositsAlert', 'info', '<span class="spinner"></span> Confirm withdrawal in MiniPay…');
+                const txHash = await _miniPayTx(SAVINGS_CONTRACT,
+                    "function withdraw(uint256 depositId) external",
+                    [BigInt(depositId)]);
+                showAlert('depositsAlert', 'success',
+                    `✅ Withdrawn successfully! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
                 );
                 loadDeposits(); loadStats();
                 return;
@@ -872,6 +1031,18 @@
                 return;
             }
 
+            if (_isMiniPay()) {
+                showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Approve G$ spending in MiniPay…');
+                const txHash = await _miniPayTx(GD_CONTRACT,
+                    "function approve(address spender, uint256 amount) returns (bool)",
+                    [SAVINGS_CONTRACT, amtWei]);
+                showAlert('sponsorAlert', 'success',
+                    `✅ Approved! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View ↗</a><br>Now click "Add to Reward Pool".`);
+                document.getElementById('poolFundBtn').disabled = false;
+                btn.innerHTML = '<i class="fas fa-check-circle"></i> Approved ✓';
+                return;
+            }
+
             showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Check your wallet — click it to open if nothing pops up…');
             const signer = await getSigner();
             await ensureCeloNetwork();
@@ -911,6 +1082,24 @@
             if (window.isCustodialMode) {
                 showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Funding reward pool server-side…');
                 const txHash = await serverSignedTx(SAVINGS_CONTRACT,
+                    "function fundRewardPool(uint256 amount) external",
+                    [amtWei]);
+                showAlert('sponsorAlert', 'success',
+                    `🎉 <strong>${parseFloat(amtStr).toLocaleString()} G$</strong> added to the reward pool.<br>` +
+                    `<a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
+                );
+                document.getElementById('sponsorAmount').value = '';
+                document.getElementById('poolApproveBtn').disabled = false;
+                document.getElementById('poolApproveBtn').innerHTML = '<i class="fas fa-check-circle"></i> Step 1 — Approve G$ Spending';
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-hand-holding-heart"></i> Step 2 — Add to Reward Pool';
+                loadStats(); loadSponsorStats();
+                return;
+            }
+
+            if (_isMiniPay()) {
+                showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Confirm reward-pool funding in MiniPay…');
+                const txHash = await _miniPayTx(SAVINGS_CONTRACT,
                     "function fundRewardPool(uint256 amount) external",
                     [amtWei]);
                 showAlert('sponsorAlert', 'success',
