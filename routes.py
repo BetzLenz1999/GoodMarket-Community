@@ -5653,6 +5653,40 @@ def _clear_email_onboarding_session():
     session.pop("turnkey_email_fallback_at", None)
 
 
+def _record_referral_with_warning(referral_code, wallet_address: str, context: str):
+    """
+    Best-effort referral recording used by the custodial / Turnkey signup paths.
+    Returns a user-facing warning string if the referral could not be recorded
+    (invalid code, already-verified wallet, unexpected error). Returns None on
+    success or when no referral code was supplied.
+    """
+    if not referral_code or not str(referral_code).strip():
+        return None
+    try:
+        from referral_program.referral_service import referral_service
+        normalized_code = str(referral_code).strip().upper()
+        validation = referral_service.validate_referral_code(normalized_code)
+        if not validation.get("valid"):
+            if len(normalized_code) < 8:
+                return f'Referral code "{normalized_code}" looks incomplete ({len(normalized_code)}/8 characters).'
+            return f'Referral code "{normalized_code}" was not recognized.'
+        record_result = referral_service.record_referral(
+            referral_code=normalized_code,
+            referee_wallet=wallet_address
+        )
+        if record_result.get("success") or record_result.get("already_exists"):
+            return None
+        if record_result.get("already_verified"):
+            return "Referral not recorded: this wallet is already face-verified on GoodDollar — referrals only apply to first-time GoodDollar users."
+        err_msg = record_result.get("error") or ""
+        if err_msg:
+            return f"Referral could not be recorded: {err_msg}"
+        return "Referral could not be recorded. Please contact support if this is unexpected."
+    except Exception as ref_err:
+        logger.warning(f"Referral processing error in {context}: {ref_err}")
+        return "Referral could not be processed due to a server error."
+
+
 def _turnkey_export_recently_verified(email: str, max_age_seconds: int = 10 * 60) -> bool:
     verified_email = session.get("turnkey_export_email_verified")
     verified_at = int(session.get("turnkey_export_email_verified_at") or 0)
@@ -5751,23 +5785,16 @@ def turnkey_login():
         _upsert_user_wallet_record(wallet_address, login_method="custodial")
         _sync_user_verification_tracking(wallet_address)
 
-        if referral_code and referral_code.strip():
-            try:
-                from referral_program.referral_service import referral_service
-                validation = referral_service.validate_referral_code(referral_code.strip().upper())
-                if validation.get("valid"):
-                    referral_service.record_referral(
-                        referral_code=referral_code.strip().upper(),
-                        referee_wallet=wallet_address
-                    )
-            except Exception as ref_err:
-                logger.warning(f"Referral processing error in custodial login: {ref_err}")
+        referral_warning = _record_referral_with_warning(referral_code, wallet_address, "custodial login")
 
-        return jsonify({
+        response_payload = {
             "success": True,
             "wallet": wallet_address,
             "redirect_to": "/wallet"
-        })
+        }
+        if referral_warning:
+            response_payload["referral_warning"] = referral_warning
+        return jsonify(response_payload)
     except Exception as e:
         logger.error(f"Custodial login error: {e}")
         return jsonify({"success": False, "error": "Login failed. Please check your key and try again."}), 500
@@ -5875,27 +5902,19 @@ def turnkey_create_wallet():
                     custodial_key_enc=encrypted_key
                 )
 
-            if referral_code and str(referral_code).strip():
-                try:
-                    from referral_program.referral_service import referral_service
-                    normalized_code = str(referral_code).strip().upper()
-                    validation = referral_service.validate_referral_code(normalized_code)
-                    if validation.get("valid"):
-                        referral_service.record_referral(
-                            referral_code=normalized_code,
-                            referee_wallet=wallet_address
-                        )
-                except Exception as ref_err:
-                    logger.warning(f"Referral processing error in fallback wallet creation: {ref_err}")
+            fallback_referral_warning = _record_referral_with_warning(referral_code, wallet_address, "fallback wallet creation")
 
             _clear_email_onboarding_session()
 
-            return jsonify({
+            fallback_response = {
                 "status": "success",
                 "wallet": wallet_address,
                 "mode": "custodial_fallback",
                 "warning": "Turnkey unavailable on this deployment; created a secure custodial wallet instead."
-            })
+            }
+            if fallback_referral_warning:
+                fallback_response["referral_warning"] = fallback_referral_warning
+            return jsonify(fallback_response)
 
         wallet_address = result.get("address")
         suborg_id = result.get("subOrgId")
@@ -5930,26 +5949,18 @@ def turnkey_create_wallet():
                 turnkey_sign_with=sign_with
             )
 
-        if referral_code and str(referral_code).strip():
-            try:
-                from referral_program.referral_service import referral_service
-                normalized_code = str(referral_code).strip().upper()
-                validation = referral_service.validate_referral_code(normalized_code)
-                if validation.get("valid"):
-                    referral_service.record_referral(
-                        referral_code=normalized_code,
-                        referee_wallet=wallet_address
-                    )
-            except Exception as ref_err:
-                logger.warning(f"Referral processing error in turnkey wallet creation: {ref_err}")
+        turnkey_referral_warning = _record_referral_with_warning(referral_code, wallet_address, "turnkey wallet creation")
 
         _clear_email_onboarding_session()
 
-        return jsonify({
+        turnkey_response = {
             "status": "success",
             "wallet": wallet_address,
             "suborg_id": suborg_id
-        })
+        }
+        if turnkey_referral_warning:
+            turnkey_response["referral_warning"] = turnkey_referral_warning
+        return jsonify(turnkey_response)
     except Exception as e:
         logger.error(f"Turnkey create-wallet error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
