@@ -176,12 +176,14 @@
         }
         .copy-btn:hover { background: rgba(var(--accent-rgb),0.26); }
         .balance-amount {
-            font-size: 2.5rem;
+            font-size: 1.7rem;
             font-weight: 900;
             color: #c8d2ff;
-            letter-spacing: -1.5px;
+            letter-spacing: -0.8px;
             line-height: 1;
             margin-bottom: 0.25rem;
+            word-break: break-word;
+            overflow-wrap: anywhere;
         }
         .balance-sub {
             font-size: 0.78rem;
@@ -192,7 +194,7 @@
         .action-row {
             display: flex;
             flex-direction: column;
-            gap: 0.55rem;
+            gap: 0.38rem;
             padding: 0;
             margin-bottom: 0;
             overflow: visible;
@@ -202,10 +204,10 @@
             flex-direction: row;
             align-items: center;
             justify-content: flex-start;
-            gap: 0.72rem;
+            gap: 0.55rem;
             width: 100%;
-            padding: 0.5rem 0.65rem;
-            border-radius: 14px;
+            padding: 0.36rem 0.5rem;
+            border-radius: 12px;
             border: 1px solid rgba(255,255,255,0.08);
             background: rgba(255,255,255,0.02);
             cursor: pointer;
@@ -216,12 +218,12 @@
             background: rgba(var(--accent-rgb),0.04);
         }
         .action-circle {
-            width: 42px; height: 42px;
+            width: 34px; height: 34px;
             border-radius: 50%;
             background: rgba(255,255,255,0.06);
             border: 1px solid rgba(255,255,255,0.12);
             display: flex; align-items: center; justify-content: center;
-            font-size: 1rem;
+            font-size: 0.88rem;
             flex-shrink: 0;
             transition: all 0.2s;
         }
@@ -293,10 +295,24 @@
             50% { transform: translateY(-1.5px); }
         }
         .action-label {
-            font-size: 0.86rem;
+            font-size: 0.78rem;
             font-weight: 600;
             color: var(--text-dim);
             white-space: nowrap;
+        }
+        .action-label.action-label-colorful {
+            font-weight: 800;
+            background: linear-gradient(90deg, #ff5f6d, #ffc371, #47e0a0, #4facfe, #a78bfa, #ff5f6d);
+            background-size: 300% 100%;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+            animation: colorfulShift 6s linear infinite;
+        }
+        @keyframes colorfulShift {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 300% 50%; }
         }
         .wallet-layout {
             display: grid;
@@ -799,16 +815,16 @@
                 padding-right: 0.9rem;
             }
             .action-item {
-                gap: 0.58rem;
-                padding: 0.45rem 0.52rem;
+                gap: 0.45rem;
+                padding: 0.32rem 0.42rem;
             }
             .action-circle {
-                width: 40px;
-                height: 40px;
-                font-size: 0.95rem;
+                width: 32px;
+                height: 32px;
+                font-size: 0.82rem;
             }
             .action-label {
-                font-size: 0.8rem;
+                font-size: 0.72rem;
             }
         }
 
@@ -881,9 +897,9 @@
                     <div class="action-circle">🏦</div>
                     <span class="action-label">Savings</span>
                 </div>
-                <div class="action-item" onclick="handleDashboardFromWallet(event)">
-                    <div class="action-circle">📊</div>
-                    <span class="action-label">Dashboard</span>
+                <div class="action-item" onclick="handleMoreWaysToEarnFromWallet(event)">
+                    <div class="action-circle">💎</div>
+                    <span class="action-label action-label-colorful">More Ways To Earn</span>
                 </div>
                 <div class="action-item" onclick="window.location.href='/overview'">
                     <div class="action-circle">🏠</div>
@@ -1491,6 +1507,19 @@
             return false;
         }
         window.location.href = '/dashboard';
+        return false;
+    }
+    function handleMoreWaysToEarnFromWallet(event) {
+        if (window._walletNeedsFV) {
+            if (event) event.preventDefault();
+            const msg = document.getElementById('walletDashboardFVMsg');
+            if (msg) {
+                msg.style.display = 'block';
+                msg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            return false;
+        }
+        window.location.href = '/dashboard#menuHeader-earn';
         return false;
     }
     function clearAlert(id) {
