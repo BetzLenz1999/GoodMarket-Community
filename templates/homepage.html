@@ -1094,6 +1094,13 @@
             display: block;
         }
 
+        .status-message.warning {
+            background: #fffbeb;
+            color: #b45309;
+            border: 1px solid #fcd34d;
+            display: block;
+        }
+
         .status-message.info {
             background: rgba(251,191,36,0.12);
             color: #d97706;
@@ -1819,6 +1826,12 @@
             <div class="wallet-form" id="walletConnectOptions">
                 <button class="back-btn" onclick="showWalletOptions()">← Back to login options</button>
 
+                <div class="wallet-input-group" style="margin-bottom:0.85rem;">
+                    <label class="wallet-label" for="wcReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
+                    <input type="text" id="wcReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" autocomplete="off" oninput="syncReferralInputs(this)" />
+                    <p style="font-size:0.72rem;color:#6b7280;margin-top:0.35rem;line-height:1.45;">Paste the 8-character code from the friend who invited you. Applies to Injected Wallet, WalletConnect, and Manual Address login below.</p>
+                </div>
+
                 <div class="wallet-options">
                     <button class="wallet-option-card" id="injectedWalletBtn" onclick="connectInjectedWallet()" style="border-color: rgba(249,115,22,0.5);">
                         <div class="option-icon" id="injectedWalletIcon">👛</div>
@@ -1863,7 +1876,7 @@
                 </div>
                 <div class="wallet-input-group">
                     <label class="wallet-label" for="manualReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
-                    <input type="text" id="manualReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" />
+                    <input type="text" id="manualReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" autocomplete="off" oninput="syncReferralInputs(this)" />
                 </div>
                 <button class="connect-btn" onclick="verifyManualAddress()">Continue to Wallet (Manual Mode)</button>
                 <div id="manualAddressStatus" class="status-message"></div>
@@ -1936,7 +1949,7 @@
 
                 <div class="wallet-input-group">
                     <label class="wallet-label" for="createReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
-                    <input type="text" id="createReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" autocomplete="off" />
+                    <input type="text" id="createReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" autocomplete="off" oninput="syncReferralInputs(this)" />
                 </div>
 
                 <button class="connect-btn" onclick="createTurnkeyWallet()" style="background: linear-gradient(135deg, #059669, #047857);">
@@ -2184,9 +2197,64 @@
 
 
         function getPendingReferralCode() {
+            const fromWc = ((document.getElementById('wcReferralCode') || {}).value || '').trim();
             const fromManual = ((document.getElementById('manualReferralCode') || {}).value || '').trim();
+            const fromCreate = ((document.getElementById('createReferralCode') || {}).value || '').trim();
             const saved = (sessionStorage.getItem('pending_referral_code') || '').trim();
-            return fromManual || saved || '';
+            return (fromWc || fromManual || fromCreate || saved || '').toUpperCase();
+        }
+
+        function syncReferralInputs(sourceEl) {
+            const value = (sourceEl && sourceEl.value ? sourceEl.value : '').trim().toUpperCase();
+            ['wcReferralCode', 'manualReferralCode', 'createReferralCode'].forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el && el !== sourceEl && el.value !== value) {
+                    el.value = value;
+                }
+            });
+            if (value) {
+                try { sessionStorage.setItem('pending_referral_code', value); } catch (e) {}
+            }
+        }
+
+        function initReferralFromUrl() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const rawRef = (params.get('ref') || '').trim();
+                const stored = (sessionStorage.getItem('pending_referral_code') || '').trim();
+                const candidate = (rawRef || stored).toUpperCase();
+                // Defense-in-depth: referral codes are 8 alphanumeric chars; reject anything else
+                // so we never store or echo attacker-controlled values into the DOM / sessionStorage.
+                const ref = /^[A-Z0-9]{4,16}$/.test(candidate) ? candidate : '';
+                if (!ref) return;
+
+                if (rawRef) {
+                    try { sessionStorage.setItem('pending_referral_code', ref); } catch (e) {}
+                }
+
+                ['wcReferralCode', 'manualReferralCode', 'createReferralCode'].forEach(function (id) {
+                    const el = document.getElementById(id);
+                    if (el && !el.value.trim()) el.value = ref;
+                });
+
+                if (!document.getElementById('referralBanner')) {
+                    const banner = document.createElement('div');
+                    banner.id = 'referralBanner';
+                    banner.style.cssText = 'position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9998;max-width:92%;padding:0.7rem 1rem;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.18);font-size:0.86rem;text-align:center;line-height:1.5;';
+                    // Use textContent to prevent any HTML injection via the URL-derived ref value.
+                    banner.textContent = '🎁 Referral applied — Code ' + ref + ' will be used when you sign up. Both you and your referrer earn G$ after UBI verification.';
+                    document.body.appendChild(banner);
+                    setTimeout(function () { banner.style.transition = 'opacity 0.6s'; banner.style.opacity = '0'; setTimeout(function () { banner.remove(); }, 700); }, 8000);
+                }
+            } catch (err) {
+                console.warn('initReferralFromUrl failed:', err);
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initReferralFromUrl);
+        } else {
+            initReferralFromUrl();
         }
 
         function makeLoginMessage(address) {
@@ -2233,9 +2301,12 @@
                 const messageHex = utf8ToHex(message);
                 showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve the login message in your wallet.', 'info');
                 const signature = await provider.request({ method: 'personal_sign', params: [messageHex, wallet] });
-                await postVerifyIdentity(wallet, signature, message, getPendingReferralCode());
-                showWalletStatus('walletConnectStatus', '✅ Signature verified. Redirecting...', 'success');
-                setTimeout(() => { window.location.href = '/wallet'; }, 900);
+                const verifyData = await postVerifyIdentity(wallet, signature, message, getPendingReferralCode());
+                const okMsg = (verifyData && verifyData.referral_warning)
+                    ? ('✅ Signature verified. ⚠️ ' + verifyData.referral_warning + ' Redirecting...')
+                    : '✅ Signature verified. Redirecting...';
+                showWalletStatus('walletConnectStatus', okMsg, verifyData && verifyData.referral_warning ? 'warning' : 'success');
+                setTimeout(() => { window.location.href = '/wallet'; }, verifyData && verifyData.referral_warning ? 2400 : 900);
             } catch (err) {
                 const msg = (err && err.message) ? err.message : 'Failed to connect injected wallet';
                 const rejected = /reject|denied|cancel/i.test(msg);
@@ -2376,9 +2447,12 @@
                                 if (!signResp.ok || !signData.signature) {
                                     throw new Error(signData.error || 'WalletConnect signature failed');
                                 }
-                                await postVerifyIdentity(stData.address, signData.signature, message, getPendingReferralCode());
-                                showWalletStatus('walletConnectStatus', '✅ Wallet connected via WalletConnect. Redirecting...', 'success');
-                                setTimeout(() => { window.location.href = '/wallet'; }, 900);
+                                const wcVerifyData = await postVerifyIdentity(stData.address, signData.signature, message, getPendingReferralCode());
+                                const wcOkMsg = (wcVerifyData && wcVerifyData.referral_warning)
+                                    ? ('✅ Wallet connected via WalletConnect. ⚠️ ' + wcVerifyData.referral_warning + ' Redirecting...')
+                                    : '✅ Wallet connected via WalletConnect. Redirecting...';
+                                showWalletStatus('walletConnectStatus', wcOkMsg, wcVerifyData && wcVerifyData.referral_warning ? 'warning' : 'success');
+                                setTimeout(() => { window.location.href = '/wallet'; }, wcVerifyData && wcVerifyData.referral_warning ? 2400 : 900);
                                 return;
                             }
                             if (stData.status === 'rejected') throw new Error('WalletConnect request rejected by wallet.');
@@ -2428,9 +2502,12 @@
                     chainId: 'eip155:42220',
                     request: { method: 'personal_sign', params: [messageHex, address] }
                 });
-                await postVerifyIdentity(address, signature, message, getPendingReferralCode());
-                showWalletStatus('walletConnectStatus', '✅ Wallet connected via browser WalletConnect fallback. Redirecting...', 'success');
-                setTimeout(() => { window.location.href = '/wallet'; }, 900);
+                const wcFbVerifyData = await postVerifyIdentity(address, signature, message, getPendingReferralCode());
+                const wcFbOkMsg = (wcFbVerifyData && wcFbVerifyData.referral_warning)
+                    ? ('✅ Wallet connected via browser WalletConnect fallback. ⚠️ ' + wcFbVerifyData.referral_warning + ' Redirecting...')
+                    : '✅ Wallet connected via browser WalletConnect fallback. Redirecting...';
+                showWalletStatus('walletConnectStatus', wcFbOkMsg, wcFbVerifyData && wcFbVerifyData.referral_warning ? 'warning' : 'success');
+                setTimeout(() => { window.location.href = '/wallet'; }, wcFbVerifyData && wcFbVerifyData.referral_warning ? 2400 : 900);
             } catch (err) {
                 const emsg = (err && err.message) ? err.message : 'WalletConnect failed';
                 const rejected = /reject|denied|cancel/i.test(emsg);
@@ -2574,9 +2651,16 @@
                 const createData = await createResp.json();
 
                 if (createData.status === 'success' && createData.wallet) {
-                    statusDiv.className = 'status-message success';
-                    statusDiv.textContent = `✅ Wallet created: ${createData.wallet.slice(0,8)}…${createData.wallet.slice(-4)} — Redirecting…`;
-                    setTimeout(() => { window.location.href = '/wallet'; }, 1500);
+                    const shortWallet = `${createData.wallet.slice(0,8)}…${createData.wallet.slice(-4)}`;
+                    if (createData.referral_warning) {
+                        statusDiv.className = 'status-message warning';
+                        statusDiv.textContent = `✅ Wallet created: ${shortWallet} — ⚠️ ${createData.referral_warning} Redirecting…`;
+                        setTimeout(() => { window.location.href = '/wallet'; }, 3500);
+                    } else {
+                        statusDiv.className = 'status-message success';
+                        statusDiv.textContent = `✅ Wallet created: ${shortWallet} — Redirecting…`;
+                        setTimeout(() => { window.location.href = '/wallet'; }, 1500);
+                    }
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = createData.message || 'Wallet creation failed. Please try again.';
