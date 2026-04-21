@@ -2221,6 +2221,8 @@
             }
         }
 
+        let referralBannerShown = false;
+
         function initReferralFromUrl() {
             try {
                 const params = new URLSearchParams(window.location.search);
@@ -2259,7 +2261,11 @@
                     if (el && !el.value.trim()) el.value = ref;
                 });
 
-                if (!document.getElementById('referralBanner')) {
+                // Show the referral banner only once per page load — after it
+                // auto-dismisses we don't want subsequent openWalletModal() calls
+                // to re-create and flash it to the user again.
+                if (!referralBannerShown && !document.getElementById('referralBanner')) {
+                    referralBannerShown = true;
                     const banner = document.createElement('div');
                     banner.id = 'referralBanner';
                     banner.style.cssText = 'position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9998;max-width:92%;padding:0.7rem 1rem;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.18);font-size:0.86rem;text-align:center;line-height:1.5;';
