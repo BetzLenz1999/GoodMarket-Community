@@ -91,7 +91,7 @@ class NewsFeedService:
                 },
                 {
                     "title": "New Learn & Earn System Now Live",
-                    "content": "Take quizzes about GoodDollar and earn up to 2000 G$ per quiz! Each correct answer earns you 200 G$ with a 24-hour cooldown between quizzes. Test your knowledge and grow your G$ balance.",
+                    "content": "Take quizzes about GoodDollar and earn up to 2,000 G$ per quiz! Each correct answer earns you 200 G$, with a 5-day cooldown between successful quizzes. Test your knowledge and grow your G$ balance.",
                     "category": "feature",
                     "priority": "high", 
                     "author": "GIMT Team",
