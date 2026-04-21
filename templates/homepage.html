@@ -830,6 +830,58 @@
             width: 100%;
             box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
             animation: modalIn 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .wallet-modal-content::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.4), rgba(59, 130, 246, 0.28), rgba(16, 185, 129, 0.25));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+
+        .wallet-journey {
+            display: flex;
+            gap: 0.5rem;
+            margin: 0 0 1rem;
+            flex-wrap: wrap;
+        }
+
+        .wallet-step-chip {
+            border: 1px solid #e5e7eb;
+            background: #f8fafc;
+            color: #6b7280;
+            border-radius: 999px;
+            padding: 0.35rem 0.7rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            transition: all 0.2s ease;
+        }
+
+        .wallet-step-chip.active {
+            background: rgba(124, 58, 237, 0.1);
+            border-color: rgba(124, 58, 237, 0.32);
+            color: #6d28d9;
+            box-shadow: 0 6px 14px rgba(124, 58, 237, 0.15);
+        }
+
+        .wallet-mode-hint {
+            margin: 0 0 1rem;
+            border: 1px solid #e5e7eb;
+            background: linear-gradient(135deg, #f8fafc, #f9fafb);
+            color: #374151;
+            border-radius: 12px;
+            padding: 0.7rem 0.85rem;
+            font-size: 0.78rem;
+            line-height: 1.45;
         }
 
         @keyframes modalIn {
@@ -912,6 +964,36 @@
             transform: translateY(-2px);
         }
 
+        .wallet-option-card.loading {
+            pointer-events: none;
+            opacity: 0.86;
+            border-color: rgba(124, 58, 237, 0.45);
+            box-shadow: 0 8px 18px rgba(124, 58, 237, 0.18);
+        }
+
+        .wallet-option-card.loading .option-arrow {
+            color: transparent;
+            position: relative;
+        }
+
+        .wallet-option-card.loading .option-arrow::after {
+            content: '';
+            width: 15px;
+            height: 15px;
+            border: 2px solid rgba(255, 255, 255, 0.85);
+            border-right-color: transparent;
+            border-radius: 50%;
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            animation: spinLoader 0.7s linear infinite;
+        }
+
+        @keyframes spinLoader {
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
         .wallet-option-card.primary {
             background: linear-gradient(135deg, #10b981, #059669);
             border-color: transparent;
@@ -988,6 +1070,14 @@
 
         .wallet-option-card .option-text .option-desc {
             color: #374151;
+        }
+
+        .wallet-quick-note {
+            margin: 0.75rem 0 0.2rem;
+            font-size: 0.75rem;
+            color: #6b7280;
+            line-height: 1.45;
+            text-align: left;
         }
 
         .option-arrow {
@@ -2144,10 +2234,18 @@
                 </div>
                 <button class="close-modal" onclick="closeWalletModal()">×</button>
             </div>
+            <div class="wallet-journey" id="walletJourney">
+                <span class="wallet-step-chip active" data-step="start">1 · Choose path</span>
+                <span class="wallet-step-chip" data-step="connect">2 · Connect wallet</span>
+                <span class="wallet-step-chip" data-step="create">2 · Create wallet</span>
+            </div>
+            <div class="wallet-mode-hint" id="walletModeHint">
+                Pick your preferred flow: connect an existing wallet, or create a brand-new GoodDollar wallet with email OTP.
+            </div>
 
             <!-- Step 1: Choose login path -->
             <div class="wallet-options" id="walletOptions">
-                <button class="wallet-option-card wc-option" onclick="showWalletConnectOptions()">
+                <button class="wallet-option-card wc-option" id="walletConnectPrimaryBtn" onclick="showWalletConnectOptions()">
                     <div class="option-icon">🔗</div>
                     <div class="option-text">
                         <div class="option-title">Wallet Connect</div>
@@ -2156,7 +2254,7 @@
                     <span class="option-arrow">→</span>
                 </button>
 
-                <button class="wallet-option-card primary" onclick="showTurnkeyOptions()">
+                <button class="wallet-option-card primary" id="createWalletPrimaryBtn" onclick="showTurnkeyOptions()">
                     <div class="option-icon">🆕</div>
                     <div class="option-text">
                         <div class="option-title">Create New Wallet</div>
@@ -2164,6 +2262,7 @@
                     </div>
                     <span class="option-arrow">→</span>
                 </button>
+                <p class="wallet-quick-note">Tip: If you already use MetaMask/Trust Wallet, choose Wallet Connect. If you're new, choose Create New Wallet.</p>
             </div>
 
             <!-- Step 2A: WalletConnect / injected / manual -->
@@ -2186,7 +2285,7 @@
                         <span class="option-arrow">→</span>
                     </button>
 
-                    <button class="wallet-option-card wc-option" onclick="connectWalletConnect()">
+                    <button class="wallet-option-card wc-option" id="walletConnectQrBtn" onclick="connectWalletConnect()">
                         <div class="option-icon">📱</div>
                         <div class="option-text">
                             <div class="option-title">WalletConnect</div>
@@ -2245,7 +2344,7 @@
                 </div>
 
                 <div class="wallet-options">
-                    <button class="wallet-option-card" onclick="showCreateWalletForm()" style="border-color: rgba(16,185,129,0.45); background: linear-gradient(135deg, rgba(16,185,129,0.09), rgba(5,150,105,0.05));">
+                    <button class="wallet-option-card" id="createWalletFlowBtn" onclick="showCreateWalletForm()" style="border-color: rgba(16,185,129,0.45); background: linear-gradient(135deg, rgba(16,185,129,0.09), rgba(5,150,105,0.05));">
                         <div class="option-icon">🆕</div>
                         <div class="option-text">
                             <div class="option-title" style="color:#10b981;">Create New GoodDollar Wallet</div>
@@ -2356,8 +2455,24 @@
             try { initReferralFromUrl(); } catch (e) {}
         }
 
+        function setWalletJourney(step, hintText) {
+            const chips = document.querySelectorAll('#walletJourney .wallet-step-chip');
+            chips.forEach(chip => chip.classList.toggle('active', chip.dataset.step === step));
+            const hint = document.getElementById('walletModeHint');
+            if (hint && hintText) hint.textContent = hintText;
+        }
+
+        function setOptionCardLoading(btnId, isLoading) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            btn.classList.toggle('loading', !!isLoading);
+            btn.disabled = !!isLoading;
+        }
+
         function closeWalletModal() {
             document.getElementById('walletModal').classList.remove('active');
+            setOptionCardLoading('walletConnectPrimaryBtn', false);
+            setOptionCardLoading('createWalletPrimaryBtn', false);
         }
 
         function showWalletOptions() {
@@ -2366,10 +2481,14 @@
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('visible');
             });
+            setWalletJourney('start', 'Pick your preferred flow: connect an existing wallet, or create a brand-new GoodDollar wallet with email OTP.');
+            setOptionCardLoading('walletConnectPrimaryBtn', false);
+            setOptionCardLoading('createWalletPrimaryBtn', false);
             detectInjectedWallet();
         }
 
         function showWalletConnectOptions() {
+            setOptionCardLoading('walletConnectPrimaryBtn', true);
             document.getElementById('walletOptions').style.display = 'none';
             ['manualAddressForm', 'turnkeyOptions', 'createWalletForm'].forEach(id => {
                 const el = document.getElementById(id);
@@ -2377,6 +2496,8 @@
             });
             const f = document.getElementById('walletConnectOptions');
             if (f) f.classList.add('visible');
+            setWalletJourney('connect', 'Connect using injected wallet, WalletConnect QR, or use manual fallback if wallet signature is unavailable.');
+            setTimeout(() => setOptionCardLoading('walletConnectPrimaryBtn', false), 220);
             detectInjectedWallet();
         }
 
@@ -2388,9 +2509,11 @@
             });
             const f = document.getElementById('manualAddressForm');
             if (f) f.classList.add('visible');
+            setWalletJourney('connect', 'Manual mode is available for copy/paste login when signature flow is blocked on your current wallet/browser.');
         }
 
         function showTurnkeyOptions() {
+            setOptionCardLoading('createWalletPrimaryBtn', true);
             document.getElementById('walletOptions').style.display = 'none';
             ['walletConnectOptions', 'manualAddressForm', 'createWalletForm'].forEach(id => {
                 const el = document.getElementById(id);
@@ -2398,9 +2521,12 @@
             });
             const f = document.getElementById('turnkeyOptions');
             if (f) f.classList.add('visible');
+            setWalletJourney('create', 'Create or recover your email-linked GoodDollar wallet in a few steps (email + OTP + wallet setup).');
+            setTimeout(() => setOptionCardLoading('createWalletPrimaryBtn', false), 220);
         }
 
         function showCreateWalletForm() {
+            setOptionCardLoading('createWalletFlowBtn', true);
             configureWalletForm('create');
             ['walletOptions', 'turnkeyOptions'].forEach(id => {
                 const el = document.getElementById(id);
@@ -2408,6 +2534,8 @@
             });
             const f = document.getElementById('createWalletForm');
             if (f) f.classList.add('visible');
+            setWalletJourney('create', 'Step 1: send OTP to your email. Step 2: verify code. Step 3: create your new GoodDollar wallet.');
+            setTimeout(() => setOptionCardLoading('createWalletFlowBtn', false), 220);
         }
 
         let walletFormMode = 'create';
@@ -2454,6 +2582,7 @@
             });
             const f = document.getElementById('createWalletForm');
             if (f) f.classList.add('visible');
+            setWalletJourney('create', 'Recover flow: verify your email OTP, then load your previously linked wallet.');
         }
 
         function showWalletStatus(targetId, message, type = 'info') {
@@ -2838,6 +2967,7 @@
         }
 
         async function connectWalletConnect() {
+            setOptionCardLoading('walletConnectQrBtn', true);
             const qrWrap = document.getElementById('wcQrWrap');
             if (qrWrap) qrWrap.style.display = 'none';
             showWalletStatus('walletConnectStatus', '⏳ Starting WalletConnect...', 'info');
@@ -2931,6 +3061,8 @@
                 const rejected = /reject|denied|cancel/i.test(emsg);
                 const prefix = rejected ? '❌ Request rejected by wallet. ' : '❌ ';
                 showWalletStatus('walletConnectStatus', prefix + emsg + ' You can use manual wallet input for copy/paste guidance.', rejected ? 'warning' : 'error');
+            } finally {
+                setOptionCardLoading('walletConnectQrBtn', false);
             }
         }
 
