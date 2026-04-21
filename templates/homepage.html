@@ -1098,6 +1098,7 @@
             background: #fffbeb;
             color: #b45309;
             border: 1px solid #fcd34d;
+            display: block;
         }
 
         .status-message.info {
@@ -2221,7 +2222,10 @@
                 const params = new URLSearchParams(window.location.search);
                 const rawRef = (params.get('ref') || '').trim();
                 const stored = (sessionStorage.getItem('pending_referral_code') || '').trim();
-                const ref = (rawRef || stored).toUpperCase();
+                const candidate = (rawRef || stored).toUpperCase();
+                // Defense-in-depth: referral codes are 8 alphanumeric chars; reject anything else
+                // so we never store or echo attacker-controlled values into the DOM / sessionStorage.
+                const ref = /^[A-Z0-9]{4,16}$/.test(candidate) ? candidate : '';
                 if (!ref) return;
 
                 if (rawRef) {
@@ -2237,7 +2241,8 @@
                     const banner = document.createElement('div');
                     banner.id = 'referralBanner';
                     banner.style.cssText = 'position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9998;max-width:92%;padding:0.7rem 1rem;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.18);font-size:0.86rem;text-align:center;line-height:1.5;';
-                    banner.innerHTML = '🎁 <strong>Referral applied</strong> &mdash; Code <strong>' + ref + '</strong> will be used when you sign up. Both you and your referrer earn G$ after UBI verification.';
+                    // Use textContent to prevent any HTML injection via the URL-derived ref value.
+                    banner.textContent = '🎁 Referral applied — Code ' + ref + ' will be used when you sign up. Both you and your referrer earn G$ after UBI verification.';
                     document.body.appendChild(banner);
                     setTimeout(function () { banner.style.transition = 'opacity 0.6s'; banner.style.opacity = '0'; setTimeout(function () { banner.remove(); }, 700); }, 8000);
                 }
