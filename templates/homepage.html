@@ -2317,6 +2317,43 @@
             return data;
         }
 
+        async function ensureCeloChain(provider) {
+            const CELO_CHAIN_HEX = '0xa4ec'; // 42220
+            try {
+                const current = await provider.request({ method: 'eth_chainId' });
+                const normalized = (typeof current === 'string') ? current.toLowerCase() : current;
+                if (normalized === CELO_CHAIN_HEX) return true;
+            } catch (_) { /* some wallets don't support eth_chainId pre-connect */ }
+            try {
+                await provider.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: CELO_CHAIN_HEX }]
+                });
+                return true;
+            } catch (switchErr) {
+                if (switchErr && (switchErr.code === 4902 || /unrecognized|not added/i.test(switchErr.message || ''))) {
+                    try {
+                        await provider.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: CELO_CHAIN_HEX,
+                                chainName: 'Celo Mainnet',
+                                nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+                                rpcUrls: ['https://forno.celo.org'],
+                                blockExplorerUrls: ['https://celoscan.io']
+                            }]
+                        });
+                        return true;
+                    } catch (addErr) {
+                        console.warn('Failed to add Celo network to wallet:', addErr);
+                        return false;
+                    }
+                }
+                console.warn('Failed to switch wallet to Celo:', switchErr);
+                return false;
+            }
+        }
+
         async function connectInjectedWallet() {
             const provider = getPreferredInjectedProvider();
             if (!provider) {
@@ -2328,6 +2365,12 @@
                 const accounts = await provider.request({ method: 'eth_requestAccounts' });
                 if (!accounts || !accounts.length) throw new Error('No wallet account found.');
                 const wallet = accounts[0];
+                showWalletStatus('walletConnectStatus', '🔀 Switching your wallet to the Celo network…', 'info');
+                const onCelo = await ensureCeloChain(provider);
+                if (!onCelo) {
+                    showWalletStatus('walletConnectStatus', '⚠️ Could not switch to Celo automatically — please switch manually in your wallet and try again.', 'warning');
+                    return;
+                }
                 const message = makeLoginMessage(wallet);
                 const messageHex = utf8ToHex(message);
                 showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve the login message in your wallet.', 'info');
@@ -2503,7 +2546,7 @@
                     optionalNamespaces: {
                         eip155: {
                             methods: ['eth_accounts', 'eth_sendTransaction', 'eth_getTransactionReceipt', 'eth_chainId', 'personal_sign'],
-                            chains: ['eip155:42220', 'eip155:1'],
+                            chains: ['eip155:42220'],
                             events: ['chainChanged', 'accountsChanged']
                         }
                     }
