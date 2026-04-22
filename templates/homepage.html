@@ -1795,15 +1795,15 @@
                         Active Earners
                     </div>
                     <div class="nx-stats-value" data-stat="active-earners">18,492</div>
-                    <div class="nx-stats-trend">+342 today</div>
+                    <div class="nx-stats-trend" data-stat-trend="active-earners">Live from Supabase</div>
                 </div>
                 <div class="nx-stats-card nx-sc-3">
                     <div class="nx-stats-label">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/></svg>
-                        Tasks Completed Today
+                        Tasks Completed This Month
                     </div>
                     <div class="nx-stats-value" data-stat="tasks-today">4,128</div>
-                    <div class="nx-stats-trend" style="color: var(--nx-cyan);">Live · updating</div>
+                    <div class="nx-stats-trend" data-stat-trend="tasks-today" style="color: var(--nx-cyan);">Last 30 days · Supabase</div>
                 </div>
             </div>
         </div>
@@ -3792,6 +3792,46 @@
         }
 
         document.addEventListener('DOMContentLoaded', loadCommunityTweets);
+    })();
+
+    (function() {
+        function formatNumber(value) {
+            const parsed = Number(value);
+            if (!Number.isFinite(parsed)) return '0';
+            return parsed.toLocaleString('en-US');
+        }
+
+        async function loadHomepageLiveStats() {
+            try {
+                const response = await fetch('/api/homepage-live-stats');
+                if (!response.ok) return;
+
+                const data = await response.json();
+                if (!data.success) return;
+
+                const activeEarnersEl = document.querySelector('[data-stat="active-earners"]');
+                const tasksTodayEl = document.querySelector('[data-stat="tasks-today"]');
+                const activeTrendEl = document.querySelector('[data-stat-trend="active-earners"]');
+                const tasksTrendEl = document.querySelector('[data-stat-trend="tasks-today"]');
+
+                if (activeEarnersEl) {
+                    activeEarnersEl.textContent = formatNumber(data.active_earners);
+                }
+                if (tasksTodayEl) {
+                    tasksTodayEl.textContent = formatNumber(data.tasks_completed_30d);
+                }
+                if (activeTrendEl) {
+                    activeTrendEl.textContent = 'Updated from Supabase';
+                }
+                if (tasksTrendEl) {
+                    tasksTrendEl.textContent = 'Last 30 days · Supabase';
+                }
+            } catch (error) {
+                console.warn('Failed to load homepage live stats:', error);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadHomepageLiveStats);
     })();
     </script>
 </body>
