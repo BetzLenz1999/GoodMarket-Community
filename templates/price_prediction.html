@@ -124,6 +124,48 @@
             margin-top: 0.2rem;
         }
 
+        .price-card .sparkline {
+            margin-top: 0.5rem;
+            height: 36px;
+            width: 100%;
+            display: block;
+        }
+
+        .price-card .sparkline path.line {
+            fill: none;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .price-card .sparkline path.fill {
+            opacity: 0.18;
+        }
+
+        .price-card.trend-up .sparkline path.line,
+        .price-card.trend-up .change { color: #10b981; stroke: #10b981; fill: #10b981; }
+        .price-card.trend-down .sparkline path.line,
+        .price-card.trend-down .change { color: #ef4444; stroke: #ef4444; fill: #ef4444; }
+
+        .price-card .change {
+            font-size: 0.7rem;
+            font-weight: 700;
+            margin-top: 0.25rem;
+        }
+
+        .price-error {
+            grid-column: 1 / -1;
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 12px;
+            padding: 0.75rem 1rem;
+            color: #fca5a5;
+            font-size: 0.85rem;
+            text-align: center;
+            display: none;
+        }
+        .price-error.show { display: block; }
+
         /* Prediction Form */
         .prediction-form {
             background: rgba(255,255,255,0.04);
@@ -171,11 +213,27 @@
             cursor: pointer;
             transition: all 0.2s;
             text-align: center;
+            font-family: inherit;
+            line-height: 1.3;
         }
 
         .opt-btn:hover {
             border-color: rgba(16,185,129,0.5);
             color: white;
+        }
+
+        .opt-btn:focus-visible {
+            outline: 2px solid #10b981;
+            outline-offset: 2px;
+        }
+
+        .price-card {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .price-card:focus-visible {
+            outline: 2px solid #10b981;
+            outline-offset: 2px;
         }
 
         .opt-btn.selected-up {
@@ -285,6 +343,75 @@
             color: rgba(255,255,255,0.5);
             margin-top: 0.25rem;
         }
+
+        .progress-track {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 999px;
+            overflow: hidden;
+            margin-top: 0.75rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #10b981, #06b6d4);
+            border-radius: 999px;
+            transition: width 1s linear;
+        }
+
+        .pl-tracker {
+            margin-top: 1rem;
+            background: rgba(0,0,0,0.25);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px;
+            padding: 0.9rem 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .pl-tracker .pl-label {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: rgba(255,255,255,0.5);
+        }
+
+        .pl-tracker .pl-price {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+
+        .pl-tracker .pl-change {
+            font-size: 0.95rem;
+            font-weight: 700;
+        }
+
+        .pl-tracker .pl-status {
+            font-size: 0.85rem;
+            font-weight: 700;
+            padding: 0.35rem 0.8rem;
+            border-radius: 999px;
+        }
+
+        .pl-tracker.winning { border-color: rgba(16,185,129,0.45); }
+        .pl-tracker.winning .pl-change,
+        .pl-tracker.winning .pl-status { color: #10b981; }
+        .pl-tracker.winning .pl-status { background: rgba(16,185,129,0.15); }
+
+        .pl-tracker.losing { border-color: rgba(239,68,68,0.45); }
+        .pl-tracker.losing .pl-change,
+        .pl-tracker.losing .pl-status { color: #ef4444; }
+        .pl-tracker.losing .pl-status { background: rgba(239,68,68,0.15); }
+
+        .pl-tracker.neutral .pl-change,
+        .pl-tracker.neutral .pl-status { color: rgba(255,255,255,0.65); }
+        .pl-tracker.neutral .pl-status { background: rgba(255,255,255,0.08); }
 
         /* Result Notification */
         .result-banner {
@@ -407,6 +534,42 @@
 
         .notification.show {
             transform: translateX(-50%) translateY(0);
+        }
+
+        .confetti-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9998;
+        }
+
+        .mute-toggle {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: rgba(255,255,255,0.75);
+            border-radius: 10px;
+            padding: 0.45rem 0.75rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        .mute-toggle:hover {
+            border-color: rgba(16,185,129,0.5);
+            color: white;
+        }
+
+        .header-actions {
+            display: flex;
+            justify-content: center;
+            gap: 0.6rem;
+            margin-top: 0.9rem;
+            flex-wrap: wrap;
         }
 
         /* ── Live Players Section ── */
@@ -532,6 +695,16 @@
             .price-card .symbol { font-size: 0.9rem; }
             .price-card .price-value { font-size: 0.78rem; margin-top: 0.15rem; }
             .price-card .price-label { font-size: 0.65rem; margin-top: 0.1rem; }
+            .price-card .sparkline { height: 24px; margin-top: 0.3rem; }
+            .price-card .change { font-size: 0.6rem; margin-top: 0.15rem; }
+
+            .pl-tracker { padding: 0.6rem 0.7rem; gap: 0.5rem; }
+            .pl-tracker .pl-label { font-size: 0.6rem; }
+            .pl-tracker .pl-price { font-size: 0.9rem; }
+            .pl-tracker .pl-change { font-size: 0.85rem; }
+            .pl-tracker .pl-status { font-size: 0.72rem; padding: 0.2rem 0.6rem; }
+            .mute-toggle { font-size: 0.72rem; padding: 0.3rem 0.55rem; }
+            .header-actions { margin-top: 0.4rem; }
 
             .prediction-form { padding: 0.9rem 0.85rem; margin-bottom: 0.7rem; border-radius: 14px; }
             .prediction-form h2 { font-size: 0.95rem; margin-bottom: 0.7rem; }
@@ -584,25 +757,35 @@
             <h1>📈 Price Prediction</h1>
             <p>Predict whether crypto goes UP or DOWN — earn G$ if you're right!</p>
             <div class="reward-badge">🏆 Up to 50 G$ Reward — Completely FREE to play!</div>
+            <div class="header-actions">
+                <button type="button" class="mute-toggle" id="muteToggle" aria-pressed="false">🔊 Sound on</button>
+            </div>
         </div>
 
         <!-- Live Prices -->
         <div class="prices-section">
-            <div class="price-card" id="card-BTC" onclick="selectCrypto('BTC')">
+            <div class="price-card" id="card-BTC" role="button" tabindex="0" aria-label="Select Bitcoin">
                 <div class="symbol">₿ BTC</div>
                 <div class="price-value" id="price-BTC">Loading...</div>
                 <div class="price-label">Bitcoin / USD</div>
+                <svg class="sparkline" id="spark-BTC" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"></svg>
+                <div class="change" id="change-BTC">&nbsp;</div>
             </div>
-            <div class="price-card" id="card-ETH" onclick="selectCrypto('ETH')">
+            <div class="price-card" id="card-ETH" role="button" tabindex="0" aria-label="Select Ethereum">
                 <div class="symbol">⧫ ETH</div>
                 <div class="price-value" id="price-ETH">Loading...</div>
                 <div class="price-label">Ethereum / USD</div>
+                <svg class="sparkline" id="spark-ETH" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"></svg>
+                <div class="change" id="change-ETH">&nbsp;</div>
             </div>
-            <div class="price-card" id="card-CELO" onclick="selectCrypto('CELO')">
+            <div class="price-card" id="card-CELO" role="button" tabindex="0" aria-label="Select Celo">
                 <div class="symbol">🌍 CELO</div>
                 <div class="price-value" id="price-CELO">Loading...</div>
                 <div class="price-label">Celo / USD</div>
+                <svg class="sparkline" id="spark-CELO" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"></svg>
+                <div class="change" id="change-CELO">&nbsp;</div>
             </div>
+            <div class="price-error" id="priceError">⚠️ Unable to load live prices. Retrying…</div>
         </div>
 
         <!-- Result Banner (shown after resolution) -->
@@ -632,8 +815,19 @@
                     <div class="detail-value" id="activeTimeframe">—</div>
                 </div>
             </div>
+
+            <div class="pl-tracker neutral" id="plTracker" aria-live="polite">
+                <div>
+                    <div class="pl-label">Current Price</div>
+                    <div class="pl-price" id="plPrice">—</div>
+                </div>
+                <div class="pl-change" id="plChange">—</div>
+                <div class="pl-status" id="plStatus">Waiting for price…</div>
+            </div>
+
             <div class="countdown" id="countdown">--:--:--</div>
             <div class="countdown-label">Time remaining until result</div>
+            <div class="progress-track" aria-hidden="true"><div class="progress-fill" id="progressFill"></div></div>
         </div>
 
         <!-- Prediction Form -->
@@ -641,36 +835,36 @@
             <h2>🎯 Make Your Prediction</h2>
 
             <div class="form-group">
-                <label class="form-label">1. Choose Crypto</label>
-                <div class="btn-group">
-                    <div class="opt-btn" id="btn-BTC" onclick="selectCrypto('BTC')">₿ BTC</div>
-                    <div class="opt-btn" id="btn-ETH" onclick="selectCrypto('ETH')">⧫ ETH</div>
-                    <div class="opt-btn" id="btn-CELO" onclick="selectCrypto('CELO')">🌍 CELO</div>
+                <label class="form-label" id="label-crypto">1. Choose Crypto</label>
+                <div class="btn-group" role="radiogroup" aria-labelledby="label-crypto">
+                    <button type="button" class="opt-btn" id="btn-BTC" role="radio" aria-checked="false">₿ BTC</button>
+                    <button type="button" class="opt-btn" id="btn-ETH" role="radio" aria-checked="false">⧫ ETH</button>
+                    <button type="button" class="opt-btn" id="btn-CELO" role="radio" aria-checked="false">🌍 CELO</button>
                 </div>
             </div>
 
             <div class="form-group">
-                <label class="form-label">2. Will the price go...</label>
-                <div class="btn-group">
-                    <div class="opt-btn" id="btn-UP" onclick="selectDirection('UP')">📈 UP</div>
-                    <div class="opt-btn" id="btn-DOWN" onclick="selectDirection('DOWN')">📉 DOWN</div>
+                <label class="form-label" id="label-direction">2. Will the price go...</label>
+                <div class="btn-group" role="radiogroup" aria-labelledby="label-direction">
+                    <button type="button" class="opt-btn" id="btn-UP" role="radio" aria-checked="false">📈 UP</button>
+                    <button type="button" class="opt-btn" id="btn-DOWN" role="radio" aria-checked="false">📉 DOWN</button>
                 </div>
             </div>
 
             <div class="form-group">
-                <label class="form-label">3. Choose Timeframe &amp; Reward</label>
-                <div class="btn-group">
-                    <div class="opt-btn" id="btn-1" onclick="selectTimeframe(1)">1 Min<br><small style="color:#f59e0b;">+2 G$</small></div>
-                    <div class="opt-btn" id="btn-60" onclick="selectTimeframe(60)">1 Hour<br><small style="color:#f59e0b;">+5 G$</small></div>
-                    <div class="opt-btn" id="btn-720" onclick="selectTimeframe(720)">12 Hours<br><small style="color:#f59e0b;">+20 G$</small></div>
-                    <div class="opt-btn" id="btn-1440" onclick="selectTimeframe(1440)">24 Hours<br><small style="color:#f59e0b;">+50 G$</small></div>
+                <label class="form-label" id="label-timeframe">3. Choose Timeframe &amp; Reward</label>
+                <div class="btn-group" role="radiogroup" aria-labelledby="label-timeframe">
+                    <button type="button" class="opt-btn" id="btn-1" role="radio" aria-checked="false">1 Min<br><small style="color:#f59e0b;">+2 G$</small></button>
+                    <button type="button" class="opt-btn" id="btn-60" role="radio" aria-checked="false">1 Hour<br><small style="color:#f59e0b;">+5 G$</small></button>
+                    <button type="button" class="opt-btn" id="btn-720" role="radio" aria-checked="false">12 Hours<br><small style="color:#f59e0b;">+20 G$</small></button>
+                    <button type="button" class="opt-btn" id="btn-1440" role="radio" aria-checked="false">24 Hours<br><small style="color:#f59e0b;">+50 G$</small></button>
                 </div>
             </div>
 
             <div id="selectionSummary" style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; display: none; text-align: center; color: rgba(255,255,255,0.8); font-size: 0.95rem;">
             </div>
 
-            <button class="submit-btn" id="submitBtn" onclick="submitPrediction()" disabled>
+            <button type="button" class="submit-btn" id="submitBtn" disabled>
                 Submit Prediction
             </button>
             <p id="formMsg" style="text-align: center; margin-top: 0.75rem; font-size: 0.85rem; color: rgba(255,255,255,0.5);"></p>
@@ -693,6 +887,7 @@
     </div>
 
     <div class="notification" id="notification"></div>
+    <canvas class="confetti-canvas" id="confettiCanvas" aria-hidden="true"></canvas>
 
     <script>
         const MY_WALLET = '{{ wallet }}';
@@ -701,12 +896,124 @@
         let selectedTimeframe = null;
         let livePrices = {};
         let countdownInterval = null;
+        let activePrediction = null;
+        let sparklineCache = {};
+
+        const MUTE_KEY = 'gm_price_prediction_muted';
+        let muted = localStorage.getItem(MUTE_KEY) === '1';
 
         function showNotification(msg, duration = 4000) {
             const n = document.getElementById('notification');
             n.textContent = msg;
             n.classList.add('show');
             setTimeout(() => n.classList.remove('show'), duration);
+        }
+
+        /* ── Sound (Web Audio API, no assets) ── */
+        let audioCtx = null;
+        function getAudioCtx() {
+            if (!audioCtx) {
+                try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+                catch (e) { audioCtx = null; }
+            }
+            return audioCtx;
+        }
+        function playTone(freq, duration, type = 'sine', gain = 0.12) {
+            if (muted) return;
+            const ctx = getAudioCtx();
+            if (!ctx) return;
+            try {
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                osc.type = type;
+                osc.frequency.value = freq;
+                g.gain.setValueAtTime(0, ctx.currentTime);
+                g.gain.linearRampToValueAtTime(gain, ctx.currentTime + 0.01);
+                g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+                osc.connect(g).connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + duration);
+            } catch (e) { /* ignore */ }
+        }
+        function playWinSound() {
+            playTone(523.25, 0.18);
+            setTimeout(() => playTone(659.25, 0.18), 150);
+            setTimeout(() => playTone(783.99, 0.28), 300);
+        }
+        function playLoseSound() {
+            playTone(349.23, 0.2, 'triangle', 0.08);
+            setTimeout(() => playTone(261.63, 0.3, 'triangle', 0.08), 180);
+        }
+        function playClick() { playTone(880, 0.05, 'square', 0.04); }
+
+        function updateMuteUI() {
+            const btn = document.getElementById('muteToggle');
+            if (!btn) return;
+            btn.textContent = muted ? '🔇 Sound off' : '🔊 Sound on';
+            btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+        }
+        function toggleMute() {
+            muted = !muted;
+            localStorage.setItem(MUTE_KEY, muted ? '1' : '0');
+            updateMuteUI();
+            if (!muted) playClick();
+        }
+
+        /* ── Confetti (tiny inline implementation) ── */
+        function launchConfetti(duration = 2200) {
+            const canvas = document.getElementById('confettiCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const resize = () => {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            };
+            resize();
+            window.addEventListener('resize', resize);
+
+            const colors = ['#10b981', '#06b6d4', '#f59e0b', '#a855f7', '#ef4444', '#f1f5f9'];
+            const count = 140;
+            const particles = [];
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: canvas.width / 2,
+                    y: canvas.height / 3,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: Math.random() * -8 - 4,
+                    size: Math.random() * 6 + 4,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    rot: Math.random() * Math.PI,
+                    vrot: (Math.random() - 0.5) * 0.3,
+                    life: 1
+                });
+            }
+
+            const start = performance.now();
+            function frame(now) {
+                const elapsed = now - start;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                for (const p of particles) {
+                    p.vy += 0.25;
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.rot += p.vrot;
+                    p.life = Math.max(0, 1 - elapsed / duration);
+                    ctx.save();
+                    ctx.globalAlpha = p.life;
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(p.rot);
+                    ctx.fillStyle = p.color;
+                    ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+                    ctx.restore();
+                }
+                if (elapsed < duration) {
+                    requestAnimationFrame(frame);
+                } else {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    window.removeEventListener('resize', resize);
+                }
+            }
+            requestAnimationFrame(frame);
         }
 
         function formatPrice(p) {
@@ -738,37 +1045,113 @@
             return new Date(parseUTCMs(iso)).toLocaleString();
         }
 
+        function setPriceErrorVisible(visible) {
+            const el = document.getElementById('priceError');
+            if (!el) return;
+            el.classList.toggle('show', visible);
+        }
+
         async function loadPrices() {
             try {
                 const res = await fetch('/price-prediction/api/prices');
                 const data = await res.json();
-                if (data.success) {
+                if (data.success && data.prices && Object.keys(data.prices).length) {
                     livePrices = data.prices;
                     for (const sym of ['BTC', 'ETH', 'CELO']) {
                         const el = document.getElementById('price-' + sym);
                         if (el) el.textContent = livePrices[sym] ? formatPrice(livePrices[sym]) : '—';
                     }
+                    setPriceErrorVisible(false);
+                    updatePLTracker();
+                } else {
+                    setPriceErrorVisible(true);
                 }
             } catch (e) {
                 console.error('Error loading prices:', e);
+                setPriceErrorVisible(true);
+            }
+        }
+
+        function renderSparkline(sym, points) {
+            const svg = document.getElementById('spark-' + sym);
+            const card = document.getElementById('card-' + sym);
+            const changeEl = document.getElementById('change-' + sym);
+            if (!svg || !points || points.length < 2) return;
+
+            const values = points.map(p => p[1]);
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const range = (max - min) || 1;
+            const w = 100, h = 40;
+            const step = w / (values.length - 1);
+
+            const pts = values.map((v, i) => {
+                const x = i * step;
+                const y = h - ((v - min) / range) * (h - 4) - 2;
+                return [x, y];
+            });
+
+            const line = pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+            const fill = `${line} L${w},${h} L0,${h} Z`;
+
+            svg.innerHTML = `<path class="fill" d="${fill}"></path><path class="line" d="${line}"></path>`;
+
+            const first = values[0];
+            const last = values[values.length - 1];
+            const pct = first !== 0 ? ((last - first) / first) * 100 : 0;
+            const trendUp = pct >= 0;
+            card.classList.toggle('trend-up', trendUp);
+            card.classList.toggle('trend-down', !trendUp);
+            if (changeEl) {
+                const sign = pct >= 0 ? '+' : '';
+                changeEl.textContent = `24h ${sign}${pct.toFixed(2)}%`;
+            }
+        }
+
+        async function loadSparklines() {
+            try {
+                const res = await fetch('/price-prediction/api/sparklines');
+                const data = await res.json();
+                if (data.success && data.sparklines) {
+                    sparklineCache = data.sparklines;
+                    for (const sym of ['BTC', 'ETH', 'CELO']) {
+                        renderSparkline(sym, data.sparklines[sym]);
+                    }
+                }
+            } catch (e) {
+                console.error('Error loading sparklines:', e);
             }
         }
 
         function selectCrypto(sym) {
+            if (activePrediction) return;
             selectedCrypto = sym;
             ['BTC','ETH','CELO'].forEach(s => {
-                document.getElementById('btn-' + s).className = 'opt-btn';
-                document.getElementById('card-' + s).classList.remove('selected');
+                const btn = document.getElementById('btn-' + s);
+                const card = document.getElementById('card-' + s);
+                btn.className = 'opt-btn';
+                btn.setAttribute('aria-checked', 'false');
+                card.classList.remove('selected');
             });
-            document.getElementById('btn-' + sym).className = 'opt-btn selected-crypto';
+            const btn = document.getElementById('btn-' + sym);
+            btn.className = 'opt-btn selected-crypto';
+            btn.setAttribute('aria-checked', 'true');
             document.getElementById('card-' + sym).classList.add('selected');
+            playClick();
             updateSummary();
         }
 
         function selectDirection(dir) {
             selectedDirection = dir;
-            ['UP','DOWN'].forEach(d => document.getElementById('btn-' + d).className = 'opt-btn');
-            document.getElementById('btn-' + dir).className = 'opt-btn selected-' + dir.toLowerCase();
+            ['UP','DOWN'].forEach(d => {
+                const b = document.getElementById('btn-' + d);
+                b.className = 'opt-btn';
+                b.setAttribute('aria-checked', 'false');
+            });
+            const btn = document.getElementById('btn-' + dir);
+            btn.className = 'opt-btn selected-' + dir.toLowerCase();
+            btn.setAttribute('aria-checked', 'true');
+            playClick();
             updateSummary();
         }
 
@@ -777,9 +1160,70 @@
 
         function selectTimeframe(m) {
             selectedTimeframe = m;
-            [1, 60, 720, 1440].forEach(t => document.getElementById('btn-' + t).className = 'opt-btn');
-            document.getElementById('btn-' + m).className = 'opt-btn selected-time';
+            [1, 60, 720, 1440].forEach(t => {
+                const b = document.getElementById('btn-' + t);
+                b.className = 'opt-btn';
+                b.setAttribute('aria-checked', 'false');
+            });
+            const btn = document.getElementById('btn-' + m);
+            btn.className = 'opt-btn selected-time';
+            btn.setAttribute('aria-checked', 'true');
+            playClick();
             updateSummary();
+        }
+
+        function updatePLTracker() {
+            if (!activePrediction) return;
+            const sym = activePrediction.crypto_symbol;
+            const entry = parseFloat(activePrediction.entry_price);
+            const current = livePrices[sym];
+            const tracker = document.getElementById('plTracker');
+            const priceEl = document.getElementById('plPrice');
+            const changeEl = document.getElementById('plChange');
+            const statusEl = document.getElementById('plStatus');
+            if (!tracker) return;
+
+            if (!current || !entry) {
+                tracker.className = 'pl-tracker neutral';
+                priceEl.textContent = '—';
+                changeEl.textContent = '—';
+                statusEl.textContent = 'Waiting for price…';
+                return;
+            }
+
+            const delta = current - entry;
+            const pct = entry !== 0 ? (delta / entry) * 100 : 0;
+            const sign = pct >= 0 ? '+' : '';
+            priceEl.textContent = formatPrice(current);
+            changeEl.textContent = `${sign}${pct.toFixed(3)}%`;
+
+            const dir = activePrediction.direction;
+            let winning;
+            if (Math.abs(delta) < 1e-8) winning = null; // exactly flat
+            else winning = (dir === 'UP' && delta > 0) || (dir === 'DOWN' && delta < 0);
+
+            if (winning === null) {
+                tracker.className = 'pl-tracker neutral';
+                statusEl.textContent = '⚖️ Flat';
+            } else if (winning) {
+                tracker.className = 'pl-tracker winning';
+                statusEl.textContent = '🏆 Winning';
+            } else {
+                tracker.className = 'pl-tracker losing';
+                statusEl.textContent = '⚠️ Losing';
+            }
+        }
+
+        function updateProgressBar() {
+            if (!activePrediction) return;
+            const fill = document.getElementById('progressFill');
+            if (!fill) return;
+            const start = parseUTCMs(activePrediction.created_at);
+            const end = parseUTCMs(activePrediction.target_time);
+            const now = Date.now();
+            if (!start || !end || end <= start) return;
+            const pct = Math.max(0, Math.min(100, ((now - start) / (end - start)) * 100));
+            fill.style.width = pct.toFixed(2) + '%';
         }
 
         function updateSummary() {
@@ -841,10 +1285,12 @@
             const el = document.getElementById('countdown');
 
             function tick() {
-                const now = new Date().getTime();
+                const now = Date.now();
                 const target = parseUTCMs(targetTimeISO);
                 const remaining = target - now;
                 el.textContent = formatCountdown(remaining);
+                updateProgressBar();
+                updatePLTracker();
                 if (remaining <= 0) {
                     clearInterval(countdownInterval);
                     el.textContent = 'Resolving...';
@@ -873,10 +1319,13 @@
                         banner.className = 'result-banner won';
                         title.textContent = `🏆 You Won! +${reward} G$`;
                         desc.textContent = `${r.crypto} went ${r.direction === 'UP' ? '📈 UP' : '📉 DOWN'} — Entry: ${formatPrice(r.entry_price)} → Result: ${formatPrice(r.result_price)}. Your ${reward} G$ is in your Play & Earn balance!`;
+                        launchConfetti();
+                        playWinSound();
                     } else {
                         banner.className = 'result-banner lost';
                         title.textContent = '❌ Wrong Prediction';
                         desc.textContent = `${r.crypto} went the opposite direction. Entry: ${formatPrice(r.entry_price)} → Result: ${formatPrice(r.result_price)}. Better luck next time!`;
+                        playLoseSound();
                     }
                     banner.style.display = 'block';
                 }
@@ -886,6 +1335,7 @@
                 const formDiv = document.getElementById('predictionForm');
                 if (data.prediction) {
                     const p = data.prediction;
+                    activePrediction = p;
                     const mins = p.timeframe_minutes || ((p.timeframe_hours || 24) * 60);
                     document.getElementById('activeCrypto').textContent = p.crypto_symbol;
                     document.getElementById('activeDirection').textContent = p.direction === 'UP' ? '📈 UP' : '📉 DOWN';
@@ -894,10 +1344,13 @@
                     activeDiv.style.display = 'block';
                     formDiv.style.display = 'none';
                     startCountdown(p.target_time);
+                    updatePLTracker();
+                    updateProgressBar();
                 } else {
+                    activePrediction = null;
                     activeDiv.style.display = 'none';
                     formDiv.style.display = 'block';
-                    if (countdownInterval) clearInterval(countdownInterval);
+                    if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
                 }
 
                 // Render history
@@ -949,6 +1402,13 @@
             return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
         }
 
+        function escapeHTML(s) {
+            if (s == null) return '';
+            return String(s).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
         async function loadLivePredictions() {
             try {
                 const res = await fetch('/price-prediction/api/live');
@@ -963,7 +1423,8 @@
                 const now = Date.now();
                 countBadge.textContent = data.predictions.length + ' active';
                 list.innerHTML = data.predictions.map(p => {
-                    const isMe = p.wallet_address.toLowerCase() === MY_WALLET.toLowerCase();
+                    const isMe = !!p.is_me;
+                    const walletLabel = isMe ? '👤 You' : escapeHTML(p.wallet_short || '???');
                     const remaining = parseUTCMs(p.target_time) - now;
                     const dirClass = p.direction === 'UP' ? 'up' : 'down';
                     const dirIcon = p.direction === 'UP' ? '📈' : '📉';
@@ -973,10 +1434,10 @@
                         ? `<span class="live-timer resolving">⏳ Resolving</span>`
                         : `<span class="live-timer">${formatCountdownShort(remaining)}</span>`;
                     return `<div class="live-item ${isMe ? 'is-me' : ''}">
-                        <span class="live-wallet">${isMe ? '👤 You' : shortWallet(p.wallet_address)}</span>
-                        <span class="live-crypto">${p.crypto_symbol}</span>
-                        <span class="live-dir ${dirClass}">${dirIcon} ${p.direction}</span>
-                        <span class="live-tf">${tfLabel}</span>
+                        <span class="live-wallet">${walletLabel}</span>
+                        <span class="live-crypto">${escapeHTML(p.crypto_symbol)}</span>
+                        <span class="live-dir ${dirClass}">${dirIcon} ${escapeHTML(p.direction)}</span>
+                        <span class="live-tf">${escapeHTML(tfLabel)}</span>
                         ${timerHtml}
                     </div>`;
                 }).join('');
@@ -985,9 +1446,33 @@
             }
         }
 
+        function wireEvents() {
+            ['BTC','ETH','CELO'].forEach(sym => {
+                const card = document.getElementById('card-' + sym);
+                const btn = document.getElementById('btn-' + sym);
+                const handler = () => selectCrypto(sym);
+                card.addEventListener('click', handler);
+                card.addEventListener('keydown', e => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); }
+                });
+                btn.addEventListener('click', handler);
+            });
+            ['UP','DOWN'].forEach(dir => {
+                document.getElementById('btn-' + dir).addEventListener('click', () => selectDirection(dir));
+            });
+            [1, 60, 720, 1440].forEach(m => {
+                document.getElementById('btn-' + m).addEventListener('click', () => selectTimeframe(m));
+            });
+            document.getElementById('submitBtn').addEventListener('click', submitPrediction);
+            document.getElementById('muteToggle').addEventListener('click', toggleMute);
+        }
+
         async function init() {
-            await Promise.all([loadPrices(), loadActiveAndHistory(), loadLivePredictions()]);
+            wireEvents();
+            updateMuteUI();
+            await Promise.all([loadPrices(), loadSparklines(), loadActiveAndHistory(), loadLivePredictions()]);
             setInterval(loadPrices, 60000);
+            setInterval(loadSparklines, 5 * 60000);
             setInterval(loadLivePredictions, 15000);
         }
 

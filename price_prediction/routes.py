@@ -94,7 +94,7 @@ def get_live_predictions():
     wallet = session.get('wallet') or session.get('wallet_address')
     if not wallet:
         return jsonify({'success': False, 'error': 'Not authenticated'}), 401
-    result = price_prediction_service.get_all_active_predictions()
+    result = price_prediction_service.get_all_active_predictions(current_wallet=wallet)
     return jsonify(result)
 
 
@@ -104,4 +104,13 @@ def check_resolve():
     if not wallet:
         return jsonify({'success': False, 'error': 'Not authenticated'}), 401
     result = price_prediction_service.check_and_resolve(wallet)
+    return jsonify(result)
+
+
+@price_prediction_bp.route('/api/sparklines')
+def get_sparklines():
+    wallet = session.get('wallet') or session.get('wallet_address')
+    if not wallet:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    result = price_prediction_service.get_sparklines()
     return jsonify(result)
