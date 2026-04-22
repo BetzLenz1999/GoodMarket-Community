@@ -891,14 +891,12 @@ async function startAutoDetect() {
                         '• Not enough CELO for gas fees<br><br>' +
                         'No G$ was deducted. Please try again.');
                     showToast('Transaction failed', 'error');
-                } else if (res.status === 'completed' || res.success) {
-                    setResult('success', '✅ Payment detected on blockchain!<br>Your order has been completed and delivered.');
-                    showToast('Order completed!', 'success');
-                    loadOrders();
-                    if (_pendingOrderData && _pendingOrderData.is_virtual_card && currentOrderId) {
-                        revealVirtualCard(currentOrderId);
-                    }
                 } else if (res.already_processed) {
+                    // Check already_processed BEFORE the generic success branch:
+                    // the backend returns {success: true, already_processed: true}
+                    // for every non-pending status (completed, refunded,
+                    // payment_failed, refund_failed), so the status-specific
+                    // messaging below is the only correct path for those.
                     const statusMsg = {
                         completed: '✅ Order already completed!',
                         refunded: '⚠️ Payment was detected but fulfillment failed — your G$ was refunded.',
@@ -908,6 +906,13 @@ async function startAutoDetect() {
                     const isGood = res.status === 'completed';
                     setResult(isGood ? 'success' : 'error', statusMsg[res.status] || `Status: ${res.status}`);
                     if (isGood && _pendingOrderData && _pendingOrderData.is_virtual_card && currentOrderId) {
+                        revealVirtualCard(currentOrderId);
+                    }
+                } else if (res.status === 'completed' || res.success) {
+                    setResult('success', '✅ Payment detected on blockchain!<br>Your order has been completed and delivered.');
+                    showToast('Order completed!', 'success');
+                    loadOrders();
+                    if (_pendingOrderData && _pendingOrderData.is_virtual_card && currentOrderId) {
                         revealVirtualCard(currentOrderId);
                     }
                 } else {
