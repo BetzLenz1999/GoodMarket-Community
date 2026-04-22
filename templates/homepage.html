@@ -2222,10 +2222,29 @@
             return /android|iphone|ipad|ipod|minipay|trust|metamask/.test(ua);
         }
 
+        function _eip6963InfoForProvider(provider) {
+            if (!provider) return null;
+            const detail = _eip6963Details().find(d => d && d.provider === provider);
+            return (detail && detail.info) || null;
+        }
+
+        function _looksLikeTrustWalletInfo(info) {
+            if (!info) return false;
+            const rdns = String(info.rdns || '').toLowerCase();
+            const name = String(info.name || '').toLowerCase();
+            return rdns.includes('trustwallet') || name.includes('trust');
+        }
+
+        function _isTrustWalletProvider(provider) {
+            if (!provider) return false;
+            if (provider.isTrust || provider.isTrustWallet) return true;
+            return _looksLikeTrustWalletInfo(_eip6963InfoForProvider(provider));
+        }
+
         function getInjectedProviderLabel(provider) {
             if (!provider) return null;
             if (provider.isMiniPay) return 'MiniPay';
-            if (provider.isTrust || provider.isTrustWallet) return 'Trust Wallet';
+            if (_isTrustWalletProvider(provider)) return 'Trust Wallet';
             if (provider.isMetaMask && !provider.isBraveWallet) return 'MetaMask';
             return 'Injected Wallet';
         }
@@ -2233,18 +2252,13 @@
         function getInjectedProviderIcon(provider) {
             if (!provider) return '👛';
             if (provider.isMiniPay) return '📱';
-            if (provider.isTrust || provider.isTrustWallet) return '🛡️';
+            if (_isTrustWalletProvider(provider)) return '🛡️';
             if (provider.isMetaMask && !provider.isBraveWallet) return '🦊';
             return '👛';
         }
 
         function _trustProviderFromEip6963() {
-            const detail = _eip6963Details().find(d => {
-                const info = d.info || {};
-                const rdns = String(info.rdns || '').toLowerCase();
-                const name = String(info.name || '').toLowerCase();
-                return rdns.includes('trustwallet') || name.includes('trust');
-            });
+            const detail = _eip6963Details().find(d => _looksLikeTrustWalletInfo(d.info));
             return (detail && detail.provider) || null;
         }
 
