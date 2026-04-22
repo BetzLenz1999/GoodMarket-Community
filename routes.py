@@ -1012,6 +1012,80 @@ def login_page():
         return redirect(url_for("routes.dashboard"))
     return redirect(url_for("routes.index"))
 
+@routes.route("/api/homepage-live-stats", methods=["GET"])
+def get_homepage_live_stats():
+    """Get live homepage stats from Supabase for active earners and tasks completed in the last 30 days."""
+    try:
+        from datetime import datetime, timedelta
+        from supabase_client import get_supabase_client
+
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({
+                "success": False,
+                "active_earners": 0,
+                "tasks_completed_30d": 0,
+                "error": "Supabase client unavailable"
+            }), 503
+
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        start_datetime = f"{today}T00:00:00Z"
+        end_datetime = f"{today}T23:59:59Z"
+        start_30d = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_datetime_30d = f"{start_30d}T00:00:00Z"
+
+        # Active earners: distinct wallets with earning activity today
+        active_rows = safe_supabase_operation(
+            lambda: supabase.table("learnearn_log")
+                .select("wallet_address")
+                .eq("status", True)
+                .gte("timestamp", start_datetime)
+                .lte("timestamp", end_datetime)
+                .execute(),
+            fallback_result=type("obj", (object,), {"data": []})(),
+            operation_name="get homepage active earners"
+        )
+
+        active_wallets = {
+            row.get("wallet_address")
+            for row in (active_rows.data or [])
+            if row.get("wallet_address")
+        }
+
+        # Tasks completed in the last 30 days: total successful Learn & Earn submissions
+        tasks_result = safe_supabase_operation(
+            lambda: supabase.table("learnearn_log")
+                .select("id", count="exact")
+                .eq("status", True)
+                .gte("timestamp", start_datetime_30d)
+                .lte("timestamp", end_datetime)
+                .execute(),
+            fallback_result=type("obj", (object,), {"count": 0, "data": []})(),
+            operation_name="get homepage tasks completed 30d"
+        )
+
+        tasks_completed_30d = (
+            tasks_result.count
+            if hasattr(tasks_result, "count") and tasks_result.count is not None
+            else len(tasks_result.data or [])
+        )
+
+        return jsonify({
+            "success": True,
+            "active_earners": len(active_wallets),
+            "tasks_completed_30d": tasks_completed_30d,
+            "date_utc": today,
+            "window": "30d"
+        })
+    except Exception as e:
+        logger.error(f"❌ Error loading homepage live stats: {e}")
+        return jsonify({
+            "success": False,
+            "active_earners": 0,
+            "tasks_completed_30d": 0,
+            "error": str(e)
+        }), 500
+
 @routes.route("/login", methods=["POST"])
 def login():
     """Legacy login endpoint - redirects to main page"""
