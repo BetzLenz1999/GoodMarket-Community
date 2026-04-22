@@ -676,6 +676,113 @@ def is_identity_verified(wallet_address: str) -> dict:
         return {"verified": False, "error": str(e)}
 
 
+_fv_expiry_cache: dict = {}
+_fv_expiry_cache_lock = threading.Lock()
+FV_EXPIRY_CACHE_TTL = 300  # 5 minutes — expiry rarely changes but we want fresh enough countdowns
+
+
+def get_identity_expiry(wallet_address: str) -> dict:
+    """Return face-verification expiry data for a wallet.
+
+    Reads `dateAuthenticated(wallet)` and `authenticationPeriod()` from the
+    GoodDollar Identity contract on-chain. Expiry = dateAuthenticated +
+    authenticationPeriod * 86400. All timestamps are unix seconds (UTC).
+    """
+    import time
+    try:
+        from web3 import Web3 as _Web3
+        checksum = _Web3.to_checksum_address(wallet_address)
+        key = checksum.lower()
+
+        with _fv_expiry_cache_lock:
+            entry = _fv_expiry_cache.get(key)
+            if entry and entry["expires_cache_at"] > time.time():
+                return entry["result"]
+
+        w3 = _get_w3()
+        contract = w3.eth.contract(
+            address=_Web3.to_checksum_address(GOODDOLLAR_CONTRACTS["IDENTITY"]),
+            abi=IDENTITY_ABI
+        )
+
+        is_whitelisted = contract.functions.isWhitelisted(checksum).call()
+        date_auth = contract.functions.dateAuthenticated(checksum).call()
+        auth_period_days = contract.functions.authenticationPeriod().call()
+
+        now = int(time.time())
+        ever_verified = date_auth > 0
+        expires_at = (date_auth + auth_period_days * 86400) if ever_verified and auth_period_days > 0 else 0
+        seconds_remaining = expires_at - now if expires_at > 0 else 0
+        days_remaining = seconds_remaining // 86400 if seconds_remaining > 0 else 0
+        expired = ever_verified and expires_at > 0 and now > expires_at
+
+        # A user is "effectively verified" only if whitelisted AND not lapsed.
+        effective_verified = bool(is_whitelisted) and not expired
+
+        result = {
+            "success": True,
+            "wallet": key,
+            "is_whitelisted": bool(is_whitelisted),
+            "ever_verified": bool(ever_verified),
+            "verified": effective_verified,
+            "expired": bool(expired),
+            "date_authenticated": int(date_auth),
+            "date_authenticated_iso": (
+                datetime.fromtimestamp(date_auth, tz=timezone.utc).isoformat()
+                if ever_verified else None
+            ),
+            "authentication_period_days": int(auth_period_days),
+            "expires_at": int(expires_at),
+            "expires_at_iso": (
+                datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat()
+                if expires_at > 0 else None
+            ),
+            "seconds_remaining": int(max(0, seconds_remaining)),
+            "days_remaining": int(days_remaining),
+        }
+
+        with _fv_expiry_cache_lock:
+            _fv_expiry_cache[key] = {
+                "result": result,
+                "expires_cache_at": time.time() + FV_EXPIRY_CACHE_TTL,
+            }
+
+        logger.info(
+            f"🪪 FV expiry for {wallet_address[:8]}…: "
+            f"whitelisted={is_whitelisted}, expired={expired}, "
+            f"days_remaining={days_remaining}"
+        )
+        return result
+
+    except Exception as e:
+        logger.error(f"FV expiry check error for {wallet_address}: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "wallet": (wallet_address or "").lower(),
+            "verified": False,
+            "expired": False,
+            "ever_verified": False,
+            "is_whitelisted": False,
+            "date_authenticated": 0,
+            "date_authenticated_iso": None,
+            "authentication_period_days": 0,
+            "expires_at": 0,
+            "expires_at_iso": None,
+            "seconds_remaining": 0,
+            "days_remaining": 0,
+        }
+
+
+def invalidate_fv_expiry_cache(wallet_address: str | None = None) -> None:
+    """Drop cached FV expiry data (for a wallet, or all if None)."""
+    with _fv_expiry_cache_lock:
+        if wallet_address:
+            _fv_expiry_cache.pop(wallet_address.lower(), None)
+        else:
+            _fv_expiry_cache.clear()
+
+
 _entitlement_cache: dict = {}
 _entitlement_cache_lock = threading.Lock()
 ENTITLEMENT_CACHE_TTL = 180  # 3 minutes — short enough to reflect claim/status changes

@@ -5020,6 +5020,36 @@ def ubi_entitlement():
         return jsonify({"success": False, "error": str(e), "entitlement": 0, "can_claim": False}), 500
 
 
+@routes.route("/api/fv-status", methods=["GET"])
+@auth_required
+def fv_status():
+    """Return the logged-in wallet's GoodDollar face-verification expiry data.
+
+    Reads directly from the GoodDollar Identity contract — GoodMarket does not
+    store its own FV expiry, so whatever `authenticationPeriod()` the contract
+    returns (currently 180 days / 6 months) is what applies.
+    """
+    try:
+        wallet = session.get("wallet")
+        if not wallet:
+            return jsonify({"success": False, "error": "not_authenticated"}), 401
+        force = request.args.get("force", "0") == "1"
+        from blockchain import get_identity_expiry, invalidate_fv_expiry_cache
+        if force:
+            invalidate_fv_expiry_cache(wallet)
+        result = get_identity_expiry(wallet)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"FV status route error: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "verified": False,
+            "expired": False,
+            "days_remaining": 0,
+        }), 500
+
+
 @routes.route("/wallet")
 def wallet_page():
     """Wallet page for sending/receiving G$ and CELO"""
