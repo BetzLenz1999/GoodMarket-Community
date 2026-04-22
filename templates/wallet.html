@@ -1056,7 +1056,7 @@
                     <div class="action-circle">🏦</div>
                     <span class="action-label">Savings</span>
                 </div>
-                <div class="action-item" onclick="window.location.href='/reloadly/#virtualcard'">
+                <div class="action-item" onclick="handleVirtualCardAction()">
                     <div class="action-circle">💳</div>
                     <span class="action-label">Virtual Card</span>
                 </div>
@@ -1634,6 +1634,21 @@
         const totalGd = (gdBal || 0) + (xdcGdBal || 0) + convertedToGd;
 
         totalBalanceEl.textContent = fmt(totalGd, 4) + ' G$';
+    }
+
+    async function handleVirtualCardAction() {
+        const hiddenMessage = "This virtual card will available on Year 2027, no kyc needed , you get instant card that you can purchase online no kyc needed. for more info read this article https://good-market-community-git-de-b748c8-chadtreb1999-6619s-projects.vercel.app/news/article/26";
+        try {
+            const res = await fetch('/api/feature-visibility', { cache: 'no-store' });
+            const data = await res.json();
+            if (data && data.virtualcard_visible === false) {
+                window.alert(hiddenMessage);
+                return;
+            }
+        } catch (_) {
+            // If the visibility check fails, keep existing behavior and allow navigation.
+        }
+        window.location.href = '/reloadly/#virtualcard';
     }
 
     // ── Modal ────────────────────────────────────────────────

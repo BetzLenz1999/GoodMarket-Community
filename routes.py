@@ -854,11 +854,12 @@ def public_feature_visibility():
         supabase = get_supabase_client()
         if not supabase:
             return jsonify({"success": True, "swap_visible": True, "wallet_visible": True,
-                            "savings_visible": True, "topup_visible": True, "giftcard_visible": True, "utility_visible": True})
+                            "savings_visible": True, "topup_visible": True, "giftcard_visible": True,
+                            "virtualcard_visible": True, "utility_visible": True})
         result = safe_supabase_operation(
             lambda: supabase.table('maintenance_settings')
                 .select('feature_name,is_maintenance')
-                .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_utility'])
+                .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility'])
                 .execute(),
             operation_name="get feature visibility"
         )
@@ -867,6 +868,7 @@ def public_feature_visibility():
         savings_visible = True
         topup_visible = True
         giftcard_visible = True
+        virtualcard_visible = True
         utility_visible = True
         if result and result.data:
             for row in result.data:
@@ -882,18 +884,22 @@ def public_feature_visibility():
                     topup_visible = val
                 elif fn == 'store_giftcard':
                     giftcard_visible = val
+                elif fn == 'store_virtualcard':
+                    virtualcard_visible = val
                 elif fn == 'store_utility':
                     utility_visible = val
         data = {"success": True, "swap_visible": swap_visible, "wallet_visible": wallet_visible,
                 "savings_visible": savings_visible,
-                "topup_visible": topup_visible, "giftcard_visible": giftcard_visible, "utility_visible": utility_visible}
+                "topup_visible": topup_visible, "giftcard_visible": giftcard_visible,
+                "virtualcard_visible": virtualcard_visible, "utility_visible": utility_visible}
         _feature_visibility_cache["data"] = data
         _feature_visibility_cache["expires"] = now + _PUBLIC_ENDPOINT_CACHE_TTL
         return jsonify(data)
     except Exception as e:
         logger.error(f"Feature visibility fetch error: {e}")
         return jsonify({"success": True, "swap_visible": True, "wallet_visible": True,
-                        "savings_visible": True, "topup_visible": True, "giftcard_visible": True, "utility_visible": True})
+                        "savings_visible": True, "topup_visible": True, "giftcard_visible": True,
+                        "virtualcard_visible": True, "utility_visible": True})
 
 
 @routes.route("/api/admin/feature-visibility", methods=["GET"])
@@ -907,7 +913,7 @@ def get_feature_visibility():
         result = safe_supabase_operation(
             lambda: supabase.table('maintenance_settings')
                 .select('feature_name,is_maintenance')
-                .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_utility'])
+                .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility'])
                 .execute(),
             operation_name="get feature visibility admin"
         )
@@ -916,6 +922,7 @@ def get_feature_visibility():
         savings_visible = True
         topup_visible = True
         giftcard_visible = True
+        virtualcard_visible = True
         utility_visible = True
         if result and result.data:
             for row in result.data:
@@ -931,11 +938,14 @@ def get_feature_visibility():
                     topup_visible = val
                 elif fn == 'store_giftcard':
                     giftcard_visible = val
+                elif fn == 'store_virtualcard':
+                    virtualcard_visible = val
                 elif fn == 'store_utility':
                     utility_visible = val
         return jsonify({"success": True, "swap_visible": swap_visible, "wallet_visible": wallet_visible,
                         "savings_visible": savings_visible,
-                        "topup_visible": topup_visible, "giftcard_visible": giftcard_visible, "utility_visible": utility_visible})
+                        "topup_visible": topup_visible, "giftcard_visible": giftcard_visible,
+                        "virtualcard_visible": virtualcard_visible, "utility_visible": utility_visible})
     except Exception as e:
         logger.error(f"Admin feature visibility fetch error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -955,7 +965,7 @@ def set_feature_visibility():
         is_hidden = not visible
         admin_wallet = session.get('wallet')
 
-        if feature not in ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_utility']:
+        if feature not in ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility']:
             return jsonify({"success": False, "error": "Invalid feature name"}), 400
 
         existing = safe_supabase_operation(
