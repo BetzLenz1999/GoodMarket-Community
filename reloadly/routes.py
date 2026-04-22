@@ -109,6 +109,101 @@ def api_detect_operator():
 
 # ─── GIFT CARDS ─────────────────────────────────────────────────────────────────
 
+# Keywords used to identify virtual prepaid money-card products
+# (Visa / Mastercard / American Express virtual/prepaid cards) across
+# Reloadly's product catalog. Matched case-insensitively against product
+# name and category name.
+VIRTUAL_CARD_KEYWORDS = (
+    "visa",
+    "mastercard",
+    "master card",
+    "amex",
+    "american express",
+    "money card",
+    "prepaid card",
+)
+
+
+def _is_virtual_card_product(product: dict) -> bool:
+    """Return True if a Reloadly gift-card product is a virtual prepaid money card."""
+    name = (product.get("productName") or "").lower()
+    category = ""
+    cat_obj = product.get("category")
+    if isinstance(cat_obj, dict):
+        category = (cat_obj.get("name") or "").lower()
+    elif isinstance(cat_obj, str):
+        category = cat_obj.lower()
+    brand = ""
+    brand_obj = product.get("brand")
+    if isinstance(brand_obj, dict):
+        brand = (brand_obj.get("brandName") or "").lower()
+    haystack = f"{name} {category} {brand}"
+    return any(kw in haystack for kw in VIRTUAL_CARD_KEYWORDS)
+
+
+@reloadly_bp.route("/api/virtual-cards")
+def api_virtual_cards():
+    """
+    Return Reloadly gift-card products that are virtual prepaid money cards
+    (Visa / Mastercard / Amex). These can be funded with G$ and produce a
+    card number + CVV/PIN + expiry that the user can spend at any online
+    merchant that accepts the underlying network.
+    """
+    wallet, _verified = _require_auth()
+    if not wallet:
+        return jsonify({"error": "Not authenticated"}), 401
+    country = request.args.get("country", None)
+    try:
+        # Walk all pages (up to a safe cap) so we capture virtual cards that
+        # may not appear on the first page of the broader gift-card catalog.
+        matched: list = []
+        seen_ids: set = set()
+        page = 1
+        MAX_PAGES = 10  # safety cap
+        while page <= MAX_PAGES:
+            data = reloadly_client.get_giftcard_products(
+                country_code=country, page=page, size=50
+            )
+            products = data.get("content", data) if isinstance(data, dict) else data
+            if not products:
+                break
+            for p in products:
+                pid = p.get("productId") or p.get("id")
+                if pid in seen_ids:
+                    continue
+                seen_ids.add(pid)
+                if _is_virtual_card_product(p):
+                    matched.append(p)
+            # Stop early if Reloadly paging metadata says we're done.
+            if isinstance(data, dict):
+                total_pages = data.get("totalPages")
+                if total_pages is not None and page >= int(total_pages):
+                    break
+            page += 1
+
+        gd_price = get_gd_usd_price()
+        for p in matched:
+            fixed = p.get("fixedRecipientDenominations", [])
+            if fixed:
+                p["gd_fixed"] = [round(d / gd_price, 0) for d in fixed]
+            min_r = p.get("minRecipientDenomination")
+            if min_r:
+                p["gd_min"] = round(min_r / gd_price, 0)
+            max_r = p.get("maxRecipientDenomination")
+            if max_r:
+                p["gd_max"] = round(max_r / gd_price, 0)
+
+        return jsonify({
+            "success": True,
+            "products": matched,
+            "gd_price": gd_price,
+            "count": len(matched),
+        })
+    except Exception as e:
+        logger.error(f"api_virtual_cards error: {e}")
+        return jsonify({"success": False, "error": sanitize_error(e)}), 500
+
+
 @reloadly_bp.route("/api/giftcards")
 def api_giftcards():
     wallet, verified = _require_auth()
@@ -485,6 +580,49 @@ def api_get_order(order_id):
     if order["wallet_address"].lower() != wallet.lower():
         return jsonify({"error": "Unauthorized"}), 403
     return jsonify({"success": True, "order": order})
+
+
+@reloadly_bp.route("/api/order/<order_id>/card-details")
+def api_get_card_details(order_id):
+    """
+    Return the virtual card details (card number, CVV/PIN, expiry) for a
+    completed gift-card order owned by the authenticated wallet.
+
+    Only available after the order is 'completed' and only to the wallet
+    that placed the order. Card details are fetched live from Reloadly and
+    NOT persisted — this endpoint acts as a thin proxy.
+    """
+    wallet, _verified = _require_auth()
+    if not wallet:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    res = get_order_record(order_id)
+    if not res["success"]:
+        return jsonify({"success": False, "error": "Order not found"}), 404
+
+    order = res["order"]
+    if order["wallet_address"].lower() != wallet.lower():
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
+
+    if order.get("order_type") != "giftcard":
+        return jsonify({"success": False, "error": "Order is not a gift/virtual card"}), 400
+
+    if order.get("status") != "completed":
+        return jsonify({
+            "success": False,
+            "error": f"Order status is '{order.get('status')}', card details not yet available",
+        }), 400
+
+    tx_id = order.get("reloadly_transaction_id")
+    if not tx_id:
+        return jsonify({"success": False, "error": "Missing Reloadly transaction id"}), 400
+
+    try:
+        cards = reloadly_client.get_giftcard_redeem_code(tx_id)
+        return jsonify({"success": True, "cards": cards, "order_id": order_id})
+    except Exception as e:
+        logger.error(f"api_get_card_details error for {order_id}: {e}")
+        return jsonify({"success": False, "error": sanitize_error(e)}), 500
 
 
 @reloadly_bp.route("/api/orders")

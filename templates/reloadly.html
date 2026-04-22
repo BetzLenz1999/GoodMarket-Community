@@ -209,6 +209,7 @@
 
 <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('topup', this)"><i class="fas fa-mobile-alt"></i> Mobile Top-Up</button>
+    <button class="tab-btn" onclick="switchTab('virtualcard', this)"><i class="fas fa-credit-card"></i> Virtual Card</button>
     <button class="tab-btn" onclick="switchTab('giftcard', this)"><i class="fas fa-gift"></i> Gift Cards</button>
     <button class="tab-btn" onclick="switchTab('utility', this)"><i class="fas fa-bolt"></i> Utility</button>
     <button class="tab-btn" onclick="switchTab('orders', this)"><i class="fas fa-receipt"></i> My Orders</button>
@@ -241,6 +242,42 @@
             <button class="btn btn-primary btn-full" onclick="initiateTopup()" style="margin-top:12px"><i class="fas fa-bolt"></i> Pay with G$</button>
         </div>
     </div>
+</div>
+
+<!-- VIRTUAL CARD TAB -->
+<div id="tab-virtualcard" class="tab-content">
+    <div class="card" style="background:linear-gradient(135deg,#1e2260,#141735);border-color:#3730a3;">
+        <h3 style="display:flex;align-items:center;gap:8px"><i class="fas fa-credit-card" style="color:#a5b4fc"></i> Virtual Prepaid Card</h3>
+        <div style="font-size:13px;color:#b4b9d6;line-height:1.55;margin-bottom:12px">
+            Turn your GoodDollar portfolio into a <strong>Visa / Mastercard virtual prepaid card</strong>.
+            Pay with G$, receive a card number + CVV + expiry instantly — usable at online stores that accept the underlying network.
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;font-size:11.5px">
+            <div style="background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:10px;padding:10px 12px">
+                <div style="color:#c4b5fd;font-weight:600;margin-bottom:3px">⚡ Instant</div>
+                <div style="color:#9ca3af">Card details issued seconds after G$ payment confirms on-chain.</div>
+            </div>
+            <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);border-radius:10px;padding:10px 12px">
+                <div style="color:#6ee7b7;font-weight:600;margin-bottom:3px">🌍 Global</div>
+                <div style="color:#9ca3af">Works on Amazon, Netflix, Shopee, and other online merchants.</div>
+            </div>
+            <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px 12px">
+                <div style="color:#fcd34d;font-weight:600;margin-bottom:3px">🔒 Minimal KYC</div>
+                <div style="color:#9ca3af">Issued via Reloadly — no bank-grade KYC, no physical card.</div>
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <h3><i class="fas fa-filter"></i> Filter</h3>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+            <div class="form-group" style="flex:1;min-width:120px;margin-bottom:0">
+                <label>Country Code (optional)</label>
+                <input id="vcCountry" placeholder="e.g. US, PH"/>
+            </div>
+            <button class="btn btn-primary" onclick="loadVirtualCards()"><i class="fas fa-search"></i> Find Cards</button>
+        </div>
+    </div>
+    <div id="vcList"></div>
 </div>
 
 <!-- GIFT CARDS TAB -->
@@ -858,6 +895,9 @@ async function startAutoDetect() {
                     setResult('success', '✅ Payment detected on blockchain!<br>Your order has been completed and delivered.');
                     showToast('Order completed!', 'success');
                     loadOrders();
+                    if (_pendingOrderData && _pendingOrderData.is_virtual_card && currentOrderId) {
+                        revealVirtualCard(currentOrderId);
+                    }
                 } else if (res.already_processed) {
                     const statusMsg = {
                         completed: '✅ Order already completed!',
@@ -867,6 +907,9 @@ async function startAutoDetect() {
                     };
                     const isGood = res.status === 'completed';
                     setResult(isGood ? 'success' : 'error', statusMsg[res.status] || `Status: ${res.status}`);
+                    if (isGood && _pendingOrderData && _pendingOrderData.is_virtual_card && currentOrderId) {
+                        revealVirtualCard(currentOrderId);
+                    }
                 } else {
                     let msg = '❌ ' + (res.error || 'Order fulfillment failed.');
                     if (res.refunded) msg += `<br><br>✅ Your ${_pendingOrderData?.gd_amount} G$ has been refunded.`;
@@ -1150,6 +1193,193 @@ function initiateGiftcard() {
         label: `${selectedGcProduct.productName} — $${usd}` });
 }
 
+// ─── VIRTUAL CARDS ────────────────────────────────────────────────────────────
+let selectedVcProduct = null;
+
+async function loadVirtualCards() {
+    const country = document.getElementById('vcCountry').value.trim().toUpperCase() || null;
+    const list = document.getElementById('vcList');
+    list.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i></div>';
+    try {
+        const data = await apiFetch(`/reloadly/api/virtual-cards${country ? '?country='+country : ''}`);
+        if (!data.success) { list.innerHTML = `<div class="empty-msg">❌ ${data.error}</div>`; return; }
+        const products = data.products || [];
+        if (!products.length) {
+            list.innerHTML = `<div class="empty-msg">
+                No virtual Visa/Mastercard cards available${country ? ' for ' + country : ''} right now.<br>
+                <span style="font-size:12px;opacity:0.7">Try another country code, or leave blank to browse all regions.</span>
+            </div>`;
+            return;
+        }
+        window._vcProducts = products;
+        list.innerHTML = `<div class="card"><h3>Select a Virtual Card</h3><div class="gc-grid">${
+            products.slice(0,40).map((p,i) => `
+            <div class="gc-card" onclick="selectVc(${i})" id="vccard-${i}">
+                ${p.logoUrls && p.logoUrls[0] ? `<img src="${p.logoUrls[0]}" style="height:36px;margin-bottom:8px;object-fit:contain;max-width:100%" alt="">` : '<div style="font-size:26px;margin-bottom:6px">💳</div>'}
+                <div class="op-name">${p.productName}</div>
+                <div class="op-country">${p.country?.name || p.countryCode || ''}</div>
+                <div class="op-amounts">${p.gd_fixed ? p.gd_fixed.slice(0,2).map(a=>`${a.toLocaleString()} G$`).join(' · ') : (p.gd_min ? `${p.gd_min.toLocaleString()}–${p.gd_max.toLocaleString()} G$` : '')}</div>
+            </div>`).join('')
+        }</div></div>`;
+    } catch(e) { list.innerHTML = '<div class="empty-msg">❌ Failed to load virtual cards</div>'; }
+}
+
+function selectVc(idx) {
+    selectedVcProduct = window._vcProducts[idx];
+    document.querySelectorAll('#vcList .gc-card').forEach(c => c.classList.remove('selected'));
+    document.getElementById('vccard-' + idx)?.classList.add('selected');
+    const ex = document.getElementById('vcOrderForm'); if (ex) ex.remove();
+    const div = document.createElement('div');
+    div.id = 'vcOrderForm'; div.className = 'card';
+    let amtHtml = '';
+    if (selectedVcProduct.fixedRecipientDenominations?.length) {
+        const gd = selectedVcProduct.gd_fixed || selectedVcProduct.fixedRecipientDenominations.map(a => Math.ceil(a / GD_PRICE));
+        amtHtml = `<div class="form-group"><label>Select Denomination</label><div class="amount-chips">${
+            selectedVcProduct.fixedRecipientDenominations.map((a,i) => `<div class="chip" onclick="selectVcAmt(${a},${gd[i]},this)">$${a} <span style="color:#7986cb">(${gd[i].toLocaleString()} G$)</span></div>`).join('')}</div></div>`;
+    } else {
+        amtHtml = `<div class="form-group"><label>Amount (USD) — $${selectedVcProduct.minRecipientDenomination}–$${selectedVcProduct.maxRecipientDenomination}</label>
+            <input id="vcCustomAmt" type="number" step="0.01" min="${selectedVcProduct.minRecipientDenomination}" max="${selectedVcProduct.maxRecipientDenomination}" placeholder="Enter amount" oninput="updateVcSummary()"/></div>`;
+    }
+    div.innerHTML = `<h3>${selectedVcProduct.productName}</h3>${amtHtml}
+        <div class="summary-box" id="vcSummary" style="display:none"></div>
+        <div style="font-size:11.5px;color:#9ca3af;line-height:1.5;margin-top:10px;padding:9px 12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid rgba(255,255,255,0.06)">
+            ℹ️ After payment confirms, card number + CVV + expiry will appear below. <strong>Save them immediately</strong> — most virtual cards are one-time use.
+        </div>
+        <button class="btn btn-primary btn-full" onclick="initiateVirtualCard()" style="margin-top:12px"><i class="fas fa-bolt"></i> Pay with G$</button>`;
+    document.getElementById('vcList').after(div);
+    window._vcSelectedAmt = null;
+}
+
+function selectVcAmt(usd, gd, el) {
+    document.querySelectorAll('#vcOrderForm .chip').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    window._vcSelectedAmt = { usd, gd };
+    const s = document.getElementById('vcSummary');
+    s.style.display='block';
+    s.innerHTML = `<div class="summary-row"><span>Card</span><span>${selectedVcProduct.productName}</span></div>
+        <div class="summary-row"><span>Value</span><span>$${usd}</span></div>
+        <div class="summary-row"><span>You Pay</span><span style="color:#69f0ae;font-weight:700">${gd.toLocaleString()} G$</span></div>`;
+}
+
+function updateVcSummary() {
+    const usd = parseFloat(document.getElementById('vcCustomAmt')?.value);
+    const s = document.getElementById('vcSummary');
+    if (!usd || !selectedVcProduct) { if (s) s.style.display='none'; return; }
+    const gd = Math.ceil(usd / GD_PRICE);
+    window._vcSelectedAmt = { usd, gd };
+    s.style.display='block';
+    s.innerHTML = `<div class="summary-row"><span>Card</span><span>${selectedVcProduct.productName}</span></div>
+        <div class="summary-row"><span>Value</span><span>$${usd.toFixed(2)}</span></div>
+        <div class="summary-row"><span>You Pay</span><span style="color:#69f0ae;font-weight:700">${gd.toLocaleString()} G$</span></div>`;
+}
+
+function initiateVirtualCard() {
+    if (!selectedVcProduct) { showToast('Select a virtual card', 'error'); return; }
+    let usd, gd;
+    if (window._vcSelectedAmt) { usd = window._vcSelectedAmt.usd; gd = window._vcSelectedAmt.gd; }
+    else { const inp = document.getElementById('vcCustomAmt'); if (!inp?.value) { showToast('Enter amount', 'error'); return; } usd = parseFloat(inp.value); gd = Math.ceil(usd / GD_PRICE); }
+    // order_type stays 'giftcard' so the backend fulfills via Reloadly gift-cards API.
+    // The is_virtual_card flag signals the result UI to reveal the card number after success.
+    openPayModal({ order_type: 'giftcard', usd_amount: usd, gd_amount: gd,
+        payload: { product_id: selectedVcProduct.productId, unit_price: usd, quantity: 1, is_virtual_card: true },
+        label: `${selectedVcProduct.productName} — $${usd}`,
+        is_virtual_card: true });
+}
+
+// ─── Virtual Card Reveal ──────────────────────────────────────────────────────
+// Called after a virtual-card order completes successfully. Fetches the card
+// number + CVV + expiry from Reloadly (via our proxy endpoint) and renders
+// them inside the payment modal's result box with copy buttons.
+async function revealVirtualCard(orderId) {
+    const box = document.getElementById('resultBox');
+    if (!box) return;
+    const loader = document.createElement('div');
+    loader.id = 'vcCardReveal';
+    loader.style.cssText = 'margin-top:14px;padding:14px;background:#0f0f1a;border:1px solid #3730a3;border-radius:12px';
+    loader.innerHTML = '<div style="text-align:center;font-size:13px;color:#a5b4fc"><i class="fas fa-spinner fa-spin"></i> Retrieving your card details…</div>';
+    box.appendChild(loader);
+
+    try {
+        const res = await apiFetch(`/reloadly/api/order/${orderId}/card-details`);
+        if (!res.success) {
+            loader.innerHTML = `<div style="font-size:13px;color:#f87171">⚠️ Could not retrieve card details: ${res.error || 'unknown error'}<br><br>Your order completed — contact support with order id <code>${orderId}</code>.</div>`;
+            return;
+        }
+        const cards = Array.isArray(res.cards) ? res.cards : (res.cards?.content || res.cards?.cards || [res.cards]);
+        if (!cards || !cards.length) {
+            loader.innerHTML = `<div style="font-size:13px;color:#fcd34d">⚠️ Card was ordered successfully but Reloadly returned no redeem data yet. Check "My Orders" in a few minutes, or contact support with order id <code>${orderId}</code>.</div>`;
+            return;
+        }
+        loader.innerHTML = cards.map((c) => renderVirtualCard(c)).join('');
+    } catch (e) {
+        loader.innerHTML = `<div style="font-size:13px;color:#f87171">⚠️ Network error retrieving card: ${(e && e.message) || e}</div>`;
+    }
+}
+
+function renderVirtualCard(card) {
+    // Reloadly redeem payloads vary per product. Try a few known shapes.
+    const pan = card.cardNumber || card.cardNo || card.redemptionCode || card.pinCode || card.code || '';
+    const pin = (card.cardNumber && (card.pinCode || card.cvv || card.cvc)) || card.pinCode || card.cvv || card.cvc || '';
+    const expiry = card.expiryDate || card.cardExpiration || card.expiry || '';
+    const instructions = card.instructions || card.redemptionInstructions || '';
+    const brand = card.brandName || card.productName || 'Virtual Card';
+
+    const row = (label, value, isSecret) => value ? `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed rgba(255,255,255,0.06)">
+            <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.8px;color:#7986cb">${label}</span>
+            <div style="display:flex;align-items:center;gap:8px;flex:1;justify-content:flex-end">
+                <span style="font-family:monospace;font-size:14px;color:#fff;word-break:break-all;text-align:right">${isSecret ? _maskValue(String(value)) : value}</span>
+                ${isSecret ? `<button type="button" class="vc-reveal-toggle" onclick="_vcToggleReveal(this)" style="background:#3730a3;border:none;color:#fff;padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer"><i class="fas fa-eye"></i></button>` : ''}
+                <button type="button" onclick="_vcCopy('${String(value).replace(/'/g,"\\'")}', this)" title="Copy" style="background:#1e2260;border:1px solid #3730a3;color:#a5b4fc;padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer"><i class="fas fa-copy"></i></button>
+            </div>
+        </div>` : '';
+
+    return `
+        <div style="margin-bottom:10px">
+            <div style="font-size:12px;color:#a5b4fc;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+                <i class="fas fa-credit-card"></i> <strong>${brand}</strong>
+            </div>
+            <div data-vc-secret="${String(pan || '')}" data-vc-pin="${String(pin || '')}">
+                ${row('Card Number', pan, true)}
+                ${row('CVV / PIN', pin, true)}
+                ${row('Expiry', expiry, false)}
+            </div>
+            ${instructions ? `<div style="font-size:11px;color:#9ca3af;margin-top:8px;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px;line-height:1.5">${instructions}</div>` : ''}
+            <div style="font-size:11px;color:#fcd34d;margin-top:8px">⚠️ Save these details now — for security, you may not be able to retrieve them again.</div>
+        </div>`;
+}
+
+function _maskValue(v) {
+    if (!v) return '';
+    if (v.length <= 4) return '•'.repeat(v.length);
+    return '•'.repeat(Math.max(v.length - 4, 4)) + v.slice(-4);
+}
+
+function _vcToggleReveal(btn) {
+    const wrap = btn.closest('[data-vc-secret]');
+    if (!wrap) return;
+    const revealed = wrap.getAttribute('data-vc-revealed') === '1';
+    const rows = wrap.querySelectorAll(':scope > div');
+    const values = [wrap.getAttribute('data-vc-secret'), wrap.getAttribute('data-vc-pin')];
+    rows.forEach((r, i) => {
+        const span = r.querySelector('span:last-of-type') || r.querySelectorAll('span')[1];
+        if (span && values[i] != null) {
+            span.textContent = revealed ? _maskValue(values[i]) : values[i];
+        }
+    });
+    wrap.setAttribute('data-vc-revealed', revealed ? '0' : '1');
+    btn.innerHTML = revealed ? '<i class="fas fa-eye"></i>' : '<i class="fas fa-eye-slash"></i>';
+}
+
+function _vcCopy(value, btn) {
+    if (!navigator.clipboard) return;
+    navigator.clipboard.writeText(value).then(() => {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i>';
+        setTimeout(() => { btn.innerHTML = orig; }, 1500);
+    }).catch(() => {});
+}
+
 // ─── UTILITY ──────────────────────────────────────────────────────────────────
 async function loadBillers() {
     const country = document.getElementById('utilCountry').value.trim().toUpperCase() || null;
@@ -1346,10 +1576,28 @@ async function applyStoreVisibility() {
     }
 }
 
+function handleTabHash() {
+    // Deep-link support: /reloadly/#virtualcard opens the Virtual Card tab.
+    const hash = (window.location.hash || '').replace('#', '').trim().toLowerCase();
+    if (!hash) return;
+    const aliases = { 'virtual-card': 'virtualcard', 'virtualcards': 'virtualcard', 'virtual-cards': 'virtualcard' };
+    const target = aliases[hash] || hash;
+    const btn = document.querySelector(`.tab-btn[onclick*="switchTab('${target}'"]`);
+    if (btn && btn.style.display !== 'none') {
+        btn.click();
+        if (target === 'virtualcard') {
+            // Preload the catalog so users see cards immediately.
+            setTimeout(() => { try { loadVirtualCards(); } catch (_) {} }, 50);
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     applyStoreVisibility();
     loadOrders();
+    handleTabHash();
 });
+window.addEventListener('hashchange', handleTabHash);
 </script>
 </body>
 </html>

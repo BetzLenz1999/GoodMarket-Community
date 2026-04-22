@@ -260,6 +260,34 @@ class ReloadlyClient:
             logger.error(f"❌ get_giftcard_order error: {e}")
             raise
 
+    def get_giftcard_redeem_code(self, transaction_id) -> dict:
+        """
+        Fetch the redeem code (card number, PIN, etc.) for a completed
+        gift card order. For Visa/Mastercard virtual prepaid cards, this
+        returns the card number, CVV/PIN, and expiry.
+        Reloadly docs: GET /orders/transactions/{transactionId}/cards
+        """
+        try:
+            url = f"{self.giftcard_url}/orders/transactions/{transaction_id}/cards"
+            resp = requests.get(url, headers=self._giftcard_headers(), timeout=15)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            logger.error(f"❌ get_giftcard_redeem_code error: {e}")
+            raise
+
+    def get_giftcard_categories(self) -> list:
+        """Get gift card product categories (e.g. 'Prepaid Visa', 'Money Cards')."""
+        try:
+            url = f"{self.giftcard_url}/categories"
+            resp = requests.get(url, headers=self._giftcard_headers(), timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("content", data) if isinstance(data, dict) else data
+        except Exception as e:
+            logger.error(f"❌ get_giftcard_categories error: {e}")
+            raise
+
     # ─── UTILITY PAYMENTS ──────────────────────────────────────────────────────
 
     def get_utility_billers(self, country_code: str = None) -> list:
