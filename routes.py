@@ -1029,28 +1029,88 @@ def get_homepage_live_stats():
             }), 503
 
         today = datetime.utcnow().strftime("%Y-%m-%d")
-        start_datetime = f"{today}T00:00:00Z"
-        end_datetime = f"{today}T23:59:59Z"
         start_30d = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
         start_datetime_30d = f"{start_30d}T00:00:00Z"
+        end_datetime = f"{today}T23:59:59Z"
 
-        # Active earners: distinct wallets with earning activity today
-        active_rows = safe_supabase_operation(
-            lambda: supabase.table("learnearn_log")
+        def _normalize_wallet(wallet):
+            return (wallet or "").strip().lower()
+
+        def _collect_wallets(table_name, time_column, operation_name, status_column=None, status_value=None):
+            """Fetch wallet addresses from a table for the last 30 days with optional status filter."""
+            try:
+                def _query():
+                    query = supabase.table(table_name).select("wallet_address") \
+                        .gte(time_column, start_datetime_30d) \
+                        .lte(time_column, end_datetime)
+
+                    if status_column is not None:
+                        query = query.eq(status_column, status_value)
+
+                    return query.execute()
+
+                rows = safe_supabase_operation(
+                    _query,
+                    fallback_result=type("obj", (object,), {"data": []})(),
+                    operation_name=operation_name
+                )
+                return {
+                    _normalize_wallet(row.get("wallet_address"))
+                    for row in (rows.data or [])
+                    if _normalize_wallet(row.get("wallet_address"))
+                }
+            except Exception as table_error:
+                logger.warning(f"⚠️ Failed loading active wallets from {table_name}: {table_error}")
+                return set()
+
+        # Active earners (30d): distinct wallets merged from Learn & Earn, Daily Tasks, Minigames, and Community Stories.
+        active_wallets = set()
+        active_wallets.update(_collect_wallets(
+            table_name="learnearn_log",
+            time_column="timestamp",
+            status_column="status",
+            status_value=True,
+            operation_name="get homepage active earners from learnearn_log"
+        ))
+        active_wallets.update(_collect_wallets(
+            table_name="twitter_task_log",
+            time_column="created_at",
+            status_column="status",
+            status_value="completed",
+            operation_name="get homepage active earners from twitter_task_log"
+        ))
+        active_wallets.update(_collect_wallets(
+            table_name="telegram_task_log",
+            time_column="created_at",
+            status_column="status",
+            status_value="completed",
+            operation_name="get homepage active earners from telegram_task_log"
+        ))
+        active_wallets.update(_collect_wallets(
+            table_name="task_completion_log",
+            time_column="timestamp",
+            operation_name="get homepage active earners from task_completion_log"
+        ))
+        active_wallets.update(_collect_wallets(
+            table_name="minigame_rewards_log",
+            time_column="created_at",
+            operation_name="get homepage active earners from minigame_rewards_log"
+        ))
+        community_rows = safe_supabase_operation(
+            lambda: supabase.table("community_stories_submissions")
                 .select("wallet_address")
-                .eq("status", True)
-                .gte("timestamp", start_datetime)
-                .lte("timestamp", end_datetime)
+                .in_("status", ["approved", "approved_low", "approved_high"])
+                .gte("created_at", start_datetime_30d)
+                .lte("created_at", end_datetime)
                 .execute(),
             fallback_result=type("obj", (object,), {"data": []})(),
-            operation_name="get homepage active earners"
+            operation_name="get homepage active earners from community_stories_submissions"
         )
-
-        active_wallets = {
-            row.get("wallet_address")
-            for row in (active_rows.data or [])
-            if row.get("wallet_address")
-        }
+        active_wallets.update({
+            _normalize_wallet(row.get("wallet_address"))
+            for row in (community_rows.data or [])
+            if _normalize_wallet(row.get("wallet_address"))
+        })
 
         # Tasks completed in the last 30 days: total successful Learn & Earn submissions
         tasks_result = safe_supabase_operation(
