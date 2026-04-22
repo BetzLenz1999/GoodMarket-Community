@@ -837,6 +837,10 @@
     <div id="walletDashboardFVMsg" class="alert alert-info" style="display:none;margin:0.9rem 1rem 0;padding:0.75rem 0.9rem;text-align:center;border-radius:12px;">
         Please click <strong>Claim G$</strong> button to start your face verification to start G$ daily claiming and using GoodMarket full features.
     </div>
+    <div id="fvExpiryBanner" style="display:none;margin:0.9rem 1rem 0;padding:0.8rem 0.95rem;border-radius:12px;font-size:0.88rem;line-height:1.5;">
+        <span id="fvExpiryBannerIcon" style="margin-right:0.4rem;">⏳</span><span id="fvExpiryBannerText"></span>
+        <button type="button" id="fvExpiryBannerCta" onclick="handleFvReverifyClick()" style="margin-left:0.6rem;padding:0.35rem 0.8rem;border-radius:8px;border:1px solid currentColor;background:transparent;color:inherit;font-size:0.8rem;font-weight:600;cursor:pointer;">Re-verify</button>
+    </div>
 
     <!-- Balance Card -->
     <div class="balance-card">
@@ -1119,6 +1123,37 @@
             <div style="margin-bottom:1.25rem;">
                 <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Wallet Address</div>
                 <div style="font-family:monospace;font-size:0.8rem;color:var(--text-dim);background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:0.75rem;word-break:break-all;line-height:1.6;">{{ wallet }}</div>
+            </div>
+
+            <div style="margin-bottom:1.25rem;">
+                <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Face Verification</div>
+                <div id="fvStatusCard" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:0.85rem 0.95rem;font-size:0.85rem;line-height:1.6;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;margin-bottom:0.45rem;">
+                        <span style="color:var(--text-dim);">Status</span>
+                        <span id="fvStatusPill" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.22rem 0.6rem;border-radius:999px;font-size:0.75rem;font-weight:600;background:rgba(255,255,255,0.06);color:var(--text-dim);">
+                            <span id="fvStatusDot" style="width:0.5rem;height:0.5rem;border-radius:50%;background:#888;"></span>
+                            <span id="fvStatusLabel">Loading…</span>
+                        </span>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;margin-bottom:0.35rem;">
+                        <span style="color:var(--text-dim);">Last verified</span>
+                        <span id="fvStatusLastVerified" style="color:#fff;">—</span>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;margin-bottom:0.35rem;">
+                        <span style="color:var(--text-dim);">Expires</span>
+                        <span id="fvStatusExpiresAt" style="color:#fff;">—</span>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
+                        <span style="color:var(--text-dim);">Time remaining</span>
+                        <span id="fvStatusRemaining" style="color:#fff;">—</span>
+                    </div>
+                    <div id="fvStatusHint" style="margin-top:0.6rem;font-size:0.78rem;color:var(--text-dim);line-height:1.5;">
+                        Expiry is read live from the GoodDollar Identity contract on Celo — whatever <code>authenticationPeriod()</code> is set on-chain (currently 180 days) applies automatically.
+                    </div>
+                    <button type="button" id="fvStatusCta" onclick="handleFvReverifyClick()" style="display:none;margin-top:0.75rem;width:100%;padding:0.6rem 0.8rem;border-radius:10px;border:1px solid rgba(124,58,237,0.45);background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;font-weight:600;cursor:pointer;">
+                        🪪 <span id="fvStatusCtaLabel">Verify Now</span>
+                    </button>
+                </div>
             </div>
 
             {% if login_method == 'custodial' %}
@@ -1430,6 +1465,10 @@
     function openModal(id) {
         document.getElementById(id).classList.add('open');
         document.body.style.overflow = 'hidden';
+        if (id === 'settingsModal') {
+            // Refresh FV status each time Settings opens so the user sees fresh data.
+            loadFvStatus(true);
+        }
     }
     function closeModal(id) {
         document.getElementById(id).classList.remove('open');
@@ -1438,6 +1477,159 @@
     document.querySelectorAll('.modal-overlay').forEach(el => {
         el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
     });
+
+    // ── Face Verification status + expiry tracking ───────────
+    // Reads live from the GoodDollar Identity contract via /api/fv-status.
+    // Powers both the Settings modal card and the wallet-page warning banner.
+    let _fvStatusState = null;
+
+    function fmtDateLocal(iso) {
+        if (!iso) return '—';
+        try {
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return '—';
+            return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+        } catch { return '—'; }
+    }
+
+    function fmtRemaining(seconds) {
+        if (!seconds || seconds <= 0) return '0 days';
+        const days = Math.floor(seconds / 86400);
+        if (days >= 2) return days + ' days';
+        const hours = Math.floor(seconds / 3600);
+        if (hours >= 2) return hours + ' hours';
+        const minutes = Math.max(1, Math.floor(seconds / 60));
+        return minutes + ' minutes';
+    }
+
+    function handleFvReverifyClick() {
+        closeModal('settingsModal');
+        if (typeof window._triggerReVerify === 'function') {
+            window._triggerReVerify();
+        }
+        // Scroll to the Claim area so the re-verify button is visible.
+        const claimEl = document.getElementById('ubiEntitlementBox') || document.querySelector('.action-item');
+        if (claimEl && claimEl.scrollIntoView) {
+            claimEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+
+    function renderFvStatus(d) {
+        _fvStatusState = d || {};
+        const pill    = document.getElementById('fvStatusPill');
+        const dot     = document.getElementById('fvStatusDot');
+        const label   = document.getElementById('fvStatusLabel');
+        const lastEl  = document.getElementById('fvStatusLastVerified');
+        const expEl   = document.getElementById('fvStatusExpiresAt');
+        const remEl   = document.getElementById('fvStatusRemaining');
+        const cta     = document.getElementById('fvStatusCta');
+        const ctaLbl  = document.getElementById('fvStatusCtaLabel');
+        const banner  = document.getElementById('fvExpiryBanner');
+        const bIcon   = document.getElementById('fvExpiryBannerIcon');
+        const bText   = document.getElementById('fvExpiryBannerText');
+        if (!pill || !dot || !label) return;
+
+        // Defaults
+        let state = 'unverified';  // unverified | verified | warning | expired | error
+        let color = '#888';
+        let bg = 'rgba(255,255,255,0.06)';
+        let pillText = 'Not verified';
+        let ctaText  = 'Verify Now';
+        let showCta  = true;
+
+        if (!d || d.success === false) {
+            state = 'error';
+            color = '#94a3b8';
+            pillText = 'Unavailable';
+            showCta = false;
+        } else if (d.expired) {
+            state = 'expired';
+            color = '#ef4444';
+            bg = 'rgba(239,68,68,0.12)';
+            pillText = 'Expired';
+            ctaText = 'Re-verify Now';
+        } else if (d.verified && d.days_remaining <= 14) {
+            state = 'warning';
+            color = '#f59e0b';
+            bg = 'rgba(245,158,11,0.12)';
+            pillText = 'Expires soon';
+            ctaText = 'Re-verify Now';
+        } else if (d.verified) {
+            state = 'verified';
+            color = '#10b981';
+            bg = 'rgba(16,185,129,0.12)';
+            pillText = 'Verified';
+            showCta = false;
+        } else if (d.ever_verified) {
+            // Has date_authenticated but not whitelisted (revoked) — treat as expired-equivalent.
+            state = 'expired';
+            color = '#ef4444';
+            bg = 'rgba(239,68,68,0.12)';
+            pillText = 'Not whitelisted';
+            ctaText = 'Re-verify Now';
+        }
+
+        dot.style.background = color;
+        label.textContent = pillText;
+        pill.style.color = color;
+        pill.style.background = bg;
+
+        lastEl.textContent = d && d.date_authenticated_iso ? fmtDateLocal(d.date_authenticated_iso) : '—';
+        expEl.textContent  = d && d.expires_at_iso         ? fmtDateLocal(d.expires_at_iso)         : '—';
+        if (state === 'expired') {
+            remEl.textContent = 'Expired';
+            remEl.style.color = '#ef4444';
+        } else if (d && d.seconds_remaining) {
+            remEl.textContent = fmtRemaining(d.seconds_remaining);
+            remEl.style.color = state === 'warning' ? '#f59e0b' : '#fff';
+        } else {
+            remEl.textContent = '—';
+            remEl.style.color = '#fff';
+        }
+
+        if (showCta) {
+            cta.style.display = '';
+            ctaLbl.textContent = ctaText;
+        } else {
+            cta.style.display = 'none';
+        }
+
+        // Top-of-page banner: only show in 'warning' or 'expired' states.
+        if (banner && bText && bIcon) {
+            if (state === 'expired') {
+                banner.style.display = '';
+                banner.style.background = 'rgba(239,68,68,0.10)';
+                banner.style.border = '1px solid rgba(239,68,68,0.35)';
+                banner.style.color = '#fca5a5';
+                bIcon.textContent = '⚠️';
+                bText.innerHTML = '<strong>Face Verification expired</strong>' +
+                    (d && d.expires_at_iso ? ' on ' + fmtDateLocal(d.expires_at_iso) : '') +
+                    '. Re-verify to resume daily G$ claims.';
+            } else if (state === 'warning') {
+                banner.style.display = '';
+                banner.style.background = 'rgba(245,158,11,0.10)';
+                banner.style.border = '1px solid rgba(245,158,11,0.35)';
+                banner.style.color = '#fcd34d';
+                bIcon.textContent = '⏳';
+                bText.innerHTML = '<strong>Face Verification expires in ' + fmtRemaining(d.seconds_remaining) + '</strong>' +
+                    (d.expires_at_iso ? ' (' + fmtDateLocal(d.expires_at_iso) + ')' : '') +
+                    '. Re-verify soon to avoid a gap in your G$ claims.';
+            } else {
+                banner.style.display = 'none';
+            }
+        }
+    }
+
+    function loadFvStatus(force) {
+        const url = '/api/fv-status' + (force ? '?force=1' : '');
+        fetch(url, { credentials: 'same-origin' })
+            .then(r => r.json())
+            .then(renderFvStatus)
+            .catch(() => renderFvStatus({ success: false }));
+    }
+
+    // Kick off once on page load so the banner can appear without opening Settings.
+    loadFvStatus(false);
 
     // ── Copy address ─────────────────────────────────────────
     function copyAddress() {
