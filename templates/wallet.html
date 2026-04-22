@@ -1199,13 +1199,89 @@
     let selectedToken = 'GD';
 
     // ── Helpers ──────────────────────────────────────────────
-    function _getEthProvider() {
-        if (!window.ethereum) return null;
-        if (window.ethereum.providers && window.ethereum.providers.length) {
-            const mm = window.ethereum.providers.find(p => p.isMetaMask && !p.isBraveWallet);
-            return mm || window.ethereum.providers[0];
+    // Trust Wallet mobile dApp browser (recent builds) exposes its EIP-1193
+    // provider only via `window.trustwallet` and/or EIP-6963 announcements —
+    // `window.ethereum` can be unset or shimmed to an unrelated provider. We
+    // collect all known injections (legacy `window.ethereum`, EIP-5749
+    // `window.ethereum.providers`, `window.trustwallet`, EIP-6963 announced
+    // providers) so claim / send / FV signing can find the real wallet.
+    window.__announced6963Providers = window.__announced6963Providers || [];
+    (function _initEip6963Discovery() {
+        try {
+            window.addEventListener('eip6963:announceProvider', (event) => {
+                const detail = event && event.detail;
+                if (!detail || !detail.provider) return;
+                const uuid = detail.info && detail.info.uuid;
+                const already = window.__announced6963Providers.find(d =>
+                    (d.info && d.info.uuid && uuid && d.info.uuid === uuid) ||
+                    d.provider === detail.provider
+                );
+                if (!already) window.__announced6963Providers.push(detail);
+            });
+            window.dispatchEvent(new Event('eip6963:requestProvider'));
+        } catch (_) { /* no-op: older browsers / strict CSPs */ }
+    })();
+
+    function _eip6963Providers() {
+        return Array.isArray(window.__announced6963Providers)
+            ? window.__announced6963Providers.slice()
+            : [];
+    }
+
+    function _isTrustWalletUA() {
+        const ua = (navigator.userAgent || '').toLowerCase();
+        return ua.includes('trust') || ua.includes('trustwallet');
+    }
+
+    function _pickTrustWallet(candidates) {
+        return candidates.find(p => p && (p.isTrust || p.isTrustWallet)) || null;
+    }
+
+    function _collectInjectedProviders() {
+        const out = [];
+        const push = (p) => { if (p && typeof p.request === 'function' && !out.includes(p)) out.push(p); };
+        if (window.ethereum) {
+            if (Array.isArray(window.ethereum.providers)) {
+                window.ethereum.providers.forEach(push);
+            }
+            push(window.ethereum);
         }
-        return window.ethereum;
+        if (window.trustwallet) push(window.trustwallet);
+        if (window.trustWallet) push(window.trustWallet);
+        for (const detail of _eip6963Providers()) push(detail.provider);
+        return out;
+    }
+
+    function _getEthProvider() {
+        const candidates = _collectInjectedProviders();
+        if (!candidates.length) return null;
+
+        // Inside Trust Wallet's in-app dApp browser the authentic provider may
+        // only be exposed via `window.trustwallet` or EIP-6963 — pick it first.
+        if (_isTrustWalletUA()) {
+            const trust = _pickTrustWallet(candidates);
+            if (trust) return trust;
+            const trust6963 = _eip6963Providers().find(d => {
+                const info = d.info || {};
+                const rdns = String(info.rdns || '').toLowerCase();
+                const name = String(info.name || '').toLowerCase();
+                return rdns.includes('trustwallet') || name.includes('trust');
+            });
+            if (trust6963 && trust6963.provider) return trust6963.provider;
+        }
+
+        // Preserve existing MetaMask preference for multi-provider setups
+        // (e.g. MetaMask + Brave or MetaMask + Coinbase both injecting).
+        if (window.ethereum && Array.isArray(window.ethereum.providers) && window.ethereum.providers.length) {
+            const mm = window.ethereum.providers.find(p => p.isMetaMask && !p.isBraveWallet);
+            if (mm) return mm;
+            return window.ethereum.providers[0];
+        }
+
+        // Fall back to vanilla `window.ethereum` when present, otherwise return
+        // the first non-ethereum injection we found (Trust / EIP-6963 only).
+        if (window.ethereum) return window.ethereum;
+        return candidates[0];
     }
     function isMobile() {
         return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
