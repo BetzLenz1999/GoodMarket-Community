@@ -1296,87 +1296,150 @@ async function revealVirtualCard(orderId) {
     const loader = document.createElement('div');
     loader.id = 'vcCardReveal';
     loader.style.cssText = 'margin-top:14px;padding:14px;background:#0f0f1a;border:1px solid #3730a3;border-radius:12px';
-    loader.innerHTML = '<div style="text-align:center;font-size:13px;color:#a5b4fc"><i class="fas fa-spinner fa-spin"></i> Retrieving your card details…</div>';
+    const spinner = document.createElement('div');
+    spinner.style.cssText = 'text-align:center;font-size:13px;color:#a5b4fc';
+    const icon = document.createElement('i');
+    icon.className = 'fas fa-spinner fa-spin';
+    spinner.append(icon, ' Retrieving your card details…');
+    loader.appendChild(spinner);
     box.appendChild(loader);
+
+    const setMsg = (color, textHtml) => {
+        while (loader.firstChild) loader.removeChild(loader.firstChild);
+        const msg = document.createElement('div');
+        msg.style.cssText = `font-size:13px;color:${color}`;
+        msg.textContent = textHtml;
+        loader.appendChild(msg);
+    };
 
     try {
         const res = await apiFetch(`/reloadly/api/order/${orderId}/card-details`);
         if (!res.success) {
-            loader.innerHTML = `<div style="font-size:13px;color:#f87171">⚠️ Could not retrieve card details: ${res.error || 'unknown error'}<br><br>Your order completed — contact support with order id <code>${orderId}</code>.</div>`;
+            setMsg('#f87171',
+                `⚠️ Could not retrieve card details: ${res.error || 'unknown error'}. Your order completed — contact support with order id ${orderId}.`);
             return;
         }
         const cards = Array.isArray(res.cards) ? res.cards : (res.cards?.content || res.cards?.cards || [res.cards]);
         if (!cards || !cards.length) {
-            loader.innerHTML = `<div style="font-size:13px;color:#fcd34d">⚠️ Card was ordered successfully but Reloadly returned no redeem data yet. Check "My Orders" in a few minutes, or contact support with order id <code>${orderId}</code>.</div>`;
+            setMsg('#fcd34d',
+                `⚠️ Card was ordered successfully but Reloadly returned no redeem data yet. Check "My Orders" in a few minutes, or contact support with order id ${orderId}.`);
             return;
         }
-        loader.innerHTML = cards.map((c) => renderVirtualCard(c)).join('');
+        while (loader.firstChild) loader.removeChild(loader.firstChild);
+        cards.forEach(c => loader.appendChild(renderVirtualCard(c)));
     } catch (e) {
-        loader.innerHTML = `<div style="font-size:13px;color:#f87171">⚠️ Network error retrieving card: ${(e && e.message) || e}</div>`;
+        setMsg('#f87171', `⚠️ Network error retrieving card: ${(e && e.message) || e}`);
     }
 }
 
+// Build a card-details block with no innerHTML concatenation of untrusted
+// data. All values coming from the Reloadly API are inserted as text nodes
+// or attribute values via DOM APIs, so no HTML/JS injection is possible.
 function renderVirtualCard(card) {
-    // Reloadly redeem payloads vary per product. Try a few known shapes.
     const pan = card.cardNumber || card.cardNo || card.redemptionCode || card.pinCode || card.code || '';
     const pin = (card.cardNumber && (card.pinCode || card.cvv || card.cvc)) || card.pinCode || card.cvv || card.cvc || '';
     const expiry = card.expiryDate || card.cardExpiration || card.expiry || '';
     const instructions = card.instructions || card.redemptionInstructions || '';
     const brand = card.brandName || card.productName || 'Virtual Card';
 
-    const row = (label, value, isSecret) => value ? `
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed rgba(255,255,255,0.06)">
-            <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.8px;color:#7986cb">${label}</span>
-            <div style="display:flex;align-items:center;gap:8px;flex:1;justify-content:flex-end">
-                <span style="font-family:monospace;font-size:14px;color:#fff;word-break:break-all;text-align:right">${isSecret ? _maskValue(String(value)) : value}</span>
-                ${isSecret ? `<button type="button" class="vc-reveal-toggle" onclick="_vcToggleReveal(this)" style="background:#3730a3;border:none;color:#fff;padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer"><i class="fas fa-eye"></i></button>` : ''}
-                <button type="button" onclick="_vcCopy('${String(value).replace(/'/g,"\\'")}', this)" title="Copy" style="background:#1e2260;border:1px solid #3730a3;color:#a5b4fc;padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer"><i class="fas fa-copy"></i></button>
-            </div>
-        </div>` : '';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'margin-bottom:10px';
 
-    return `
-        <div style="margin-bottom:10px">
-            <div style="font-size:12px;color:#a5b4fc;margin-bottom:8px;display:flex;align-items:center;gap:6px">
-                <i class="fas fa-credit-card"></i> <strong>${brand}</strong>
-            </div>
-            <div data-vc-secret="${String(pan || '')}" data-vc-pin="${String(pin || '')}">
-                ${row('Card Number', pan, true)}
-                ${row('CVV / PIN', pin, true)}
-                ${row('Expiry', expiry, false)}
-            </div>
-            ${instructions ? `<div style="font-size:11px;color:#9ca3af;margin-top:8px;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px;line-height:1.5">${instructions}</div>` : ''}
-            <div style="font-size:11px;color:#fcd34d;margin-top:8px">⚠️ Save these details now — for security, you may not be able to retrieve them again.</div>
-        </div>`;
+    const header = document.createElement('div');
+    header.style.cssText = 'font-size:12px;color:#a5b4fc;margin-bottom:8px;display:flex;align-items:center;gap:6px';
+    const headerIcon = document.createElement('i');
+    headerIcon.className = 'fas fa-credit-card';
+    const brandStrong = document.createElement('strong');
+    brandStrong.textContent = String(brand);
+    header.append(headerIcon, ' ', brandStrong);
+    wrap.appendChild(header);
+
+    const rowsHost = document.createElement('div');
+    wrap.appendChild(rowsHost);
+    if (pan) rowsHost.appendChild(_vcMakeRow('Card Number', String(pan), true));
+    if (pin) rowsHost.appendChild(_vcMakeRow('CVV / PIN', String(pin), true));
+    if (expiry) rowsHost.appendChild(_vcMakeRow('Expiry', String(expiry), false));
+
+    if (instructions) {
+        const note = document.createElement('div');
+        note.style.cssText = 'font-size:11px;color:#9ca3af;margin-top:8px;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px;line-height:1.5';
+        note.textContent = String(instructions);
+        wrap.appendChild(note);
+    }
+
+    const warn = document.createElement('div');
+    warn.style.cssText = 'font-size:11px;color:#fcd34d;margin-top:8px';
+    warn.textContent = '⚠️ Save these details now — for security, you may not be able to retrieve them again.';
+    wrap.appendChild(warn);
+    return wrap;
+}
+
+function _vcMakeRow(label, value, isSecret) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed rgba(255,255,255,0.06)';
+
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'font-size:11px;text-transform:uppercase;letter-spacing:0.8px;color:#7986cb';
+    lbl.textContent = label;
+
+    const right = document.createElement('div');
+    right.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;justify-content:flex-end';
+
+    const val = document.createElement('span');
+    val.style.cssText = 'font-family:monospace;font-size:14px;color:#fff;word-break:break-all;text-align:right';
+    val.dataset.vcValue = value;
+    val.dataset.vcSecret = isSecret ? '1' : '0';
+    val.dataset.vcRevealed = '0';
+    val.textContent = isSecret ? _maskValue(value) : value;
+    right.appendChild(val);
+
+    if (isSecret) {
+        const eyeBtn = document.createElement('button');
+        eyeBtn.type = 'button';
+        eyeBtn.style.cssText = 'background:#3730a3;border:none;color:#fff;padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer';
+        const eyeIcon = document.createElement('i');
+        eyeIcon.className = 'fas fa-eye';
+        eyeBtn.appendChild(eyeIcon);
+        eyeBtn.addEventListener('click', () => _vcToggleReveal(val, eyeIcon));
+        right.appendChild(eyeBtn);
+    }
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.title = 'Copy';
+    copyBtn.style.cssText = 'background:#1e2260;border:1px solid #3730a3;color:#a5b4fc;padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer';
+    const copyIcon = document.createElement('i');
+    copyIcon.className = 'fas fa-copy';
+    copyBtn.appendChild(copyIcon);
+    copyBtn.addEventListener('click', () => _vcCopy(value, copyBtn));
+    right.appendChild(copyBtn);
+
+    row.append(lbl, right);
+    return row;
 }
 
 function _maskValue(v) {
     if (!v) return '';
+    v = String(v);
     if (v.length <= 4) return '•'.repeat(v.length);
     return '•'.repeat(Math.max(v.length - 4, 4)) + v.slice(-4);
 }
 
-function _vcToggleReveal(btn) {
-    const wrap = btn.closest('[data-vc-secret]');
-    if (!wrap) return;
-    const revealed = wrap.getAttribute('data-vc-revealed') === '1';
-    const rows = wrap.querySelectorAll(':scope > div');
-    const values = [wrap.getAttribute('data-vc-secret'), wrap.getAttribute('data-vc-pin')];
-    rows.forEach((r, i) => {
-        const span = r.querySelector('span:last-of-type') || r.querySelectorAll('span')[1];
-        if (span && values[i] != null) {
-            span.textContent = revealed ? _maskValue(values[i]) : values[i];
-        }
-    });
-    wrap.setAttribute('data-vc-revealed', revealed ? '0' : '1');
-    btn.innerHTML = revealed ? '<i class="fas fa-eye"></i>' : '<i class="fas fa-eye-slash"></i>';
+function _vcToggleReveal(valueSpan, iconEl) {
+    const revealed = valueSpan.dataset.vcRevealed === '1';
+    valueSpan.textContent = revealed ? _maskValue(valueSpan.dataset.vcValue) : valueSpan.dataset.vcValue;
+    valueSpan.dataset.vcRevealed = revealed ? '0' : '1';
+    iconEl.className = revealed ? 'fas fa-eye' : 'fas fa-eye-slash';
 }
 
 function _vcCopy(value, btn) {
     if (!navigator.clipboard) return;
     navigator.clipboard.writeText(value).then(() => {
-        const orig = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-check"></i>';
-        setTimeout(() => { btn.innerHTML = orig; }, 1500);
+        const icon = btn.querySelector('i');
+        if (!icon) return;
+        const origClass = icon.className;
+        icon.className = 'fas fa-check';
+        setTimeout(() => { icon.className = origClass; }, 1500);
     }).catch(() => {});
 }
 
@@ -1548,10 +1611,18 @@ async function loadOrders() {
 async function applyStoreVisibility() {
     try {
         const data = await apiFetch('/api/feature-visibility');
+        const giftcardVisible = data.giftcard_visible !== false;
         const map = {
-            topup:    data.topup_visible !== false,
-            giftcard: data.giftcard_visible !== false,
-            utility:  data.utility_visible !== false
+            topup:       data.topup_visible !== false,
+            giftcard:    giftcardVisible,
+            // Virtual cards are fulfilled through the gift-card rails, so they
+            // share the same visibility gate. An explicit virtualcard_visible
+            // flag overrides it if an admin wants to kill-switch virtual cards
+            // independently.
+            virtualcard: data.virtualcard_visible !== undefined
+                ? data.virtualcard_visible !== false
+                : giftcardVisible,
+            utility:     data.utility_visible !== false
         };
         // Get all tab buttons and their associated content
         const tabBtns = document.querySelectorAll('.tab-btn[onclick*="switchTab"]');
