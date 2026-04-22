@@ -2119,12 +2119,92 @@
             el.textContent = message;
         }
 
-        function getAllInjectedProviders() {
-            const eth = window.ethereum;
-            if (!eth) return [];
-            if (Array.isArray(eth.providers) && eth.providers.length) return eth.providers;
-            return [eth];
+        // EIP-6963 provider discovery — Trust Wallet (mobile dApp browser +
+        // extension), Rabby, Coinbase Wallet, and current MetaMask builds all
+        // announce themselves via `eip6963:announceProvider`. Recent Trust
+        // Wallet mobile builds no longer guarantee a `window.ethereum`
+        // injection, so if we only look at `window.ethereum` we miss them.
+        window.__announced6963Providers = window.__announced6963Providers || [];
+        (function _initEip6963Discovery() {
+            try {
+                window.addEventListener('eip6963:announceProvider', (event) => {
+                    const detail = event && event.detail;
+                    if (!detail || !detail.provider) return;
+                    const uuid = detail.info && detail.info.uuid;
+                    const already = window.__announced6963Providers.find(d =>
+                        (d.info && d.info.uuid && uuid && d.info.uuid === uuid) ||
+                        d.provider === detail.provider
+                    );
+                    if (!already) window.__announced6963Providers.push(detail);
+                });
+                window.dispatchEvent(new Event('eip6963:requestProvider'));
+            } catch (_) { /* older browsers / strict CSPs */ }
+        })();
+
+        function _eip6963Details() {
+            return Array.isArray(window.__announced6963Providers)
+                ? window.__announced6963Providers.slice()
+                : [];
         }
+
+        function getAllInjectedProviders() {
+            const out = [];
+            const push = (p) => {
+                if (p && typeof p.request === 'function' && !out.includes(p)) out.push(p);
+            };
+            const eth = window.ethereum;
+            if (eth) {
+                if (Array.isArray(eth.providers) && eth.providers.length) {
+                    eth.providers.forEach(push);
+                }
+                push(eth);
+            }
+            // Trust Wallet's branded injection (mobile dApp browser + desktop
+            // extension). Hyphen / casing varies across versions.
+            if (window.trustwallet) push(window.trustwallet);
+            if (window.trustWallet) push(window.trustWallet);
+            for (const detail of _eip6963Details()) push(detail.provider);
+            return out;
+        }
+
+        // Exposes a one-tap diagnostic for the "wallet not detected" reports we
+        // get from Trust Wallet users. Open the homepage inside the dApp
+        // browser, then in the DevTools / remote console call
+        // `window._gmDebugDumpWallets()` (or tap the hidden long-press on the
+        // Get Started button) to see what the page actually sees.
+        window._gmDebugDumpWallets = function _gmDebugDumpWallets() {
+            const providers = getAllInjectedProviders();
+            const info6963 = _eip6963Details().map(d => ({
+                rdns: d.info && d.info.rdns,
+                name: d.info && d.info.name,
+                uuid: d.info && d.info.uuid
+            }));
+            const snapshot = {
+                userAgent: navigator.userAgent,
+                hasWindowEthereum: !!window.ethereum,
+                ethereumIsTrust: !!(window.ethereum && window.ethereum.isTrust),
+                ethereumIsTrustWallet: !!(window.ethereum && window.ethereum.isTrustWallet),
+                ethereumIsMetaMask: !!(window.ethereum && window.ethereum.isMetaMask),
+                ethereumIsMiniPay: !!(window.ethereum && window.ethereum.isMiniPay),
+                hasWindowTrustwallet: !!window.trustwallet,
+                hasWindowTrustWallet: !!window.trustWallet,
+                nestedProvidersLength: (window.ethereum && Array.isArray(window.ethereum.providers))
+                    ? window.ethereum.providers.length : 0,
+                eip6963Count: info6963.length,
+                eip6963: info6963,
+                collectedProviderCount: providers.length,
+                collectedProviderFlags: providers.map(p => ({
+                    isTrust: !!p.isTrust,
+                    isTrustWallet: !!p.isTrustWallet,
+                    isMetaMask: !!p.isMetaMask,
+                    isMiniPay: !!p.isMiniPay,
+                    isBraveWallet: !!p.isBraveWallet,
+                    isCoinbaseWallet: !!p.isCoinbaseWallet
+                }))
+            };
+            try { console.log('[GoodMarket wallet debug]', JSON.stringify(snapshot, null, 2)); } catch (_) {}
+            return snapshot;
+        };
 
         // EIP-5749 helper: prefer MetaMask provider when multiple injected providers are present.
         function getEip5749Provider() {
@@ -2142,10 +2222,29 @@
             return /android|iphone|ipad|ipod|minipay|trust|metamask/.test(ua);
         }
 
+        function _eip6963InfoForProvider(provider) {
+            if (!provider) return null;
+            const detail = _eip6963Details().find(d => d && d.provider === provider);
+            return (detail && detail.info) || null;
+        }
+
+        function _looksLikeTrustWalletInfo(info) {
+            if (!info) return false;
+            const rdns = String(info.rdns || '').toLowerCase();
+            const name = String(info.name || '').toLowerCase();
+            return rdns.includes('trustwallet') || name.includes('trust');
+        }
+
+        function _isTrustWalletProvider(provider) {
+            if (!provider) return false;
+            if (provider.isTrust || provider.isTrustWallet) return true;
+            return _looksLikeTrustWalletInfo(_eip6963InfoForProvider(provider));
+        }
+
         function getInjectedProviderLabel(provider) {
             if (!provider) return null;
             if (provider.isMiniPay) return 'MiniPay';
-            if (provider.isTrust) return 'Trust Wallet';
+            if (_isTrustWalletProvider(provider)) return 'Trust Wallet';
             if (provider.isMetaMask && !provider.isBraveWallet) return 'MetaMask';
             return 'Injected Wallet';
         }
@@ -2153,20 +2252,34 @@
         function getInjectedProviderIcon(provider) {
             if (!provider) return '👛';
             if (provider.isMiniPay) return '📱';
-            if (provider.isTrust) return '🛡️';
+            if (_isTrustWalletProvider(provider)) return '🛡️';
             if (provider.isMetaMask && !provider.isBraveWallet) return '🦊';
             return '👛';
+        }
+
+        function _trustProviderFromEip6963() {
+            const detail = _eip6963Details().find(d => _looksLikeTrustWalletInfo(d.info));
+            return (detail && detail.provider) || null;
         }
 
         function getPreferredInjectedProvider() {
             const providers = getAllInjectedProviders();
             if (!providers.length) return null;
 
+            const ua = (navigator.userAgent || '').toLowerCase();
+            const uaIsTrust = ua.includes('trust') || ua.includes('trustwallet');
+
             // Mobile dapp browsers: MiniPay > Trust Wallet > MetaMask > generic.
             const miniPayProvider = providers.find(p => p && p.isMiniPay);
             if (miniPayProvider) return miniPayProvider;
-            const trustProvider = providers.find(p => p && p.isTrust);
+            const trustProvider = providers.find(p => p && (p.isTrust || p.isTrustWallet));
             if (trustProvider) return trustProvider;
+            // Inside Trust Wallet's dApp browser the injected provider may not
+            // self-identify via isTrust; fall back to EIP-6963's rdns match.
+            if (uaIsTrust) {
+                const trust6963 = _trustProviderFromEip6963();
+                if (trust6963) return trust6963;
+            }
             const metaMaskProvider = providers.find(p => p && p.isMetaMask && !p.isBraveWallet);
             if (metaMaskProvider) return metaMaskProvider;
 
@@ -2174,7 +2287,12 @@
             return isMobileDappContext() ? (providers[0] || null) : getEip5749Provider();
         }
 
-        function detectInjectedWallet() {
+        function detectInjectedWallet(_retryDepth) {
+            // Re-dispatch EIP-6963 requestProvider on every call — wallets that
+            // inject late (Trust Wallet mobile in some builds) will announce
+            // themselves only after we ask, and there's no harm in asking twice.
+            try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+
             const provider = getPreferredInjectedProvider();
             const title = document.getElementById('injectedWalletTitle');
             const desc = document.getElementById('injectedWalletDesc');
@@ -2190,6 +2308,13 @@
                     desc.textContent = 'Not detected — install MetaMask extension or use WalletConnect QR / manual fallback guidance.';
                 }
                 btn.style.opacity = '0.78';
+                // Some mobile dApp browsers inject after DOMContentLoaded. Retry
+                // a couple times with small backoff so a user opening the modal
+                // fast still gets Trust Wallet / MetaMask Mobile detected.
+                const depth = Number(_retryDepth || 0);
+                if (depth < 3) {
+                    setTimeout(() => detectInjectedWallet(depth + 1), 350 + depth * 250);
+                }
                 return;
             }
             const name = getInjectedProviderLabel(provider);

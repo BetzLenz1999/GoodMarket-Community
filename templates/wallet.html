@@ -1253,6 +1253,11 @@
     }
 
     function _getEthProvider() {
+        // Re-dispatch EIP-6963 discovery on every call — Trust Wallet mobile
+        // and some MetaMask Mobile builds announce only after the dApp asks,
+        // and idempotent re-dispatch costs nothing for wallets that don't.
+        try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+
         const candidates = _collectInjectedProviders();
         if (!candidates.length) return null;
 
@@ -1283,6 +1288,49 @@
         if (window.ethereum) return window.ethereum;
         return candidates[0];
     }
+
+    // Diagnostic: open the claim page inside the failing wallet's dApp browser,
+    // then in the console call `window._gmDebugDumpWallets()` to see exactly
+    // what the page sees. Useful when reports like "Trust Wallet doesn't work"
+    // come in — the dump shows which injection channels are actually present.
+    window._gmDebugDumpWallets = function _gmDebugDumpWallets() {
+        const candidates = _collectInjectedProviders();
+        const info6963 = _eip6963Providers().map(d => ({
+            rdns: d.info && d.info.rdns,
+            name: d.info && d.info.name,
+            uuid: d.info && d.info.uuid
+        }));
+        const snapshot = {
+            page: 'wallet.html',
+            userAgent: navigator.userAgent,
+            loginMethod: (typeof LOGIN_METHOD === 'string') ? LOGIN_METHOD : null,
+            isCustodialMode: !!window.isCustodialMode,
+            hasWindowEthereum: !!window.ethereum,
+            ethereumIsTrust: !!(window.ethereum && window.ethereum.isTrust),
+            ethereumIsTrustWallet: !!(window.ethereum && window.ethereum.isTrustWallet),
+            ethereumIsMetaMask: !!(window.ethereum && window.ethereum.isMetaMask),
+            ethereumIsMiniPay: !!(window.ethereum && window.ethereum.isMiniPay),
+            hasWindowTrustwallet: !!window.trustwallet,
+            hasWindowTrustWallet: !!window.trustWallet,
+            nestedProvidersLength: (window.ethereum && Array.isArray(window.ethereum.providers))
+                ? window.ethereum.providers.length : 0,
+            eip6963Count: info6963.length,
+            eip6963: info6963,
+            collectedProviderCount: candidates.length,
+            collectedProviderFlags: candidates.map(p => ({
+                isTrust: !!p.isTrust,
+                isTrustWallet: !!p.isTrustWallet,
+                isMetaMask: !!p.isMetaMask,
+                isMiniPay: !!p.isMiniPay,
+                isBraveWallet: !!p.isBraveWallet,
+                isCoinbaseWallet: !!p.isCoinbaseWallet,
+                isWalletConnect: !!p.isWalletConnect
+            }))
+        };
+        try { console.log('[GoodMarket wallet debug]', JSON.stringify(snapshot, null, 2)); } catch (_) {}
+        return snapshot;
+    };
+
     function isMobile() {
         return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     }
