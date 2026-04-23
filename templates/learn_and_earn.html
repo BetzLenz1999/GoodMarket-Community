@@ -2699,7 +2699,7 @@
             }
         }
 
-        // Show quiz results with achievement card
+        // Show quiz results with instant reward summary
         async function showQuizResults(data) {
             const container = document.getElementById('quiz-container');
 
@@ -2713,23 +2713,15 @@
                     <h2 style="color: #ffffff; margin-bottom: 12px; font-size: 1.1rem;"><i class="fas fa-trophy"></i> Quiz Complete!</h2>
                     <div style="margin: 12px 0; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 10px;">
                         <h3 style="color: #ffffff; font-size: 1.1rem; margin-bottom: 8px;">Score: ${data.score}/${data.total_questions}</h3>
-                        <h3 style="color: #c4b5fd; font-size: 1.4rem;">🏆 Reward: Achievement NFT Card</h3>
+                        <h3 style="color: #86efac; font-size: 1.4rem;">🏆 Reward: ${data.rewards || 0} G$</h3>
                     </div>
 
-                    <div style="background: rgba(124, 58, 237, 0.2); padding: 10px; border-radius: 10px; margin: 12px 0; border: 2px solid rgba(124, 58, 237, 0.5);">
-                        <p style="color: #c4b5fd; font-weight: bold; font-size: 0.9rem;"><i class="fas fa-trophy"></i> Your Achievement Card is ready to mint as an NFT!</p>
-                        <p style="color: rgba(255,255,255,0.75); font-size: 0.82rem; margin-top: 4px;">Mint it below, then choose to burn for instant G$ or list it for sale.</p>
+                    <div style="background: rgba(16, 185, 129, 0.15); padding: 10px; border-radius: 10px; margin: 12px 0; border: 2px solid rgba(16, 185, 129, 0.45);">
+                        <p style="color: #86efac; font-weight: bold; font-size: 0.9rem;"><i class="fas fa-coins"></i> Instant reward sent after quiz completion.</p>
+                        <p style="color: rgba(255,255,255,0.75); font-size: 0.82rem; margin-top: 4px;">Rewards are credited directly in G$ once your quiz is submitted.</p>
                     </div>
 
                     <div style="margin-top: 14px;">
-                        <button id="view-achievement-btn"
-                                data-score="${data.score}"
-                                data-total="${data.total_questions}"
-                                data-quiz-id="${data.quiz_id || ''}"
-                                style="margin: 8px; padding: 11px 20px; background: linear-gradient(135deg, #f093fb, #f5576c); color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 0.9rem; box-shadow: 0 4px 10px rgba(240, 147, 251, 0.4);">
-                            <i class="fas fa-trophy"></i> View Achievement Card
-                        </button>
-
                         <button id="reset-quiz-btn" style="margin: 8px; padding: 11px 20px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 0.9rem;">
                             <i class="fas fa-redo"></i> Take Another Quiz
                         </button>
@@ -2739,49 +2731,15 @@
 
             showNotification(data.message, data.notification_type || 'success');
 
-            // Add event listeners for buttons
-            const viewAchievementBtn = document.getElementById('view-achievement-btn');
-            if (viewAchievementBtn) {
-                viewAchievementBtn.addEventListener('click', async function() {
-                    const score = parseInt(this.dataset.score);
-                    const total = parseInt(this.dataset.total);
-                    const quizId = this.dataset.quizId || '';
-                    let alreadyMinted = false, mintedTokenId = null, notEligible = false;
-                    try {
-                        const params = new URLSearchParams({ quiz_id: quizId, quiz_timestamp: new Date().toISOString() });
-                        const mintCheck = await fetch(`/learn-earn/check-nft-minted?${params}`);
-                        const mintData = await mintCheck.json();
-                        alreadyMinted = mintData.already_minted || false;
-                        mintedTokenId = mintData.token_id || null;
-                        notEligible = mintData.not_eligible || false;
-                    } catch(e) { /* use defaults */ }
-                    showAchievementCard(score, total, {
-                        quiz_id: quizId,
-                        quiz_name: 'Learn & Earn Quiz',
-                        quiz_timestamp: new Date().toISOString(),
-                        already_minted: alreadyMinted,
-                        minted_token_id: mintedTokenId,
-                        not_eligible: notEligible
-                    });
-                });
-            }
+            // Add event listener for reset button
 
             const resetBtn = document.getElementById('reset-quiz-btn');
             if (resetBtn) {
                 resetBtn.addEventListener('click', resetQuiz);
             }
 
-            // Auto-show achievement card after quiz completes
             if (data.success) {
                 playClapSound();
-                setTimeout(() => {
-                    showAchievementCard(data.score, data.total_questions, {
-                        quiz_id: data.quiz_id || '',
-                        quiz_name: 'Learn & Earn Quiz',
-                        quiz_timestamp: new Date().toISOString(),
-                        already_minted: false
-                    });
-                }, 1500);
             }
         }
 
