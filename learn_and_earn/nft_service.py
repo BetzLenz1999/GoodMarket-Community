@@ -174,6 +174,7 @@ class AchievementNFTService:
         self.chain_id = int(os.getenv('CHAIN_ID', 42220))
         self.contract_address = _CONFIG_NFT_ADDRESS or None
         self._wallet_key = os.getenv('LEARN_WALLET_PRIVATE_KEY')
+        self._wallet_key_normalized = None
         self._escrow_address = _CONFIG_ESCROW_ADDRESS
         self._g_dollar_address = _CONFIG_GD_ADDRESS
         self.tx_receipt_timeout = int(os.getenv('TX_RECEIPT_TIMEOUT', '300'))
@@ -201,7 +202,9 @@ class AchievementNFTService:
                 logger.warning("ACHIEVEMENT_NFT_CONTRACT_ADDRESS not set — deploy contract first")
 
             if self._wallet_key:
-                key = self._wallet_key if self._wallet_key.startswith('0x') else '0x' + self._wallet_key
+                key = self._wallet_key.strip()
+                key = key if key.startswith('0x') else '0x' + key
+                self._wallet_key_normalized = key
                 self.operator_account = Account.from_key(key)
                 logger.info(f"NFT operator wallet configured: {self.operator_account.address[:10]}...")
             else:
@@ -246,9 +249,27 @@ class AchievementNFTService:
                 estimated_gas_cost = gas_limit * gas_price
 
                 if gas_balance < estimated_gas_cost:
+                    balance_celo = float(self.w3.from_wei(gas_balance, 'ether'))
+                    required_celo = float(self.w3.from_wei(estimated_gas_cost, 'ether'))
+                    logger.error(
+                        "Insufficient app gas balance for NFT tx. "
+                        f"wallet={self.operator_account.address} chain_id={self.chain_id} "
+                        f"rpc={self.celo_rpc_url} balance_celo={balance_celo:.8f} "
+                        f"required_celo={required_celo:.8f} gas_price_wei={gas_price} gas_limit={gas_limit}"
+                    )
                     return {
                         "success": False,
-                        "error": "Ang GoodMarket app gas ay 0 balance. Please contact the GoodMarket team."
+                        "error": (
+                            f"Insufficient app gas. Need ~{required_celo:.6f} CELO, "
+                            f"but wallet only has {balance_celo:.6f} CELO on chain {self.chain_id}."
+                        ),
+                        "debug": {
+                            "operator_wallet": self.operator_account.address,
+                            "chain_id": self.chain_id,
+                            "rpc_url": self.celo_rpc_url,
+                            "balance_celo": balance_celo,
+                            "required_celo": required_celo,
+                        }
                     }
 
                 txn = txn_builder.build_transaction({
@@ -258,7 +279,7 @@ class AchievementNFTService:
                     'nonce': nonce,
                 })
 
-                signed = self.w3.eth.account.sign_transaction(txn, self._wallet_key)
+                signed = self.w3.eth.account.sign_transaction(txn, self._wallet_key_normalized)
                 tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
                 tx_hash_hex = tx_hash.hex()
 
