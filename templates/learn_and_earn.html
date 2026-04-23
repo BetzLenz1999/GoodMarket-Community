@@ -2255,6 +2255,83 @@
         let moduleReadingTimer = null;
         let moduleTimeRemaining = 0;
 
+        function makeModuleContentLinksClickable(rawContent) {
+            if (!rawContent || !String(rawContent).trim()) {
+                return '<p style="color: #999;">No content available for this module.</p>';
+            }
+
+            const wrapped = `<div>${String(rawContent)}</div>`;
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(wrapped, 'text/html');
+            const container = doc.body.firstElementChild;
+
+            // 1) Ensure existing anchor tags are safely clickable
+            container.querySelectorAll('a[href]').forEach(anchor => {
+                const href = (anchor.getAttribute('href') || '').trim();
+                if (!href) return;
+
+                if (!/^https?:\/\//i.test(href)) {
+                    anchor.setAttribute('href', `https://${href.replace(/^\/+/, '')}`);
+                }
+
+                anchor.setAttribute('target', '_blank');
+                anchor.setAttribute('rel', 'noopener noreferrer');
+                anchor.style.color = '#2563eb';
+                anchor.style.textDecoration = 'underline';
+                anchor.style.fontWeight = '600';
+            });
+
+            // 2) Convert plain text URLs into clickable links
+            const urlRegex = /((https?:\/\/|www\.)[^\s<]+)/gi;
+            const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+            const textNodes = [];
+            while (walker.nextNode()) {
+                const node = walker.currentNode;
+                if (node.parentElement && node.parentElement.closest('a')) continue;
+                textNodes.push(node);
+            }
+
+            textNodes.forEach(node => {
+                const text = node.textContent;
+                if (!text || !urlRegex.test(text)) return;
+                urlRegex.lastIndex = 0;
+
+                const fragment = doc.createDocumentFragment();
+                let lastIndex = 0;
+                let match;
+
+                while ((match = urlRegex.exec(text)) !== null) {
+                    const matchedText = match[0];
+                    const start = match.index;
+
+                    if (start > lastIndex) {
+                        fragment.appendChild(doc.createTextNode(text.slice(lastIndex, start)));
+                    }
+
+                    const url = /^https?:\/\//i.test(matchedText) ? matchedText : `https://${matchedText}`;
+                    const link = doc.createElement('a');
+                    link.href = url;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.textContent = matchedText;
+                    link.style.color = '#2563eb';
+                    link.style.textDecoration = 'underline';
+                    link.style.fontWeight = '600';
+                    fragment.appendChild(link);
+
+                    lastIndex = start + matchedText.length;
+                }
+
+                if (lastIndex < text.length) {
+                    fragment.appendChild(doc.createTextNode(text.slice(lastIndex)));
+                }
+
+                node.parentNode.replaceChild(fragment, node);
+            });
+
+            return container.innerHTML;
+        }
+
         // Display module links with embedded content and reading timer
         function displayModuleLinks() {
             const container = document.getElementById('quiz-container');
@@ -2267,6 +2344,7 @@
 
             const currentModule = moduleLinks[currentModuleIndex];
             const readingTime = currentModule.reading_time_minutes || 5;
+            const renderedModuleContent = makeModuleContentLinksClickable(currentModule.content);
             moduleTimeRemaining = readingTime * 60; // Convert to seconds
 
             container.innerHTML = `
@@ -2300,7 +2378,7 @@
 
                     <!-- Module Content -->
                     <div id="module-content" style="background: white; padding: 12px; border-radius: 8px; color: #333; line-height: 1.7; font-size: 0.9rem; max-height: 300px; overflow-y: auto;">
-                        ${currentModule.content || '<p style="color: #999;">No content available for this module.</p>'}
+                        ${renderedModuleContent}
                     </div>
                 </div>
 
