@@ -1358,6 +1358,8 @@
                         <tr>
                             <th>Date</th>
                             <th>Score</th>
+                            <th>Reward</th>
+                            <th>TX</th>
                             <th>Achievement</th>
                         </tr>
                     </thead>
@@ -3091,22 +3093,30 @@
                             </a>
                         `;
 
+                        const reward = parseFloat(quiz['amount_g$'] || 0).toFixed(2);
+                        const txHash = quiz.transaction_hash;
+                        const txLink = txHash
+                            ? `<a href="https://celoscan.io/tx/${txHash}" target="_blank" class="tx-hash-link" title="View on Celoscan">${txHash.substring(0, 10)}... <i class="fas fa-external-link-alt" style="font-size:0.8rem;"></i></a>`
+                            : '<span style="color:#999;font-size:0.9rem;">Pending</span>';
+
                         row.innerHTML = `
                             <td>${date}</td>
                             <td>${quiz.score}/${quiz.total_questions}</td>
+                            <td style="color:#86efac;font-weight:700;">${reward} G$</td>
+                            <td>${txLink}</td>
                             <td>${achievementLink}</td>
                         `;
 
                         historyTableBody.appendChild(row);
                     });
                 } else {
-                    historyTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px;">No quiz history yet</td></tr>';
+                    historyTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">No quiz history yet</td></tr>';
                 }
                 historyContent.style.display = 'block';
             } catch (error) {
                 console.error('Error loading quiz history:', error);
                 document.getElementById('history-content').style.display = 'block';
-                document.getElementById('history-table-body').innerHTML = '<tr><td colspan="3" style="text-align: center; color: red;">Failed to load history</td></tr>';
+                document.getElementById('history-table-body').innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Failed to load history</td></tr>';
             }
         }
 
