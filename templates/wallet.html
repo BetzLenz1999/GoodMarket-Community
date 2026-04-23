@@ -1767,7 +1767,7 @@
             state = 'revoked';
             color = '#f97316';
             bg = 'rgba(249,115,22,0.12)';
-            pillText = 'Removed from whitelist';
+            pillText = 'Verification needs renewal';
             ctaText = 'Re-verify Now';
         }
 
@@ -1782,7 +1782,7 @@
             remEl.textContent = 'Expired';
             remEl.style.color = '#ef4444';
         } else if (state === 'revoked') {
-            remEl.textContent = 'Wallet removed from whitelist';
+            remEl.textContent = 'Verification needs renewal';
             remEl.style.color = '#f97316';
         } else if (d && d.seconds_remaining) {
             remEl.textContent = fmtRemaining(d.seconds_remaining);
