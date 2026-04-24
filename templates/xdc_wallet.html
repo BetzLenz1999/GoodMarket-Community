@@ -971,7 +971,31 @@
                 }
             }
 
-            return await ep.request({ method: 'eth_sendTransaction', params: [txParams] });
+            const txHash = await ep.request({ method: 'eth_sendTransaction', params: [txParams] });
+            await _waitForXdcTxReceipt(ep, txHash);
+            return txHash;
+        }
+
+        async function _waitForXdcTxReceipt(ep, txHash, { timeoutMs = 180000, pollMs = 2500 } = {}) {
+            const start = Date.now();
+            while ((Date.now() - start) < timeoutMs) {
+                const receipt = await ep.request({ method: 'eth_getTransactionReceipt', params: [txHash] });
+                if (receipt) {
+                    const statusHex = String(receipt.status || '').toLowerCase();
+                    const successStatuses = new Set(['0x1', '1']);
+                    if (!successStatuses.has(statusHex)) {
+                        throw new Error(
+                            `Transaction reverted on XDC. Hash: ${txHash}.`
+                        );
+                    }
+                    return receipt;
+                }
+                await new Promise((resolve) => setTimeout(resolve, pollMs));
+            }
+            throw new Error(
+                `Transaction was sent but not mined yet after ${Math.floor(timeoutMs / 1000)}s. ` +
+                `Please check XDCScan: ${txHash}`
+            );
         }
 
         async function executeXswap() {
@@ -1092,8 +1116,16 @@
                 if (!isCustodialMode) {
                     const ep = _getEthProvider();
                     if (!ep) throw new Error('No Web3 wallet found.');
-                    const onchainBalHex = await ep.request({ method: 'eth_getBalance', params: [toAddr, 'latest'] });
-                    const onchainBalWei = BigInt(onchainBalHex);
+                    const switched = await ensureXDCNetwork(ep);
+                    if (!switched) throw new Error('Could not switch to XDC network.');
+                    const accounts = await ep.request({ method: 'eth_requestAccounts' });
+                    const from = accounts[0] ? normalizeAddr(accounts[0]) : null;
+                    if (!from) throw new Error('No wallet account found.');
+                    if (WALLET && from.toLowerCase() !== normalizeAddr(WALLET).toLowerCase()) {
+                        throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+                    }
+
+                    const onchainBalWei = await readProvider.getBalance(from);
                     if (onchainBalWei < minimumRequiredWei) {
                         const needXdc = ethers.formatUnits(minimumRequiredWei, 18);
                         const hasXdc = ethers.formatUnits(onchainBalWei, 18);
@@ -1109,7 +1141,7 @@
                         await ep.request({
                             method: 'eth_estimateGas',
                             params: [{
-                                from: toAddr,
+                                from,
                                 to: XDC_CELO_BRIDGE,
                                 data: preflightData,
                                 value: ethers.toBeHex(feeWei),
