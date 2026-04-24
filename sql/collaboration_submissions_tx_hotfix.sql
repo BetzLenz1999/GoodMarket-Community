@@ -24,38 +24,43 @@ WHERE COALESCE(status, '') IN ('awaiting_payment', 'draft')
     OR COALESCE(paid_amount_gd, 0) > 0
   );
 
--- Optional backfill from sponsorship_logs using wallet + close timestamp.
--- Adjust table/column names if your sponsorship log schema differs.
-WITH candidates AS (
-  SELECT
-    cs.id,
-    sl.tx_hash,
-    sl.amount_gd,
-    sl.created_at,
-    ROW_NUMBER() OVER (
-      PARTITION BY cs.id
-      ORDER BY sl.created_at ASC
-    ) AS rn
-  FROM public.collaboration_submissions cs
-  JOIN public.sponsorship_logs sl
-    ON LOWER(sl.wallet_address) = LOWER(cs.wallet_address)
-   AND sl.created_at >= cs.created_at
-  WHERE (cs.tx_hash IS NULL OR TRIM(cs.tx_hash) = '')
-    AND COALESCE(cs.paid_amount_gd, 0) <= 0
-    AND NULLIF(TRIM(COALESCE(sl.tx_hash, '')), '') IS NOT NULL
-    AND COALESCE(sl.amount_gd, 0) > 0
-)
-UPDATE public.collaboration_submissions cs
-SET tx_hash = c.tx_hash,
-    paid_amount_gd = c.amount_gd,
-    status = CASE
-      WHEN COALESCE(cs.status, '') IN ('awaiting_payment', 'draft') THEN 'paid'
-      ELSE cs.status
-    END,
-    updated_at = now()
-FROM candidates c
-WHERE cs.id = c.id
-  AND c.rn = 1;
+-- Optional backfill from sponsorship_log using wallet + close timestamp.
+-- Runs only when public.sponsorship_log exists.
+DO $$
+BEGIN
+  IF to_regclass('public.sponsorship_log') IS NOT NULL THEN
+    WITH candidates AS (
+      SELECT
+        cs.id,
+        sl.tx_hash,
+        sl.amount_gd,
+        sl.created_at,
+        ROW_NUMBER() OVER (
+          PARTITION BY cs.id
+          ORDER BY sl.created_at ASC
+        ) AS rn
+      FROM public.collaboration_submissions cs
+      JOIN public.sponsorship_log sl
+        ON LOWER(sl.wallet_address) = LOWER(cs.wallet_address)
+       AND sl.created_at >= cs.created_at
+      WHERE (cs.tx_hash IS NULL OR TRIM(cs.tx_hash) = '')
+        AND COALESCE(cs.paid_amount_gd, 0) <= 0
+        AND NULLIF(TRIM(COALESCE(sl.tx_hash, '')), '') IS NOT NULL
+        AND COALESCE(sl.amount_gd, 0) > 0
+    )
+    UPDATE public.collaboration_submissions cs
+    SET tx_hash = c.tx_hash,
+        paid_amount_gd = c.amount_gd,
+        status = CASE
+          WHEN COALESCE(cs.status, '') IN ('awaiting_payment', 'draft') THEN 'paid'
+          ELSE cs.status
+        END,
+        updated_at = now()
+    FROM candidates c
+    WHERE cs.id = c.id
+      AND c.rn = 1;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_collab_submissions_status_created_at
   ON public.collaboration_submissions (status, created_at DESC);
