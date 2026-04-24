@@ -795,6 +795,16 @@
             }, 450);
         }
 
+        function _increaseGasLimitHex(gasHexOrDec, percent = 20) {
+            try {
+                const base = BigInt(gasHexOrDec);
+                const boosted = base + (base * BigInt(percent) / 100n);
+                return ethers.toBeHex(boosted);
+            } catch {
+                return null;
+            }
+        }
+
         async function estimateBridgeFeeXdcToCelo(showSuccessAlert = true) {
             const amountStr = (document.getElementById('bridgeAmountXdcToCelo').value || '').trim() || '1';
             const btn = document.getElementById('btnBridgeEstimateFee');
@@ -929,11 +939,20 @@
             if (WALLET && normalizeAddr(from).toLowerCase() !== normalizeAddr(WALLET).toLowerCase()) {
                 throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
             }
+            const txParams = { from, to, data, value: valueHex, chainId: XDC_CHAIN_ID_HEX };
+            try {
+                const gasEstimate = await ep.request({ method: 'eth_estimateGas', params: [txParams] });
+                const boostedGas = _increaseGasLimitHex(gasEstimate, 20);
+                if (boostedGas) txParams.gas = boostedGas;
+            } catch (estimateErr) {
+                const msg = (estimateErr?.message || '').toLowerCase();
+                if (msg.includes('insufficient funds')) {
+                    throw new Error('Insufficient XDC for transaction value + network gas. Please top up XDC and retry.');
+                }
+                throw new Error('Could not estimate network fee from wallet. Please increase XDC gas balance and retry.');
+            }
 
-            return await ep.request({
-                method: 'eth_sendTransaction',
-                params: [{ from, to, data, value: valueHex, chainId: XDC_CHAIN_ID_HEX }]
-            });
+            return await ep.request({ method: 'eth_sendTransaction', params: [txParams] });
         }
 
         async function executeXswap() {
@@ -1016,11 +1035,25 @@
                 const amountWei = ethers.parseUnits(amountStr, 18);
                 const feeWei = ethers.parseUnits(feeStr, 18);
                 const toAddr = normalizeAddr(WALLET);
+                const recommendedGasReserveWei = ethers.parseUnits('0.0015', 18);
+                const minimumRequiredWei = feeWei + recommendedGasReserveWei;
 
                 const erc20Iface = new ethers.Interface(ERC20_ABI);
                 const bridgeIface = new ethers.Interface(BRIDGE_ABI);
                 const readProvider = await _xswapReadProvider();
                 const gd = new ethers.Contract(XDC_GD_TOKEN, ERC20_ABI, readProvider);
+
+                if (!isCustodialMode) {
+                    const ep = _getEthProvider();
+                    if (!ep) throw new Error('No Web3 wallet found.');
+                    const onchainBalHex = await ep.request({ method: 'eth_getBalance', params: [toAddr, 'latest'] });
+                    const onchainBalWei = BigInt(onchainBalHex);
+                    if (onchainBalWei < minimumRequiredWei) {
+                        const needXdc = ethers.formatUnits(minimumRequiredWei, 18);
+                        const hasXdc = ethers.formatUnits(onchainBalWei, 18);
+                        throw new Error(`Not enough XDC balance. You need at least ${parseFloat(needXdc).toFixed(6)} XDC (bridge fee + gas reserve), but wallet has ${parseFloat(hasXdc).toFixed(6)} XDC.`);
+                    }
+                }
 
                 btn.innerHTML = '<span class="spinner-inline"></span> Checking allowance...';
                 const allowance = await gd.allowance(toAddr, XDC_CELO_BRIDGE);
