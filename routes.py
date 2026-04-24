@@ -4176,6 +4176,14 @@ def approve_collaboration_submission(submission_id):
 
         submission = existing.data[0]
         current_status = (submission.get('status') or '').strip().lower()
+        paid_amount = float(submission.get('paid_amount_gd') or 0)
+        has_payment_proof = bool((submission.get('tx_hash') or '').strip()) or paid_amount > 0
+
+        # Backward-compat: some rows may still be tagged awaiting_payment
+        # even though payment metadata is already present.
+        if current_status == 'awaiting_payment' and has_payment_proof:
+            current_status = 'paid'
+
         if current_status == 'published':
             return jsonify({"success": False, "error": "Published submissions cannot be re-approved"}), 400
         if current_status not in ('paid', 'approved'):
