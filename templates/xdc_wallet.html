@@ -620,7 +620,7 @@
                 </div>
                 <div class="form-group" style="margin-bottom:0;">
                     <label class="form-label">Bridge Fee (XDC)</label>
-                    <input class="form-input" id="bridgeFeeXdcToCelo" type="number" min="0.000001" step="0.000001" value="0.008">
+                    <input class="form-input" id="bridgeFeeXdcToCelo" type="number" min="0.000001" step="0.000001" value="1.617600">
                 </div>
             </div>
 
@@ -692,8 +692,10 @@
         ];
         const BRIDGE_ABI = [
             "function bridgeTo(address target, uint256 targetChainId, uint256 amount, uint8 bridge) payable",
+            "function canBridge(address from, uint256 amount) view returns (bool)",
         ];
         const BRIDGE_SERVICE_LAYERZERO = 1;
+        const BRIDGE_FALLBACK_FEE_XDC_TO_CELO = 1.6176;
 
         function _providerLabel(provider) {
             if (!provider) return 'wallet';
@@ -1044,10 +1046,10 @@
             if (!feeStr || parseFloat(feeStr) <= 0) {
                 return showBridgeAlert('alert-error', '❌ Enter a valid bridge fee in XDC.');
             }
-            if (bridgeFeeSourceState === 'fallback_default' && parseFloat(feeStr) <= 0.008) {
+            if (bridgeFeeSourceState === 'fallback_default' && parseFloat(feeStr) <= BRIDGE_FALLBACK_FEE_XDC_TO_CELO) {
                 return showBridgeAlert(
                     'alert-error',
-                    '❌ Current bridge fee is using fallback default (0.008 XDC). This can still be too low during congestion and may trigger wallet "network fee" alerts. Click Estimate Fee again, or set a slightly higher manual fee and retry.'
+                    `❌ Current bridge fee is using fallback default (${BRIDGE_FALLBACK_FEE_XDC_TO_CELO.toFixed(6)} XDC). This can still be too low during congestion and may trigger wallet "network fee" alerts. Click Estimate Fee again, or set a slightly higher manual fee and retry.`
                 );
             }
 
@@ -1065,6 +1067,26 @@
                 const bridgeIface = new ethers.Interface(BRIDGE_ABI);
                 const readProvider = await _xswapReadProvider();
                 const gd = new ethers.Contract(XDC_GD_TOKEN, ERC20_ABI, readProvider);
+                const celoProvider = new ethers.JsonRpcProvider('https://forno.celo.org');
+                const targetBridge = new ethers.Contract(XDC_CELO_BRIDGE, BRIDGE_ABI, celoProvider);
+
+                btn.innerHTML = '<span class="spinner-inline"></span> Checking bridge limits...';
+                try {
+                    const canBridge = await targetBridge.canBridge(toAddr, amountWei);
+                    if (!canBridge) {
+                        throw new Error(
+                            'Bridge limit check failed on target chain (canBridge returned false). Lower the amount and try again.'
+                        );
+                    }
+                } catch (limitErr) {
+                    const limitMessage = limitErr?.message || String(limitErr || '');
+                    if (limitMessage.toLowerCase().includes('returned false')) {
+                        throw limitErr;
+                    }
+                    throw new Error(
+                        'Could not verify bridge limits via canBridge on Celo. Please retry in a moment.'
+                    );
+                }
 
                 if (!isCustodialMode) {
                     const ep = _getEthProvider();

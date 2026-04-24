@@ -6018,15 +6018,23 @@ def xdc_prepare_send():
 def xdc_bridge_estimate_fee():
     """Estimate bridge fee for XDC -> Celo G$ bridge with safe fallback."""
     try:
+        source_chain_id = request.args.get("sourceChainId", "50").strip() or "50"
+        target_chain_id = request.args.get("targetChainId", "42220").strip() or "42220"
         amount = request.args.get("amount", "1").strip() or "1"
         try:
+            source_chain_id_val = int(source_chain_id)
+            target_chain_id_val = int(target_chain_id)
             amount_val = float(amount)
             if amount_val <= 0:
                 raise ValueError("amount must be > 0")
         except Exception:
-            return jsonify({"success": False, "error": "Invalid amount"}), 400
+            return jsonify({"success": False, "error": "Invalid chain ids or amount"}), 400
 
-        default_fee_xdc = 0.008
+        fallback_fees = {
+            (50, 42220): 1.6176,   # XDC -> Celo
+            (42220, 50): 0.1151,   # Celo -> XDC
+        }
+        default_fee_xdc = fallback_fees.get((source_chain_id_val, target_chain_id_val), 1.6176)
         fee_source = "fallback_default"
         bridge_fee_xdc = default_fee_xdc
         raw_payload = None
@@ -6037,7 +6045,7 @@ def xdc_bridge_estimate_fee():
             # Keep compatibility with older route-specific response shapes.
             (
                 "https://goodserver.gooddollar.org/bridge/estimatefees"
-                f"?sourceChainId=50&targetChainId=42220&amount={amount}"
+                f"?sourceChainId={source_chain_id_val}&targetChainId={target_chain_id_val}&amount={amount}"
             ),
         ]
 
@@ -6056,11 +6064,22 @@ def xdc_bridge_estimate_fee():
                         return payload_obj["data"].get(key)
 
             route_keys = (
-                "LZ_XDC_TO_CELO",
-                "LZ_50_TO_42220",
-                "XDC_TO_CELO",
-                "50_TO_42220",
+                f"LZ_{source_chain_id_val}_TO_{target_chain_id_val}",
+                f"{source_chain_id_val}_TO_{target_chain_id_val}",
             )
+            chain_aliases = {
+                1: "ETH",
+                50: "XDC",
+                122: "FUSE",
+                42220: "CELO",
+            }
+            source_alias = chain_aliases.get(source_chain_id_val)
+            target_alias = chain_aliases.get(target_chain_id_val)
+            if source_alias and target_alias:
+                route_keys += (
+                    f"LZ_{source_alias}_TO_{target_alias}",
+                    f"{source_alias}_TO_{target_alias}",
+                )
             for route_key in route_keys:
                 if route_key not in payload_obj:
                     continue
@@ -6094,8 +6113,8 @@ def xdc_bridge_estimate_fee():
 
         return jsonify({
             "success": True,
-            "source_chain_id": 50,
-            "target_chain_id": 42220,
+            "source_chain_id": source_chain_id_val,
+            "target_chain_id": target_chain_id_val,
             "amount": amount_val,
             "bridge_fee_xdc": bridge_fee_xdc,
             "bridge_fee_wei": str(int(bridge_fee_xdc * (10 ** 18))),
