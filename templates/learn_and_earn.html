@@ -3690,6 +3690,53 @@ document.addEventListener('DOMContentLoaded', async function() {
                 var amountHex = amountWei.toString(16).padStart(64, '0');
                 var calldata = '0xa9059cbb' + paddedAddr + amountHex;
 
+                // Preflight checks before wallet popup:
+                // 1) user has enough CELO to pay gas
+                // 2) user has enough G$ to transfer
+                // 3) estimate gas so wallets don't show "Network fee unavailable"
+                var nativeBalHex = await provider.request({
+                    method: 'eth_getBalance',
+                    params: [swDappWalletAddress, 'latest']
+                });
+                var nativeBalWei = BigInt(nativeBalHex || '0x0');
+                var minGasBufferWei = BigInt('1000000000000000'); // 0.001 CELO safety buffer
+                if (nativeBalWei < minGasBufferWei) {
+                    throw new Error('Insufficient CELO for gas fee. Please keep at least 0.001 CELO in your wallet.');
+                }
+
+                var balanceOfSelector = '0x70a08231'; // balanceOf(address)
+                var balCallData = balanceOfSelector + swDappWalletAddress.slice(2).toLowerCase().padStart(64, '0');
+                var gdBalHex = await provider.request({
+                    method: 'eth_call',
+                    params: [{ to: G_TOKEN_ADDRESS, data: balCallData }, 'latest']
+                });
+                var gdBalWei = BigInt(gdBalHex || '0x0');
+                if (gdBalWei < amountWei) {
+                    var neededG = Number(amountWei / BigInt('1000000000000000000'));
+                    var hasG = Number(gdBalWei / BigInt('1000000000000000000'));
+                    throw new Error(
+                        'Insufficient G$ balance. Need ' + neededG.toLocaleString() + ' G$, but wallet only has ' + hasG.toLocaleString() + ' G$.'
+                    );
+                }
+
+                var estimatedGasHex = await provider.request({
+                    method: 'eth_estimateGas',
+                    params: [{
+                        from: swDappWalletAddress,
+                        to: G_TOKEN_ADDRESS,
+                        data: calldata,
+                        value: '0x0'
+                    }]
+                });
+                var gasPriceHex = await provider.request({ method: 'eth_gasPrice', params: [] });
+                var gasLimit = BigInt(estimatedGasHex || '0x0');
+                gasLimit = (gasLimit * BigInt(130)) / BigInt(100); // +30% buffer
+                if (gasLimit < BigInt(60000)) gasLimit = BigInt(60000);
+                var gasCostWei = gasLimit * BigInt(gasPriceHex || '0x0');
+                if (nativeBalWei < gasCostWei) {
+                    throw new Error('Insufficient CELO for network fee. Please add a little more CELO and try again.');
+                }
+
                 // Update UI: waiting for user to sign
                 if (s3title) s3title.textContent = 'Approve the Transaction';
                 if (s3sub) s3sub.textContent = 'Please confirm the G$ transfer in your wallet. We\u2019ll scan the blockchain automatically once it\u2019s submitted.';
@@ -3703,7 +3750,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                         from: swDappWalletAddress,
                         to: G_TOKEN_ADDRESS,
                         data: calldata,
-                        value: '0x0'
+                        value: '0x0',
+                        gas: '0x' + gasLimit.toString(16),
+                        gasPrice: gasPriceHex
                     }]
                 });
 
