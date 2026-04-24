@@ -4271,19 +4271,34 @@ def _try_backfill_collab_payment_metadata(supabase, submission: dict) -> dict:
     wallet_address = str(submission.get('wallet_address') or '').strip()
     if not wallet_address:
         return submission
+    masked_wallet = (
+        f"{wallet_address[:6]}...{wallet_address[-4:]}"
+        if len(wallet_address) > 10 else wallet_address
+    )
 
     submission_created_at = _parse_iso_datetime(submission.get('created_at'))
-    fallback_result = safe_supabase_operation(
+    exact_wallet_result = safe_supabase_operation(
         lambda: supabase.table('sponsorship_log')
-            .select('tx_hash,amount_gd,created_at')
+            .select('tx_hash,amount_gd,created_at,wallet_address')
             .eq('wallet_address', wallet_address)
             .order('created_at', desc=True)
             .limit(10)
             .execute(),
         fallback_result=type('obj', (object,), {'data': []})(),
-        operation_name="find fallback sponsorship log for collaboration submission"
+        operation_name="find fallback sponsorship log for collaboration submission (exact wallet)"
     )
-    logs = fallback_result.data or []
+    masked_wallet_result = safe_supabase_operation(
+        lambda: supabase.table('sponsorship_log')
+            .select('tx_hash,amount_gd,created_at,wallet_address')
+            .eq('wallet_address', masked_wallet)
+            .order('created_at', desc=True)
+            .limit(10)
+            .execute(),
+        fallback_result=type('obj', (object,), {'data': []})(),
+        operation_name="find fallback sponsorship log for collaboration submission (masked wallet)"
+    )
+    logs = (exact_wallet_result.data or []) + (masked_wallet_result.data or [])
+    logs.sort(key=lambda row: str(row.get('created_at') or ''), reverse=True)
     if not logs:
         return submission
 

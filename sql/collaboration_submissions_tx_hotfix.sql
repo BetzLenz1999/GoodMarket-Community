@@ -24,7 +24,7 @@ WHERE COALESCE(status, '') IN ('awaiting_payment', 'draft')
     OR COALESCE(paid_amount_gd, 0) > 0
   );
 
--- Optional backfill from sponsorship_log using wallet + close timestamp.
+-- Optional backfill from sponsorship_log using full OR masked wallet + timestamp.
 -- Runs only when public.sponsorship_log exists.
 DO $$
 BEGIN
@@ -41,7 +41,16 @@ BEGIN
         ) AS rn
       FROM public.collaboration_submissions cs
       JOIN public.sponsorship_log sl
-        ON LOWER(sl.wallet_address) = LOWER(cs.wallet_address)
+        ON (
+             LOWER(sl.wallet_address) = LOWER(cs.wallet_address)
+             OR LOWER(sl.wallet_address) = LOWER(
+               CASE
+                 WHEN LENGTH(COALESCE(cs.wallet_address, '')) > 10
+                   THEN SUBSTRING(cs.wallet_address FROM 1 FOR 6) || '...' || RIGHT(cs.wallet_address, 4)
+                 ELSE COALESCE(cs.wallet_address, '')
+               END
+             )
+           )
        AND sl.created_at >= cs.created_at
       WHERE (cs.tx_hash IS NULL OR TRIM(cs.tx_hash) = '')
         AND COALESCE(cs.paid_amount_gd, 0) <= 0
