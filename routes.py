@@ -7087,6 +7087,7 @@ _faucet_api_pending: dict = {}
 _faucet_lock = threading.Lock()
 
 FAUCET_MIN_CELO = float(os.getenv("FAUCET_MIN_CELO", "0.002"))
+FAUCET_MIN_XDC = float(os.getenv("FAUCET_MIN_XDC", "0.003"))
 FAUCET_BUFFER_MULTIPLIER = float(os.getenv("FAUCET_BUFFER_MULTIPLIER", "1.35"))
 FAUCET_DUPLICATE_WINDOW_MIN = int(os.getenv("FAUCET_DUPLICATE_WINDOW_MIN", "30"))
 FAUCET_API_GRACE_SECONDS = int(os.getenv("FAUCET_API_GRACE_SECONDS", "30"))
@@ -7099,6 +7100,14 @@ GOODDOLLAR_FAUCET_CONTRACT = os.getenv(
 GOODDOLLAR_FAUCET_API_URL = os.getenv(
     "GOODDOLLAR_FAUCET_API_URL",
     "https://goodserver.gooddollar.org/verify/topWallet"
+)
+GOODDOLLAR_XDC_FAUCET_API_URL = os.getenv(
+    "GOODDOLLAR_XDC_FAUCET_API_URL",
+    "https://goodserver.gooddollar.org/verify/topWallet"
+)
+GOODDOLLAR_XDC_FAUCET_CONTRACT = os.getenv(
+    "GOODDOLLAR_XDC_FAUCET_CONTRACT",
+    "0x7344Da1Be296f03fbb8082aDaC5696058B5a9bd9"
 )
 
 
@@ -7151,6 +7160,41 @@ def _get_gas_status(w3, checksum_wallet: str) -> dict:
         "gas_price_wei": str(gas_price_wei),
         "required_gas_wei": str(required_wei),
         "required_gas_celo": float(w3.from_wei(required_wei, "ether")),
+        "gas_ready": balance_wei >= required_wei,
+    }
+
+
+def _get_xdc_gas_status(w3, checksum_wallet: str) -> dict:
+    """Estimate XDC claim gas reserve and compare with current XDC balance."""
+    from blockchain import XDC_UBI_SCHEME
+
+    claim_selector = "0x4e71d92d"  # claim()
+    try:
+        estimated_gas = w3.eth.estimate_gas({
+            "from": checksum_wallet,
+            "to": Web3.to_checksum_address(XDC_UBI_SCHEME),
+            "data": claim_selector,
+            "value": 0,
+        })
+    except Exception:
+        estimated_gas = 220000
+
+    gas_price_wei = int(w3.eth.gas_price)
+    required_wei = int(estimated_gas * gas_price_wei * FAUCET_BUFFER_MULTIPLIER)
+    minimum_wei = w3.to_wei(FAUCET_MIN_XDC, "ether")
+    required_wei = max(required_wei, int(minimum_wei))
+
+    balance_wei = int(w3.eth.get_balance(checksum_wallet))
+    required_xdc = float(w3.from_wei(required_wei, "ether"))
+    balance_xdc = float(w3.from_wei(balance_wei, "ether"))
+    return {
+        "balance_wei": str(balance_wei),
+        "balance_xdc": balance_xdc,
+        "estimated_gas": int(estimated_gas),
+        "gas_price_wei": str(gas_price_wei),
+        "required_gas_wei": str(required_wei),
+        "required_gas_xdc": required_xdc,
+        "required_gas_celo": required_xdc,  # compatibility for shared FE parsers
         "gas_ready": balance_wei >= required_wei,
     }
 
@@ -7352,6 +7396,77 @@ def _execute_onchain_faucet_topup(w3, checksum_wallet: str, correlation_id: str 
         "status": "onchain_failed",
         "error": "On-chain faucet transaction failed",
         "tx_hash": tx_hash_hex
+    }
+
+
+def _execute_onchain_xdc_faucet_topup(w3, checksum_wallet: str, correlation_id: str = "n/a") -> dict:
+    """Internal helper to send topWallet(address) on XDC with XDC_GAMES_KEY."""
+    from blockchain import XDC_CHAIN_ID
+    from eth_account import Account
+
+    games_key = (os.getenv("XDC_GAMES_KEY") or os.getenv("GAMES_KEY") or "").strip()
+    if not games_key:
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": "not_configured",
+            "error": "On-chain XDC faucet not configured (missing XDC_GAMES_KEY)",
+        }
+
+    key = games_key if games_key.startswith("0x") else "0x" + games_key
+    faucet_acct = Account.from_key(key)
+    faucet_contract = Web3.to_checksum_address(GOODDOLLAR_XDC_FAUCET_CONTRACT)
+
+    # calldata for topWallet(address): 0x3771dcf8 + padded wallet bytes
+    call_data = "0x3771dcf8" + "000000000000000000000000" + checksum_wallet[2:].lower()
+    nonce = w3.eth.get_transaction_count(faucet_acct.address, "pending")
+
+    try:
+        gas_est = w3.eth.estimate_gas({
+            "from": faucet_acct.address,
+            "to": faucet_contract,
+            "data": call_data,
+        })
+    except Exception:
+        gas_est = 160000
+
+    tx = {
+        "chainId": XDC_CHAIN_ID,
+        "nonce": nonce,
+        "gasPrice": int(w3.eth.gas_price * 12 // 10),
+        "gas": int(gas_est * 12 // 10),
+        "to": faucet_contract,
+        "value": 0,
+        "data": call_data,
+    }
+
+    try:
+        signed = faucet_acct.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+        tx_hash_hex = "0x" + tx_hash.hex()
+    except Exception as e:
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": "rpc_error",
+            "error": str(e),
+        }
+
+    if receipt and receipt.get("status") == 1:
+        _record_recent_refill(
+            checksum_wallet,
+            reason="onchain_xdc_tx_success",
+            source="onchain_xdc",
+            tx_hash=tx_hash_hex,
+        )
+        return {"success": True, "status": "onchain_sent", "tx_hash": tx_hash_hex}
+
+    return {
+        "success": False,
+        "status": "onchain_failed",
+        "error": "On-chain XDC faucet transaction failed",
+        "tx_hash": tx_hash_hex,
     }
 
 
@@ -7704,6 +7819,133 @@ def faucet_gas():
 @auth_required
 def gas_faucet_compat():
     return faucet_gas()
+
+
+@routes.route("/api/xdc/faucet/gas", methods=["POST"])
+@auth_required
+def xdc_faucet_gas():
+    """XDC claim-safe flow: gas readiness check + faucet top-up attempts."""
+    try:
+        data = request.get_json(silent=True) or {}
+        correlation_id = _get_faucet_correlation_id(data)
+        force_onchain = _coerce_bool(data.get("force_onchain"))
+        checksum_wallet, err_resp, status_code = _validate_and_authorize_wallet(data)
+        if err_resp:
+            return err_resp, status_code
+
+        from blockchain import XDC_RPC
+        w3 = Web3(Web3.HTTPProvider(XDC_RPC, request_kwargs={"timeout": 15}))
+
+        status_before = _get_xdc_gas_status(w3, checksum_wallet)
+        pre_balance_wei = int(status_before["balance_wei"])
+        if status_before["gas_ready"]:
+            return jsonify({
+                "success": True,
+                "status": "gas_ready",
+                "gas_ready": True,
+                "topped_up": False,
+                "topup_source": None,
+                "correlation_id": correlation_id,
+                "wallet": checksum_wallet.lower(),
+                "terminal_status": "gas_ready",
+                **status_before,
+            })
+
+        recent_refill, seconds_remaining = _has_recent_refill(checksum_wallet)
+        if recent_refill and not force_onchain:
+            return jsonify({
+                "success": True,
+                "status": "recent_refill",
+                "gas_ready": False,
+                "topped_up": False,
+                "terminal_status": "recent_refill",
+                "recent_refill_cooldown_seconds": seconds_remaining,
+                "correlation_id": correlation_id,
+                "wallet": checksum_wallet.lower(),
+                **status_before,
+            })
+
+        api_ok = False
+        api_tx_hash = None
+        api_error = None
+        if not force_onchain:
+            try:
+                payload = json.dumps({"chainId": 50, "account": checksum_wallet}).encode("utf-8")
+                req = urllib.request.Request(
+                    GOODDOLLAR_XDC_FAUCET_API_URL,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                api_ok = body.get("ok", -1) == 1
+                api_tx_hash = body.get("txHash") or body.get("tx_hash")
+                api_error = None if api_ok else (body.get("error") or "API faucet declined")
+            except Exception as e:
+                api_error = str(e)
+
+        if api_ok and not force_onchain:
+            _set_api_pending(checksum_wallet, api_tx_hash, pre_balance_wei)
+            post_balance_wei, _ = _poll_balance_increase(
+                w3, checksum_wallet, pre_balance_wei, FAUCET_API_GRACE_SECONDS
+            )
+            status_after_api = _get_xdc_gas_status(w3, checksum_wallet)
+            if status_after_api["gas_ready"]:
+                _clear_api_pending(checksum_wallet)
+                _record_recent_refill(
+                    checksum_wallet,
+                    reason="api_xdc_balance_increase_confirmed",
+                    source="api_xdc",
+                    tx_hash=api_tx_hash,
+                )
+                return jsonify({
+                    "success": True,
+                    "status": "gas_ready",
+                    "gas_ready": True,
+                    "topped_up": True,
+                    "topup_source": "api",
+                    "api_tx_hash": api_tx_hash,
+                    "api_error": api_error,
+                    "terminal_status": "gas_ready",
+                    "correlation_id": correlation_id,
+                    "wallet": checksum_wallet.lower(),
+                    "debug": {
+                        "pre_balance_wei": str(pre_balance_wei),
+                        "post_balance_wei": str(post_balance_wei),
+                        "required_gas_wei": status_after_api["required_gas_wei"],
+                        "required_gas_xdc": status_after_api["required_gas_xdc"],
+                    },
+                    **status_after_api,
+                })
+
+        onchain_result = _execute_onchain_xdc_faucet_topup(w3, checksum_wallet, correlation_id=correlation_id)
+        status_after = _get_xdc_gas_status(w3, checksum_wallet)
+        topped_up = bool(onchain_result.get("success"))
+
+        terminal_status = (
+            "gas_ready" if status_after["gas_ready"] else
+            ("not_configured" if onchain_result.get("reason") == "not_configured" else "onchain_failed")
+        )
+
+        return jsonify({
+            "success": bool(status_after["gas_ready"] or topped_up),
+            "status": "gas_ready" if status_after["gas_ready"] else "onchain_failed",
+            "gas_ready": status_after["gas_ready"],
+            "topped_up": topped_up,
+            "topup_source": "onchain" if topped_up else None,
+            "api_tx_hash": api_tx_hash,
+            "api_error": api_error,
+            "onchain_result": onchain_result,
+            "terminal_status": terminal_status,
+            "recent_refill_cooldown_seconds": seconds_remaining if recent_refill else 0,
+            "correlation_id": correlation_id,
+            "wallet": checksum_wallet.lower(),
+            **status_after,
+        })
+    except Exception as e:
+        logger.error(f"xdc_faucet_gas error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @routes.route("/api/custodial/sign-msg", methods=["POST"])

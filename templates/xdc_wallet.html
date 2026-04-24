@@ -1490,6 +1490,21 @@
                     }
                 }
 
+                btnText.textContent = '⏳ Checking XDC gas...';
+                const gasRes = await fetch('/api/xdc/faucet/gas', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wallet: WALLET, force_onchain: true })
+                });
+                const gasData = await gasRes.json();
+                if (!gasData.success || !gasData.gas_ready) {
+                    const cooldown = Number(gasData.recent_refill_cooldown_seconds || 0);
+                    if ((gasData.terminal_status || gasData.status) === 'recent_refill') {
+                        throw new Error(`Gas refill cooldown active (${cooldown}s). Please retry after cooldown.`);
+                    }
+                    throw new Error(gasData.error || gasData.reason || 'Insufficient XDC gas. Please top up your wallet and retry.');
+                }
+
                 btnText.textContent = '⏳ Requesting accounts...';
                 const accounts = await ep.request({ method: 'eth_requestAccounts' });
                 const from = accounts[0];

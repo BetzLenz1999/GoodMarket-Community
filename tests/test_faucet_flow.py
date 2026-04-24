@@ -263,6 +263,78 @@ class FaucetFlowTests(unittest.TestCase):
         self.assertEqual(body["topup_source"], "api")
         self.assertFalse(body["debug"]["force_onchain"])
 
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._get_xdc_gas_status")
+    def test_case8_xdc_faucet_returns_ready_without_topup(self, mock_get_xdc_gas):
+        self._auth_session()
+        mock_get_xdc_gas.return_value = {
+            "balance_wei": "4000000000000000",
+            "balance_xdc": 0.004,
+            "estimated_gas": 220000,
+            "gas_price_wei": "1000000000",
+            "required_gas_wei": "3000000000000000",
+            "required_gas_xdc": 0.003,
+            "required_gas_celo": 0.003,
+            "gas_ready": True,
+        }
+
+        resp = self.client.post("/api/xdc/faucet/gas", json={"wallet": "0x1111111111111111111111111111111111111111"})
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(body["success"])
+        self.assertTrue(body["gas_ready"])
+        self.assertFalse(body["topped_up"])
+        self.assertEqual(body["terminal_status"], "gas_ready")
+
+    @patch("routes._execute_onchain_xdc_faucet_topup")
+    @patch("routes.urllib.request.urlopen")
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._poll_balance_increase")
+    @patch("routes._has_recent_refill")
+    @patch("routes._get_xdc_gas_status")
+    def test_case9_xdc_faucet_api_success_then_gas_ready(
+        self, mock_get_xdc_gas, mock_recent, mock_poll, mock_urlopen, _mock_onchain
+    ):
+        self._auth_session()
+        mock_recent.return_value = (False, 0)
+        mock_get_xdc_gas.side_effect = [
+            {
+                "balance_wei": "0",
+                "balance_xdc": 0.0,
+                "estimated_gas": 220000,
+                "gas_price_wei": "1000000000",
+                "required_gas_wei": "3000000000000000",
+                "required_gas_xdc": 0.003,
+                "required_gas_celo": 0.003,
+                "gas_ready": False,
+            },
+            {
+                "balance_wei": "4000000000000000",
+                "balance_xdc": 0.004,
+                "estimated_gas": 220000,
+                "gas_price_wei": "1000000000",
+                "required_gas_wei": "3000000000000000",
+                "required_gas_xdc": 0.003,
+                "required_gas_celo": 0.003,
+                "gas_ready": True,
+            },
+        ]
+        mock_poll.return_value = (4000000000000000, True)
+
+        class _Resp:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self): return b'{"ok":1,"txHash":"0xapi-xdc"}'
+        mock_urlopen.return_value = _Resp()
+
+        resp = self.client.post("/api/xdc/faucet/gas", json={"wallet": "0x1111111111111111111111111111111111111111"})
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(body["success"])
+        self.assertTrue(body["gas_ready"])
+        self.assertTrue(body["topped_up"])
+        self.assertEqual(body["topup_source"], "api")
+
 
 if __name__ == "__main__":
     unittest.main()
