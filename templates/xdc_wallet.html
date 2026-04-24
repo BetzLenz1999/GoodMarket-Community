@@ -1497,12 +1497,37 @@
                     body: JSON.stringify({ wallet: WALLET, force_onchain: true })
                 });
                 const gasData = await gasRes.json();
+                const terminalStatus = gasData.terminal_status || gasData.status || 'unknown';
                 if (!gasData.success || !gasData.gas_ready) {
                     const cooldown = Number(gasData.recent_refill_cooldown_seconds || 0);
-                    if ((gasData.terminal_status || gasData.status) === 'recent_refill') {
+                    const currentBal = Number(gasData.balance_xdc || 0);
+                    const requiredBal = Number(gasData.required_gas_xdc || 0);
+                    const gasHint = (
+                        Number.isFinite(currentBal) &&
+                        Number.isFinite(requiredBal) &&
+                        requiredBal > 0
+                    )
+                        ? ` Current: ${currentBal.toFixed(6)} XDC, required: ${requiredBal.toFixed(6)} XDC.`
+                        : '';
+
+                    if (terminalStatus === 'recent_refill') {
                         throw new Error(`Gas refill cooldown active (${cooldown}s). Please retry after cooldown.`);
                     }
-                    throw new Error(gasData.error || gasData.reason || 'Insufficient XDC gas. Please top up your wallet and retry.');
+                    if (terminalStatus === 'not_configured') {
+                        throw new Error(
+                            `XDC faucet is not configured right now. Please top up your wallet manually and retry.${gasHint}`
+                        );
+                    }
+                    if (terminalStatus === 'onchain_failed') {
+                        throw new Error(
+                            `${gasData.error || gasData.reason || 'XDC faucet top-up failed.'}` +
+                            `${gasHint} Retry after a few seconds. If unchanged, manual top-up is needed.`
+                        );
+                    }
+                    throw new Error(
+                        `${gasData.error || gasData.reason || 'Insufficient XDC gas.'}` +
+                        `${gasHint} Please top up your wallet and retry.`
+                    );
                 }
 
                 btnText.textContent = '⏳ Requesting accounts...';
