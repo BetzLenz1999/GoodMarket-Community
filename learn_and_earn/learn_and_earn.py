@@ -2800,6 +2800,21 @@ def check_collaboration_deposit(submission_id):
             .eq('id', submission_id)\
             .execute()
 
+        automation_result = {
+            'modules_total': 0,
+            'modules_enriched': 0,
+            'draft_questions_created': 0
+        }
+        try:
+            from collaboration_automation import automate_collaboration_assets
+            automation_result = automate_collaboration_assets(
+                supabase=supabase,
+                submission_id=submission_id,
+                question_count=15
+            )
+        except Exception as automation_error:
+            logger.warning(f"⚠️ Collaboration auto-automation after payment failed: {automation_error}")
+
         return jsonify({
             'success': True,
             'found': True,
@@ -2808,7 +2823,8 @@ def check_collaboration_deposit(submission_id):
             'date': date_str,
             'cert_id': cert_id,
             'explorer_url': f'https://celoscan.io/tx/{tx_hash}',
-            'download_url': f'/learn-earn/download-certificate/{cert_id}'
+            'download_url': f'/learn-earn/download-certificate/{cert_id}',
+            'automation': automation_result
         }), 200
     except Exception as e:
         logger.error(f"❌ Error checking collaboration deposit: {e}")
