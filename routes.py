@@ -15,6 +15,10 @@ import urllib.error
 import uuid
 from datetime import datetime, timedelta, timezone
 import re
+from collaboration_automation import (
+    automate_collaboration_assets,
+    generate_collaboration_quiz_draft as generate_collaboration_quiz_draft_rows
+)
 
 # Initialize notification service
 notification_service = NotificationService()
@@ -4413,6 +4417,26 @@ def approve_collaboration_submission(submission_id):
         if not (result.data or []):
             return jsonify({"success": False, "error": "Failed to update submission status to approved"}), 500
 
+        automation_summary = {
+            "modules_total": 0,
+            "modules_enriched": 0,
+            "draft_questions_created": 0
+        }
+        try:
+            automation_summary = automate_collaboration_assets(
+                supabase=supabase,
+                submission_id=submission_id,
+                question_count=15
+            )
+        except Exception as automation_error:
+            logger.warning(f"⚠️ Collaboration automation on approve failed: {automation_error}")
+
+        publish_result = _publish_collaboration_assets(
+            supabase=supabase,
+            submission_id=submission_id,
+            replace_existing_questions=False
+        )
+
         admin_wallet = session.get('wallet')
         log_admin_action(
             admin_wallet=admin_wallet,
@@ -4422,7 +4446,9 @@ def approve_collaboration_submission(submission_id):
 
         return jsonify({
             "success": True,
-            "submission": (result.data or [submission])[0]
+            "submission": (result.data or [submission])[0],
+            "automation": automation_summary,
+            "publish": publish_result
         })
     except Exception as e:
         logger.error(f"❌ Approve collaboration submission error: {e}")
@@ -4508,61 +4534,113 @@ def generate_collaboration_quiz_draft(submission_id):
         if not sub.data:
             return jsonify({"success": False, "error": "Submission not found"}), 404
 
-        modules = safe_supabase_operation(
-            lambda: supabase.table('collaboration_modules')
-                .select('*')
-                .eq('submission_id', submission_id)
-                .eq('is_deleted', False)
-                .eq('is_active', True)
-                .order('display_order', desc=False)
-                .execute(),
-            fallback_result=type('obj', (object,), {'data': []})(),
-            operation_name="get collaboration modules"
+        created = generate_collaboration_quiz_draft_rows(
+            supabase=supabase,
+            submission_id=submission_id,
+            question_count=15
         )
-        if not modules.data:
+        if created <= 0:
             return jsonify({"success": False, "error": "No active collaboration modules found"}), 400
-
-        # clear previous drafts for fresh generation
-        safe_supabase_operation(
-            lambda: supabase.table('collaboration_quiz_questions_draft').delete().eq('submission_id', submission_id).execute(),
-            fallback_result=type('obj', (object,), {'data': []})(),
-            operation_name="clear collaboration quiz draft"
-        )
-
-        created = 0
-        for idx, module in enumerate(modules.data, 1):
-            title = (module.get('title') or f'Module {idx}').strip()
-            content = (module.get('content') or '').strip()
-            url = (module.get('url') or '').strip()
-            short_content = content[:220].replace('\n', ' ').strip()
-            question_id = f"COLLAB_{submission_id[:8]}_{idx:02d}"
-            question = f"Based on '{title}', which statement best reflects the platform information presented?"
-            answer_a = short_content if short_content else f"{title} explains the platform overview."
-            answer_b = "The module says users do not need to read any content before taking a quiz."
-            answer_c = "The module states there is no real platform link or source material."
-            answer_d = f"The module link is unrelated to the platform ({url or 'N/A'})."
-            row = {
-                'submission_id': submission_id,
-                'question_id': question_id,
-                'question': question[:400],
-                'answer_a': answer_a[:1000],
-                'answer_b': answer_b[:1000],
-                'answer_c': answer_c[:1000],
-                'answer_d': answer_d[:1000],
-                'correct': 'A',
-                'source_module_id': module.get('id')
-            }
-            safe_supabase_operation(
-                lambda row=row: supabase.table('collaboration_quiz_questions_draft').insert(row).execute(),
-                fallback_result=type('obj', (object,), {'data': []})(),
-                operation_name="insert collaboration quiz draft"
-            )
-            created += 1
 
         return jsonify({"success": True, "created_count": created})
     except Exception as e:
         logger.error(f"❌ Generate collaboration draft questions error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _publish_collaboration_assets(supabase, submission_id, replace_existing_questions=False):
+    """Publish collaboration module rows and generated draft quiz questions into live Learn & Earn tables."""
+    submission_res = safe_supabase_operation(
+        lambda: supabase.table('collaboration_submissions').select('*').eq('id', submission_id).limit(1).execute(),
+        fallback_result=type('obj', (object,), {'data': []})(),
+        operation_name="get collaboration submission for publish helper"
+    )
+    if not submission_res.data:
+        raise ValueError("Submission not found")
+
+    submission = submission_res.data[0]
+    if submission.get('status') not in ('paid', 'approved', 'published'):
+        raise ValueError("Only paid or approved submissions can be published")
+
+    modules = safe_supabase_operation(
+        lambda: supabase.table('collaboration_modules').select('*')
+            .eq('submission_id', submission_id)
+            .eq('is_deleted', False)
+            .eq('is_active', True)
+            .order('display_order', desc=False)
+            .execute(),
+        fallback_result=type('obj', (object,), {'data': []})(),
+        operation_name="get modules for publish helper"
+    )
+    if not modules.data:
+        raise ValueError("No active modules to publish")
+
+    inserted_modules = 0
+    for module in modules.data:
+        link_row = {
+            'title': module.get('title'),
+            'url': module.get('url') or '',
+            'description': f"Collaboration module from {submission.get('partner_name', 'partner')}",
+            'content': module.get('content') or '',
+            'reading_time_minutes': module.get('reading_time_minutes') or 1,
+            'display_order': module.get('display_order') or 1,
+            'is_active': True,
+            'created_at': datetime.utcnow().isoformat(),
+            'updated_at': datetime.utcnow().isoformat()
+        }
+        safe_supabase_operation(
+            lambda row=link_row: supabase.table('learn_earn_module_links').insert(row).execute(),
+            fallback_result=type('obj', (object,), {'data': []})(),
+            operation_name="publish collaboration module helper"
+        )
+        inserted_modules += 1
+
+    draft_q = safe_supabase_operation(
+        lambda: supabase.table('collaboration_quiz_questions_draft').select('*').eq('submission_id', submission_id).execute(),
+        fallback_result=type('obj', (object,), {'data': []})(),
+        operation_name="fetch collaboration draft questions helper"
+    )
+
+    if replace_existing_questions:
+        safe_supabase_operation(
+            lambda: supabase.table('quiz_questions').delete().neq('quiz_id', 0).execute(),
+            fallback_result=type('obj', (object,), {'data': []})(),
+            operation_name="replace existing quiz questions helper"
+        )
+
+    inserted_questions = 0
+    for q in draft_q.data or []:
+        question_data = {
+            'question_id': q.get('question_id'),
+            'question': q.get('question'),
+            'answer_a': q.get('answer_a'),
+            'answer_b': q.get('answer_b'),
+            'answer_c': q.get('answer_c'),
+            'answer_d': q.get('answer_d'),
+            'correct': q.get('correct'),
+            'created_at': datetime.utcnow().isoformat() + 'Z'
+        }
+        safe_supabase_operation(
+            lambda row=question_data: supabase.table('quiz_questions').insert(row).execute(),
+            fallback_result=type('obj', (object,), {'data': []})(),
+            operation_name="publish collaboration quiz question helper"
+        )
+        inserted_questions += 1
+
+    safe_supabase_operation(
+        lambda: supabase.table('collaboration_submissions')
+            .update({'status': 'published', 'updated_at': datetime.utcnow().isoformat() + 'Z'})
+            .eq('id', submission_id)
+            .execute(),
+        fallback_result=type('obj', (object,), {'data': []})(),
+        operation_name="mark collaboration published helper"
+    )
+
+    return {
+        "published_modules": inserted_modules,
+        "published_questions": inserted_questions,
+        "replaced_existing_questions": replace_existing_questions
+    }
 
 
 @routes.route("/api/admin/collaboration/submissions/<submission_id>/publish", methods=["POST"])
@@ -4577,96 +4655,22 @@ def publish_collaboration_submission(submission_id):
         if not supabase:
             return jsonify({"success": False, "error": "Database not available"}), 500
 
-        sub = safe_supabase_operation(
-            lambda: supabase.table('collaboration_submissions').select('*').eq('id', submission_id).limit(1).execute(),
-            fallback_result=type('obj', (object,), {'data': []})(),
-            operation_name="get collaboration submission for publish"
-        )
-        if not sub.data:
-            return jsonify({"success": False, "error": "Submission not found"}), 404
-        submission = sub.data[0]
-        if submission.get('status') not in ('paid', 'approved'):
-            return jsonify({"success": False, "error": "Only paid or approved submissions can be published"}), 400
-
-        modules = safe_supabase_operation(
-            lambda: supabase.table('collaboration_modules').select('*')
-                .eq('submission_id', submission_id)
-                .eq('is_deleted', False)
-                .eq('is_active', True)
-                .order('display_order', desc=False)
-                .execute(),
-            fallback_result=type('obj', (object,), {'data': []})(),
-            operation_name="get modules for publish"
-        )
-        if not modules.data:
-            return jsonify({"success": False, "error": "No active modules to publish"}), 400
-
-        inserted_modules = 0
-        for module in modules.data:
-            link_row = {
-                'title': module.get('title'),
-                'url': module.get('url') or '',
-                'description': f"Collaboration module from {submission.get('partner_name', 'partner')}",
-                'content': module.get('content') or '',
-                'reading_time_minutes': module.get('reading_time_minutes') or 1,
-                'display_order': module.get('display_order') or 1,
-                'is_active': True,
-                'created_at': datetime.utcnow().isoformat(),
-                'updated_at': datetime.utcnow().isoformat()
-            }
-            safe_supabase_operation(
-                lambda row=link_row: supabase.table('learn_earn_module_links').insert(row).execute(),
-                fallback_result=type('obj', (object,), {'data': []})(),
-                operation_name="publish collaboration module"
-            )
-            inserted_modules += 1
-
-        draft_q = safe_supabase_operation(
-            lambda: supabase.table('collaboration_quiz_questions_draft').select('*').eq('submission_id', submission_id).execute(),
-            fallback_result=type('obj', (object,), {'data': []})(),
-            operation_name="fetch collaboration draft questions"
+        # Ensure latest module content + fixed 15-question draft exists before publish.
+        automate_collaboration_assets(
+            supabase=supabase,
+            submission_id=submission_id,
+            question_count=15
         )
 
-        if replace_existing_questions:
-            safe_supabase_operation(
-                lambda: supabase.table('quiz_questions').delete().neq('quiz_id', 0).execute(),
-                fallback_result=type('obj', (object,), {'data': []})(),
-                operation_name="replace existing quiz questions"
-            )
-
-        inserted_questions = 0
-        for q in draft_q.data or []:
-            question_data = {
-                'question_id': q.get('question_id'),
-                'question': q.get('question'),
-                'answer_a': q.get('answer_a'),
-                'answer_b': q.get('answer_b'),
-                'answer_c': q.get('answer_c'),
-                'answer_d': q.get('answer_d'),
-                'correct': q.get('correct'),
-                'created_at': datetime.utcnow().isoformat() + 'Z'
-            }
-            safe_supabase_operation(
-                lambda row=question_data: supabase.table('quiz_questions').insert(row).execute(),
-                fallback_result=type('obj', (object,), {'data': []})(),
-                operation_name="publish collaboration quiz question"
-            )
-            inserted_questions += 1
-
-        safe_supabase_operation(
-            lambda: supabase.table('collaboration_submissions')
-                .update({'status': 'published', 'updated_at': datetime.utcnow().isoformat() + 'Z'})
-                .eq('id', submission_id)
-                .execute(),
-            fallback_result=type('obj', (object,), {'data': []})(),
-            operation_name="mark collaboration published"
+        publish_result = _publish_collaboration_assets(
+            supabase=supabase,
+            submission_id=submission_id,
+            replace_existing_questions=replace_existing_questions
         )
 
         return jsonify({
             "success": True,
-            "published_modules": inserted_modules,
-            "published_questions": inserted_questions,
-            "replaced_existing_questions": replace_existing_questions
+            **publish_result
         })
     except Exception as e:
         logger.error(f"❌ Publish collaboration submission error: {e}")
