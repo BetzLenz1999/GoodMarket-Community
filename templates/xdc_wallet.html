@@ -614,13 +614,13 @@
                 <div class="form-group" style="margin-bottom:0;">
                     <label class="form-label">Amount (G$ on XDC)</label>
                     <div class="amount-row">
-                        <input class="form-input" id="bridgeAmountXdcToCelo" type="number" min="0.000000000000000001" step="any" placeholder="0.00" oninput="scheduleBridgeFeeEstimate()">
+                        <input class="form-input" id="bridgeAmountXdcToCelo" type="number" min="0.000000000000000001" step="any" placeholder="0.00" oninput="updateBridgeSummary(); scheduleBridgeFeeEstimate();">
                         <button class="max-btn" onclick="setBridgeMax()">MAX</button>
                     </div>
                 </div>
                 <div class="form-group" style="margin-bottom:0;">
                     <label class="form-label">Bridge Fee (XDC)</label>
-                    <input class="form-input" id="bridgeFeeXdcToCelo" type="number" min="0.000001" step="0.000001" value="1.617600">
+                    <input class="form-input" id="bridgeFeeXdcToCelo" type="number" min="0.000001" step="0.000001" value="1.617600" oninput="updateBridgeSummary()">
                 </div>
             </div>
 
@@ -628,6 +628,21 @@
                 Destination wallet: <code id="bridgeDestinationWallet" style="color:#c4b5fd;">{{ wallet }}</code><br>
                 Destination chain: <strong>Celo Mainnet (Chain ID 42220)</strong><br>
                 Fee source: <span id="bridgeFeeSource" style="color:#bfdbfe;">manual</span>
+            </div>
+
+            <div style="margin-bottom:0.8rem; background:rgba(15,23,42,0.5); border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:0.8rem 0.9rem;">
+                <div style="font-size:0.74rem; color:rgba(255,255,255,0.6); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.45rem;">
+                    Bridge Summary
+                </div>
+                <div style="font-size:0.84rem; color:rgba(255,255,255,0.85); line-height:1.6;">
+                    <strong>From:</strong> XDC G$ (XDC Network)<br>
+                    <strong>To:</strong> Celo G$ (Celo Mainnet)
+                </div>
+                <div style="margin-top:0.55rem; border-top:1px solid rgba(255,255,255,0.1); padding-top:0.55rem; font-size:0.82rem; line-height:1.65;">
+                    <div style="color:rgba(255,255,255,0.65);">Gross amount: <strong id="bridgeGrossReceive" style="color:#e2e8f0;">0.000000 G$</strong></div>
+                    <div style="color:rgba(255,255,255,0.65);">Fee deduction: <strong id="bridgeFeeDeductionDisplay" style="color:#bfdbfe;">1.617600 XDC (network/bridge fee, paid in XDC)</strong></div>
+                    <div style="color:rgba(255,255,255,0.8);">Net estimated receive on Celo: <strong id="bridgeNetReceive" style="color:#a7f3d0;">0.000000 G$</strong></div>
+                </div>
             </div>
 
             <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
@@ -728,6 +743,7 @@
         let xswapQuoteData = null;
         let bridgeFeeEstimateDebounce = null;
         let bridgeFeeSourceState = 'manual';
+        let bridgeAttemptContext = null;
 
         async function loadBalances() {
             try {
@@ -785,10 +801,40 @@
             el.innerHTML = '';
         }
 
+        function _fmtBridgeAmount(value, symbol = 'G$') {
+            const n = Number(value || 0);
+            if (!Number.isFinite(n)) return `0.000000 ${symbol}`;
+            return `${n.toFixed(6)} ${symbol}`;
+        }
+
+        function _fmtBridgeFeeXdc(value) {
+            const n = Number(value || 0);
+            if (!Number.isFinite(n)) return '—';
+            return `${n.toFixed(6)} XDC`;
+        }
+
+        function updateBridgeSummary() {
+            const amountStr = (document.getElementById('bridgeAmountXdcToCelo')?.value || '').trim();
+            const feeStr = (document.getElementById('bridgeFeeXdcToCelo')?.value || '').trim();
+            const gross = parseFloat(amountStr || '0') || 0;
+            const feeXdc = parseFloat(feeStr || '0');
+            const net = gross;
+
+            const grossEl = document.getElementById('bridgeGrossReceive');
+            const feeEl = document.getElementById('bridgeFeeDeductionDisplay');
+            const netEl = document.getElementById('bridgeNetReceive');
+            if (grossEl) grossEl.textContent = _fmtBridgeAmount(gross);
+            if (feeEl) feeEl.textContent = Number.isFinite(feeXdc) && feeXdc > 0
+                ? `${_fmtBridgeFeeXdc(feeXdc)} (network/bridge fee, paid in XDC)`
+                : '—';
+            if (netEl) netEl.textContent = _fmtBridgeAmount(net);
+        }
+
         function setBridgeMax() {
             const gdText = (document.getElementById('gdXdcBalance').textContent || '0').replace(/[^\d.]/g, '');
             const gdBal = parseFloat(gdText || '0') || 0;
             document.getElementById('bridgeAmountXdcToCelo').value = gdBal > 0 ? gdBal.toFixed(6) : '0';
+            updateBridgeSummary();
             scheduleBridgeFeeEstimate();
         }
 
@@ -829,6 +875,7 @@
                 if (Number.isFinite(feeXdc) && feeXdc > 0) {
                     feeInput.value = feeXdc.toFixed(6);
                 }
+                updateBridgeSummary();
                 feeSourceEl.textContent = data.source === 'goodserver_estimatefees'
                     ? 'goodserver estimatefees'
                     : 'fallback default (manual check recommended)';
@@ -837,6 +884,7 @@
                     showBridgeAlert('alert-success', `✅ Estimated bridge fee: ${feeInput.value} XDC`);
                 }
             } catch (err) {
+                updateBridgeSummary();
                 feeSourceEl.textContent = 'manual';
                 bridgeFeeSourceState = 'manual';
                 if (showSuccessAlert) {
@@ -1003,14 +1051,25 @@
                             }
                         } catch (_ignore) {}
                         const supportDetails = [];
+                        if (bridgeAttemptContext) {
+                            supportDetails.push(`source token: ${bridgeAttemptContext.source_token}`);
+                            supportDetails.push(`target token: ${bridgeAttemptContext.target_token}`);
+                            supportDetails.push(`attempted amount: ${bridgeAttemptContext.attempted_amount}`);
+                        }
                         if (technicalDetails) supportDetails.push(technicalDetails);
                         if (txHash) supportDetails.push(`tx: ${txHash}`);
-                        const detailsSuffix = supportDetails.length
-                            ? ` Technical details: ${supportDetails.join(' | ')}.`
-                            : '';
-                        throw new Error(
-                            `${cleanReason}${detailsSuffix}`
+                        const isSelectorOnly = Boolean(
+                            technicalDetails &&
+                            /^Bridge custom error \(0x[a-f0-9]{8}\)$/i.test(technicalDetails) &&
+                            (!cleanReason || cleanReason === 'Transaction reverted on XDC.')
                         );
+                        const friendlyReason = isSelectorOnly
+                            ? 'Bridge rejected the transfer parameters. Please verify amount/token and try again.'
+                            : cleanReason;
+                        const detailsBlock = supportDetails.length
+                            ? `<br><br><strong>Support details:</strong><br>${supportDetails.join('<br>')}`
+                            : '';
+                        throw new Error(`${friendlyReason}${detailsBlock}`);
                     }
                     return receipt;
                 }
@@ -1087,6 +1146,8 @@
             const btn = document.getElementById('btnBridgeXdcToCelo');
             const amountStr = (document.getElementById('bridgeAmountXdcToCelo').value || '').trim();
             const feeStr = (document.getElementById('bridgeFeeXdcToCelo').value || '').trim();
+            const sourceToken = 'XDC G$';
+            const targetToken = 'Celo G$';
 
             if (!amountStr || parseFloat(amountStr) <= 0) {
                 return showBridgeAlert('alert-error', '❌ Enter a valid bridge amount.');
@@ -1101,10 +1162,18 @@
                 const amountWei = ethers.parseUnits(amountStr, 18);
                 const feeWei = ethers.parseUnits(feeStr, 18);
                 const feeXdc = parseFloat(feeStr);
+                const grossReceive = parseFloat(amountStr) || 0;
+                const netReceive = grossReceive;
                 const toAddr = normalizeAddr(WALLET);
                 const recommendedGasReserveWei = ethers.parseUnits('0.0015', 18);
                 const minimumRequiredWei = feeWei + recommendedGasReserveWei;
                 let preflightWarning = '';
+                bridgeAttemptContext = {
+                    source_token: sourceToken,
+                    target_token: targetToken,
+                    attempted_amount: _fmtBridgeAmount(grossReceive),
+                    tx_hash: null
+                };
 
                 if (bridgeFeeSourceState === 'fallback_default' && feeXdc <= BRIDGE_FALLBACK_FEE_XDC_TO_CELO) {
                     preflightWarning =
@@ -1215,10 +1284,18 @@
                     valueHex: ethers.toBeHex(feeWei),
                     fallbackGasLimit: 350000
                 });
+                bridgeAttemptContext.tx_hash = bridgeTx;
 
                 showBridgeAlert(
                     'alert-success',
                     `${preflightWarning ? `${preflightWarning}<br>` : ''}✅ Bridge submitted to Celo!<br>
+                    <div style="margin:0.45rem 0 0.35rem; padding:0.45rem 0.55rem; border-radius:8px; border:1px solid rgba(255,255,255,0.14); background:rgba(15,23,42,0.4); color:rgba(255,255,255,0.86); font-size:0.79rem; line-height:1.5;">
+                        <strong>From:</strong> ${sourceToken} (XDC Network)<br>
+                        <strong>To:</strong> ${targetToken} (Celo Mainnet)<br>
+                        <strong>Gross:</strong> ${_fmtBridgeAmount(grossReceive)}<br>
+                        <strong>Fee:</strong> ${_fmtBridgeFeeXdc(feeXdc)}<br>
+                        <strong>Net Est. Receive:</strong> ${_fmtBridgeAmount(netReceive)}
+                    </div>
                     <a class="tx-link" href="https://xdcscan.com/tx/${bridgeTx}" target="_blank" rel="noopener">View on XDCScan ↗ ${bridgeTx.substring(0,10)}...${bridgeTx.slice(-8)}</a><br>
                     <span style="color:rgba(255,255,255,0.7);font-size:0.8rem;">Final mint on Celo may take a few minutes.</span>`
                 );
@@ -1226,6 +1303,14 @@
             } catch (err) {
                 let msg = err.message || 'Bridge failed';
                 if (err.code === 4001) msg = 'Bridge transaction rejected by user.';
+                if (!bridgeAttemptContext) {
+                    bridgeAttemptContext = {
+                        source_token: sourceToken,
+                        target_token: targetToken,
+                        attempted_amount: _fmtBridgeAmount(parseFloat(amountStr || '0')),
+                        tx_hash: null
+                    };
+                }
                 showBridgeAlert('alert-error', '❌ ' + msg);
             } finally {
                 btn.disabled = false;
@@ -1805,6 +1890,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            updateBridgeSummary();
             loadBalances();
             loadHistory();
             loadGDInfo();

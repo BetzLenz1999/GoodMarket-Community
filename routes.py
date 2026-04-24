@@ -121,6 +121,7 @@ def _parse_xdc_revert_message(raw_message: str, fallback_reason: str = "Transact
     user_reason = fallback_reason
     if selector_match and (tuple_like or selector_only):
         selector = selector_match.group(0).lower()
+        user_reason = "Bridge rejected the transfer parameters. Please verify amount/token and try again."
         technical_details = f"Bridge custom error ({selector})"
     elif parsed:
         cleaned = parsed.strip()
