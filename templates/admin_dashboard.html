@@ -5789,6 +5789,19 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
             return `<span style="color:#cbd5e1;">${status || 'unknown'}</span>`;
         }
 
+        function _normalizeCollabStatus(sub) {
+            const rawStatus = String((sub && sub.status) || '').toLowerCase();
+            const paidAmount = Number((sub && sub.paid_amount_gd) || 0);
+            const hasTxHash = !!String((sub && sub.tx_hash) || '').trim();
+
+            // Backward-compat for records that already have payment proof
+            // but are still labeled as awaiting_payment.
+            if (rawStatus === 'awaiting_payment' && (hasTxHash || paidAmount > 0)) {
+                return 'paid';
+            }
+            return rawStatus;
+        }
+
         async function loadCollaborationSubmissions() {
             const contentDiv = document.getElementById('collaborationReviewContent');
             const statusFilter = (document.getElementById('collabStatusFilter') || {}).value || '';
@@ -5836,14 +5849,15 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     const txHash = sub.tx_hash || '';
                     const txShort = txHash ? `${txHash.slice(0, 10)}...${txHash.slice(-8)}` : '—';
                     const amount = Number(sub.paid_amount_gd || 0);
-                    const canApprove = String(sub.status || '').toLowerCase() === 'paid';
-                    const canReject = !['published', 'rejected'].includes(String(sub.status || '').toLowerCase());
+                    const normalizedStatus = _normalizeCollabStatus(sub);
+                    const canApprove = normalizedStatus === 'paid';
+                    const canReject = !['published', 'rejected'].includes(normalizedStatus);
 
                     html += `
                         <tr id="collab-row-${id}">
                             <td style="font-weight:600;">${sub.partner_name || '—'}</td>
                             <td style="font-family:monospace;">${walletShort}</td>
-                            <td>${_collabStatusBadge(sub.status)}</td>
+                            <td>${_collabStatusBadge(normalizedStatus)}</td>
                             <td>${amount > 0 ? amount.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' G$' : '—'}</td>
                             <td>${txHash ? `<a href="https://celoscan.io/tx/${txHash}" target="_blank" rel="noopener" style="color:#93c5fd;text-decoration:underline;">${txShort}</a>` : '—'}</td>
                             <td style="max-width:220px;white-space:normal;">${sub.rejection_reason || '—'}</td>
@@ -5883,6 +5897,8 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     return;
                 }
                 alert('✅ Collaboration submission approved.');
+                const row = document.getElementById(`collab-row-${submissionId}`);
+                if (row) row.remove();
                 await loadCollaborationSubmissions();
             } catch (error) {
                 console.error('Error approving collaboration submission:', error);
@@ -5906,6 +5922,8 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     return;
                 }
                 alert('✅ Collaboration submission rejected.');
+                const row = document.getElementById(`collab-row-${submissionId}`);
+                if (row) row.remove();
                 await loadCollaborationSubmissions();
             } catch (error) {
                 console.error('Error rejecting collaboration submission:', error);
