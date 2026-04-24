@@ -1475,36 +1475,45 @@ def submit_quiz(current_user):
         # Prefer validated questions from scoring path to avoid missing-session save failures
         questions_for_log = quiz_result.get('questions') or stored_questions or []
 
-        # Process instant G$ reward disbursement
+        # Process instant G$ reward disbursement only when there is a positive reward.
+        # Failed quiz attempts can validly earn 0 G$, so we should still record completion
+        # without attempting an on-chain transfer.
         disbursement_result = None
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            disbursement_result = loop.run_until_complete(
-                learn_blockchain_service.send_g_reward(
-                    current_user,
-                    reward_amount,
-                    {
-                        'action': 'quiz_submit',
-                        'quiz_session_id': quiz_session_id,
-                        'score': score,
-                        'total': total_questions
-                    }
+        tx_hash = None
+        if reward_amount > 0:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                disbursement_result = loop.run_until_complete(
+                    learn_blockchain_service.send_g_reward(
+                        current_user,
+                        reward_amount,
+                        {
+                            'action': 'quiz_submit',
+                            'quiz_session_id': quiz_session_id,
+                            'score': score,
+                            'total': total_questions
+                        }
+                    )
                 )
+            finally:
+                loop.close()
+
+            if not disbursement_result or not disbursement_result.get('success'):
+                err = (disbursement_result or {}).get('error', 'Failed to process instant quiz reward')
+                logger.error(f"❌ Instant reward disbursement failed for {current_user[:8]}...: {err}")
+                return jsonify({
+                    'success': False,
+                    'error': err,
+                    'message': 'Quiz submitted but reward transfer failed. Please try again later.'
+                }), 500
+
+            tx_hash = disbursement_result.get('tx_hash')
+        else:
+            logger.info(
+                f"ℹ️ Quiz completed with 0 reward for {current_user[:8]}...; "
+                "skipping blockchain disbursement."
             )
-        finally:
-            loop.close()
-
-        if not disbursement_result or not disbursement_result.get('success'):
-            err = (disbursement_result or {}).get('error', 'Failed to process instant quiz reward')
-            logger.error(f"❌ Instant reward disbursement failed for {current_user[:8]}...: {err}")
-            return jsonify({
-                'success': False,
-                'error': err,
-                'message': 'Quiz submitted but reward transfer failed. Please try again later.'
-            }), 500
-
-        tx_hash = disbursement_result.get('tx_hash')
 
         # Save quiz attempt to database
         quiz_log = None
@@ -1532,10 +1541,16 @@ def submit_quiz(current_user):
         # Invalidate quiz history cache so next fetch shows the new attempt
         _quiz_history_cache.pop(current_user, None)
 
-        logger.info(
-            f"✅ Quiz completed for {current_user} — {score}/{total_questions}. "
-            f"Instant reward sent: {reward_amount} G$ tx={tx_hash}"
-        )
+        if tx_hash:
+            logger.info(
+                f"✅ Quiz completed for {current_user} — {score}/{total_questions}. "
+                f"Instant reward sent: {reward_amount} G$ tx={tx_hash}"
+            )
+        else:
+            logger.info(
+                f"✅ Quiz completed for {current_user} — {score}/{total_questions}. "
+                f"No reward disbursed (earned: {reward_amount} G$)."
+            )
 
         saved_quiz_id = quiz_log.get('quiz_id', '') if quiz_log else ''
 
@@ -1545,7 +1560,11 @@ def submit_quiz(current_user):
             'total_questions': total_questions,
             'rewards': reward_amount,
             'quiz_id': saved_quiz_id,
-            'message': f'Quiz completed! You earned {reward_amount} G$ instantly.',
+            'message': (
+                f'Quiz completed! You earned {reward_amount} G$ instantly.'
+                if reward_amount > 0
+                else f'Quiz completed! You earned {reward_amount} G$ this round.'
+            ),
             'transaction_hash': tx_hash,
             'explorer_url': f'https://celoscan.io/tx/{tx_hash}' if tx_hash else '',
             'feature_status': 'completed_successfully',
@@ -1553,7 +1572,11 @@ def submit_quiz(current_user):
             'can_retry_immediately': False,
             'show_notification': True,
             'notification_type': 'success',
-            'notification_message': f'Quiz completed! {score}/{total_questions} correct. Reward sent: {reward_amount} G$.'
+            'notification_message': (
+                f'Quiz completed! {score}/{total_questions} correct. Reward sent: {reward_amount} G$.'
+                if reward_amount > 0
+                else f'Quiz completed! {score}/{total_questions} correct. No reward was sent for this attempt.'
+            )
         }), 200
 
     except Exception as e:
