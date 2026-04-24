@@ -43,6 +43,19 @@ _quiz_history_cache:   dict = {}   # {wallet: (data, expires)}
 _card_sales_cache:     dict = {}   # {wallet: (data, expires)}
 # ─────────────────────────────────────────────────────────────────────────────
 
+COLLABORATION_MIN_GD = int(os.getenv('COLLABORATION_MIN_GD', '100000'))
+
+
+def _wallet_from_session_or_request(data: dict) -> str:
+    wallet = (session.get('wallet') or '').strip()
+    if wallet:
+        return wallet
+    return (data.get('wallet_address') or '').strip()
+
+
+def _normalize_wallet(wallet: str) -> str:
+    return (wallet or '').strip().lower()
+
 
 def _is_missing_nft_purchase_jobs_error(error) -> bool:
     text = str(error)
@@ -2094,6 +2107,234 @@ def get_current_block():
         return jsonify({'success': False, 'block': 0}), 500
 
 
+@learn_earn_bp.route('/collaboration/submissions', methods=['POST'])
+def create_collaboration_submission():
+    """Create a collaboration submission draft tied to the current wallet."""
+    try:
+        data = request.get_json(silent=True) or {}
+        partner_name = (data.get('partner_name') or '').strip()
+        if len(partner_name) < 2:
+            return jsonify({'success': False, 'error': 'Partner name is required (minimum 2 characters).'}), 400
+
+        wallet_address = _wallet_from_session_or_request(data)
+        if not wallet_address or not wallet_address.startswith('0x') or len(wallet_address) != 42:
+            return jsonify({'success': False, 'error': 'A valid wallet address is required.'}), 400
+
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({'success': False, 'error': 'Database unavailable'}), 500
+
+        submission_id = uuid.uuid4().hex
+        now_iso = datetime.utcnow().isoformat() + 'Z'
+        row = {
+            'id': submission_id,
+            'wallet_address': _normalize_wallet(wallet_address),
+            'partner_name': partner_name,
+            'status': 'draft',
+            'target_amount_gd': COLLABORATION_MIN_GD,
+            'created_at': now_iso,
+            'updated_at': now_iso
+        }
+        supabase.table('collaboration_submissions').insert(row).execute()
+        return jsonify({'success': True, 'submission': row}), 201
+    except Exception as e:
+        logger.error(f"❌ Error creating collaboration submission: {e}")
+        return jsonify({'success': False, 'error': 'Failed to create collaboration submission.'}), 500
+
+
+@learn_earn_bp.route('/collaboration/submissions/<submission_id>', methods=['GET'])
+def get_collaboration_submission(submission_id):
+    """Get one collaboration submission with draft modules."""
+    try:
+        wallet = _normalize_wallet(session.get('wallet') or request.args.get('wallet_address', ''))
+        if not wallet:
+            return jsonify({'success': False, 'error': 'Wallet is required.'}), 400
+
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({'success': False, 'error': 'Database unavailable'}), 500
+
+        sub_res = supabase.table('collaboration_submissions').select('*').eq('id', submission_id).limit(1).execute()
+        if not sub_res.data:
+            return jsonify({'success': False, 'error': 'Submission not found.'}), 404
+        submission = sub_res.data[0]
+        if _normalize_wallet(submission.get('wallet_address')) != wallet:
+            return jsonify({'success': False, 'error': 'Unauthorized submission access.'}), 403
+
+        mod_res = supabase.table('collaboration_modules')\
+            .select('*')\
+            .eq('submission_id', submission_id)\
+            .eq('is_deleted', False)\
+            .order('display_order', desc=False)\
+            .execute()
+        return jsonify({
+            'success': True,
+            'submission': submission,
+            'modules': mod_res.data or []
+        })
+    except Exception as e:
+        logger.error(f"❌ Error getting collaboration submission: {e}")
+        return jsonify({'success': False, 'error': 'Failed to load collaboration submission.'}), 500
+
+
+@learn_earn_bp.route('/collaboration/submissions/<submission_id>/modules', methods=['POST'])
+def add_collaboration_module(submission_id):
+    """Add a module draft for collaboration submission."""
+    try:
+        data = request.get_json(silent=True) or {}
+        title = (data.get('title') or '').strip()
+        url = (data.get('url') or '').strip()
+        content = (data.get('content') or '').strip()
+        display_order = int(data.get('display_order') or 1)
+        if not title:
+            return jsonify({'success': False, 'error': 'Title is required.'}), 400
+        if not content and not url:
+            return jsonify({'success': False, 'error': 'Provide content or URL.'}), 400
+
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({'success': False, 'error': 'Database unavailable'}), 500
+
+        sub_res = supabase.table('collaboration_submissions').select('*').eq('id', submission_id).limit(1).execute()
+        if not sub_res.data:
+            return jsonify({'success': False, 'error': 'Submission not found.'}), 404
+        submission = sub_res.data[0]
+        if _normalize_wallet(submission.get('wallet_address')) != _normalize_wallet(session.get('wallet') or data.get('wallet_address')):
+            return jsonify({'success': False, 'error': 'Unauthorized submission access.'}), 403
+
+        reading_time = max(1, round(len((content or title).split()) / 200))
+        now_iso = datetime.utcnow().isoformat() + 'Z'
+        module_row = {
+            'id': uuid.uuid4().hex,
+            'submission_id': submission_id,
+            'title': title,
+            'url': url,
+            'content': content,
+            'reading_time_minutes': reading_time,
+            'display_order': display_order,
+            'is_active': True,
+            'is_deleted': False,
+            'created_at': now_iso,
+            'updated_at': now_iso
+        }
+        supabase.table('collaboration_modules').insert(module_row).execute()
+        return jsonify({'success': True, 'module': module_row}), 201
+    except Exception as e:
+        logger.error(f"❌ Error adding collaboration module: {e}")
+        return jsonify({'success': False, 'error': 'Failed to add module.'}), 500
+
+
+@learn_earn_bp.route('/collaboration/submissions/<submission_id>/modules/<module_id>', methods=['PUT'])
+def update_collaboration_module(submission_id, module_id):
+    """Update collaboration module draft fields only."""
+    try:
+        data = request.get_json(silent=True) or {}
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({'success': False, 'error': 'Database unavailable'}), 500
+
+        sub_res = supabase.table('collaboration_submissions').select('wallet_address,status').eq('id', submission_id).limit(1).execute()
+        if not sub_res.data:
+            return jsonify({'success': False, 'error': 'Submission not found.'}), 404
+        submission = sub_res.data[0]
+        if _normalize_wallet(submission.get('wallet_address')) != _normalize_wallet(session.get('wallet') or data.get('wallet_address')):
+            return jsonify({'success': False, 'error': 'Unauthorized submission access.'}), 403
+        if submission.get('status') in ('paid', 'published'):
+            return jsonify({'success': False, 'error': 'Modules cannot be edited after payment.'}), 400
+
+        update_data = {}
+        for field in ('title', 'url', 'content', 'display_order', 'is_active'):
+            if field in data:
+                update_data[field] = data[field]
+        if 'content' in update_data and isinstance(update_data['content'], str):
+            update_data['reading_time_minutes'] = max(1, round(len(update_data['content'].split()) / 200))
+        update_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+
+        result = supabase.table('collaboration_modules')\
+            .update(update_data)\
+            .eq('id', module_id)\
+            .eq('submission_id', submission_id)\
+            .execute()
+        if not result.data:
+            return jsonify({'success': False, 'error': 'Module not found.'}), 404
+        return jsonify({'success': True, 'module': result.data[0]})
+    except Exception as e:
+        logger.error(f"❌ Error updating collaboration module: {e}")
+        return jsonify({'success': False, 'error': 'Failed to update module.'}), 500
+
+
+@learn_earn_bp.route('/collaboration/submissions/<submission_id>/modules/<module_id>', methods=['DELETE'])
+def delete_collaboration_module(submission_id, module_id):
+    """Soft-delete collaboration module draft; does not affect live admin modules."""
+    try:
+        data = request.get_json(silent=True) or {}
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({'success': False, 'error': 'Database unavailable'}), 500
+        sub_res = supabase.table('collaboration_submissions').select('wallet_address,status').eq('id', submission_id).limit(1).execute()
+        if not sub_res.data:
+            return jsonify({'success': False, 'error': 'Submission not found.'}), 404
+        submission = sub_res.data[0]
+        if _normalize_wallet(submission.get('wallet_address')) != _normalize_wallet(session.get('wallet') or data.get('wallet_address')):
+            return jsonify({'success': False, 'error': 'Unauthorized submission access.'}), 403
+        if submission.get('status') in ('paid', 'published'):
+            return jsonify({'success': False, 'error': 'Modules cannot be deleted after payment.'}), 400
+
+        result = supabase.table('collaboration_modules')\
+            .update({'is_deleted': True, 'updated_at': datetime.utcnow().isoformat() + 'Z'})\
+            .eq('id', module_id)\
+            .eq('submission_id', submission_id)\
+            .execute()
+        if not result.data:
+            return jsonify({'success': False, 'error': 'Module not found.'}), 404
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"❌ Error deleting collaboration module: {e}")
+        return jsonify({'success': False, 'error': 'Failed to delete module.'}), 500
+
+
+@learn_earn_bp.route('/collaboration/submissions/<submission_id>/begin-payment', methods=['POST'])
+def begin_collaboration_payment(submission_id):
+    """Move submission to awaiting_payment if it has at least one active module."""
+    try:
+        data = request.get_json(silent=True) or {}
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({'success': False, 'error': 'Database unavailable'}), 500
+        sub_res = supabase.table('collaboration_submissions').select('*').eq('id', submission_id).limit(1).execute()
+        if not sub_res.data:
+            return jsonify({'success': False, 'error': 'Submission not found.'}), 404
+        submission = sub_res.data[0]
+        if _normalize_wallet(submission.get('wallet_address')) != _normalize_wallet(session.get('wallet') or data.get('wallet_address')):
+            return jsonify({'success': False, 'error': 'Unauthorized submission access.'}), 403
+
+        mods = supabase.table('collaboration_modules')\
+            .select('id')\
+            .eq('submission_id', submission_id)\
+            .eq('is_deleted', False)\
+            .eq('is_active', True)\
+            .execute()
+        if not (mods.data and len(mods.data) > 0):
+            return jsonify({'success': False, 'error': 'Add at least one module before payment.'}), 400
+
+        upd = supabase.table('collaboration_submissions')\
+            .update({'status': 'awaiting_payment', 'updated_at': datetime.utcnow().isoformat() + 'Z'})\
+            .eq('id', submission_id)\
+            .execute()
+        payload = upd.data[0] if upd.data else submission
+        return jsonify({
+            'success': True,
+            'submission': payload,
+            'min_contribution': COLLABORATION_MIN_GD,
+            'token': 'G$',
+            'network': 'Celo Mainnet',
+            'contract_address': _CONFIG_LEARN_EARN_ADDRESS
+        })
+    except Exception as e:
+        logger.error(f"❌ Error beginning collaboration payment: {e}")
+        return jsonify({'success': False, 'error': 'Failed to begin payment.'}), 500
+
+
 @learn_earn_bp.route('/check-deposit', methods=['POST'])
 def check_deposit():
     """Scan recent blocks for a G$ Transfer to the Learn & Earn contract from a given wallet.
@@ -2164,7 +2405,7 @@ def check_deposit():
                 raw_amount = raw_amount.hex()
             amount_wei = int(raw_amount, 16) if raw_amount and raw_amount != '0x' else 0
             amount_gd = amount_wei / (10 ** 18)
-            if amount_gd >= 100:
+            if amount_gd >= COLLABORATION_MIN_GD:
                 qualifying_log = log
                 break
 
@@ -2193,7 +2434,8 @@ def check_deposit():
             sponsor_name=sponsor_name,
             amount_gd=verified_amount,
             date_str=date_str,
-            cert_id=cert_id
+            cert_id=cert_id,
+            certificate_type='collaboration'
         )
 
         try:
@@ -2230,6 +2472,122 @@ def check_deposit():
         return jsonify({'found': False, 'error': 'Scan failed, retrying...'}), 200
 
 
+@learn_earn_bp.route('/collaboration/submissions/<submission_id>/check-deposit', methods=['POST'])
+def check_collaboration_deposit(submission_id):
+    """Check collaboration payment and mark submission as paid once detected."""
+    try:
+        data = request.get_json(silent=True) or {}
+        wallet_address = _wallet_from_session_or_request(data)
+        partner_name = (data.get('partner_name') or '').strip()
+        since_block = data.get('since_block', 0)
+
+        if not partner_name:
+            return jsonify({'success': False, 'error': 'Partner name required.'}), 400
+        if not wallet_address or not wallet_address.startswith('0x') or len(wallet_address) != 42:
+            return jsonify({'success': False, 'error': 'A valid wallet address is required.'}), 400
+
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({'success': False, 'error': 'Database unavailable'}), 500
+        sub_res = supabase.table('collaboration_submissions').select('*').eq('id', submission_id).limit(1).execute()
+        if not sub_res.data:
+            return jsonify({'success': False, 'error': 'Submission not found.'}), 404
+        submission = sub_res.data[0]
+        if _normalize_wallet(submission.get('wallet_address')) != _normalize_wallet(wallet_address):
+            return jsonify({'success': False, 'error': 'Wallet does not match submission owner.'}), 403
+
+        contract_address = _CONFIG_LEARN_EARN_ADDRESS
+        gooddollar_address = os.getenv('GOODDOLLAR_CONTRACT', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
+        celo_rpc_url = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')
+        from web3 import Web3
+        w3 = Web3(Web3.HTTPProvider(celo_rpc_url, request_kwargs={'timeout': 10}))
+        current_block = w3.eth.block_number
+        from_block = max(int(since_block), current_block - 1440)
+
+        transfer_topic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+        erc20_checksum = Web3.to_checksum_address(gooddollar_address)
+        contract_checksum = Web3.to_checksum_address(contract_address)
+        topics = [
+            transfer_topic,
+            '0x' + Web3.to_checksum_address(wallet_address)[2:].lower().zfill(64),
+            '0x' + contract_checksum[2:].lower().zfill(64)
+        ]
+        logs = w3.eth.get_logs({
+            'fromBlock': from_block,
+            'toBlock': 'latest',
+            'address': erc20_checksum,
+            'topics': topics
+        })
+        if not logs:
+            return jsonify({'success': True, 'found': False, 'scanned_to': current_block}), 200
+
+        qualifying_log = None
+        for log in reversed(logs):
+            raw_amount = log.get('data', '0x0')
+            if hasattr(raw_amount, 'hex'):
+                raw_amount = raw_amount.hex()
+            amount_wei = int(raw_amount, 16) if raw_amount and raw_amount != '0x' else 0
+            amount_gd = amount_wei / (10 ** 18)
+            if amount_gd >= COLLABORATION_MIN_GD:
+                qualifying_log = log
+                break
+
+        if not qualifying_log:
+            return jsonify({
+                'success': True,
+                'found': False,
+                'scanned_to': current_block,
+                'error': f'No qualifying transfer found yet (minimum {COLLABORATION_MIN_GD:,} G$).'
+            }), 200
+
+        tx_hash = qualifying_log['transactionHash'].hex() if hasattr(qualifying_log['transactionHash'], 'hex') else qualifying_log['transactionHash']
+        if not tx_hash.startswith('0x'):
+            tx_hash = '0x' + tx_hash
+        raw_amount = qualifying_log.get('data', '0x0')
+        if hasattr(raw_amount, 'hex'):
+            raw_amount = raw_amount.hex()
+        amount_wei = int(raw_amount, 16)
+        verified_amount = amount_wei / (10 ** 18)
+
+        cert_id = uuid.uuid4().hex[:12]
+        date_str = datetime.utcnow().strftime('%B %d, %Y')
+        from .sponsor_certificate import generate_certificate
+        cert_filename = generate_certificate(
+            sponsor_name=partner_name,
+            amount_gd=verified_amount,
+            date_str=date_str,
+            cert_id=cert_id,
+            certificate_type='collaboration'
+        )
+
+        supabase.table('collaboration_submissions')\
+            .update({
+                'status': 'paid',
+                'paid_amount_gd': verified_amount,
+                'tx_hash': tx_hash,
+                'cert_id': cert_id,
+                'cert_filename': cert_filename,
+                'paid_at': datetime.utcnow().isoformat() + 'Z',
+                'updated_at': datetime.utcnow().isoformat() + 'Z'
+            })\
+            .eq('id', submission_id)\
+            .execute()
+
+        return jsonify({
+            'success': True,
+            'found': True,
+            'tx_hash': tx_hash,
+            'amount': verified_amount,
+            'date': date_str,
+            'cert_id': cert_id,
+            'explorer_url': f'https://celoscan.io/tx/{tx_hash}',
+            'download_url': f'/learn-earn/download-certificate/{cert_id}'
+        }), 200
+    except Exception as e:
+        logger.error(f"❌ Error checking collaboration deposit: {e}")
+        return jsonify({'success': False, 'error': 'Failed to check collaboration payment.'}), 500
+
+
 @learn_earn_bp.route('/sponsor-contract-address', methods=['GET'])
 def get_sponsor_contract_address():
     """Return the Learn & Earn contract address for public sponsorship display"""
@@ -2238,7 +2596,7 @@ def get_sponsor_contract_address():
         return jsonify({
             'success': True,
             'contract_address': contract_address,
-            'min_contribution': 100,
+            'min_contribution': COLLABORATION_MIN_GD,
             'token': 'G$',
             'network': 'Celo Mainnet'
         })
@@ -2319,10 +2677,10 @@ def verify_sponsorship():
             amount_wei = int(log['data'].hex() if hasattr(log['data'], 'hex') else log['data'], 16)
             amount_gd = amount_wei / (10 ** 18)
 
-            if amount_gd < 100:
+            if amount_gd < COLLABORATION_MIN_GD:
                 return jsonify({
                     'success': False,
-                    'error': f'Contribution amount ({amount_gd:.2f} G$) is below the minimum of 100 G$.'
+                    'error': f'Contribution amount ({amount_gd:.2f} G$) is below the minimum of {COLLABORATION_MIN_GD:,} G$.'
                 }), 400
 
             verified_amount = amount_gd
@@ -2349,7 +2707,8 @@ def verify_sponsorship():
             sponsor_name=sponsor_name,
             amount_gd=verified_amount,
             date_str=date_str,
-            cert_id=cert_id
+            cert_id=cert_id,
+            certificate_type='collaboration'
         )
 
         try:

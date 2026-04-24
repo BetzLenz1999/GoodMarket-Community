@@ -1272,26 +1272,26 @@
             </div>
         </div>
 
-        <!-- Community Sponsorship Banner -->
+        <!-- Collaboration Partnership Banner -->
         <div id="sponsorship-banner" style="margin-bottom: 12px; background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.2)); border: 2px solid rgba(139,92,246,0.5); border-radius: 12px; padding: 10px 12px; backdrop-filter: blur(10px); box-shadow: 0 6px 18px rgba(99,102,241,0.2);">
             <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
                 <div style="flex:1; min-width:0;">
                     <div style="color:#a78bfa; font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">
-                        <i class="fas fa-hand-holding-heart"></i> Community Sponsorship
+                        <i class="fas fa-hand-holding-heart"></i> Collaboration Partnership
                     </div>
                     <p style="color:rgba(255,255,255,0.9); font-size:0.83rem; margin:0; line-height:1.5;">
                         Anyone can sponsor our Learn &amp; Earn contract with a minimum of
-                        <strong style="color:#34d399;">100 G$</strong> and receive a personalized recognition certificate!
+                        <strong style="color:#34d399;">100,000 G$</strong> and receive a personalized recognition certificate!
                     </p>
                 </div>
-                <button onclick="openSponsorWizard()" style="
+                <button onclick="openCollaborationWizard()" style="
                     background: linear-gradient(135deg, #6366f1, #8b5cf6);
                     color: white; border: none; padding: 9px 14px;
                     border-radius: 10px; font-size: 0.82rem; font-weight: bold;
                     cursor: pointer; white-space: nowrap;
                     box-shadow: 0 4px 12px rgba(99,102,241,0.45);
                     transition: all 0.3s ease; flex-shrink:0;">
-                    <i class="fas fa-star"></i> Sponsor Now
+                    <i class="fas fa-star"></i> Collaborate Now
                 </button>
             </div>
         </div>
@@ -1608,7 +1608,7 @@
                 position: relative;">
 
                 <!-- Close button -->
-                <button onclick="closeSponsorWizard()" style="
+                <button onclick="closeCollaborationWizard()" style="
                     position:absolute; top:10px; right:14px;
                     background:transparent; border:none; color:#a78bfa;
                     font-size:1.3rem; cursor:pointer; line-height:1;">&times;</button>
@@ -1625,21 +1625,20 @@
                 <div id="sw-step-1">
                     <div style="text-align:center; margin-bottom:14px;">
                         <div style="font-size:2rem; margin-bottom:8px;">🤝</div>
-                        <h2 style="color:#fff; font-size:1.1rem; margin-bottom:8px;">Community Sponsorship</h2>
+                        <h2 style="color:#fff; font-size:1.1rem; margin-bottom:8px;">Collaboration Partnership</h2>
                         <p style="color:rgba(255,255,255,0.8); font-size:0.88rem; line-height:1.6;">
-                            Anyone can sponsor our <strong style="color:#a78bfa;">Learn &amp; Earn Treasury contract</strong>
-                            with a minimum of <strong style="color:#34d399;">100 G$</strong>.
+                            Collaboration partners contribute to our <strong style="color:#a78bfa;">Learn &amp; Earn program</strong>
+                            with a minimum of <strong style="color:#34d399;">100,000 G$</strong>.
                         </p>
                         <p style="color:rgba(255,255,255,0.7); font-size:0.82rem; margin-top:10px; line-height:1.5;">
-                            Your contribution helps fund rewards for learners in the GoodDollar ecosystem.
-                            In return, you'll receive a personalized <strong style="color:#fbbf24;">downloadable PNG certificate</strong>
-                            as recognition of your generosity.
+                            Your collaboration budget is disbursed to our community who read your platform modules.
+                            After on-chain verification, you'll receive a personalized <strong style="color:#fbbf24;">collaboration certificate</strong>.
                         </p>
                     </div>
                     <div style="background:rgba(255,255,255,0.08); border-radius:10px; padding:12px; margin-bottom:14px;">
                         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:8px;">
                             <span style="color:#34d399; font-size:1rem;">✓</span>
-                            <span style="color:rgba(255,255,255,0.85); font-size:0.85rem;">Minimum contribution: <strong>100 G$</strong></span>
+                            <span style="color:rgba(255,255,255,0.85); font-size:0.85rem;">Minimum collaboration amount: <strong>100,000 G$</strong></span>
                         </div>
                         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:8px;">
                             <span style="color:#34d399; font-size:1rem;">✓</span>
@@ -1647,7 +1646,7 @@
                         </div>
                         <div style="display:flex; gap:10px; align-items:flex-start;">
                             <span style="color:#34d399; font-size:1rem;">✓</span>
-                            <span style="color:rgba(255,255,255,0.85); font-size:0.85rem;">Downloadable <strong>Certificate of Sponsorship</strong></span>
+                            <span style="color:rgba(255,255,255,0.85); font-size:0.85rem;">Downloadable <strong>Collaboration Certificate</strong></span>
                         </div>
                     </div>
                     <button onclick="swGoTo(2)" style="
@@ -1665,7 +1664,7 @@
                         <div style="font-size:1.8rem; margin-bottom:8px;">📝</div>
                         <h2 style="color:#fff; font-size:1.1rem; margin-bottom:6px;">Enter Your Name</h2>
                         <p style="color:rgba(255,255,255,0.7); font-size:0.85rem;">
-                            This name will appear on your sponsorship certificate.
+                            This name will appear on your collaboration certificate.
                         </p>
                     </div>
                     <div style="margin-bottom:20px;">
@@ -1682,12 +1681,23 @@
                         <div style="text-align:right; color:rgba(255,255,255,0.4); font-size:0.8rem; margin-top:4px;" id="sw-name-counter">0/60</div>
                         <div id="sw-name-error" style="color:#f87171; font-size:0.9rem; margin-top:6px; display:none;">Please enter your name.</div>
                     </div>
+                    <div style="margin-bottom:14px; padding:12px; border-radius:10px; border:1px solid rgba(139,92,246,0.35); background:rgba(255,255,255,0.04);">
+                        <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;"><i class="fas fa-book-open"></i> Collaboration Module Builder</div>
+                        <input type="text" id="sw-module-title" placeholder="Module Title" style="width:100%; margin-bottom:8px; background:rgba(255,255,255,0.1); border:1px solid rgba(139,92,246,0.4); color:#fff; padding:10px; border-radius:10px;">
+                        <input type="text" id="sw-module-url" placeholder="Module URL (optional)" style="width:100%; margin-bottom:8px; background:rgba(255,255,255,0.1); border:1px solid rgba(139,92,246,0.4); color:#fff; padding:10px; border-radius:10px;">
+                        <textarea id="sw-module-content" placeholder="Module content (required if URL is empty)" rows="4" style="width:100%; margin-bottom:8px; background:rgba(255,255,255,0.1); border:1px solid rgba(139,92,246,0.4); color:#fff; padding:10px; border-radius:10px;"></textarea>
+                        <button type="button" onclick="swAddModuleDraft()" style="width:100%; background:linear-gradient(135deg,#4f46e5,#7c3aed); color:#fff; border:none; padding:10px; border-radius:10px; font-weight:700; cursor:pointer;">
+                            ➕ Add Module Link
+                        </button>
+                        <div id="sw-module-error" style="color:#f87171; font-size:0.85rem; margin-top:6px; display:none;"></div>
+                        <div id="sw-module-list" style="margin-top:10px;"></div>
+                    </div>
                     <!-- DApp browser: amount input (shown only when wallet is detected) -->
                     <div id="sw-dapp-amount-wrap" style="display:none; margin-bottom:20px;">
                         <label style="color:#a78bfa; font-weight:600; display:block; margin-bottom:8px;">
-                            <i class="fas fa-coins"></i> Amount (G$) <span style="color:rgba(255,255,255,0.5); font-size:0.85rem; font-weight:400;">min. 100</span>
+                            <i class="fas fa-coins"></i> Amount (G$) <span style="color:rgba(255,255,255,0.5); font-size:0.85rem; font-weight:400;">min. 100,000</span>
                         </label>
-                        <input type="number" id="sw-dapp-amount" min="100" value="100" step="1"
+                        <input type="number" id="sw-dapp-amount" min="100000" value="100000" step="1"
                             style="width:100%; background:rgba(255,255,255,0.1); border:2px solid rgba(139,92,246,0.5);
                             color:#fff; padding:14px 16px; border-radius:12px; font-size:1.05rem; outline:none;
                             transition:border-color 0.3s;"
@@ -1727,7 +1737,7 @@
                         <div style="font-size:2.4rem; margin-bottom:8px;" id="sw-step3-icon">📡</div>
                         <h2 style="color:#fff; font-size:1.4rem; margin-bottom:6px;" id="sw-step3-title">Watching for Your Deposit</h2>
                         <p style="color:rgba(255,255,255,0.65); font-size:0.9rem;" id="sw-step3-subtitle">
-                            Send <strong style="color:#34d399;">at least 100 G$</strong> to the address below — we're already scanning the blockchain for it.
+                            Send <strong style="color:#34d399;">at least 100,000 G$</strong> to the address below — we're already scanning the blockchain for it.
                         </p>
                     </div>
 
@@ -1799,7 +1809,7 @@
                 <!-- Step 4: Success -->
                 <div id="sw-step-4" style="display:none; text-align:center;">
                     <div style="font-size:2.2rem; margin-bottom:10px;">🎉</div>
-                    <h2 style="color:#34d399; font-size:1.2rem; margin-bottom:8px;">Sponsorship Verified!</h2>
+                    <h2 style="color:#34d399; font-size:1.2rem; margin-bottom:8px;">Collaboration Verified!</h2>
                     <p style="color:rgba(255,255,255,0.8); margin-bottom:6px;" id="sw-success-msg">
                         Thank you for your generous contribution!
                     </p>
@@ -1824,7 +1834,7 @@
                     </a>
 
                     <div style="margin-top:24px;">
-                        <button onclick="closeSponsorWizard()" style="
+                        <button onclick="closeCollaborationWizard()" style="
                             background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; border:none;
                             padding:12px 30px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:1rem;">
                             Close
@@ -3273,7 +3283,11 @@
             }
         }
 
-        document.addEventListener('DOMContentLoaded', async function() {
+        
+        // Backward compatibility
+        function openSponsorWizard() { openCollaborationWizard(); }
+        function closeSponsorWizard() { closeCollaborationWizard(); }
+document.addEventListener('DOMContentLoaded', async function() {
             console.log('🎓 Learn & Earn page loaded - initializing...');
 
             // Auto-recover any interrupted purchase first
@@ -3309,15 +3323,19 @@
         var swIsDappBrowser = false;
         var swDappWalletAddress = '';
         var swDappTxHash = '';
+        var swSubmissionId = '';
+        var swDraftModules = [];
         var G_TOKEN_ADDRESS = '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A';
         var ESCROW_ADDRESS  = '{{ escrow_address | default("") }}';
         var ESCROW_ENABLED  = {{ 'true' if escrow_enabled else 'false' }};
 
-        function openSponsorWizard() {
+        function openCollaborationWizard() {
             swCurrentStep = 1;
             swSponsorName = '';
             swDappWalletAddress = '';
             swDappTxHash = '';
+            swSubmissionId = '';
+            swDraftModules = [];
             swStopScan();
 
             // Detect DApp browser (injected wallet)
@@ -3327,6 +3345,10 @@
 
             var nameInput = document.getElementById('sponsor-name-input');
             if (nameInput) nameInput.value = '';
+            var mt = document.getElementById('sw-module-title'); if (mt) mt.value = '';
+            var mu = document.getElementById('sw-module-url'); if (mu) mu.value = '';
+            var mc = document.getElementById('sw-module-content'); if (mc) mc.value = '';
+            swRenderModuleList();
             var walletInput = document.getElementById('sw-wallet-input');
             if (walletInput && walletInput.type !== 'hidden') walletInput.value = '';
             var nameErr = document.getElementById('sw-name-error');
@@ -3355,7 +3377,7 @@
             var s3title = document.getElementById('sw-step3-title');
             if (s3title) s3title.textContent = 'Watching for Your Deposit';
             var s3sub = document.getElementById('sw-step3-subtitle');
-            if (s3sub) s3sub.innerHTML = 'Send <strong style="color:#34d399;">at least 100 G$</strong> to the address below \u2014 we\u2019re already scanning the blockchain for it.';
+            if (s3sub) s3sub.innerHTML = 'Send <strong style="color:#34d399;">at least 100,000 G$</strong> to the address below \u2014 we\u2019re already scanning the blockchain for it.';
             var manualBlock = document.getElementById('sw-manual-send-block');
             if (manualBlock) manualBlock.style.display = 'block';
             swShowStep(1);
@@ -3364,7 +3386,7 @@
             fetchSponsorContractAddress();
         }
 
-        function closeSponsorWizard() {
+        function closeCollaborationWizard() {
             swStopScan();
             document.getElementById('sponsor-modal-overlay').style.display = 'none';
             document.body.style.overflow = '';
@@ -3392,23 +3414,93 @@
             }
         }
 
-        function swStep2Next() {
+        function swRenderModuleList() {
+            var listEl = document.getElementById('sw-module-list');
+            if (!listEl) return;
+            if (!swDraftModules.length) {
+                listEl.innerHTML = '<div style="color:rgba(255,255,255,0.55); font-size:0.82rem;">No module links added yet.</div>';
+                return;
+            }
+            listEl.innerHTML = swDraftModules.map(function(m, i) {
+                return '<div style="margin-bottom:6px; padding:8px; border-radius:8px; background:rgba(255,255,255,0.08); color:#fff; font-size:0.82rem;">'
+                    + '<strong>' + (i + 1) + '.</strong> ' + (m.title || 'Untitled')
+                    + (m.url ? ' <span style="color:#a5b4fc;">(' + m.url + ')</span>' : '')
+                    + '</div>';
+            }).join('');
+        }
+
+        function swAddModuleDraft() {
+            var t = (document.getElementById('sw-module-title').value || '').trim();
+            var u = (document.getElementById('sw-module-url').value || '').trim();
+            var c = (document.getElementById('sw-module-content').value || '').trim();
+            var err = document.getElementById('sw-module-error');
+            if (!t) {
+                if (err) { err.textContent = 'Module title is required.'; err.style.display = 'block'; }
+                return;
+            }
+            if (!u && !c) {
+                if (err) { err.textContent = 'Provide module URL or content.'; err.style.display = 'block'; }
+                return;
+            }
+            if (err) err.style.display = 'none';
+            swDraftModules.push({ title: t, url: u, content: c, display_order: swDraftModules.length + 1 });
+            document.getElementById('sw-module-title').value = '';
+            document.getElementById('sw-module-url').value = '';
+            document.getElementById('sw-module-content').value = '';
+            swRenderModuleList();
+        }
+
+        async function swStep2Next() {
             var nameVal = document.getElementById('sponsor-name-input').value.trim();
             if (!nameVal || nameVal.length < 2) {
                 document.getElementById('sw-name-error').textContent = 'Please enter at least 2 characters.';
                 document.getElementById('sw-name-error').style.display = 'block';
                 return;
             }
+            if (!swDraftModules.length) {
+                var me = document.getElementById('sw-module-error');
+                if (me) { me.textContent = 'Add at least one module link before proceeding.'; me.style.display = 'block'; }
+                return;
+            }
             document.getElementById('sw-name-error').style.display = 'none';
             swSponsorName = nameVal;
+
+            try {
+                if (!swSubmissionId) {
+                    var createResp = await fetch('/learn-earn/collaboration/submissions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ partner_name: swSponsorName, wallet_address: (document.getElementById('sw-wallet-input') || {}).value || '' })
+                    });
+                    var createData = await createResp.json();
+                    if (!createData.success) throw new Error(createData.error || 'Failed to create collaboration submission.');
+                    swSubmissionId = createData.submission.id;
+                    for (var i = 0; i < swDraftModules.length; i++) {
+                        await fetch('/learn-earn/collaboration/submissions/' + swSubmissionId + '/modules', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(swDraftModules[i])
+                        });
+                    }
+                    await fetch('/learn-earn/collaboration/submissions/' + swSubmissionId + '/begin-payment', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ wallet_address: (document.getElementById('sw-wallet-input') || {}).value || '' })
+                    });
+                }
+            } catch (setupErr) {
+                var se = document.getElementById('sw-name-error');
+                if (se) { se.textContent = setupErr.message || 'Unable to prepare collaboration flow.'; se.style.display = 'block'; }
+                return;
+            }
 
             if (swIsDappBrowser) {
                 // Validate amount input
                 var amtInput = document.getElementById('sw-dapp-amount');
-                var amt = amtInput ? parseFloat(amtInput.value) : 100;
-                if (isNaN(amt) || amt < 100) {
+                var amt = amtInput ? parseFloat(amtInput.value) : 100000;
+                if (isNaN(amt) || amt < 100000) {
                     var ae = document.getElementById('sw-amount-error');
-                    if (ae) { ae.textContent = 'Minimum sponsorship amount is 100 G$.'; ae.style.display = 'block'; }
+                    if (ae) { ae.textContent = 'Minimum collaboration amount is 100,000 G$.'; ae.style.display = 'block'; }
                     return;
                 }
                 var ae2 = document.getElementById('sw-amount-error');
@@ -3542,7 +3634,7 @@
             var s3title = document.getElementById('sw-step3-title');
             if (s3title) s3title.textContent = 'Watching for Your Deposit';
             var s3sub = document.getElementById('sw-step3-subtitle');
-            if (s3sub) s3sub.innerHTML = 'Send <strong style="color:#34d399;">at least 100 G$</strong> to the address below \u2014 we\u2019re already scanning the blockchain for it.';
+            if (s3sub) s3sub.innerHTML = 'Send <strong style="color:#34d399;">at least 100,000 G$</strong> to the address below \u2014 we\u2019re already scanning the blockchain for it.';
             var manualBlock = document.getElementById('sw-manual-send-block');
             if (manualBlock) manualBlock.style.display = 'block';
             swGoTo(2);
@@ -3646,13 +3738,18 @@
                 var controller = new AbortController();
                 var fetchTimeout = setTimeout(function() { controller.abort(); }, 20000);
 
-                fetch('/learn-earn/check-deposit', {
+                var endpoint = swSubmissionId
+                    ? ('/learn-earn/collaboration/submissions/' + swSubmissionId + '/check-deposit')
+                    : '/learn-earn/check-deposit';
+
+                fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         wallet_address: walletAddr,
                         since_block: swSinceBlock,
-                        sponsor_name: swSponsorName
+                        sponsor_name: swSponsorName,
+                        partner_name: swSponsorName
                     }),
                     signal: controller.signal
                 })
@@ -3699,11 +3796,11 @@
                 var amount = data.amount || 0;
                 var amtDisplay = (amount % 1 === 0) ? Number(amount).toLocaleString() : parseFloat(Number(amount).toFixed(2)).toLocaleString();
                 var msgEl = document.getElementById('sw-success-msg');
-                if (msgEl) msgEl.textContent = 'Thank you, ' + swSponsorName + '! Your sponsorship was detected on-chain automatically.';
+                if (msgEl) msgEl.textContent = 'Thank you, ' + swSponsorName + '! your collaboration payment was detected on-chain automatically.';
                 var amtEl = document.getElementById('sw-success-amount');
-                if (amtEl) amtEl.textContent = 'Contribution: ' + amtDisplay + ' G\u0024 \u2022 Date: ' + (data.date || '');
+                if (amtEl) amtEl.textContent = 'Collaboration Amount: ' + amtDisplay + ' G\u0024 \u2022 Date: ' + (data.date || '');
                 var dlEl = document.getElementById('sw-download-link');
-                if (dlEl) { dlEl.href = data.download_url || '#'; dlEl.setAttribute('download', 'GoodDollar_Sponsorship_Certificate.png'); }
+                if (dlEl) { dlEl.href = data.download_url || '#'; dlEl.setAttribute('download', 'GoodDollar_Collaboration_Certificate.png'); }
                 var exEl = document.getElementById('sw-explorer-link');
                 if (exEl) {
                     if (data.explorer_url) { exEl.href = data.explorer_url; exEl.style.display = 'inline'; }
@@ -3719,7 +3816,7 @@
             var overlay = document.getElementById('sponsor-modal-overlay');
             if (overlay) {
                 overlay.addEventListener('click', function(e) {
-                    if (e.target === overlay) closeSponsorWizard();
+                    if (e.target === overlay) closeCollaborationWizard();
                 });
             }
             window.loadNFTMarketplace();
