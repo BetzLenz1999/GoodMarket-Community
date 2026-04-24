@@ -46,6 +46,16 @@ _card_sales_cache:     dict = {}   # {wallet: (data, expires)}
 COLLABORATION_MIN_GD = int(os.getenv('COLLABORATION_MIN_GD', '100000'))
 
 
+def _get_gooddollar_contract_address() -> str:
+    """Resolve GoodDollar token contract with backwards-compatible env keys."""
+    return (
+        os.getenv('GOODDOLLAR_CONTRACT_ADDRESS')
+        or os.getenv('GOODDOLLAR_CONTRACT')
+        or _GD_CONTRACT_ADDRESS
+        or '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A'
+    )
+
+
 def _wallet_from_session_or_request(data: dict) -> str:
     wallet = (session.get('wallet') or '').strip()
     if wallet:
@@ -2382,7 +2392,7 @@ def check_deposit():
             return jsonify({'found': False, 'error': 'Sponsor name required'}), 400
 
         contract_address = _CONFIG_LEARN_EARN_ADDRESS
-        gooddollar_address = os.getenv('GOODDOLLAR_CONTRACT', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
+        gooddollar_address = _get_gooddollar_contract_address()
         celo_rpc_url = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')
 
         if not contract_address:
@@ -2546,7 +2556,7 @@ def check_collaboration_deposit(submission_id):
             return jsonify({'success': False, 'error': 'Wallet does not match submission owner.'}), 403
 
         contract_address = _CONFIG_LEARN_EARN_ADDRESS
-        gooddollar_address = os.getenv('GOODDOLLAR_CONTRACT', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
+        gooddollar_address = _get_gooddollar_contract_address()
         celo_rpc_url = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')
         from web3 import Web3
         w3 = Web3(Web3.HTTPProvider(celo_rpc_url, request_kwargs={'timeout': 10}))
@@ -2760,7 +2770,7 @@ def verify_sponsorship():
             return jsonify({'success': False, 'error': 'Invalid transaction hash format'}), 400
 
         contract_address = _CONFIG_LEARN_EARN_ADDRESS
-        gooddollar_address = os.getenv('GOODDOLLAR_CONTRACT', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
+        gooddollar_address = _get_gooddollar_contract_address()
         celo_rpc_url = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')
 
         from web3 import Web3
