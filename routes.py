@@ -4160,6 +4160,7 @@ def get_collaboration_submissions():
         for sub in submissions:
             if not sub.get('id') and sub.get('submission_id'):
                 sub['id'] = sub.get('submission_id')
+            sub = _try_backfill_collab_payment_metadata(supabase, sub)
             paid_amount, tx_hash = _collab_payment_metadata(sub)
             if not sub.get('paid_amount_gd') and paid_amount > 0:
                 sub['paid_amount_gd'] = paid_amount
@@ -4258,6 +4259,88 @@ def _collab_payment_metadata(submission: dict):
     return paid_amount, str(tx_hash or '').strip()
 
 
+def _try_backfill_collab_payment_metadata(supabase, submission: dict) -> dict:
+    """Backfill missing collab payment proof from sponsorship_log for legacy rows."""
+    if not isinstance(submission, dict):
+        return submission
+
+    paid_amount, tx_hash = _collab_payment_metadata(submission)
+    if tx_hash and paid_amount > 0:
+        return submission
+
+    wallet_address = str(submission.get('wallet_address') or '').strip()
+    if not wallet_address:
+        return submission
+
+    submission_created_at = _parse_iso_datetime(submission.get('created_at'))
+    fallback_result = safe_supabase_operation(
+        lambda: supabase.table('sponsorship_log')
+            .select('tx_hash,amount_gd,created_at')
+            .eq('wallet_address', wallet_address)
+            .order('created_at', desc=True)
+            .limit(10)
+            .execute(),
+        fallback_result=type('obj', (object,), {'data': []})(),
+        operation_name="find fallback sponsorship log for collaboration submission"
+    )
+    logs = fallback_result.data or []
+    if not logs:
+        return submission
+
+    matched_log = None
+    for row in logs:
+        row_tx = str(row.get('tx_hash') or '').strip()
+        try:
+            row_amt = float(row.get('amount_gd') or 0)
+        except (TypeError, ValueError):
+            row_amt = 0.0
+        if not row_tx or row_amt <= 0:
+            continue
+
+        row_created_at = _parse_iso_datetime(row.get('created_at'))
+        if submission_created_at and row_created_at and row_created_at < submission_created_at:
+            continue
+        matched_log = row
+        break
+
+    if not matched_log:
+        return submission
+
+    backfill_tx = str(matched_log.get('tx_hash') or '').strip()
+    try:
+        backfill_amount = float(matched_log.get('amount_gd') or 0)
+    except (TypeError, ValueError):
+        backfill_amount = 0.0
+
+    if not backfill_tx or backfill_amount <= 0:
+        return submission
+
+    # Update response payload immediately so admin can review without refreshing DB state.
+    submission['tx_hash'] = backfill_tx
+    submission['paid_amount_gd'] = backfill_amount
+    status = (submission.get('status') or '').strip().lower()
+    if status in ('awaiting_payment', 'draft'):
+        submission['status'] = 'paid'
+
+    # Best-effort persistence so next reads are already normalized.
+    persisted_payload = {
+        'tx_hash': backfill_tx,
+        'paid_amount_gd': backfill_amount,
+        'updated_at': datetime.utcnow().isoformat() + 'Z'
+    }
+    if status in ('awaiting_payment', 'draft'):
+        persisted_payload['status'] = 'paid'
+    safe_supabase_operation(
+        lambda: supabase.table('collaboration_submissions')
+            .update(persisted_payload)
+            .eq('id', submission.get('id'))
+            .execute(),
+        fallback_result=None,
+        operation_name="persist fallback collaboration payment metadata"
+    )
+    return submission
+
+
 @routes.route("/api/admin/collaboration/submissions/<submission_id>/approve", methods=["POST"])
 @admin_required
 def approve_collaboration_submission(submission_id):
@@ -4270,6 +4353,7 @@ def approve_collaboration_submission(submission_id):
         submission, matched_column = _fetch_collaboration_submission(supabase, submission_id)
         if not submission:
             return jsonify({"success": False, "error": "Submission not found"}), 404
+        submission = _try_backfill_collab_payment_metadata(supabase, submission)
 
         current_status = (submission.get('status') or '').strip().lower()
         paid_amount, tx_hash = _collab_payment_metadata(submission)
