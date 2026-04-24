@@ -26,8 +26,14 @@ def _get_font(size, bold=False):
     return ImageFont.load_default()
 
 
-def generate_certificate(sponsor_name: str, amount_gd: float, date_str: str = None, cert_id: str = None) -> str:
-    """Generate a PNG sponsorship certificate and return the file path."""
+def generate_certificate(
+    sponsor_name: str,
+    amount_gd: float,
+    date_str: str = None,
+    cert_id: str = None,
+    certificate_type: str = 'sponsorship'
+) -> str:
+    """Generate a PNG certificate (sponsorship/collaboration) and return filename."""
     if not cert_id:
         cert_id = uuid.uuid4().hex[:12]
     if not date_str:
@@ -64,8 +70,18 @@ def generate_certificate(sponsor_name: str, amount_gd: float, date_str: str = No
         x = (width - text_width) // 2
         draw.text((x, y), text, font=font, fill=color)
 
+    is_collaboration = (certificate_type or '').strip().lower() == 'collaboration'
+    title_text = 'CERTIFICATE OF COLLABORATION' if is_collaboration else 'CERTIFICATE OF SPONSORSHIP'
+    action_text = 'has entered a collaboration partnership with' if is_collaboration else 'has generously sponsored the'
+    subject_text = 'Learn & Earn Community Module Program' if is_collaboration else 'Learn & Earn Treasury Contract'
+    footer_text = (
+        'Thank you for supporting learners through platform collaboration!'
+        if is_collaboration
+        else 'Thank you for supporting financial inclusion worldwide!'
+    )
+
     star = '\u2605'
-    center_text(draw, f'{star}  CERTIFICATE OF SPONSORSHIP  {star}', 40, font_title, (255, 255, 255))
+    center_text(draw, f'{star}  {title_text}  {star}', 40, font_title, (255, 255, 255))
 
     draw.line([(60, 105), (width - 60, 105)], fill=(99, 102, 241), width=2)
 
@@ -75,8 +91,8 @@ def generate_certificate(sponsor_name: str, amount_gd: float, date_str: str = No
 
     center_text(draw, sponsor_name, 210, font_name, (250, 204, 21))
 
-    center_text(draw, 'has generously sponsored the', 278, font_body, (200, 200, 220))
-    center_text(draw, 'Learn & Earn Treasury Contract', 308, font_subtitle, (255, 255, 255))
+    center_text(draw, action_text, 278, font_body, (200, 200, 220))
+    center_text(draw, subject_text, 308, font_subtitle, (255, 255, 255))
 
     center_text(draw, 'with a contribution of', 358, font_body, (200, 200, 220))
 
@@ -89,7 +105,7 @@ def generate_certificate(sponsor_name: str, amount_gd: float, date_str: str = No
     center_text(draw, f'Certificate ID: {cert_id}', 500, font_small, (120, 130, 160))
 
     center_text(draw, 'GoodMarket  \u2022  GoodDollar Ecosystem  \u2022  Powered by Celo', 540, font_small, (120, 130, 160))
-    center_text(draw, 'Thank you for supporting financial inclusion worldwide!', 570, font_body, (200, 200, 220))
+    center_text(draw, footer_text, 570, font_body, (200, 200, 220))
 
     corners = [(20, 20), (width - 40, 20), (20, height - 40), (width - 40, height - 40)]
     corner_size = 20
@@ -97,7 +113,8 @@ def generate_certificate(sponsor_name: str, amount_gd: float, date_str: str = No
     for cx, cy in corners:
         draw.rectangle([cx, cy, cx + corner_size, cy + corner_size], outline=corner_color, width=3)
 
-    cert_filename = f'sponsorship_{cert_id}.png'
+    prefix = 'collaboration' if is_collaboration else 'sponsorship'
+    cert_filename = f'{prefix}_{cert_id}.png'
     cert_path = os.path.join(CERT_DIR, cert_filename)
     img.save(cert_path, 'PNG', optimize=True)
     logger.info(f'Certificate generated: {cert_path}')

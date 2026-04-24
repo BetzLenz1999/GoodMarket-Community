@@ -470,6 +470,63 @@ CREATE INDEX IF NOT EXISTS idx_sponsorship_log_created_at ON sponsorship_log(cre
 ALTER TABLE sponsorship_log ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all operations on sponsorship_log" ON sponsorship_log FOR ALL USING (true);
 
+-- Collaboration submissions (draft -> paid -> published flow)
+CREATE TABLE IF NOT EXISTS collaboration_submissions (
+    id VARCHAR(64) PRIMARY KEY,
+    wallet_address VARCHAR(42) NOT NULL,
+    partner_name VARCHAR(200) NOT NULL,
+    status VARCHAR(30) DEFAULT 'draft',
+    target_amount_gd NUMERIC(18, 4) DEFAULT 100000,
+    paid_amount_gd NUMERIC(18, 4),
+    tx_hash VARCHAR(66),
+    cert_id VARCHAR(24),
+    cert_filename VARCHAR(255),
+    paid_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_collab_sub_wallet ON collaboration_submissions(wallet_address);
+CREATE INDEX IF NOT EXISTS idx_collab_sub_status ON collaboration_submissions(status);
+CREATE INDEX IF NOT EXISTS idx_collab_sub_created_at ON collaboration_submissions(created_at);
+ALTER TABLE collaboration_submissions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations on collaboration_submissions" ON collaboration_submissions FOR ALL USING (true);
+
+CREATE TABLE IF NOT EXISTS collaboration_modules (
+    id VARCHAR(64) PRIMARY KEY,
+    submission_id VARCHAR(64) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    url TEXT,
+    content TEXT,
+    reading_time_minutes INTEGER DEFAULT 1,
+    display_order INTEGER DEFAULT 1,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_collab_mod_submission_id ON collaboration_modules(submission_id);
+CREATE INDEX IF NOT EXISTS idx_collab_mod_active ON collaboration_modules(is_active);
+CREATE INDEX IF NOT EXISTS idx_collab_mod_deleted ON collaboration_modules(is_deleted);
+ALTER TABLE collaboration_modules ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations on collaboration_modules" ON collaboration_modules FOR ALL USING (true);
+
+CREATE TABLE IF NOT EXISTS collaboration_quiz_questions_draft (
+    id SERIAL PRIMARY KEY,
+    submission_id VARCHAR(64) NOT NULL,
+    question_id VARCHAR(100) NOT NULL,
+    question TEXT NOT NULL,
+    answer_a TEXT NOT NULL,
+    answer_b TEXT NOT NULL,
+    answer_c TEXT NOT NULL,
+    answer_d TEXT NOT NULL,
+    correct VARCHAR(1) NOT NULL,
+    source_module_id VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_collab_q_submission_id ON collaboration_quiz_questions_draft(submission_id);
+ALTER TABLE collaboration_quiz_questions_draft ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations on collaboration_quiz_questions_draft" ON collaboration_quiz_questions_draft FOR ALL USING (true);
+
 -- Achievement NFT Mints Table (for Learn & Earn NFT Marketplace)
 CREATE TABLE IF NOT EXISTS achievement_nft_mints (
     id SERIAL PRIMARY KEY,
