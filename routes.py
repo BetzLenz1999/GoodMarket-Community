@@ -6031,62 +6031,66 @@ def xdc_bridge_estimate_fee():
         bridge_fee_xdc = default_fee_xdc
         raw_payload = None
 
-        url = (
-            "https://goodserver.gooddollar.org/bridge/estimatefees"
-            f"?sourceChainId=50&targetChainId=42220&amount={amount}"
-        )
-        try:
-            with urllib.request.urlopen(url, timeout=8) as resp:
-                body = resp.read().decode("utf-8", errors="replace")
-                raw_payload = body[:1000]  # keep logs/surface bounded
-                payload = json.loads(body) if body else {}
+        urls = [
+            # GoodDocs recommends this endpoint without query params, then pick route key.
+            "https://goodserver.gooddollar.org/bridge/estimatefees",
+            # Keep compatibility with older route-specific response shapes.
+            (
+                "https://goodserver.gooddollar.org/bridge/estimatefees"
+                f"?sourceChainId=50&targetChainId=42220&amount={amount}"
+            ),
+        ]
 
-                candidate = None
-                if isinstance(payload, dict):
-                    # Support multiple estimate API shapes:
-                    # 1) direct fields (fee/nativeFee/etc)
-                    # 2) nested data object
-                    # 3) path-keyed map, e.g. LZ_XDC_TO_CELO
-                    for key in ("fee", "bridgeFee", "nativeFee", "estimatedFee"):
-                        if key in payload:
-                            candidate = payload.get(key)
+        def _extract_candidate(payload_obj):
+            candidate_val = None
+            if not isinstance(payload_obj, dict):
+                return None
+
+            for key in ("fee", "bridgeFee", "nativeFee", "estimatedFee"):
+                if key in payload_obj:
+                    return payload_obj.get(key)
+
+            if "data" in payload_obj and isinstance(payload_obj["data"], dict):
+                for key in ("fee", "bridgeFee", "nativeFee", "estimatedFee"):
+                    if key in payload_obj["data"]:
+                        return payload_obj["data"].get(key)
+
+            route_keys = (
+                "LZ_XDC_TO_CELO",
+                "LZ_50_TO_42220",
+                "XDC_TO_CELO",
+                "50_TO_42220",
+            )
+            for route_key in route_keys:
+                if route_key not in payload_obj:
+                    continue
+                route_val = payload_obj.get(route_key)
+                if isinstance(route_val, dict):
+                    for key in ("fee", "bridgeFee", "nativeFee", "estimatedFee", "value"):
+                        if key in route_val:
+                            candidate_val = route_val.get(key)
                             break
+                else:
+                    candidate_val = route_val
+                if candidate_val is not None:
+                    break
+            return candidate_val
 
-                    if candidate is None and "data" in payload and isinstance(payload["data"], dict):
-                        for key in ("fee", "bridgeFee", "nativeFee", "estimatedFee"):
-                            if key in payload["data"]:
-                                candidate = payload["data"].get(key)
-                                break
-
+        for url in urls:
+            try:
+                with urllib.request.urlopen(url, timeout=8) as resp:
+                    body = resp.read().decode("utf-8", errors="replace")
+                    raw_payload = body[:1000]
+                    payload = json.loads(body) if body else {}
+                    candidate = _extract_candidate(payload)
                     if candidate is None:
-                        route_keys = (
-                            "LZ_XDC_TO_CELO",
-                            "LZ_50_TO_42220",
-                            "XDC_TO_CELO",
-                            "50_TO_42220",
-                        )
-                        for route_key in route_keys:
-                            if route_key in payload:
-                                route_val = payload.get(route_key)
-                                if isinstance(route_val, dict):
-                                    for key in ("fee", "bridgeFee", "nativeFee", "estimatedFee", "value"):
-                                        if key in route_val:
-                                            candidate = route_val.get(key)
-                                            break
-                                else:
-                                    candidate = route_val
-                                if candidate is not None:
-                                    break
-
-                    if candidate is not None:
-                        bridge_fee_xdc = float(candidate)
-                        if bridge_fee_xdc > 0:
-                            fee_source = "goodserver_estimatefees"
-                        else:
-                            bridge_fee_xdc = default_fee_xdc
-                            fee_source = "fallback_default"
-        except Exception as api_err:
-            logger.warning(f"xdc bridge fee estimate fallback: {api_err}")
+                        continue
+                    bridge_fee_xdc = float(candidate)
+                    if bridge_fee_xdc > 0:
+                        fee_source = "goodserver_estimatefees"
+                        break
+            except Exception as api_err:
+                logger.warning(f"xdc bridge fee estimate fallback from {url}: {api_err}")
 
         return jsonify({
             "success": True,

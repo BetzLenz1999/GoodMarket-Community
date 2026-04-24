@@ -691,8 +691,9 @@
             "function allowance(address owner, address spender) external view returns (uint256)"
         ];
         const BRIDGE_ABI = [
-            "function bridgeTo(address target, uint256 targetChainId, uint256 amount, address bridge) payable",
+            "function bridgeTo(address target, uint256 targetChainId, uint256 amount, uint8 bridge) payable",
         ];
+        const BRIDGE_SERVICE_LAYERZERO = 1;
 
         function _providerLabel(provider) {
             if (!provider) return 'wallet';
@@ -1080,7 +1081,7 @@
                             toAddr,
                             CELO_CHAIN_ID,
                             amountWei,
-                            XDC_CELO_BRIDGE
+                            BRIDGE_SERVICE_LAYERZERO
                         ]);
                         await ep.request({
                             method: 'eth_estimateGas',
@@ -1123,7 +1124,7 @@
                     toAddr,
                     CELO_CHAIN_ID,
                     amountWei,
-                    XDC_CELO_BRIDGE
+                    BRIDGE_SERVICE_LAYERZERO
                 ]);
                 const bridgeTx = await _sendXswapTx({
                     to: XDC_CELO_BRIDGE,
