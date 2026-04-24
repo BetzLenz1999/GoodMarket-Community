@@ -2510,6 +2510,7 @@ def check_collaboration_deposit(submission_id):
         wallet_address = _wallet_from_session_or_request(data)
         partner_name = (data.get('partner_name') or '').strip()
         since_block = data.get('since_block', 0)
+        submitted_tx_hash = (data.get('tx_hash') or '').strip()
         allow_test_amount = str(data.get('allow_test_amount', '')).strip().lower() in ('1', 'true', 'yes', 'on')
         expected_amount = data.get('expected_amount')
 
@@ -2560,19 +2561,87 @@ def check_collaboration_deposit(submission_id):
             '0x' + Web3.to_checksum_address(wallet_address)[2:].lower().zfill(64),
             '0x' + contract_checksum[2:].lower().zfill(64)
         ]
-        logs = w3.eth.get_logs({
-            'fromBlock': from_block,
-            'toBlock': 'latest',
-            'address': erc20_checksum,
-            'topics': topics
-        })
-        if not logs:
-            return jsonify({'success': True, 'found': False, 'scanned_to': current_block}), 200
-
         required_min = COLLABORATION_MIN_GD
         scan_min = required_min
         if allow_test_amount and expected_amount and expected_amount > 0:
             scan_min = expected_amount
+
+        # Fast-path for wallet-submitted tx hash: verify receipt first so UI can show
+        # "waiting for confirmation" instead of repeatedly reporting "no deposit yet".
+        if submitted_tx_hash:
+            try:
+                receipt = w3.eth.get_transaction_receipt(submitted_tx_hash)
+            except Exception:
+                receipt = None
+
+            if receipt is None:
+                return jsonify({
+                    'success': True,
+                    'found': False,
+                    'pending_confirmation': True,
+                    'scanned_to': current_block,
+                    'message': 'Transaction submitted and pending confirmation on Celo.'
+                }), 200
+
+            if receipt.status != 1:
+                return jsonify({
+                    'success': True,
+                    'found': False,
+                    'scanned_to': current_block,
+                    'error': 'Submitted transaction failed on-chain. Please retry your payment.'
+                }), 200
+
+            transfer_topic_lower = transfer_topic.lower()
+            normalized_wallet = Web3.to_checksum_address(wallet_address).lower()
+            matched_receipt_log = None
+            for receipt_log in receipt.logs:
+                log_address = receipt_log['address']
+                log_address = log_address.lower() if isinstance(log_address, str) else log_address.hex().lower()
+                if log_address != erc20_checksum.lower():
+                    continue
+                log_topics = receipt_log.get('topics', [])
+                if len(log_topics) < 3:
+                    continue
+                first_topic = log_topics[0].hex() if hasattr(log_topics[0], 'hex') else log_topics[0]
+                if not first_topic or first_topic.lower() != transfer_topic_lower:
+                    continue
+
+                from_topic = log_topics[1].hex() if hasattr(log_topics[1], 'hex') else log_topics[1]
+                to_topic = log_topics[2].hex() if hasattr(log_topics[2], 'hex') else log_topics[2]
+                from_addr = '0x' + from_topic[-40:]
+                to_addr = '0x' + to_topic[-40:]
+                if from_addr.lower() != normalized_wallet:
+                    continue
+                if to_addr.lower() != contract_checksum.lower():
+                    continue
+
+                raw_amount = receipt_log.get('data', '0x0')
+                if hasattr(raw_amount, 'hex'):
+                    raw_amount = raw_amount.hex()
+                amount_wei = int(raw_amount, 16) if raw_amount and raw_amount != '0x' else 0
+                amount_gd = amount_wei / (10 ** 18)
+                if amount_gd >= scan_min:
+                    matched_receipt_log = receipt_log
+                    break
+
+            if matched_receipt_log:
+                logs = [matched_receipt_log]
+            else:
+                return jsonify({
+                    'success': True,
+                    'found': False,
+                    'scanned_to': current_block,
+                    'error': f'No qualifying transfer found in submitted transaction (minimum {scan_min:,.2f} G$).'
+                }), 200
+        else:
+            logs = w3.eth.get_logs({
+                'fromBlock': from_block,
+                'toBlock': 'latest',
+                'address': erc20_checksum,
+                'topics': topics
+            })
+        if not logs:
+            return jsonify({'success': True, 'found': False, 'scanned_to': current_block}), 200
 
         qualifying_log = None
         for log in reversed(logs):
