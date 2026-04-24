@@ -5842,19 +5842,21 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                         </thead>
                         <tbody>`;
 
-                submissions.forEach((sub) => {
-                    const id = sub.id || '';
+                submissions.forEach((sub, index) => {
+                    const id = String(sub.id || sub.submission_id || '').trim();
+                    const rowId = id || `missing-collab-id-${index}`;
                     const wallet = sub.wallet_address || '';
                     const walletShort = wallet.length > 12 ? `${wallet.slice(0, 8)}...${wallet.slice(-6)}` : wallet;
                     const txHash = sub.tx_hash || '';
                     const txShort = txHash ? `${txHash.slice(0, 10)}...${txHash.slice(-8)}` : '—';
                     const amount = Number(sub.paid_amount_gd || 0);
                     const normalizedStatus = _normalizeCollabStatus(sub);
-                    const canApprove = normalizedStatus === 'paid';
-                    const canReject = !['published', 'rejected'].includes(normalizedStatus);
+                    const hasActionableId = !!id;
+                    const canApprove = hasActionableId && normalizedStatus === 'paid';
+                    const canReject = hasActionableId && !['published', 'rejected'].includes(normalizedStatus);
 
                     html += `
-                        <tr id="collab-row-${id}">
+                        <tr id="collab-row-${rowId}">
                             <td style="font-weight:600;">${sub.partner_name || '—'}</td>
                             <td style="font-family:monospace;">${walletShort}</td>
                             <td>${_collabStatusBadge(normalizedStatus)}</td>
@@ -5868,6 +5870,7 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                                     ✅ Approve
                                 </button>
                                 <button class="btn btn-danger" onclick="rejectCollaborationSubmission('${id}')" ${canReject ? '' : 'disabled'}
+                                    title="${hasActionableId ? '' : 'Missing submission ID'}"
                                     style="padding:0.35rem 0.7rem;font-size:0.82rem;${canReject ? '' : 'opacity:0.45;cursor:not-allowed;'}">
                                     ❌ Reject
                                 </button>

@@ -4147,14 +4147,58 @@ def get_collaboration_submissions():
             fallback_result=type('obj', (object,), {'data': []})(),
             operation_name="get collaboration submissions"
         )
+        submissions = result.data or []
+        # Legacy-compat: older rows may use submission_id instead of id.
+        for sub in submissions:
+            if not sub.get('id') and sub.get('submission_id'):
+                sub['id'] = sub.get('submission_id')
         return jsonify({
             "success": True,
-            "submissions": result.data or [],
-            "count": len(result.data) if result.data else 0
+            "submissions": submissions,
+            "count": len(submissions)
         })
     except Exception as e:
         logger.error(f"❌ Get collaboration submissions error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _fetch_collaboration_submission(supabase, submission_identifier):
+    """Fetch a collaboration submission by either id or legacy submission_id."""
+    lookup_columns = ['id', 'submission_id']
+    for column in lookup_columns:
+        try:
+            existing = safe_supabase_operation(
+                lambda column=column: supabase.table('collaboration_submissions').select('*').eq(column, submission_identifier).limit(1).execute(),
+                fallback_result=type('obj', (object,), {'data': []})(),
+                operation_name=f"get collaboration submission by {column}"
+            )
+            if existing.data:
+                return existing.data[0], column
+        except Exception as lookup_error:
+            logger.warning(f"⚠️ Collaboration lookup failed for column '{column}': {lookup_error}")
+    return None, None
+
+
+def _update_collaboration_submission(supabase, submission_identifier, payload, preferred_column):
+    """Update a collaboration submission by preferred column, then fallback to legacy key."""
+    columns = [preferred_column] if preferred_column else []
+    for candidate in ('id', 'submission_id'):
+        if candidate not in columns:
+            columns.append(candidate)
+
+    for column in columns:
+        try:
+            result = safe_supabase_operation(
+                lambda column=column: supabase.table('collaboration_submissions').update(payload).eq(column, submission_identifier).execute(),
+                fallback_result=type('obj', (object,), {'data': []})(),
+                operation_name=f"update collaboration submission by {column}"
+            )
+            if result.data:
+                return result
+        except Exception as update_error:
+            logger.warning(f"⚠️ Collaboration update failed for column '{column}': {update_error}")
+
+    return type('obj', (object,), {'data': []})()
 
 
 @routes.route("/api/admin/collaboration/submissions/<submission_id>/approve", methods=["POST"])
@@ -4166,15 +4210,10 @@ def approve_collaboration_submission(submission_id):
         if not supabase:
             return jsonify({"success": False, "error": "Database not available"}), 500
 
-        existing = safe_supabase_operation(
-            lambda: supabase.table('collaboration_submissions').select('*').eq('id', submission_id).limit(1).execute(),
-            fallback_result=type('obj', (object,), {'data': []})(),
-            operation_name="get collaboration submission for approve"
-        )
-        if not existing.data:
+        submission, matched_column = _fetch_collaboration_submission(supabase, submission_id)
+        if not submission:
             return jsonify({"success": False, "error": "Submission not found"}), 404
 
-        submission = existing.data[0]
         current_status = (submission.get('status') or '').strip().lower()
         paid_amount = float(submission.get('paid_amount_gd') or 0)
         has_payment_proof = bool((submission.get('tx_hash') or '').strip()) or paid_amount > 0
@@ -4194,10 +4233,11 @@ def approve_collaboration_submission(submission_id):
             'rejection_reason': None,
             'updated_at': datetime.utcnow().isoformat() + 'Z'
         }
-        result = safe_supabase_operation(
-            lambda: supabase.table('collaboration_submissions').update(update_payload).eq('id', submission_id).execute(),
-            fallback_result=type('obj', (object,), {'data': []})(),
-            operation_name="approve collaboration submission"
+        result = _update_collaboration_submission(
+            supabase=supabase,
+            submission_identifier=submission_id,
+            payload=update_payload,
+            preferred_column=matched_column
         )
 
         admin_wallet = session.get('wallet')
@@ -4228,15 +4268,10 @@ def reject_collaboration_submission(submission_id):
         if not supabase:
             return jsonify({"success": False, "error": "Database not available"}), 500
 
-        existing = safe_supabase_operation(
-            lambda: supabase.table('collaboration_submissions').select('*').eq('id', submission_id).limit(1).execute(),
-            fallback_result=type('obj', (object,), {'data': []})(),
-            operation_name="get collaboration submission for reject"
-        )
-        if not existing.data:
+        submission, matched_column = _fetch_collaboration_submission(supabase, submission_id)
+        if not submission:
             return jsonify({"success": False, "error": "Submission not found"}), 404
 
-        submission = existing.data[0]
         current_status = (submission.get('status') or '').strip().lower()
         if current_status == 'published':
             return jsonify({"success": False, "error": "Published submissions cannot be rejected"}), 400
@@ -4246,10 +4281,11 @@ def reject_collaboration_submission(submission_id):
             'rejection_reason': reason or None,
             'updated_at': datetime.utcnow().isoformat() + 'Z'
         }
-        result = safe_supabase_operation(
-            lambda: supabase.table('collaboration_submissions').update(update_payload).eq('id', submission_id).execute(),
-            fallback_result=type('obj', (object,), {'data': []})(),
-            operation_name="reject collaboration submission"
+        result = _update_collaboration_submission(
+            supabase=supabase,
+            submission_identifier=submission_id,
+            payload=update_payload,
+            preferred_column=matched_column
         )
 
         admin_wallet = session.get('wallet')
