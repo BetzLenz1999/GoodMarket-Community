@@ -917,7 +917,7 @@
             }
         }
 
-        async function _sendXswapTx({ to, data, valueHex = '0x0' }) {
+        async function _sendXswapTx({ to, data, valueHex = '0x0', fallbackGasLimit = null }) {
             if (isCustodialMode) {
                 const res = await fetch('/api/server/sign-tx', {
                     method: 'POST',
@@ -949,7 +949,20 @@
                 if (msg.includes('insufficient funds')) {
                     throw new Error('Insufficient XDC for transaction value + network gas. Please top up XDC and retry.');
                 }
-                throw new Error('Could not estimate network fee from wallet. Please increase XDC gas balance and retry.');
+                if (fallbackGasLimit) {
+                    const fallbackHex = ethers.toBeHex(BigInt(fallbackGasLimit));
+                    txParams.gas = fallbackHex;
+                    console.warn('eth_estimateGas failed, using fallback gas limit', {
+                        to,
+                        fallbackGasLimit,
+                        estimateError: estimateErr?.message || estimateErr
+                    });
+                } else {
+                    throw new Error(
+                        'Could not estimate network fee from wallet for this transaction. ' +
+                        'Please retry, or increase XDC slightly if your wallet still rejects it.'
+                    );
+                }
             }
 
             return await ep.request({ method: 'eth_sendTransaction', params: [txParams] });
@@ -1060,7 +1073,11 @@
                 if (allowance < amountWei) {
                     btn.innerHTML = '<span class="spinner-inline"></span> Approving G$...';
                     const approveData = erc20Iface.encodeFunctionData('approve', [XDC_CELO_BRIDGE, ethers.MaxUint256]);
-                    const approveTx = await _sendXswapTx({ to: XDC_GD_TOKEN, data: approveData });
+                    const approveTx = await _sendXswapTx({
+                        to: XDC_GD_TOKEN,
+                        data: approveData,
+                        fallbackGasLimit: 120000
+                    });
                     showBridgeAlert(
                         'alert-success',
                         `✅ Approve submitted.<br><a class="tx-link" href="https://xdcscan.com/tx/${approveTx}" target="_blank" rel="noopener">View approve tx ↗ ${approveTx.substring(0,10)}...${approveTx.slice(-8)}</a>`
@@ -1077,7 +1094,8 @@
                 const bridgeTx = await _sendXswapTx({
                     to: XDC_CELO_BRIDGE,
                     data: bridgeData,
-                    valueHex: ethers.toBeHex(feeWei)
+                    valueHex: ethers.toBeHex(feeWei),
+                    fallbackGasLimit: 350000
                 });
 
                 showBridgeAlert(
