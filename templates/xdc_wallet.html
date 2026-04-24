@@ -724,6 +724,7 @@
         let xswapQuoteReady = false;
         let xswapQuoteData = null;
         let bridgeFeeEstimateDebounce = null;
+        let bridgeFeeSourceState = 'manual';
 
         async function loadBalances() {
             try {
@@ -828,11 +829,13 @@
                 feeSourceEl.textContent = data.source === 'goodserver_estimatefees'
                     ? 'goodserver estimatefees'
                     : 'fallback default (manual check recommended)';
+                bridgeFeeSourceState = data.source || 'manual';
                 if (showSuccessAlert) {
                     showBridgeAlert('alert-success', `✅ Estimated bridge fee: ${feeInput.value} XDC`);
                 }
             } catch (err) {
                 feeSourceEl.textContent = 'manual';
+                bridgeFeeSourceState = 'manual';
                 if (showSuccessAlert) {
                     showBridgeAlert('alert-error', '❌ Could not estimate fee automatically. You may still enter fee manually.');
                 }
@@ -1040,6 +1043,12 @@
             if (!feeStr || parseFloat(feeStr) <= 0) {
                 return showBridgeAlert('alert-error', '❌ Enter a valid bridge fee in XDC.');
             }
+            if (bridgeFeeSourceState === 'fallback_default' && parseFloat(feeStr) <= 0.005) {
+                return showBridgeAlert(
+                    'alert-error',
+                    '❌ Current bridge fee is using fallback default (0.005 XDC), which is often too low and can trigger wallet red "network fee" alerts. Click Estimate Fee again in a moment, or set a slightly higher manual fee and retry.'
+                );
+            }
 
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-inline"></span> Preparing...';
@@ -1065,6 +1074,31 @@
                         const needXdc = ethers.formatUnits(minimumRequiredWei, 18);
                         const hasXdc = ethers.formatUnits(onchainBalWei, 18);
                         throw new Error(`Not enough XDC balance. You need at least ${parseFloat(needXdc).toFixed(6)} XDC (bridge fee + gas reserve), but wallet has ${parseFloat(hasXdc).toFixed(6)} XDC.`);
+                    }
+                    try {
+                        const preflightData = bridgeIface.encodeFunctionData('bridgeTo', [
+                            toAddr,
+                            CELO_CHAIN_ID,
+                            amountWei,
+                            XDC_CELO_BRIDGE
+                        ]);
+                        await ep.request({
+                            method: 'eth_estimateGas',
+                            params: [{
+                                from: toAddr,
+                                to: XDC_CELO_BRIDGE,
+                                data: preflightData,
+                                value: ethers.toBeHex(feeWei),
+                                chainId: XDC_CHAIN_ID_HEX
+                            }]
+                        });
+                    } catch (preflightErr) {
+                        const preflightMsg = preflightErr?.message || String(preflightErr || '');
+                        const lowFeeHints = ['revert', 'fee', 'insufficient', 'underpriced', 'lz'];
+                        if (lowFeeHints.some((hint) => preflightMsg.toLowerCase().includes(hint))) {
+                            throw new Error('Bridge pre-check failed: fee/value may be too low for current LayerZero cost. Re-estimate fee and retry with a slightly higher XDC fee.');
+                        }
+                        throw new Error('Bridge pre-check failed in wallet. Please retry, then increase bridge fee slightly if the wallet still shows a network fee alert.');
                     }
                 }
 
