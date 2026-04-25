@@ -1400,7 +1400,7 @@
 
     <script>
     const WALLET = "{{ wallet }}";
-    window.useServerSigning = {{ (login_method in ['walletconnect', 'walletconnect']) | tojson }};
+    window.useServerSigning = {{ (login_method in ['walletconnect', 'turnkey', 'custodial', 'server_managed']) | tojson }};
 
     // ── Token state ──────────────────────────────────────────
     let gdBal = 0, celoBal = 0, cusdBal = 0, usdtBal = 0;
