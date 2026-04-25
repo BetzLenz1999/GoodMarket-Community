@@ -613,12 +613,14 @@
         for (const d of _savingsEip6963Providers()) push(d.provider);
         return out;
     }
-    // Handles EIP-5749 multi-wallet: prefer Trust Wallet in Trust mobile;
-    // otherwise preserve existing MetaMask-first behavior.
+    // Handles multi-wallet injections: prefer MiniPay in MiniPay dApp browser,
+    // then Trust Wallet in Trust mobile, then MetaMask (excluding Brave).
     function _getEthProvider() {
         try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
         const providers = _collectSavingsProviders();
         if (!providers.length) return null;
+        const miniPay = providers.find(p => p && p.isMiniPay);
+        if (miniPay) return miniPay;
         if (_isTrustWalletMobileContext()) {
             const trust = providers.find(p => p && (p.isTrust || p.isTrustWallet));
             if (trust) return trust;

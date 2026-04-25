@@ -4074,10 +4074,15 @@
             }
 
             // ── Voucher modal helpers ─────────────────────────────────────────
-            // Handles EIP-5749 multi-wallet: prefer MetaMask over Brave Wallet
+            // Handles multi-wallet injections: prefer MiniPay in MiniPay dApp browser,
+            // then Trust Wallet, then MetaMask (excluding Brave), then first provider.
             function _vGetEthProvider() {
                 if (!window.ethereum) return null;
                 if (window.ethereum.providers && window.ethereum.providers.length) {
+                    var miniPay = window.ethereum.providers.find(function(p) { return p && p.isMiniPay; });
+                    if (miniPay) return miniPay;
+                    var trust = window.ethereum.providers.find(function(p) { return p && (p.isTrust || p.isTrustWallet); });
+                    if (trust) return trust;
                     var mm = window.ethereum.providers.find(function(p) { return p.isMetaMask && !p.isBraveWallet; });
                     if (mm) return mm;
                     return window.ethereum.providers[0];

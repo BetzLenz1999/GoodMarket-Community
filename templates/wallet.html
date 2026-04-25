@@ -3069,8 +3069,7 @@
                 : [window.ethereum];
             return providers.find(p =>
                 p && (
-                    p.isWalletConnect ||
-                    p.isMiniPay
+                    p.isWalletConnect
                 )
             ) || null;
         }
@@ -3124,13 +3123,9 @@
         }
 
         window._fvGenerateLink = async function(address) {
-            const hasMiniPayInjected = !!(window.ethereum && (
-                window.ethereum.isMiniPay ||
-                (Array.isArray(window.ethereum.providers) && window.ethereum.providers.some(p => p && p.isMiniPay))
-            ));
             const sig = window.useServerSigning
                 ? await signServerSide(address)
-                : ((PREFER_WC_SIGNING || hasMiniPayInjected)
+                : (PREFER_WC_SIGNING
                     ? await signWithWalletConnect(address)
                     : await signWithWallet(address));
             return buildFVLink(address, sig);
