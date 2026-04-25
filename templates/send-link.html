@@ -187,7 +187,7 @@
         const LS_KEY        = "goodmarket_sent_payments";
         const WALLET_ADDRESS = "{{ wallet }}";
         const LOGIN_METHOD = "{{ login_method }}";
-        const IS_SERVER_SIGNING = ["custodial", "turnkey"].includes(LOGIN_METHOD);
+        const IS_SERVER_SIGNING = ["walletconnect", "walletconnect"].includes(LOGIN_METHOD);
         const PREFER_WC_SIGNING = ["walletconnect", "manual", "manual_address"].includes((LOGIN_METHOD || "").toLowerCase());
 
         // Handles EIP-5749 multi-wallet: prefer MetaMask over Brave Wallet
@@ -398,7 +398,7 @@
 
                 if (IS_SERVER_SIGNING) {
                     setBtnState('<span class="spinner-inline"></span> Signing with GoodMarket wallet...', true);
-                    showAlert("alert-info", '<span class="spinner-inline"></span> Processing with your custodial/Turnkey signer...');
+                    showAlert("alert-info", '<span class="spinner-inline"></span> Processing with your server_managed/serverManaged signer...');
                     const iface = new ethers.Interface(["function transferAndCall(address,uint256,bytes) returns (bool)"]);
                     const callData = iface.encodeFunctionData("transferAndCall", [OTP_ADDRESS, amountWei, data]);
                     const signRes = await fetch('/api/server/sign-tx', {
