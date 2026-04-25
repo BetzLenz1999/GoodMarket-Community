@@ -607,6 +607,8 @@
 
             <div class="info-box" style="margin-bottom:0.9rem;">
                 Bridge your <strong>G$ on XDC</strong> to <strong>G$ on Celo</strong> using the official GoodDollar bridge contract.
+                For best results, click <strong>Estimate Fee</strong> before bridging.
+                If using <strong>MAX</strong>, leave headroom (try ~75–90% first) because route fees can change between estimate and submit.
                 This flow will submit up to two transactions: <em>approve</em> (if needed), then <em>bridgeTo</em>.
             </div>
 
@@ -627,7 +629,7 @@
             <div class="info-box" style="margin-bottom:0.75rem;">
                 Destination wallet: <code id="bridgeDestinationWallet" style="color:#c4b5fd;">{{ wallet }}</code><br>
                 Destination chain: <strong>Celo Mainnet (Chain ID 42220)</strong><br>
-                Fee source: <span id="bridgeFeeSource" style="color:#bfdbfe;">manual</span>
+                Fee source: <span id="bridgeFeeSource" style="color:#bfdbfe;">manual</span> <span style="color:rgba(255,255,255,0.5);">(estimate quality)</span>
             </div>
 
             <div style="margin-bottom:0.8rem; background:rgba(15,23,42,0.5); border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:0.8rem 0.9rem;">
@@ -640,7 +642,7 @@
                 </div>
                 <div style="margin-top:0.55rem; border-top:1px solid rgba(255,255,255,0.1); padding-top:0.55rem; font-size:0.82rem; line-height:1.65;">
                     <div style="color:rgba(255,255,255,0.65);">Gross amount: <strong id="bridgeGrossReceive" style="color:#e2e8f0;">0.000000 G$</strong></div>
-                    <div style="color:rgba(255,255,255,0.65);">Fee deduction: <strong id="bridgeFeeDeductionDisplay" style="color:#bfdbfe;">1.617600 XDC (network/bridge fee, paid in XDC)</strong></div>
+                    <div style="color:rgba(255,255,255,0.65);">Fee sent (max): <strong id="bridgeFeeDeductionDisplay" style="color:#bfdbfe;">1.617600 XDC (actual fee may be lower; excess can be refunded)</strong></div>
                     <div style="color:rgba(255,255,255,0.8);">Net estimated receive on Celo: <strong id="bridgeNetReceive" style="color:#a7f3d0;">0.000000 G$</strong></div>
                 </div>
             </div>
@@ -846,7 +848,7 @@
             const netEl = document.getElementById('bridgeNetReceive');
             if (grossEl) grossEl.textContent = _fmtBridgeAmount(gross);
             if (feeEl) feeEl.textContent = Number.isFinite(feeXdc) && feeXdc > 0
-                ? `${_fmtBridgeFeeXdc(feeXdc)} (network/bridge fee, paid in XDC)`
+                ? `${_fmtBridgeFeeXdc(feeXdc)} (actual fee may be lower; excess can be refunded)`
                 : '—';
             if (netEl) netEl.textContent = _fmtBridgeAmount(net);
         }
@@ -1592,6 +1594,19 @@
             }
         }
 
+        async function autoSwitchToXDCIfOnCelo() {
+            if (isCustodialMode) return;
+            const ep = _getEthProvider();
+            if (!ep) return;
+            try {
+                const chainId = await ep.request({ method: 'eth_chainId' });
+                if (parseInt(chainId, 16) !== CELO_CHAIN_ID) return;
+                await ensureXDCNetwork(ep);
+            } catch (_) {
+                // Ignore auto-switch errors; manual switch is still available in UI.
+            }
+        }
+
         function normalizeAddr(addr) {
             if (addr.toLowerCase().startsWith('xdc')) return '0x' + addr.slice(3);
             return addr;
@@ -2066,7 +2081,8 @@
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
+            await autoSwitchToXDCIfOnCelo();
             updateBridgeSummary();
             loadBalances();
             loadHistory();
