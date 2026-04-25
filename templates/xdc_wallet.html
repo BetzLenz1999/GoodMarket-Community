@@ -871,13 +871,21 @@
                     throw new Error(data.error || 'Fee estimation failed');
                 }
 
-                const feeXdc = parseFloat(data.bridge_fee_xdc || '0');
+                const recommendedFeeXdc = parseFloat(
+                    data.recommended_bridge_fee_xdc ?? data.bridge_fee_xdc ?? '0'
+                );
+                const baseEstimatedFeeXdc = parseFloat(
+                    data.estimated_bridge_fee_xdc ?? data.bridge_fee_xdc ?? '0'
+                );
+                const feeXdc = Number.isFinite(recommendedFeeXdc) && recommendedFeeXdc > 0
+                    ? recommendedFeeXdc
+                    : baseEstimatedFeeXdc;
                 if (Number.isFinite(feeXdc) && feeXdc > 0) {
                     feeInput.value = feeXdc.toFixed(6);
                 }
                 updateBridgeSummary();
                 feeSourceEl.textContent = data.source === 'goodserver_estimatefees'
-                    ? 'goodserver estimatefees'
+                    ? 'goodserver estimatefees (+ safety buffer)'
                     : 'fallback default (manual check recommended)';
                 bridgeFeeSourceState = data.source || 'manual';
                 if (showSuccessAlert) {
@@ -1078,8 +1086,8 @@
                             (!cleanReason || cleanReason === 'Transaction reverted on XDC.')
                         );
                         const selectorMessageMap = {
-                            '0x10ecdf44': 'Bridge fee is likely below current route requirement. Refresh fee and retry with a slightly higher XDC fee.',
-                            '0x92a27eac': 'Bridge fee is lower than current LayerZero requirement. Increase fee and retry.',
+                            '0x10ecdf44': 'Bridge fee is likely below current route requirement (this is usually not an XDC wallet-balance issue). Refresh fee and retry with a slightly higher XDC fee.',
+                            '0x92a27eac': 'Bridge fee is lower than current LayerZero requirement (wallet balance may still be sufficient). Increase fee and retry.',
                             '0xc5426f8d': 'Bridge route appears paused/closed right now. Retry later.',
                             '0x2c863d26': 'Token transferFrom failed. Check G$ allowance and balance.',
                             '0x76420e1d': 'Token transfer failed. Check token and bridge route state.',
@@ -1278,8 +1286,19 @@
                         });
                     } catch (preflightErr) {
                         const preflightMsg = preflightErr?.message || String(preflightErr || '');
+                        const preflightMsgLower = preflightMsg.toLowerCase();
+                        const isKnownLowFeeSelector = preflightMsgLower.includes('0x10ecdf44')
+                            || preflightMsgLower.includes('0x92a27eac')
+                            || preflightMsgLower.includes('0x2e9394cc');
+                        if (isKnownLowFeeSelector) {
+                            throw new Error(
+                                'Bridge pre-check reports the route fee is currently higher than your entered fee. ' +
+                                'Click "Estimate Fee", then retry with at least +10% extra. ' +
+                                'Your XDC wallet balance can still be sufficient while the bridge fee itself is too low.'
+                            );
+                        }
                         const lowFeeHints = ['revert', 'fee', 'insufficient', 'underpriced', 'lz'];
-                        if (lowFeeHints.some((hint) => preflightMsg.toLowerCase().includes(hint))) {
+                        if (lowFeeHints.some((hint) => preflightMsgLower.includes(hint))) {
                             preflightWarning =
                                 '⚠️ Wallet pre-check could not confirm current LayerZero fee. ' +
                                 'Bridge will still be sent using your manual fee. If wallet warns again, increase fee slightly.';
