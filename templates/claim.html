@@ -213,6 +213,9 @@
         function _pickProviderFromCandidates(candidates) {
             if (!candidates || !candidates.length) return null;
 
+            const miniPay = candidates.find((p) => p && p.isMiniPay);
+            if (miniPay) return miniPay;
+
             const trustByFlag = candidates.find((p) => p && (p.isTrust || p.isTrustWallet));
             if (trustByFlag) return trustByFlag;
 

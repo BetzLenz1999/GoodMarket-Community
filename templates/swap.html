@@ -827,6 +827,10 @@
                 return providers[0];
             }
             if (window.ethereum && window.ethereum.providers && window.ethereum.providers.length) {
+                const miniPay = window.ethereum.providers.find(p => p && p.isMiniPay);
+                if (miniPay) return miniPay;
+                const trust = window.ethereum.providers.find(p => p && (p.isTrust || p.isTrustWallet));
+                if (trust) return trust;
                 const mm = window.ethereum.providers.find(p => p.isMetaMask && !p.isBraveWallet);
                 if (mm) return mm;
                 return window.ethereum.providers[0];
