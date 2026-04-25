@@ -2012,10 +2012,44 @@
                 : [];
         }
 
+        function _coerceToRequestProvider(candidate) {
+            if (!candidate) return null;
+            if (typeof candidate.request === 'function') return candidate;
+
+            // Trust Wallet mobile variants sometimes expose the EIP-1193
+            // provider under nested objects instead of directly on
+            // window.trustwallet.
+            if (candidate.ethereum && typeof candidate.ethereum.request === 'function') return candidate.ethereum;
+            if (candidate.provider && typeof candidate.provider.request === 'function') return candidate.provider;
+
+            // Backward compatibility: build an EIP-1193-like request wrapper
+            // around legacy send/sendAsync providers when possible.
+            const sendAsync = typeof candidate.sendAsync === 'function'
+                ? candidate.sendAsync.bind(candidate)
+                : (typeof candidate.send === 'function' ? candidate.send.bind(candidate) : null);
+            if (!sendAsync) return null;
+
+            candidate.request = ({ method, params }) => new Promise((resolve, reject) => {
+                const payload = {
+                    jsonrpc: '2.0',
+                    id: Date.now(),
+                    method,
+                    params: Array.isArray(params) ? params : []
+                };
+                sendAsync(payload, (err, res) => {
+                    if (err) return reject(err);
+                    if (res && res.error) return reject(res.error);
+                    resolve(res && Object.prototype.hasOwnProperty.call(res, 'result') ? res.result : res);
+                });
+            });
+            return candidate;
+        }
+
         function getAllInjectedProviders() {
             const out = [];
             const push = (p) => {
-                if (p && typeof p.request === 'function' && !out.includes(p)) out.push(p);
+                const provider = _coerceToRequestProvider(p);
+                if (provider && !out.includes(provider)) out.push(provider);
             };
             const eth = window.ethereum;
             if (eth) {
@@ -2028,6 +2062,8 @@
             // extension). Hyphen / casing varies across versions.
             if (window.trustwallet) push(window.trustwallet);
             if (window.trustWallet) push(window.trustWallet);
+            if (window.trustwallet && window.trustwallet.ethereum) push(window.trustwallet.ethereum);
+            if (window.trustWallet && window.trustWallet.ethereum) push(window.trustWallet.ethereum);
             for (const detail of _eip6963Details()) push(detail.provider);
             return out;
         }
