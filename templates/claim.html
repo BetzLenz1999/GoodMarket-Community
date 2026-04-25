@@ -119,8 +119,99 @@
         let paymentPrivKey = null;
         let paymentWallet = null;
         let paymentAmount = null;
+        window.__announced6963Providers = window.__announced6963Providers || [];
+
+        (function initEip6963Discovery() {
+            try {
+                window.addEventListener("eip6963:announceProvider", (event) => {
+                    const detail = event && event.detail;
+                    if (!detail || !detail.provider) return;
+                    const uuid = detail.info && detail.info.uuid;
+                    const already = window.__announced6963Providers.find((d) =>
+                        (d.info && d.info.uuid && uuid && d.info.uuid === uuid) ||
+                        d.provider === detail.provider
+                    );
+                    if (!already) window.__announced6963Providers.push(detail);
+                });
+
+                window.dispatchEvent(new Event("eip6963:requestProvider"));
+                let retries = 0;
+                const timer = setInterval(() => {
+                    try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (_) {}
+                    if (++retries >= 6) clearInterval(timer);
+                }, 200);
+                window.addEventListener("ethereum#initialized", () => {
+                    try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (_) {}
+                }, { once: true });
+            } catch (_) {}
+        })();
 
         window.addEventListener("load", initClaim);
+
+        function _eip6963Providers() {
+            return Array.isArray(window.__announced6963Providers)
+                ? window.__announced6963Providers.slice()
+                : [];
+        }
+
+        function _collectInjectedProviders() {
+            const out = [];
+            const push = (p) => {
+                if (p && typeof p.request === "function" && !out.includes(p)) out.push(p);
+            };
+            if (window.ethereum) {
+                if (Array.isArray(window.ethereum.providers)) window.ethereum.providers.forEach(push);
+                push(window.ethereum);
+            }
+            if (window.trustwallet) push(window.trustwallet);
+            if (window.trustWallet) push(window.trustWallet);
+            for (const d of _eip6963Providers()) push(d.provider);
+            return out;
+        }
+
+        function _pickProviderFromCandidates(candidates) {
+            if (!candidates || !candidates.length) return null;
+
+            const trustByFlag = candidates.find((p) => p && (p.isTrust || p.isTrustWallet));
+            if (trustByFlag) return trustByFlag;
+
+            const trustBy6963 = _eip6963Providers().find((d) => {
+                const info = d.info || {};
+                const rdns = String(info.rdns || "").toLowerCase();
+                const name = String(info.name || "").toLowerCase();
+                return rdns.includes("trustwallet") || name.includes("trust");
+            });
+            if (trustBy6963 && trustBy6963.provider) return trustBy6963.provider;
+
+            if (window.ethereum && Array.isArray(window.ethereum.providers) && window.ethereum.providers.length) {
+                const mm = window.ethereum.providers.find((p) => p.isMetaMask && !p.isBraveWallet);
+                if (mm) return mm;
+                return window.ethereum.providers[0];
+            }
+
+            if (window.ethereum) return window.ethereum;
+            return candidates[0];
+        }
+
+        function _getEthProvider() {
+            try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (_) {}
+            const candidates = _collectInjectedProviders();
+            if (!candidates.length) return null;
+            return _pickProviderFromCandidates(candidates);
+        }
+
+        async function _awaitEthProvider(timeoutMs = 800) {
+            const start = Date.now();
+            let found = _getEthProvider();
+            if (found) return found;
+            while (Date.now() - start < timeoutMs) {
+                try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (_) {}
+                await new Promise((r) => setTimeout(r, 120));
+                found = _getEthProvider();
+                if (found) return found;
+            }
+            return null;
+        }
 
         async function initClaim() {
             const hash = window.location.hash.slice(1); // remove leading #
@@ -206,24 +297,25 @@
                     const provider = new ethers.JsonRpcProvider(CELO_RPC);
                     otpCheck = new ethers.Contract(OTP_ADDRESS, OTP_ABI, provider);
                 } else {
-                    if (!window.ethereum) {
-                        showAlert("alert-error", "⚠️ No Web3 wallet detected. Please open this page in MetaMask, MiniPay, or a Celo-compatible wallet.");
+                    const injectedProvider = await _awaitEthProvider(1200);
+                    if (!injectedProvider) {
+                        showAlert("alert-error", "⚠️ No Web3 wallet detected. Please open this page in MetaMask, MiniPay, Trust Wallet dApp browser, or another Celo-compatible wallet.");
                         return;
                     }
 
                     btn.innerHTML = '<span class="spinner-inline"></span> Connecting wallet...';
-                    await window.ethereum.request({ method: "eth_requestAccounts" });
+                    await injectedProvider.request({ method: "eth_requestAccounts" });
 
-                    const chainIdHex = await window.ethereum.request({ method: "eth_chainId" });
+                    const chainIdHex = await injectedProvider.request({ method: "eth_chainId" });
                     if (parseInt(chainIdHex, 16) !== CELO_CHAIN_ID) {
                         try {
-                            await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x" + CELO_CHAIN_ID.toString(16) }] });
+                            await injectedProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x" + CELO_CHAIN_ID.toString(16) }] });
                         } catch {
-                            await window.ethereum.request({ method: "wallet_addEthereumChain", params: [{ chainId: "0x" + CELO_CHAIN_ID.toString(16), chainName: "Celo Mainnet", nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 }, rpcUrls: ["https://forno.celo.org"], blockExplorerUrls: ["https://celoscan.io"] }] });
+                            await injectedProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: "0x" + CELO_CHAIN_ID.toString(16), chainName: "Celo Mainnet", nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 }, rpcUrls: ["https://forno.celo.org"], blockExplorerUrls: ["https://celoscan.io"] }] });
                         }
                     }
 
-                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    const provider = new ethers.BrowserProvider(injectedProvider);
                     signer = await provider.getSigner();
                     receiverAddr = await signer.getAddress();
                     otpCheck = new ethers.Contract(OTP_ADDRESS, OTP_ABI, provider);
