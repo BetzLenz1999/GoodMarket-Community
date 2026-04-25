@@ -1362,7 +1362,7 @@
             </div>
             <div class="form-group" style="display:flex;gap:0.5rem;">
                 <input class="form-input" id="pkOtpInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6-digit code" autocomplete="one-time-code" spellcheck="false" style="flex:1;">
-                <button class="btn-secondary" id="pkSendCodeBtn" onclick="sendserverManagedExportCode()" style="width:auto;flex-shrink:0;margin-top:0;white-space:nowrap;padding:0 0.9rem;">Send Code</button>
+                <button class="btn-secondary" id="pkSendCodeBtn" onclick="sendWalletExportCode()" style="width:auto;flex-shrink:0;margin-top:0;white-space:nowrap;padding:0 0.9rem;">Send Code</button>
             </div>
             <div class="form-group">
                 <label class="form-label">Type <strong>"I UNDERSTAND THAT IF I EXPORT MY PRIVATE KEY AND SHARE IT WITH ANYONE, MY FUNDS CAN BE LOST"</strong> to continue</label>
@@ -1377,7 +1377,7 @@
             <div class="alert" id="pkAlert"></div>
             {% else %}
             <div style="background:rgba(0,180,255,0.07);border:1px solid rgba(0,180,255,0.2);border-radius:12px;padding:0.9rem 1rem;font-size:0.85rem;color:var(--text-dim);margin-bottom:1rem;">
-                ℹ️ Private key export is only available for server_managed wallets created in GoodMarket.
+                ℹ️ Private key export is only available for email-linked wallets created in GoodMarket.
             </div>
             {% endif %}
 
@@ -1400,7 +1400,7 @@
 
     <script>
     const WALLET = "{{ wallet }}";
-    window.isCustodialMode = {{ (login_method in ['walletconnect', 'walletconnect']) | tojson }};
+    window.useServerSigning = {{ (login_method in ['walletconnect', 'walletconnect']) | tojson }};
 
     // ── Token state ──────────────────────────────────────────
     let gdBal = 0, celoBal = 0, cusdBal = 0, usdtBal = 0;
@@ -1572,7 +1572,7 @@
             page: 'wallet.html',
             userAgent: navigator.userAgent,
             loginMethod: (typeof LOGIN_METHOD === 'string') ? LOGIN_METHOD : null,
-            isCustodialMode: !!window.isCustodialMode,
+            usesServerSigning: !!window.useServerSigning,
             hasWindowEthereum: !!window.ethereum,
             ethereumIsTrust: !!(window.ethereum && window.ethereum.isTrust),
             ethereumIsTrustWallet: !!(window.ethereum && window.ethereum.isTrustWallet),
@@ -2132,7 +2132,7 @@
             }
 
             let txHash = null;
-            if (!window.isCustodialMode) {
+            if (!window.useServerSigning) {
                 const provider = await _awaitEthProvider();
                 if (!provider) throw new Error('No wallet detected. Please connect your GoodMarket wallet.');
 
@@ -2218,7 +2218,7 @@
     let exportOtpVerified = false;
     let exportToken = null;
 
-    async function sendserverManagedExportCode() {
+    async function sendWalletExportCode() {
         clearAlert('pkAlert');
         const emailEl = document.getElementById('pkEmailInput');
         const btn = document.getElementById('pkSendCodeBtn');
@@ -2967,7 +2967,7 @@
             if (claimed || btn.disabled) return;
             if (needsVerification) { startFV(); return; }
 
-            if (!window.isCustodialMode) {
+            if (!window.useServerSigning) {
                 ensureInjectedWalletClaim();
                 return;
             }
@@ -3155,7 +3155,7 @@
                 window.ethereum.isMiniPay ||
                 (Array.isArray(window.ethereum.providers) && window.ethereum.providers.some(p => p && p.isMiniPay))
             ));
-            const sig = window.isCustodialMode
+            const sig = window.useServerSigning
                 ? await signServerSide(address)
                 : ((PREFER_WC_SIGNING || hasMiniPayInjected)
                     ? await signWithWalletConnect(address)

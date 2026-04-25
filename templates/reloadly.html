@@ -450,7 +450,7 @@ const WC_PROJECT_ID = "{{ walletconnect_project_id }}";
 const WALLET_ADDRESS = "{{ wallet }}";
 const LOGIN_METHOD = "{{ login_method }}";
 const PREFER_WC_SIGNING = ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
-window.isCustodialMode = {{ (login_method in ['walletconnect', 'walletconnect']) | tojson }};
+window.useServerSigning = {{ (login_method in ['walletconnect', 'walletconnect']) | tojson }};
 
 // ─── Live G$ price refresh (every 5 min from CoinGecko via backend) ──────────
 async function refreshGdPrice() {
@@ -586,8 +586,8 @@ async function wcSendTxReloadly(txParams) {
 }
 
 async function dappConnect() {
-    if (window.isCustodialMode || LOGIN_METHOD === 'walletconnect' || LOGIN_METHOD === 'walletconnect') {
-        throw new Error('This account uses server_managed/serverManaged signing. Please continue with automatic server signing.');
+    if (window.useServerSigning || LOGIN_METHOD === 'walletconnect' || LOGIN_METHOD === 'walletconnect') {
+        throw new Error('This account uses server-side signing. Please continue with automatic server signing.');
     }
     const ep = _getEthProvider();
     await ep.request({ method: 'eth_requestAccounts' });
@@ -638,8 +638,8 @@ async function dappSendPayment() {
 
         const data = encodeGdTransfer(MERCHANT_ADDRESS, gdNeeded);
 
-        // ── Server-side mode (server_managed + managed wallets): sign server-side, no wallet popup ──
-        if (window.isCustodialMode) {
+        // ── Server-side mode (server-signing flow): sign server-side, no wallet popup ──
+        if (window.useServerSigning) {
             setDappStatus('info', '<i class="fas fa-spinner spin"></i> Signing payment server-side…');
             const custRes = await fetch('/api/server/sign-tx', {
                 method: 'POST',

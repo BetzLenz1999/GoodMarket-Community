@@ -1812,7 +1812,7 @@
                     <span class="option-arrow">→</span>
                 </button>
 
-                <button class="wallet-option-card primary" onclick="showserverManagedOptions()">
+                <button class="wallet-option-card primary" onclick="showWalletSetupOptions()">
                     <div class="option-icon">🆕</div>
                     <div class="option-text">
                         <div class="option-title">Create New Wallet</div>
@@ -1885,7 +1885,7 @@
                 </div>
             </div>
 
-            <!-- Step 2B: serverManaged options -->
+            <!-- Step 2B: wallet setup options -->
             <div class="wallet-form" id="walletSetupOptions">
                 <button class="back-btn" onclick="showWalletOptions()">← Back to login options</button>
 
@@ -1921,9 +1921,9 @@
                 </div>
             </div>
 
-            <!-- Create New Wallet Form (Email OTP + serverManaged) -->
+            <!-- Create New Wallet Form (Email OTP wallet setup) -->
             <div class="wallet-form" id="createWalletForm">
-                <button class="back-btn" onclick="showserverManagedOptions()">← Back to GoodMarket options</button>
+                <button class="back-btn" onclick="showWalletSetupOptions()">← Back to GoodMarket options</button>
 
                 <div style="background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.06)); border: 1px solid rgba(16,185,129,0.35); border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 1.2rem;">
                     <div id="createWalletTitle" style="font-weight:700; color:#10b981; font-size:0.9rem; margin-bottom:0.4rem;">🆕 Create Your GoodDollar Wallet</div>
@@ -1936,7 +1936,7 @@
                 </div>
 
                 <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.9rem;">
-                    <button class="connect-btn" onclick="sendserverManagedEmailCode()" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); min-width:180px;">
+                    <button class="connect-btn" onclick="sendWalletSetupEmailCode()" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); min-width:180px;">
                         <span id="sendCodeBtnText">Send Sign-In Code</span>
                     </button>
                     <span style="font-size:0.78rem;color:#6b7280;">Code expires in 10 minutes</span>
@@ -1952,7 +1952,7 @@
                     <input type="text" id="createReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" autocomplete="off" oninput="syncReferralInputs(this)" />
                 </div>
 
-                <button class="connect-btn" onclick="createserverManagedWallet()" style="background: linear-gradient(135deg, #059669, #047857);">
+                <button class="connect-btn" onclick="createWalletFromEmailCode()" style="background: linear-gradient(135deg, #059669, #047857);">
                     <span id="createWalletBtnText">Verify Code & Create Wallet</span>
                 </button>
 
@@ -2046,7 +2046,7 @@
             if (f) f.classList.add('visible');
         }
 
-        function showserverManagedOptions() {
+        function showWalletSetupOptions() {
             document.getElementById('walletOptions').style.display = 'none';
             ['walletConnectOptions', 'manualAddressForm', 'createWalletForm'].forEach(id => {
                 const el = document.getElementById(id);
@@ -2749,7 +2749,7 @@
             }
         }
 
-        async function sendserverManagedEmailCode() {
+        async function sendWalletSetupEmailCode() {
             const statusDiv = document.getElementById('createWalletStatus');
             if (statusDiv) {
                 statusDiv.className = 'status-message error';
@@ -2758,7 +2758,7 @@
             return;
         }
 
-        async function createserverManagedWallet() {
+        async function createWalletFromEmailCode() {
             const statusDiv = document.getElementById('createWalletStatus');
             if (statusDiv) {
                 statusDiv.className = 'status-message error';

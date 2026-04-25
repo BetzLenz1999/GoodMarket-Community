@@ -752,7 +752,7 @@
         // ─── Constants ────────────────────────────────────────────────────────────
         const WALLET_ADDRESS = "{{ wallet }}";
         const CELO_CHAIN_ID  = 42220;
-        window.isCustodialMode = {{ (login_method in ['walletconnect', 'walletconnect']) | tojson }};
+        window.useServerSigning = {{ (login_method in ['walletconnect', 'walletconnect']) | tojson }};
         const LOGIN_METHOD = '{{ login_method }}';
         const PREFER_WC_SIGNING = ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
         const CELO_RPC       = "https://forno.celo.org";
@@ -893,8 +893,8 @@
         }
 
         async function getConnectedSwapSigner() {
-            if (window.isCustodialMode || LOGIN_METHOD === 'walletconnect' || LOGIN_METHOD === 'walletconnect') {
-                throw new Error('This account uses server_managed/serverManaged signing. Please use automatic server signing mode.');
+            if (window.useServerSigning || LOGIN_METHOD === 'walletconnect' || LOGIN_METHOD === 'walletconnect') {
+                throw new Error('This account uses server-side signing. Please use automatic server signing mode.');
             }
             const ethProvider = _getEthProvider();
             if (!ethProvider) {
@@ -1267,13 +1267,13 @@
         }
 
         // ─── Load Balances ────────────────────────────────────────────────────────
-        // For server-side (server_managed/serverManaged) mode the swap is signed from the
+        // For server-side (server-side) mode the swap is signed from the
         // backend wallet – always load balances from the backend API in that case
         // so that gas-buffer checks use the correct wallet's balance.
         // For MetaMask-only mode, read directly from the connected wallet.
         async function loadBalances() {
             try {
-                if (window.isCustodialMode) {
+                if (window.useServerSigning) {
                     // Server-side signing: use backend wallet balance
                     const res = await fetch('/api/wallet/balances');
                     if (res.ok) {
@@ -1501,8 +1501,8 @@
             const step1 = document.getElementById("step1");
             const step2 = document.getElementById("step2");
 
-            // ── Custodial mode: server-side approve + swap ──
-            if (window.isCustodialMode) {
+            // ── Server-signing mode: server-side approve + swap ──
+            if (window.useServerSigning) {
                 try {
                     // On Celo, CELO is both the native gas token AND an ERC-20 sharing
                     // the same balance. Gas is deducted from the native balance BEFORE
