@@ -448,9 +448,9 @@
     const CHAIN_ID = {{ chain_id }};
     const CELO_RPC = "https://forno.celo.org";
     const LOGIN_METHOD = "{{ login_method }}";
-    window.isCustodialMode = {{ (login_method in ['walletconnect', 'walletconnect']) | tojson }};
+    window.useServerSigning = {{ (login_method in ['walletconnect', 'walletconnect']) | tojson }};
 
-    // ── Server-sign helper (server_managed + managed wallets): encode calldata client-side, sign server-side ──
+    // ── Server-sign helper (server-signing flow): encode calldata client-side, sign server-side ──
     async function serverSignedTx(toAddr, abiFragment, args, alertId) {
         const iface = new ethers.Interface([abiFragment]);
         const fnName = abiFragment.match(/function (\w+)/)[1];
@@ -697,8 +697,8 @@
     }
 
     async function getSigner() {
-        if (window.isCustodialMode || LOGIN_METHOD === 'walletconnect' || LOGIN_METHOD === 'walletconnect') {
-            throw new Error('This account uses server_managed/serverManaged signing. Please continue with automatic server signing.');
+        if (window.useServerSigning || LOGIN_METHOD === 'walletconnect' || LOGIN_METHOD === 'walletconnect') {
+            throw new Error('This account uses server-side signing. Please continue with automatic server signing.');
         }
         const ep = _getEthProvider();
         if (ep) {
@@ -739,7 +739,7 @@
         try {
             const amtWei = ethers.parseUnits(amtStr, 18);
 
-            if (window.isCustodialMode) {
+            if (window.useServerSigning) {
                 showAlert('saveAlert', 'info', '<span class="spinner"></span> Approving G$ spending server-side…');
                 const txHash = await serverSignedTx(GD_CONTRACT,
                     "function approve(address spender, uint256 amount) returns (bool)",
@@ -804,7 +804,7 @@
         try {
             const amtWei = ethers.parseUnits(amtStr, 18);
 
-            if (window.isCustodialMode) {
+            if (window.useServerSigning) {
                 showAlert('saveAlert', 'info', '<span class="spinner"></span> Locking G$ server-side — no wallet needed…');
                 const txHash = await serverSignedTx(SAVINGS_CONTRACT,
                     "function depositSavings(uint256 amount, uint256 lockDays) external",
@@ -883,7 +883,7 @@
     // ── Withdraw ──
     async function doWithdraw(depositId) {
         try {
-            if (window.isCustodialMode) {
+            if (window.useServerSigning) {
                 showAlert('depositsAlert', 'info', '<span class="spinner"></span> Signing withdrawal server-side…');
                 const txHash = await serverSignedTx(SAVINGS_CONTRACT,
                     "function withdraw(uint256 depositId) external",
@@ -1063,7 +1063,7 @@
         try {
             const amtWei = ethers.parseUnits(amtStr, 18);
 
-            if (window.isCustodialMode) {
+            if (window.useServerSigning) {
                 showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Approving G$ spending server-side…');
                 const txHash = await serverSignedTx(GD_CONTRACT,
                     "function approve(address spender, uint256 amount) returns (bool)",
@@ -1123,7 +1123,7 @@
         try {
             const amtWei = ethers.parseUnits(amtStr, 18);
 
-            if (window.isCustodialMode) {
+            if (window.useServerSigning) {
                 showAlert('sponsorAlert', 'info', '<span class="spinner"></span> Funding reward pool server-side…');
                 const txHash = await serverSignedTx(SAVINGS_CONTRACT,
                     "function fundRewardPool(uint256 amount) external",

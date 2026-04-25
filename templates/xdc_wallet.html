@@ -429,7 +429,7 @@
                 </div>
             </div>
 
-            <!-- No wallet warning + MetaMask setup instructions (only shown for non-server_managed users) -->
+            <!-- No wallet warning + MetaMask setup instructions (only shown for users who sign with browser wallets) -->
             <div id="xdcNoWalletInstructions" style="display:none; margin-bottom:1rem;">
                 <div style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.75rem; font-size: 0.85rem; color: #fbbf24;">
                     ⚠️ <strong>No Web3 wallet detected.</strong> Please open this page in a Web3-compatible browser or wallet app.
@@ -699,7 +699,7 @@
         const XDC_CHAIN_ID = 50;
         const XDC_CHAIN_ID_HEX = "0x32";
         const LOGIN_METHOD = "{{ login_method }}";
-        const isCustodialMode = {{ 'true' if is_server_managed else 'false' }};
+        const useServerSigning = {{ 'true' if use_server_signing else 'false' }};
         const XSWAP_V2_ROUTER = "0xf9c5E4f6E627201aB2d6FB6391239738Cf4bDcf9";
         const WXDC_ADDRESS = "0x951857744785E80e2De051c32EE7b25f9c458C42";
         const XDC_GD_TOKEN = "{{ xdc_gd_token_contract }}";
@@ -969,7 +969,7 @@
         }
 
         async function _xswapReadProvider() {
-            if (!isCustodialMode) {
+            if (!useServerSigning) {
                 const ep = _getEthProvider();
                 if (ep) return new ethers.BrowserProvider(ep);
             }
@@ -1017,7 +1017,7 @@
         }
 
         async function _sendXswapTx({ to, data, valueHex = '0x0', fallbackGasLimit = null }) {
-            if (isCustodialMode) {
+            if (useServerSigning) {
                 const res = await fetch('/api/server/sign-tx', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1321,7 +1321,7 @@
                     throw new Error('Could not verify bridge limits on source bridge. Please retry in a moment.');
                 }
 
-                if (!isCustodialMode) {
+                if (!useServerSigning) {
                     const ep = _getEthProvider();
                     if (!ep) throw new Error('No Web3 wallet found.');
                     const switched = await ensureXDCNetwork(ep);
@@ -1602,7 +1602,7 @@
         }
 
         async function autoSwitchToXDCIfOnCelo() {
-            if (isCustodialMode) return;
+            if (useServerSigning) return;
             const ep = _getEthProvider();
             if (!ep) return;
             try {
@@ -1687,7 +1687,7 @@
                 const accounts = await ep.request({ method: 'eth_requestAccounts' });
                 const from = accounts[0];
                 if (!from) throw new Error('No wallet account found.');
-                if (!isCustodialMode && WALLET && normalizeAddr(from).toLowerCase() !== normalizeAddr(WALLET).toLowerCase()) {
+                if (!useServerSigning && WALLET && normalizeAddr(from).toLowerCase() !== normalizeAddr(WALLET).toLowerCase()) {
                     throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
                 }
 
@@ -1852,9 +1852,9 @@
 
             btn.disabled = true;
 
-            // ── serverManaged / Custodial: server-side signing (no MetaMask needed) ──
-            if (isCustodialMode) {
-                btnText.textContent = '⏳ Signing via serverManaged...';
+            // ── Server-signing: server-side signing (no MetaMask needed) ──
+            if (useServerSigning) {
+                btnText.textContent = '⏳ Signing via server...';
                 const XDC_UBI_SCHEME = '0x22867567E2D80f2049200E25C6F31CB6Ec2F0faf';
                 try {
                     const res = await fetch('/api/server/sign-tx', {
@@ -2095,8 +2095,8 @@
             btn.innerHTML = '⏳ Switching...';
             status.textContent = '';
 
-            // Custodial/serverManaged users don't need MetaMask — just redirect to Celo wallet
-            if (isCustodialMode) {
+            // Server-signing users don't need MetaMask — just redirect to Celo wallet
+            if (useServerSigning) {
                 status.textContent = '✅ Redirecting to Celo Wallet...';
                 setTimeout(() => { window.location.href = '/wallet'; }, 800);
                 return;

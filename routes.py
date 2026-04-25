@@ -6157,12 +6157,12 @@ def xdc_wallet_page():
     if not wallet or not session.get("verified"):
         return redirect(url_for("routes.index"))
     login_method = session.get("login_method", "")
-    is_server_managed = False
+    use_server_signing = False
     xdc_bridge_contract = os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5")
     xdc_gd_token_contract = os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c")
     celo_chain_id = int(os.getenv("CELO_MAINNET_CHAIN_ID", "42220"))
     return render_template("xdc_wallet.html", wallet=wallet,
-                           login_method=login_method, is_server_managed=is_server_managed,
+                           login_method=login_method, use_server_signing=use_server_signing,
                            xdc_bridge_contract=xdc_bridge_contract,
                            xdc_gd_token_contract=xdc_gd_token_contract,
                            celo_chain_id=celo_chain_id)
@@ -6438,7 +6438,7 @@ def _get_fernet():
     return Fernet(fernet_key)
 
 
-# serverManaged and server_managed wallet routes removed for self-custody-only mode.
+# Legacy in-app wallet routes removed; external-wallet flow only.
 
 @routes.route("/api/walletconnect-disabled/<path:_path>", methods=["GET", "POST"])
 def walletconnect_disabled(_path):

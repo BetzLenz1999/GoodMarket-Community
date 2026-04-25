@@ -437,7 +437,7 @@
                            style="width:100%; padding:14px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:12px; color:white; font-size:0.95rem; box-sizing:border-box; text-transform:uppercase;">
                 </div>
 
-                <button class="verify-btn" onclick="createTurnkeyWallet()" style="background:linear-gradient(135deg,#059669,#047857);">
+                <button class="verify-btn" onclick="createInAppWallet()" style="background:linear-gradient(135deg,#059669,#047857);">
                     <span class="btn-text-create">🆕 Create My Wallet</span>
                     <span class="btn-loader-create" style="display:none; align-items:center; justify-content:center; gap:8px;">
                         <div class="spinner"></div>
@@ -538,7 +538,7 @@
             }, 100);
         }
 
-        async function createTurnkeyWallet() {
+        async function createInAppWallet() {
             showStatus('⚠️ In-app wallet creation has been removed. Please use WalletConnect (MetaMask/Trust Wallet).', 'error');
         }
 
