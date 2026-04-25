@@ -2051,6 +2051,17 @@
                 const provider = _coerceToRequestProvider(p);
                 if (provider && !out.includes(provider)) out.push(provider);
             };
+            const pushTrustWalletInjection = () => {
+                const trustRoot = window.trustwallet || window.trustWallet || null;
+                if (!trustRoot) return;
+                // Some Trust Wallet builds expose both root + nested ethereum
+                // objects. Keep only one canonical object to avoid duplicate
+                // candidates that can confuse provider picking.
+                const canonical = (trustRoot.ethereum && typeof trustRoot.ethereum.request === 'function')
+                    ? trustRoot.ethereum
+                    : trustRoot;
+                push(canonical);
+            };
             const eth = window.ethereum;
             if (eth) {
                 if (Array.isArray(eth.providers) && eth.providers.length) {
@@ -2060,10 +2071,7 @@
             }
             // Trust Wallet's branded injection (mobile dApp browser + desktop
             // extension). Hyphen / casing varies across versions.
-            if (window.trustwallet) push(window.trustwallet);
-            if (window.trustWallet) push(window.trustWallet);
-            if (window.trustwallet && window.trustwallet.ethereum) push(window.trustwallet.ethereum);
-            if (window.trustWallet && window.trustWallet.ethereum) push(window.trustWallet.ethereum);
+            pushTrustWalletInjection();
             for (const detail of _eip6963Details()) push(detail.provider);
             return out;
         }
@@ -2160,7 +2168,7 @@
 
         function _trustProviderFromEip6963() {
             const detail = _eip6963Details().find(d => _looksLikeTrustWalletInfo(d.info));
-            return (detail && detail.provider) || null;
+            return _coerceToRequestProvider((detail && detail.provider) || null);
         }
 
         function getPreferredInjectedProvider() {

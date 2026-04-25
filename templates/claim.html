@@ -198,14 +198,21 @@
                 const provider = _coerceToRequestProvider(p);
                 if (provider && !out.includes(provider)) out.push(provider);
             };
+            const pushTrustWalletInjection = () => {
+                const trustRoot = window.trustwallet || window.trustWallet || null;
+                if (!trustRoot) return;
+                // Trust Wallet can expose both root + nested ethereum objects.
+                // Keep only one canonical object to avoid duplicate candidates.
+                const canonical = (trustRoot.ethereum && typeof trustRoot.ethereum.request === "function")
+                    ? trustRoot.ethereum
+                    : trustRoot;
+                push(canonical);
+            };
             if (window.ethereum) {
                 if (Array.isArray(window.ethereum.providers)) window.ethereum.providers.forEach(push);
                 push(window.ethereum);
             }
-            if (window.trustwallet) push(window.trustwallet);
-            if (window.trustWallet) push(window.trustWallet);
-            if (window.trustwallet && window.trustwallet.ethereum) push(window.trustwallet.ethereum);
-            if (window.trustWallet && window.trustWallet.ethereum) push(window.trustWallet.ethereum);
+            pushTrustWalletInjection();
             for (const d of _eip6963Providers()) push(d.provider);
             return out;
         }
@@ -225,7 +232,10 @@
                 const name = String(info.name || "").toLowerCase();
                 return rdns.includes("trustwallet") || name.includes("trust");
             });
-            if (trustBy6963 && trustBy6963.provider) return trustBy6963.provider;
+            if (trustBy6963 && trustBy6963.provider) {
+                const provider = _coerceToRequestProvider(trustBy6963.provider);
+                if (provider) return provider;
+            }
 
             if (window.ethereum && Array.isArray(window.ethereum.providers) && window.ethereum.providers.length) {
                 const mm = window.ethereum.providers.find((p) => p.isMetaMask && !p.isBraveWallet);
