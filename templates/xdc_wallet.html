@@ -429,7 +429,7 @@
                 </div>
             </div>
 
-            <!-- No wallet warning + MetaMask setup instructions (only shown for non-custodial users) -->
+            <!-- No wallet warning + MetaMask setup instructions (only shown for non-server_managed users) -->
             <div id="xdcNoWalletInstructions" style="display:none; margin-bottom:1rem;">
                 <div style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.75rem; font-size: 0.85rem; color: #fbbf24;">
                     ⚠️ <strong>No Web3 wallet detected.</strong> Please open this page in a Web3-compatible browser or wallet app.
@@ -699,7 +699,7 @@
         const XDC_CHAIN_ID = 50;
         const XDC_CHAIN_ID_HEX = "0x32";
         const LOGIN_METHOD = "{{ login_method }}";
-        const isCustodialMode = {{ 'true' if is_custodial else 'false' }};
+        const isCustodialMode = {{ 'true' if is_server_managed else 'false' }};
         const XSWAP_V2_ROUTER = "0xf9c5E4f6E627201aB2d6FB6391239738Cf4bDcf9";
         const WXDC_ADDRESS = "0x951857744785E80e2De051c32EE7b25f9c458C42";
         const XDC_GD_TOKEN = "{{ xdc_gd_token_contract }}";
@@ -1852,9 +1852,9 @@
 
             btn.disabled = true;
 
-            // ── Turnkey / Custodial: server-side signing (no MetaMask needed) ──
+            // ── serverManaged / Custodial: server-side signing (no MetaMask needed) ──
             if (isCustodialMode) {
-                btnText.textContent = '⏳ Signing via Turnkey...';
+                btnText.textContent = '⏳ Signing via serverManaged...';
                 const XDC_UBI_SCHEME = '0x22867567E2D80f2049200E25C6F31CB6Ec2F0faf';
                 try {
                     const res = await fetch('/api/server/sign-tx', {
@@ -2095,7 +2095,7 @@
             btn.innerHTML = '⏳ Switching...';
             status.textContent = '';
 
-            // Custodial/Turnkey users don't need MetaMask — just redirect to Celo wallet
+            // Custodial/serverManaged users don't need MetaMask — just redirect to Celo wallet
             if (isCustodialMode) {
                 status.textContent = '✅ Redirecting to Celo Wallet...';
                 setTimeout(() => { window.location.href = '/wallet'; }, 800);

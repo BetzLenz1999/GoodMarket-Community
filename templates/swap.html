@@ -752,7 +752,7 @@
         // ─── Constants ────────────────────────────────────────────────────────────
         const WALLET_ADDRESS = "{{ wallet }}";
         const CELO_CHAIN_ID  = 42220;
-        window.isCustodialMode = {{ (login_method in ['custodial', 'turnkey']) | tojson }};
+        window.isCustodialMode = {{ (login_method in ['walletconnect', 'walletconnect']) | tojson }};
         const LOGIN_METHOD = '{{ login_method }}';
         const PREFER_WC_SIGNING = ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
         const CELO_RPC       = "https://forno.celo.org";
@@ -893,8 +893,8 @@
         }
 
         async function getConnectedSwapSigner() {
-            if (window.isCustodialMode || LOGIN_METHOD === 'custodial' || LOGIN_METHOD === 'turnkey') {
-                throw new Error('This account uses custodial/Turnkey signing. Please use automatic server signing mode.');
+            if (window.isCustodialMode || LOGIN_METHOD === 'walletconnect' || LOGIN_METHOD === 'walletconnect') {
+                throw new Error('This account uses server_managed/serverManaged signing. Please use automatic server signing mode.');
             }
             const ethProvider = _getEthProvider();
             if (!ethProvider) {
@@ -1267,7 +1267,7 @@
         }
 
         // ─── Load Balances ────────────────────────────────────────────────────────
-        // For server-side (custodial/Turnkey) mode the swap is signed from the
+        // For server-side (server_managed/serverManaged) mode the swap is signed from the
         // backend wallet – always load balances from the backend API in that case
         // so that gas-buffer checks use the correct wallet's balance.
         // For MetaMask-only mode, read directly from the connected wallet.

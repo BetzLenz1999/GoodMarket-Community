@@ -26,7 +26,6 @@ from flask_compress import Compress
 _cache = {}
 _cache_timestamps = {}
 CACHE_DURATION = 60  # 60 seconds
-_wc_service_process = None
 
 def cached_response(duration=CACHE_DURATION):
     """Decorator to cache API responses"""
@@ -57,44 +56,6 @@ def cached_response(duration=CACHE_DURATION):
     return decorator
 
 
-def start_wc_service():
-    """Start local WalletConnect sidecar (best-effort) for /api/wc-* proxy routes."""
-    global _wc_service_process
-    if _wc_service_process and _wc_service_process.poll() is None:
-        return _wc_service_process
-
-    wc_script = os.path.join(os.path.dirname(__file__), "wc_service.js")
-    if not os.path.exists(wc_script):
-        logger.warning("⚠️ wc_service.js not found; skipping WalletConnect sidecar boot")
-        return None
-
-    env = os.environ.copy()
-    env.setdefault("WC_SERVICE_PORT", env.get("WC_SERVICE_PORT", "3001"))
-    env.setdefault("APP_URL", env.get("APP_URL", "https://goodmarket.live"))
-
-    if not env.get("WALLETCONNECT_PROJECT_ID"):
-        logger.warning("⚠️ WALLETCONNECT_PROJECT_ID missing; sidecar can run but QR may be limited")
-
-    try:
-        _wc_service_process = subprocess.Popen(
-            ["node", wc_script],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            close_fds=True,
-        )
-        logger.info(f"✅ WalletConnect sidecar started on port {env.get('WC_SERVICE_PORT')}")
-
-        def _cleanup_wc():
-            global _wc_service_process
-            if _wc_service_process and _wc_service_process.poll() is None:
-                _wc_service_process.terminate()
-        atexit.register(_cleanup_wc)
-    except Exception as e:
-        logger.warning(f"⚠️ Could not start WalletConnect sidecar: {e}")
-        _wc_service_process = None
-
-    return _wc_service_process
 
 # Configure logging - reduced for production performance
 logging.basicConfig(level=logging.WARNING)  # Changed from INFO to WARNING
@@ -1957,7 +1918,6 @@ if __name__ == "__main__":
     logger.info(f"🌐 Starting Flask server on http://0.0.0.0:{port}")
     logger.info(f"✅ Server is ready to accept connections")
     logger.info(f"📡 Webview URL: https://{os.environ.get('REPL_SLUG', 'app')}.{os.environ.get('REPL_OWNER', 'replit')}.repl.co")
-    start_wc_service()
 
     # Start Flask with threaded mode for better concurrent request handling
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True, use_reloader=False)

@@ -539,95 +539,11 @@
         }
 
         async function createTurnkeyWallet() {
-            const btnText = document.querySelector('.btn-text-create');
-            const btnLoader = document.querySelector('.btn-loader-create');
-            const btn = btnText ? btnText.closest('button') : null;
-            const referral = (document.getElementById('create-referral-code') || {}).value || '';
-
-            if (btn) btn.disabled = true;
-            if (btnText) btnText.style.display = 'none';
-            if (btnLoader) btnLoader.style.display = 'flex';
-            showStatus('⏳ Creating your GoodDollar wallet on Celo. This may take up to 30 seconds…', 'checking');
-
-            try {
-                const resp = await fetchWithTimeout('/api/turnkey/create-wallet', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ referral_code: referral || null }),
-                    timeout: 60000
-                });
-                const data = await resp.json();
-
-                if (data.status === 'success' && data.wallet) {
-                    showStatus(`✅ Wallet created: ${data.wallet.slice(0,8)}…${data.wallet.slice(-4)} — Redirecting…`, 'success');
-                    setTimeout(() => { window.location.href = '/wallet'; }, 1500);
-                } else {
-                    showStatus(`❌ ${data.message || 'Wallet creation failed. Please try again.'}`, 'error');
-                    if (btn) btn.disabled = false;
-                    if (btnText) btnText.style.display = '';
-                    if (btnLoader) btnLoader.style.display = 'none';
-                }
-            } catch (err) {
-                showStatus(`❌ Error: ${err.message || 'Connection failed.'}`, 'error');
-                if (btn) btn.disabled = false;
-                if (btnText) btnText.style.display = '';
-                if (btnLoader) btnLoader.style.display = 'none';
-            }
+            showStatus('⚠️ In-app wallet creation has been removed. Please use WalletConnect (MetaMask/Trust Wallet).', 'error');
         }
 
         async function loginWithPrivateKey() {
-            const pkInput = document.getElementById('privateKeyInput');
-            const privateKey = pkInput.value.trim();
-            const referralInput = document.getElementById('referral-code-pk');
-            const refCode = referralInput ? referralInput.value.trim().toUpperCase() || null : null;
-
-            if (!privateKey) {
-                showStatus('⚠️ Please enter your private key.', 'error');
-                return;
-            }
-
-            const normalized = privateKey.startsWith('0x') ? privateKey : '0x' + privateKey;
-            if (normalized.length !== 66) {
-                showStatus('⚠️ Invalid private key — must be 64 hex characters (with or without 0x prefix).', 'error');
-                return;
-            }
-
-            const btnText = document.querySelector('.btn-text-pk');
-            const btnLoader = document.querySelector('.btn-loader-pk');
-            const btn = btnText ? btnText.closest('button') : null;
-
-            if (btn) btn.disabled = true;
-            if (btnText) btnText.style.display = 'none';
-            if (btnLoader) btnLoader.style.display = 'flex';
-
-            showStatus('🔐 Encrypting and securing your key. This may take up to 30 seconds.', 'checking');
-
-            try {
-                const resp = await fetchWithTimeout('/api/turnkey/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ privateKey: normalized, referral_code: refCode }),
-                    timeout: 120000
-                });
-
-                const data = await resp.json();
-
-                if (data.status === 'success') {
-                    showStatus(`✅ Key secured! Wallet: ${data.wallet.slice(0,8)}...${data.wallet.slice(-4)} — Redirecting...`, 'success');
-                    pkInput.value = '';
-                    setTimeout(() => { window.location.href = data.redirect_to || '/wallet'; }, 1500);
-                } else {
-                    showStatus(`❌ ${data.message || 'Login failed. Please try again.'}`, 'error');
-                    if (btn) btn.disabled = false;
-                    if (btnText) btnText.style.display = '';
-                    if (btnLoader) btnLoader.style.display = 'none';
-                }
-            } catch (err) {
-                showStatus(`❌ Error: ${err.message || 'Connection failed.'}`, 'error');
-                if (btn) btn.disabled = false;
-                if (btnText) btnText.style.display = '';
-                if (btnLoader) btnLoader.style.display = 'none';
-            }
+            showStatus('⚠️ Private-key login has been removed. Please connect with WalletConnect.', 'error');
         }
 
         // Helper function for fetch with timeout

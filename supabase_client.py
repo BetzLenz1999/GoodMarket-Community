@@ -180,10 +180,7 @@ CREATE TABLE IF NOT EXISTS email_wallet_links (
     id SERIAL PRIMARY KEY,
     email_hash VARCHAR(64) UNIQUE NOT NULL,
     wallet_address VARCHAR(42) NOT NULL,
-    login_method VARCHAR(30) NOT NULL DEFAULT 'custodial',
-    custodial_key_enc TEXT,
-    turnkey_suborg_id TEXT,
-    turnkey_sign_with TEXT,
+    login_method VARCHAR(30) NOT NULL DEFAULT 'walletconnect',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

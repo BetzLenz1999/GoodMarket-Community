@@ -1331,7 +1331,7 @@
                 </div>
             </div>
 
-            {% if login_method == 'custodial' %}
+            {% if login_method == 'walletconnect' %}
             <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Private Key</div>
 
             <div class="pk-warning">
@@ -1345,7 +1345,7 @@
                 👁 Show Private Key
             </button>
             <div class="alert" id="pkAlert"></div>
-            {% elif login_method == 'turnkey' %}
+            {% elif login_method == 'walletconnect' %}
             <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Private Key Export (GoodMarket)</div>
 
             <div class="pk-warning">
@@ -1362,7 +1362,7 @@
             </div>
             <div class="form-group" style="display:flex;gap:0.5rem;">
                 <input class="form-input" id="pkOtpInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6-digit code" autocomplete="one-time-code" spellcheck="false" style="flex:1;">
-                <button class="btn-secondary" id="pkSendCodeBtn" onclick="sendTurnkeyExportCode()" style="width:auto;flex-shrink:0;margin-top:0;white-space:nowrap;padding:0 0.9rem;">Send Code</button>
+                <button class="btn-secondary" id="pkSendCodeBtn" onclick="sendserverManagedExportCode()" style="width:auto;flex-shrink:0;margin-top:0;white-space:nowrap;padding:0 0.9rem;">Send Code</button>
             </div>
             <div class="form-group">
                 <label class="form-label">Type <strong>"I UNDERSTAND THAT IF I EXPORT MY PRIVATE KEY AND SHARE IT WITH ANYONE, MY FUNDS CAN BE LOST"</strong> to continue</label>
@@ -1377,13 +1377,13 @@
             <div class="alert" id="pkAlert"></div>
             {% else %}
             <div style="background:rgba(0,180,255,0.07);border:1px solid rgba(0,180,255,0.2);border-radius:12px;padding:0.9rem 1rem;font-size:0.85rem;color:var(--text-dim);margin-bottom:1rem;">
-                ℹ️ Private key export is only available for custodial wallets created in GoodMarket.
+                ℹ️ Private key export is only available for server_managed wallets created in GoodMarket.
             </div>
             {% endif %}
 
             <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.07);">
                 <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Login Method</div>
-                <div style="font-size:0.88rem;color:#fff;">{{ 'GoodMarket' if login_method == 'turnkey' else (login_method | replace('_', ' ') | title) }}</div>
+                <div style="font-size:0.88rem;color:#fff;">{{ 'GoodMarket' if login_method == 'walletconnect' else (login_method | replace('_', ' ') | title) }}</div>
             </div>
 
             <div style="margin-top:1rem;display:flex;gap:0.75rem;">
@@ -1400,7 +1400,7 @@
 
     <script>
     const WALLET = "{{ wallet }}";
-    window.isCustodialMode = {{ (login_method in ['custodial', 'turnkey']) | tojson }};
+    window.isCustodialMode = {{ (login_method in ['walletconnect', 'walletconnect']) | tojson }};
 
     // ── Token state ──────────────────────────────────────────
     let gdBal = 0, celoBal = 0, cusdBal = 0, usdtBal = 0;
@@ -2215,10 +2215,10 @@
 
     // ── Private Key Export ───────────────────────────────────
     let pkRevealed = false;
-    let turnkeyExportOtpVerified = false;
-    let turnkeyExportToken = null;
+    let exportOtpVerified = false;
+    let exportToken = null;
 
-    async function sendTurnkeyExportCode() {
+    async function sendserverManagedExportCode() {
         clearAlert('pkAlert');
         const emailEl = document.getElementById('pkEmailInput');
         const btn = document.getElementById('pkSendCodeBtn');
@@ -2233,7 +2233,7 @@
         btn.disabled = true;
         btn.textContent = 'Sending…';
         try {
-            const res = await fetch('/api/turnkey/export/send-code', {
+            const res = await fetch('/api/walletconnect-disabled/export/send-code', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email })
@@ -2243,8 +2243,8 @@
                 showAlert('pkAlert', 'alert-error', '❌ ' + (data.error || 'Failed to send code'));
                 return;
             }
-            turnkeyExportOtpVerified = false;
-            turnkeyExportToken = null;
+            exportOtpVerified = false;
+            exportToken = null;
             showAlert('pkAlert', 'alert-success', '✅ Code sent. Enter the 6-digit code then tap export.');
         } catch (e) {
             showAlert('pkAlert', 'alert-error', '❌ ' + (e.message || 'Network error'));
@@ -2258,17 +2258,17 @@
         if (pkRevealed) {
             document.getElementById('pkDisplay').style.display = 'none';
             document.getElementById('showPkBtn').textContent =
-                (LOGIN_METHOD === 'turnkey') ? '👁 Verify OTP & Show Private Key' : '👁 Show Private Key';
+                (LOGIN_METHOD === 'walletconnect') ? '👁 Verify OTP & Show Private Key' : '👁 Show Private Key';
             pkRevealed = false;
             return;
         }
         const btn = document.getElementById('showPkBtn');
         btn.disabled = true;
-        btn.textContent = (LOGIN_METHOD === 'turnkey') ? 'Verifying OTP…' : 'Loading…';
+        btn.textContent = (LOGIN_METHOD === 'walletconnect') ? 'Verifying OTP…' : 'Loading…';
         clearAlert('pkAlert');
         try {
             let requestBody = {};
-            if (LOGIN_METHOD === 'turnkey') {
+            if (LOGIN_METHOD === 'walletconnect') {
                 const dangerAck = "I UNDERSTAND THAT IF I EXPORT MY PRIVATE KEY AND SHARE IT WITH ANYONE, MY FUNDS CAN BE LOST";
                 const confirmInput = (document.getElementById('pkRiskConfirmInput')?.value || '').trim();
                 if (confirmInput !== dangerAck) {
@@ -2289,12 +2289,12 @@
                     showAlert('pkAlert', 'alert-error', '❌ Enter your email first');
                     return;
                 }
-                if (!turnkeyExportOtpVerified) {
+                if (!exportOtpVerified) {
                     if (!/^\d{6}$/.test(code)) {
                         showAlert('pkAlert', 'alert-error', '❌ Enter the 6-digit OTP code');
                         return;
                     }
-                    const verifyRes = await fetch('/api/turnkey/export/verify-code', {
+                    const verifyRes = await fetch('/api/walletconnect-disabled/export/verify-code', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ email, code })
@@ -2304,16 +2304,16 @@
                         showAlert('pkAlert', 'alert-error', '❌ ' + (verifyData.error || 'OTP verification failed'));
                         return;
                     }
-                    turnkeyExportOtpVerified = true;
-                    turnkeyExportToken = verifyData.export_token || null;
+                    exportOtpVerified = true;
+                    exportToken = verifyData.export_token || null;
                 }
-                if (!turnkeyExportToken) {
+                if (!exportToken) {
                     showAlert('pkAlert', 'alert-error', '❌ Export session missing. Verify OTP again.');
-                    turnkeyExportOtpVerified = false;
+                    exportOtpVerified = false;
                     return;
                 }
                 requestBody.email = email;
-                requestBody.export_token = turnkeyExportToken;
+                requestBody.export_token = exportToken;
                 btn.textContent = 'Exporting…';
             }
 
@@ -2339,9 +2339,9 @@
             pkBox.style.display = 'block';
             btn.textContent = '🙈 Hide Private Key';
             pkRevealed = true;
-            if (LOGIN_METHOD === 'turnkey') {
-                turnkeyExportToken = null;
-                turnkeyExportOtpVerified = false;
+            if (LOGIN_METHOD === 'walletconnect') {
+                exportToken = null;
+                exportOtpVerified = false;
             }
         } catch (e) {
             showAlert('pkAlert', 'alert-error', '❌ ' + (e.message || 'Network error retrieving key'));
@@ -3026,7 +3026,7 @@
             // Use address as-is (checksummed) in the message — GoodID verifies against checksummed form.
             // Matches ethers.js signer.getAddress() behaviour in the SDK's getFvSig().
             const msg = FV_IDENTIFIER_MSG2.replace('<account>', address);
-            const endpoint = (LOGIN_METHOD === 'turnkey') ? '/api/turnkey/sign-msg' : '/api/custodial/sign-msg';
+            const endpoint = (LOGIN_METHOD === 'walletconnect') ? '/api/walletconnect-disabled/sign-msg' : '/api/walletconnect-disabled/sign-msg';
             const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
