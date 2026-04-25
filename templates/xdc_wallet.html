@@ -871,13 +871,21 @@
                     throw new Error(data.error || 'Fee estimation failed');
                 }
 
-                const feeXdc = parseFloat(data.bridge_fee_xdc || '0');
+                const recommendedFeeXdc = parseFloat(
+                    data.recommended_bridge_fee_xdc ?? data.bridge_fee_xdc ?? '0'
+                );
+                const baseEstimatedFeeXdc = parseFloat(
+                    data.estimated_bridge_fee_xdc ?? data.bridge_fee_xdc ?? '0'
+                );
+                const feeXdc = Number.isFinite(recommendedFeeXdc) && recommendedFeeXdc > 0
+                    ? recommendedFeeXdc
+                    : baseEstimatedFeeXdc;
                 if (Number.isFinite(feeXdc) && feeXdc > 0) {
                     feeInput.value = feeXdc.toFixed(6);
                 }
                 updateBridgeSummary();
                 feeSourceEl.textContent = data.source === 'goodserver_estimatefees'
-                    ? 'goodserver estimatefees'
+                    ? 'goodserver estimatefees (+ safety buffer)'
                     : 'fallback default (manual check recommended)';
                 bridgeFeeSourceState = data.source || 'manual';
                 if (showSuccessAlert) {
@@ -1078,8 +1086,8 @@
                             (!cleanReason || cleanReason === 'Transaction reverted on XDC.')
                         );
                         const selectorMessageMap = {
-                            '0x10ecdf44': 'Bridge fee is likely below current route requirement. Refresh fee and retry with a slightly higher XDC fee.',
-                            '0x92a27eac': 'Bridge fee is lower than current LayerZero requirement. Increase fee and retry.',
+                            '0x10ecdf44': 'Bridge fee is likely below current route requirement (this is usually not an XDC wallet-balance issue). Refresh fee and retry with a slightly higher XDC fee.',
+                            '0x92a27eac': 'Bridge fee is lower than current LayerZero requirement (wallet balance may still be sufficient). Increase fee and retry.',
                             '0xc5426f8d': 'Bridge route appears paused/closed right now. Retry later.',
                             '0x2c863d26': 'Token transferFrom failed. Check G$ allowance and balance.',
                             '0x76420e1d': 'Token transfer failed. Check token and bridge route state.',
@@ -1190,6 +1198,8 @@
                 const amountWei = ethers.parseUnits(amountStr, 18);
                 const feeWei = ethers.parseUnits(feeStr, 18);
                 const feeXdc = parseFloat(feeStr);
+                let effectiveFeeWei = feeWei;
+                let effectiveFeeXdc = feeXdc;
                 const grossReceive = parseFloat(amountStr) || 0;
                 const netReceive = grossReceive;
                 const toAddr = normalizeAddr(WALLET);
@@ -1214,8 +1224,6 @@
                 const readProvider = await _xswapReadProvider();
                 const gd = new ethers.Contract(XDC_GD_TOKEN, ERC20_ABI, readProvider);
                 const sourceBridge = new ethers.Contract(XDC_CELO_BRIDGE, BRIDGE_ABI, readProvider);
-                const celoProvider = new ethers.JsonRpcProvider('https://forno.celo.org');
-                const targetBridge = new ethers.Contract(XDC_CELO_BRIDGE, BRIDGE_ABI, celoProvider);
 
                 btn.innerHTML = '<span class="spinner-inline"></span> Checking bridge limits...';
                 try {
@@ -1225,20 +1233,14 @@
                             'Source-chain bridge preflight failed (canBridge=false). Lower amount or retry later.'
                         );
                     }
-                    const canBridge = await targetBridge.canBridge(toAddr, amountWei);
-                    if (!canBridge) {
-                        throw new Error(
-                            'Bridge limit check failed on target chain (canBridge returned false). Lower the amount and try again.'
-                        );
-                    }
                 } catch (limitErr) {
                     const limitMessage = limitErr?.message || String(limitErr || '');
                     if (limitMessage.toLowerCase().includes('returned false')) {
                         throw limitErr;
                     }
-                    throw new Error(
-                        'Could not verify bridge limits via canBridge on Celo. Please retry in a moment.'
-                    );
+                    // Do not hard-block bridging if target-side read check is unavailable.
+                    // BridgeTo on source chain remains the source of truth.
+                    console.warn('Bridge canBridge preflight warning:', limitMessage);
                 }
 
                 if (!isCustodialMode) {
@@ -1259,34 +1261,61 @@
                         const hasXdc = ethers.formatUnits(onchainBalWei, 18);
                         throw new Error(`Not enough XDC balance. You need at least ${parseFloat(needXdc).toFixed(6)} XDC (bridge fee + gas reserve), but wallet has ${parseFloat(hasXdc).toFixed(6)} XDC.`);
                     }
-                    try {
-                        const preflightData = bridgeIface.encodeFunctionData('bridgeTo', [
-                            toAddr,
-                            CELO_CHAIN_ID,
-                            amountWei,
-                            BRIDGE_SERVICE_LAYERZERO
-                        ]);
-                        await ep.request({
-                            method: 'eth_estimateGas',
-                            params: [{
-                                from,
-                                to: XDC_CELO_BRIDGE,
-                                data: preflightData,
-                                value: ethers.toBeHex(feeWei),
-                                chainId: XDC_CHAIN_ID_HEX
-                            }]
-                        });
-                    } catch (preflightErr) {
-                        const preflightMsg = preflightErr?.message || String(preflightErr || '');
-                        const lowFeeHints = ['revert', 'fee', 'insufficient', 'underpriced', 'lz'];
-                        if (lowFeeHints.some((hint) => preflightMsg.toLowerCase().includes(hint))) {
-                            preflightWarning =
-                                '⚠️ Wallet pre-check could not confirm current LayerZero fee. ' +
-                                'Bridge will still be sent using your manual fee. If wallet warns again, increase fee slightly.';
-                        } else {
-                            preflightWarning =
-                                '⚠️ Wallet pre-check could not be completed. Continuing with the bridge transaction anyway.';
+                    const preflightData = bridgeIface.encodeFunctionData('bridgeTo', [
+                        toAddr,
+                        CELO_CHAIN_ID,
+                        amountWei,
+                        BRIDGE_SERVICE_LAYERZERO
+                    ]);
+                    const preflightFeeMultipliers = [1, 1.15, 1.3];
+                    let preflightPassed = false;
+                    for (const mult of preflightFeeMultipliers) {
+                        const candidateFeeWei = mult === 1
+                            ? feeWei
+                            : (feeWei * BigInt(Math.round(mult * 100))) / 100n;
+                        try {
+                            await ep.request({
+                                method: 'eth_estimateGas',
+                                params: [{
+                                    from,
+                                    to: XDC_CELO_BRIDGE,
+                                    data: preflightData,
+                                    value: ethers.toBeHex(candidateFeeWei),
+                                    chainId: XDC_CHAIN_ID_HEX
+                                }]
+                            });
+                            effectiveFeeWei = candidateFeeWei;
+                            effectiveFeeXdc = parseFloat(ethers.formatUnits(candidateFeeWei, 18));
+                            preflightPassed = true;
+                            if (mult > 1) {
+                                preflightWarning =
+                                    `⚠️ Bridge fee was auto-adjusted to ${effectiveFeeXdc.toFixed(6)} XDC ` +
+                                    `(${Math.round((mult - 1) * 100)}% higher) after pre-check.`;
+                            }
+                            break;
+                        } catch (preflightErr) {
+                            const preflightMsg = preflightErr?.message || String(preflightErr || '');
+                            const preflightMsgLower = preflightMsg.toLowerCase();
+                            const isKnownLowFeeSelector = preflightMsgLower.includes('0x10ecdf44')
+                                || preflightMsgLower.includes('0x92a27eac')
+                                || preflightMsgLower.includes('0x2e9394cc');
+                            if (isKnownLowFeeSelector && mult < preflightFeeMultipliers[preflightFeeMultipliers.length - 1]) {
+                                continue;
+                            }
+                            const lowFeeHints = ['revert', 'fee', 'insufficient', 'underpriced', 'lz'];
+                            if (lowFeeHints.some((hint) => preflightMsgLower.includes(hint))) {
+                                preflightWarning =
+                                    '⚠️ Wallet pre-check could not confirm current LayerZero fee. ' +
+                                    'Bridge will still be sent using your manual fee. If wallet warns again, increase fee slightly.';
+                            } else {
+                                preflightWarning =
+                                    '⚠️ Wallet pre-check could not be completed. Continuing with the bridge transaction anyway.';
+                            }
                         }
+                    }
+                    if (!preflightPassed) {
+                        effectiveFeeWei = feeWei;
+                        effectiveFeeXdc = feeXdc;
                     }
                 }
 
@@ -1316,7 +1345,7 @@
                 const bridgeTx = await _sendXswapTx({
                     to: XDC_CELO_BRIDGE,
                     data: bridgeData,
-                    valueHex: ethers.toBeHex(feeWei),
+                    valueHex: ethers.toBeHex(effectiveFeeWei),
                     fallbackGasLimit: 350000
                 });
                 bridgeAttemptContext.tx_hash = bridgeTx;
@@ -1328,7 +1357,7 @@
                         <strong>From:</strong> ${sourceToken} (XDC Network)<br>
                         <strong>To:</strong> ${targetToken} (Celo Mainnet)<br>
                         <strong>Gross:</strong> ${_fmtBridgeAmount(grossReceive)}<br>
-                        <strong>Fee:</strong> ${_fmtBridgeFeeXdc(feeXdc)}<br>
+                        <strong>Fee:</strong> ${_fmtBridgeFeeXdc(effectiveFeeXdc)}<br>
                         <strong>Net Est. Receive:</strong> ${_fmtBridgeAmount(netReceive)}
                     </div>
                     <a class="tx-link" href="https://xdcscan.com/tx/${bridgeTx}" target="_blank" rel="noopener">View on XDCScan ↗ ${bridgeTx.substring(0,10)}...${bridgeTx.slice(-8)}</a><br>

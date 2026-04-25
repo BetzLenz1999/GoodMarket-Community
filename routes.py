@@ -6322,13 +6322,24 @@ def xdc_bridge_estimate_fee():
             except Exception as api_err:
                 logger.warning(f"xdc bridge fee estimate fallback from {url}: {api_err}")
 
+        # Add a safety buffer so UI defaults are less likely to underpay rapidly changing
+        # LayerZero route requirements between estimation and submission.
+        safety_multiplier = 1.25 if fee_source == "fallback_default" else 1.15
+        minimum_extra_xdc = 0.05
+        recommended_bridge_fee_xdc = max(
+            bridge_fee_xdc * safety_multiplier,
+            bridge_fee_xdc + minimum_extra_xdc
+        )
+
         return jsonify({
             "success": True,
             "source_chain_id": source_chain_id_val,
             "target_chain_id": target_chain_id_val,
             "amount": amount_val,
-            "bridge_fee_xdc": bridge_fee_xdc,
-            "bridge_fee_wei": str(int(bridge_fee_xdc * (10 ** 18))),
+            "bridge_fee_xdc": recommended_bridge_fee_xdc,
+            "bridge_fee_wei": str(int(recommended_bridge_fee_xdc * (10 ** 18))),
+            "estimated_bridge_fee_xdc": bridge_fee_xdc,
+            "recommended_bridge_fee_xdc": recommended_bridge_fee_xdc,
             "source": fee_source,
             "raw_payload_preview": raw_payload if fee_source != "goodserver_estimatefees" else None,
         })
