@@ -1477,9 +1477,39 @@
         return candidates.find(p => p && (p.isTrust || p.isTrustWallet)) || null;
     }
 
+    function _coerceToRequestProvider(candidate) {
+        if (!candidate) return null;
+        if (typeof candidate.request === 'function') return candidate;
+        if (candidate.ethereum && typeof candidate.ethereum.request === 'function') return candidate.ethereum;
+        if (candidate.provider && typeof candidate.provider.request === 'function') return candidate.provider;
+
+        const sendAsync = typeof candidate.sendAsync === 'function'
+            ? candidate.sendAsync.bind(candidate)
+            : (typeof candidate.send === 'function' ? candidate.send.bind(candidate) : null);
+        if (!sendAsync) return null;
+
+        candidate.request = ({ method, params }) => new Promise((resolve, reject) => {
+            const payload = {
+                jsonrpc: '2.0',
+                id: Date.now(),
+                method,
+                params: Array.isArray(params) ? params : []
+            };
+            sendAsync(payload, (err, res) => {
+                if (err) return reject(err);
+                if (res && res.error) return reject(res.error);
+                resolve(res && Object.prototype.hasOwnProperty.call(res, 'result') ? res.result : res);
+            });
+        });
+        return candidate;
+    }
+
     function _collectInjectedProviders() {
         const out = [];
-        const push = (p) => { if (p && typeof p.request === 'function' && !out.includes(p)) out.push(p); };
+        const push = (p) => {
+            const provider = _coerceToRequestProvider(p);
+            if (provider && !out.includes(provider)) out.push(provider);
+        };
         if (window.ethereum) {
             if (Array.isArray(window.ethereum.providers)) {
                 window.ethereum.providers.forEach(push);
@@ -1565,7 +1595,7 @@
     // so a first click doesn't spuriously fail with "No wallet detected".
     async function _awaitEthProvider(timeoutMs) {
         // Keep the longer wait strictly for Trust Wallet mobile.
-        const trustBudget = _isTrustWalletMobileContext() ? 2600 : 800;
+        const trustBudget = _isTrustWalletMobileContext() ? 4200 : 800;
         const budget = typeof timeoutMs === 'number' ? timeoutMs : trustBudget;
         const stepMs = 120;
         const start = Date.now();
