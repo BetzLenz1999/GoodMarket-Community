@@ -1812,14 +1812,6 @@
                     <span class="option-arrow">→</span>
                 </button>
 
-                <button class="wallet-option-card primary" onclick="showWalletSetupOptions()">
-                    <div class="option-icon">🆕</div>
-                    <div class="option-text">
-                        <div class="option-title">Create New Wallet</div>
-                        <p class="option-desc">Use GoodMarket mode (email OTP) for brand new users</p>
-                    </div>
-                    <span class="option-arrow">→</span>
-                </button>
             </div>
 
             <!-- Step 2A: WalletConnect / injected / manual -->
@@ -1885,80 +1877,6 @@
                 </div>
             </div>
 
-            <!-- Step 2B: wallet setup options -->
-            <div class="wallet-form" id="walletSetupOptions">
-                <button class="back-btn" onclick="showWalletOptions()">← Back to login options</button>
-
-                <div style="background: #fffbeb; border: 1.5px solid #f59e0b; border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 0.75rem; text-align:left;">
-                    <div style="font-weight:700; color:#b45309; font-size:0.88rem; margin-bottom:0.45rem;">⚠️ Important — Please Read Before Choosing</div>
-                    <div style="font-size:0.8rem; color:#374151; line-height:1.65;">
-                        <div style="margin-bottom:0.45rem;">✅ <strong style="color:#059669;">Brand new to GoodDollar?</strong> — Go ahead and <em>Create New GoodDollar Wallet</em>.</div>
-                        <div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; padding:0.5rem 0.7rem;">
-                            🚫 <strong style="color:#dc2626;">Already have an old GoodDollar wallet?</strong><br>
-                            <span style="font-size:0.78rem; color:#4b5563;">For security reasons, private key import is disabled in this page.</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="wallet-options">
-                    <button class="wallet-option-card" onclick="showCreateWalletForm()" style="border-color: rgba(16,185,129,0.45); background: linear-gradient(135deg, rgba(16,185,129,0.09), rgba(5,150,105,0.05));">
-                        <div class="option-icon">🆕</div>
-                        <div class="option-text">
-                            <div class="option-title" style="color:#10b981;">Create New GoodDollar Wallet</div>
-                            <p class="option-desc">Brand new to GoodDollar? We'll create a free Celo wallet for you automatically</p>
-                        </div>
-                        <span class="option-arrow" style="color:#10b981;">→</span>
-                    </button>
-
-                    <button class="wallet-option-card" onclick="showRecoverWalletForm()" style="border-color: rgba(37,99,235,0.45); background: linear-gradient(135deg, rgba(37,99,235,0.09), rgba(29,78,216,0.05));">
-                        <div class="option-icon">📧</div>
-                        <div class="option-text">
-                            <div class="option-title" style="color:#2563eb;">Recover Email-Linked Wallet</div>
-                            <p class="option-desc">Already created a wallet with email? Send a code and sign back in</p>
-                        </div>
-                        <span class="option-arrow" style="color:#2563eb;">→</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Create New Wallet Form (Email OTP wallet setup) -->
-            <div class="wallet-form" id="createWalletForm">
-                <button class="back-btn" onclick="showWalletSetupOptions()">← Back to GoodMarket options</button>
-
-                <div style="background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.06)); border: 1px solid rgba(16,185,129,0.35); border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 1.2rem;">
-                    <div id="createWalletTitle" style="font-weight:700; color:#10b981; font-size:0.9rem; margin-bottom:0.4rem;">🆕 Create Your GoodDollar Wallet</div>
-                    <div id="createWalletHelperText" style="font-size:0.82rem; color:#1f2937; line-height:1.6;">Enter your email, get a one-time sign-in code, then create your wallet in one tap.</div>
-                </div>
-
-                <div class="wallet-input-group">
-                    <label class="wallet-label" for="createEmail">Email Address</label>
-                    <input type="email" id="createEmail" class="wallet-input" placeholder="you@example.com" autocomplete="email" />
-                </div>
-
-                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.9rem;">
-                    <button class="connect-btn" onclick="sendWalletSetupEmailCode()" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); min-width:180px;">
-                        <span id="sendCodeBtnText">Send Sign-In Code</span>
-                    </button>
-                    <span style="font-size:0.78rem;color:#6b7280;">Code expires in 10 minutes</span>
-                </div>
-
-                <div class="wallet-input-group">
-                    <label class="wallet-label" for="createEmailCode">6-digit Code</label>
-                    <input type="text" id="createEmailCode" class="wallet-input" inputmode="numeric" maxlength="6" placeholder="Enter code from your email" autocomplete="one-time-code" />
-                </div>
-
-                <div class="wallet-input-group">
-                    <label class="wallet-label" for="createReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
-                    <input type="text" id="createReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" autocomplete="off" oninput="syncReferralInputs(this)" />
-                </div>
-
-                <button class="connect-btn" onclick="createWalletFromEmailCode()" style="background: linear-gradient(135deg, #059669, #047857);">
-                    <span id="createWalletBtnText">Verify Code & Create Wallet</span>
-                </button>
-
-                <div id="createWalletStatus" class="status-message"></div>
-            </div>
-
         </div>
     </div>
 
@@ -2018,7 +1936,7 @@
 
         function showWalletOptions() {
             document.getElementById('walletOptions').style.display = 'flex';
-            ['walletConnectOptions', 'manualAddressForm', 'walletSetupOptions', 'createWalletForm'].forEach(id => {
+            ['walletConnectOptions', 'manualAddressForm'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('visible');
             });
@@ -2027,7 +1945,7 @@
 
         function showWalletConnectOptions() {
             document.getElementById('walletOptions').style.display = 'none';
-            ['manualAddressForm', 'walletSetupOptions', 'createWalletForm'].forEach(id => {
+            ['manualAddressForm'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('visible');
             });
@@ -2038,7 +1956,7 @@
 
         function showManualAddressForm() {
             document.getElementById('walletOptions').style.display = 'none';
-            ['walletConnectOptions', 'walletSetupOptions', 'createWalletForm'].forEach(id => {
+            ['walletConnectOptions'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('visible');
             });
@@ -2046,71 +1964,6 @@
             if (f) f.classList.add('visible');
         }
 
-        function showWalletSetupOptions() {
-            document.getElementById('walletOptions').style.display = 'none';
-            ['walletConnectOptions', 'manualAddressForm', 'createWalletForm'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.classList.remove('visible');
-            });
-            const f = document.getElementById('walletSetupOptions');
-            if (f) f.classList.add('visible');
-        }
-
-        function showCreateWalletForm() {
-            configureWalletForm('create');
-            ['walletOptions', 'walletSetupOptions'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.style.display = 'none';
-            });
-            const f = document.getElementById('createWalletForm');
-            if (f) f.classList.add('visible');
-        }
-
-        let walletFormMode = 'create';
-
-        function setCreateWalletButtonText(text) {
-            const btnText = document.getElementById('createWalletBtnText');
-            if (btnText) btnText.textContent = text;
-        }
-
-        function configureWalletForm(mode) {
-            walletFormMode = mode;
-            const statusDiv = document.getElementById('createWalletStatus');
-            const codeInput = document.getElementById('createEmailCode');
-            const referralGroup = document.getElementById('createReferralCode')?.closest('.wallet-input-group');
-            const title = document.getElementById('createWalletTitle');
-            const helper = document.getElementById('createWalletHelperText');
-            if (statusDiv) {
-                statusDiv.className = 'status-message';
-                statusDiv.textContent = '';
-            }
-            if (codeInput) {
-                codeInput.value = '';
-                codeInput.disabled = false;
-                codeInput.placeholder = 'Enter code from your email';
-            }
-            if (mode === 'recover') {
-                if (title) title.textContent = '📧 Recover Your GoodDollar Wallet';
-                if (helper) helper.textContent = 'Enter the same email you used before, verify the sign-in code, then recover your linked wallet.';
-                if (referralGroup) referralGroup.style.display = 'none';
-                setCreateWalletButtonText('Verify Code & Recover Wallet');
-            } else {
-                if (title) title.textContent = '🆕 Create Your GoodDollar Wallet';
-                if (helper) helper.textContent = 'Enter your email, get a one-time sign-in code, then create your wallet in one tap.';
-                if (referralGroup) referralGroup.style.display = '';
-                setCreateWalletButtonText('Verify Code & Create Wallet');
-            }
-        }
-
-        function showRecoverWalletForm() {
-            configureWalletForm('recover');
-            ['walletOptions', 'walletSetupOptions'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.style.display = 'none';
-            });
-            const f = document.getElementById('createWalletForm');
-            if (f) f.classList.add('visible');
-        }
 
         function showWalletStatus(targetId, message, type = 'info') {
             const el = document.getElementById(targetId);
@@ -2361,14 +2214,13 @@
         function getPendingReferralCode() {
             const fromWc = ((document.getElementById('wcReferralCode') || {}).value || '').trim();
             const fromManual = ((document.getElementById('manualReferralCode') || {}).value || '').trim();
-            const fromCreate = ((document.getElementById('createReferralCode') || {}).value || '').trim();
             const saved = (sessionStorage.getItem('pending_referral_code') || '').trim();
-            return (fromWc || fromManual || fromCreate || saved || '').toUpperCase();
+            return (fromWc || fromManual || saved || '').toUpperCase();
         }
 
         function syncReferralInputs(sourceEl) {
             const value = (sourceEl && sourceEl.value ? sourceEl.value : '').trim().toUpperCase();
-            ['wcReferralCode', 'manualReferralCode', 'createReferralCode'].forEach(function (id) {
+            ['wcReferralCode', 'manualReferralCode'].forEach(function (id) {
                 const el = document.getElementById(id);
                 if (el && el !== sourceEl && el.value !== value) {
                     el.value = value;
@@ -2414,7 +2266,7 @@
                     try { sessionStorage.setItem('pending_referral_code', ref); } catch (e) {}
                 }
 
-                ['wcReferralCode', 'manualReferralCode', 'createReferralCode'].forEach(function (id) {
+                ['wcReferralCode', 'manualReferralCode'].forEach(function (id) {
                     const el = document.getElementById(id);
                     if (el && !el.value.trim()) el.value = ref;
                 });
@@ -2749,23 +2601,6 @@
             }
         }
 
-        async function sendWalletSetupEmailCode() {
-            const statusDiv = document.getElementById('createWalletStatus');
-            if (statusDiv) {
-                statusDiv.className = 'status-message error';
-                statusDiv.textContent = 'In-app wallet creation is no longer available. Please use WalletConnect.';
-            }
-            return;
-        }
-
-        async function createWalletFromEmailCode() {
-            const statusDiv = document.getElementById('createWalletStatus');
-            if (statusDiv) {
-                statusDiv.className = 'status-message error';
-                statusDiv.textContent = 'In-app wallet creation/recovery is disabled. Connect an external wallet instead.';
-            }
-            return;
-        }
 
         function showXDCForm() {
             document.getElementById('walletOptions').style.display = 'none';
