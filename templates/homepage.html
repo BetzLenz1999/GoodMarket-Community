@@ -2573,18 +2573,50 @@
             });
         }
 
-        function drawWalletConnectQr(uri) {
+        let _qrLibLoading = null;
+        function _ensureQrLib() {
+            if (window.QRCode) return Promise.resolve(window.QRCode);
+            if (_qrLibLoading) return _qrLibLoading;
+            _qrLibLoading = new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+                s.onload = () => window.QRCode ? resolve(window.QRCode) : reject(new Error('QRCode library unavailable'));
+                s.onerror = () => reject(new Error('QRCode library unavailable'));
+                document.head.appendChild(s);
+            });
+            return _qrLibLoading;
+        }
+
+        async function drawWalletConnectQr(uri) {
             const qrWrap = document.getElementById('wcQrWrap');
             const qrEl = document.getElementById('wcQrCode');
             if (!qrWrap || !qrEl) return;
             qrWrap.style.display = 'block';
             qrEl.innerHTML = '';
-            const qrImg = document.createElement('img');
-            qrImg.alt = 'WalletConnect QR';
-            qrImg.width = 210;
-            qrImg.height = 210;
-            qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=210x210&data=' + encodeURIComponent(uri);
-            qrEl.appendChild(qrImg);
+            try {
+                const QRCode = await _ensureQrLib();
+                new QRCode(qrEl, {
+                    text: uri,
+                    width: 210,
+                    height: 210,
+                    correctLevel: QRCode.CorrectLevel.L
+                });
+            } catch (_) {
+                const qrImg = document.createElement('img');
+                qrImg.alt = 'WalletConnect QR';
+                qrImg.width = 210;
+                qrImg.height = 210;
+                qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=210x210&data=' + encodeURIComponent(uri);
+                qrEl.appendChild(qrImg);
+            }
+
+            const uriHint = document.createElement('div');
+            uriHint.style.marginTop = '8px';
+            uriHint.style.fontSize = '0.72rem';
+            uriHint.style.wordBreak = 'break-all';
+            uriHint.style.color = '#93a3b8';
+            uriHint.textContent = uri;
+            qrEl.appendChild(uriHint);
         }
 
         async function connectWalletConnect() {
@@ -2592,42 +2624,51 @@
             if (qrWrap) qrWrap.style.display = 'none';
             showWalletStatus('walletConnectStatus', '⏳ Starting WalletConnect...', 'info');
             try {
-                const uriResp = await fetch('/api/wc-uri');
-                if (uriResp.ok) {
-                    const uriData = await uriResp.json();
-                    if (uriData.success && uriData.uri && uriData.id) {
-                        drawWalletConnectQr(uriData.uri);
-                        showWalletStatus('walletConnectStatus', '📲 Awaiting wallet approval. Scan QR or open deeplink in your wallet app.', 'info');
-                        const started = Date.now();
-                        while (Date.now() - started < 120000) {
-                            await new Promise(r => setTimeout(r, 2200));
-                            const stResp = await fetch('/api/wc-session/' + encodeURIComponent(uriData.id));
-                            const stData = await stResp.json();
-                            if (stData.status === 'approved' && stData.address) {
-                                const message = makeLoginMessage(stData.address);
-                                showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve login signature in your wallet.', 'info');
-                                const signResp = await fetch('/api/wc-sign/' + encodeURIComponent(uriData.id), {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ message, address: stData.address })
-                                });
-                                const signData = await signResp.json();
-                                if (!signResp.ok || !signData.signature) {
-                                    throw new Error(signData.error || 'WalletConnect signature failed');
-                                }
-                                const wcVerifyData = await postVerifyIdentity(stData.address, signData.signature, message, getPendingReferralCode());
-                                const wcOkMsg = (wcVerifyData && wcVerifyData.referral_warning)
-                                    ? ('✅ Wallet connected via WalletConnect. ⚠️ ' + wcVerifyData.referral_warning + ' Redirecting...')
-                                    : '✅ Wallet connected via WalletConnect. Redirecting...';
-                                showWalletStatus('walletConnectStatus', wcOkMsg, wcVerifyData && wcVerifyData.referral_warning ? 'warning' : 'success');
-                                setTimeout(() => { window.location.href = '/wallet'; }, wcVerifyData && wcVerifyData.referral_warning ? 2400 : 900);
-                                return;
-                            }
-                            if (stData.status === 'rejected') throw new Error('WalletConnect request rejected by wallet.');
-                        }
-                        throw new Error('WalletConnect session timed out. Please try again or use manual wallet guidance.');
-                    }
+                const sidecarCtrl = new AbortController();
+                const sidecarTimeout = setTimeout(() => sidecarCtrl.abort(), 7000);
+                let uriResp = null;
+                try {
+                    uriResp = await fetch('/api/wc-uri', { signal: sidecarCtrl.signal });
+                } finally {
+                    clearTimeout(sidecarTimeout);
                 }
+                if (!uriResp.ok) {
+                    throw new Error('WalletConnect sidecar unavailable');
+                }
+                const uriData = await uriResp.json();
+                if (!(uriData.success && uriData.uri && uriData.id)) {
+                    throw new Error(uriData.error || 'WalletConnect sidecar unavailable');
+                }
+                await drawWalletConnectQr(uriData.uri);
+                showWalletStatus('walletConnectStatus', '📲 Awaiting wallet approval. Scan QR or open deeplink in your wallet app.', 'info');
+                const started = Date.now();
+                while (Date.now() - started < 120000) {
+                    await new Promise(r => setTimeout(r, 2200));
+                    const stResp = await fetch('/api/wc-session/' + encodeURIComponent(uriData.id));
+                    const stData = await stResp.json();
+                    if (stData.status === 'approved' && stData.address) {
+                        const message = makeLoginMessage(stData.address);
+                        showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve login signature in your wallet.', 'info');
+                        const signResp = await fetch('/api/wc-sign/' + encodeURIComponent(uriData.id), {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message, address: stData.address })
+                        });
+                        const signData = await signResp.json();
+                        if (!signResp.ok || !signData.signature) {
+                            throw new Error(signData.error || 'WalletConnect signature failed');
+                        }
+                        const wcVerifyData = await postVerifyIdentity(stData.address, signData.signature, message, getPendingReferralCode());
+                        const wcOkMsg = (wcVerifyData && wcVerifyData.referral_warning)
+                            ? ('✅ Wallet connected via WalletConnect. ⚠️ ' + wcVerifyData.referral_warning + ' Redirecting...')
+                            : '✅ Wallet connected via WalletConnect. Redirecting...';
+                        showWalletStatus('walletConnectStatus', wcOkMsg, wcVerifyData && wcVerifyData.referral_warning ? 'warning' : 'success');
+                        setTimeout(() => { window.location.href = '/wallet'; }, wcVerifyData && wcVerifyData.referral_warning ? 2400 : 900);
+                        return;
+                    }
+                    if (stData.status === 'rejected') throw new Error('WalletConnect request rejected by wallet.');
+                }
+                throw new Error('WalletConnect session timed out. Please try again or use manual wallet guidance.');
             } catch (serverErr) {
                 console.warn('Sidecar WalletConnect unavailable, using browser fallback:', serverErr);
                 showWalletStatus('walletConnectStatus', '⚠️ WalletConnect relay unavailable. Trying in-browser WalletConnect fallback…', 'warning');
@@ -2646,7 +2687,7 @@
                     }
                 });
                 if (result.uri) {
-                    drawWalletConnectQr(result.uri);
+                    await drawWalletConnectQr(result.uri);
                     showWalletStatus('walletConnectStatus', '📲 Awaiting wallet approval (browser fallback). Scan QR in your wallet app.', 'info');
                 }
                 const session = await result.approval();
