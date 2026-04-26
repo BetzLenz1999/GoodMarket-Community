@@ -2579,6 +2579,34 @@
             if (!qrWrap || !qrEl) return;
             qrWrap.style.display = 'block';
             qrEl.innerHTML = '';
+
+            let textEl = document.getElementById('wcQrUriText');
+            if (!textEl) {
+                textEl = document.createElement('div');
+                textEl.id = 'wcQrUriText';
+                textEl.style.marginTop = '10px';
+                textEl.style.fontSize = '12px';
+                textEl.style.opacity = '0.85';
+                textEl.style.wordBreak = 'break-all';
+                textEl.style.maxWidth = '100%';
+                qrWrap.appendChild(textEl);
+            }
+            textEl.textContent = uri || '';
+
+            try {
+                if (window.QRCode) {
+                    new window.QRCode(qrEl, {
+                        text: uri,
+                        width: 210,
+                        height: 210,
+                        correctLevel: window.QRCode.CorrectLevel ? window.QRCode.CorrectLevel.M : undefined
+                    });
+                    return;
+                }
+            } catch (qrErr) {
+                console.warn('Local QR render failed; falling back to image endpoint.', qrErr);
+            }
+
             const qrImg = document.createElement('img');
             qrImg.alt = 'WalletConnect QR';
             qrImg.width = 210;
