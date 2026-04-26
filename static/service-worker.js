@@ -1,0 +1,74 @@
+/**
+ * GoodMarket service worker.
+ *
+ * Strategy:
+ * - Network-first for navigations and API calls (so users always see the
+ *   latest deployment and live data when online).
+ * - Cache-first for /static/ assets (which are versioned via ?v=ASSET_VERSION
+ *   in templates, so a new deployment busts the cache automatically).
+ * - On every activation, all old caches that don't match the current version
+ *   are deleted.
+ */
+
+const CACHE_VERSION = 'goodmarket-v1';
+const STATIC_CACHE = `${CACHE_VERSION}-static`;
+
+self.addEventListener('install', (event) => {
+  // Activate the new worker as soon as it's installed.
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((key) => !key.startsWith(CACHE_VERSION))
+        .map((key) => caches.delete(key))
+    );
+    await self.clients.claim();
+    // Tell open pages we updated so they can show a refresh prompt if desired.
+    const clients = await self.clients.matchAll({ includeUncontrolled: true });
+    for (const client of clients) {
+      try { client.postMessage({ type: 'SW_UPDATED', version: CACHE_VERSION }); } catch (_) {}
+    }
+  })());
+});
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+
+  // Only handle GETs on our origin.
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+
+  // Cache-first for /static/ assets.
+  if (url.pathname.startsWith('/static/')) {
+    event.respondWith((async () => {
+      const cache = await caches.open(STATIC_CACHE);
+      const cached = await cache.match(req);
+      if (cached) return cached;
+      try {
+        const fresh = await fetch(req);
+        if (fresh && fresh.ok && fresh.type === 'basic') {
+          cache.put(req, fresh.clone()).catch(() => {});
+        }
+        return fresh;
+      } catch (_) {
+        return cached || Response.error();
+      }
+    })());
+    return;
+  }
+
+  // Network-first for everything else (HTML pages, /api/*, etc.).
+  event.respondWith((async () => {
+    try {
+      return await fetch(req);
+    } catch (_) {
+      const cached = await caches.match(req);
+      return cached || Response.error();
+    }
+  })());
+});

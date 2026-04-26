@@ -168,6 +168,126 @@ def _add_cache_headers(response):
     return response
 
 
+# ---------------------------------------------------------------------------
+# Scanner / vulnerability-probe hardening
+#
+# Public production sites are continuously hit by automated scanners that
+# probe well-known leaked-secret paths (`.env`, `.git`, CI configs, AWS
+# credentials, wp-admin, phpMyAdmin, etc.). Returning a fast 403 short-circuits
+# the request before it touches any blueprint or the template engine, keeps
+# the access logs cleaner, and signals to scanners that the path is denied.
+#
+# Note: this is defense-in-depth log hygiene, not a substitute for not
+# committing secrets. The repo already does the right thing (only `.env.example`
+# is checked in) — these probes have always returned 404 because the files
+# genuinely don't exist.
+# ---------------------------------------------------------------------------
+import re as _re
+
+_BLOCKED_PATH_PATTERNS = tuple(_re.compile(p, _re.IGNORECASE) for p in (
+    r"^/\.env(\..*)?$",
+    r"^/\.git(/|$)",
+    r"^/\.aws(/|$)",
+    r"^/\.ssh(/|$)",
+    r"^/\.circleci(/|$)",
+    r"^/\.github(/|$)",
+    r"^/\.vscode(/|$)",
+    r"^/\.idea(/|$)",
+    r"^/\.docker(/|$)",
+    r"^/\.npmrc$",
+    r"^/\.htaccess$",
+    r"^/\.htpasswd$",
+    r"^/\.DS_Store$",
+    r"^/config/(secrets|aws|credentials|prod|dev|production)(/|$)",
+    r"^/secrets?(/|$)",
+    r"^/credentials?(/|$)",
+    r"^/aws[_-]?credentials",
+    r"^/backup(\.|/|$)",
+    r"^/dump(\.|/|$)",
+    r"^/wp-(admin|login|content|includes)(/|$)",
+    r"^/phpmyadmin(/|$)",
+    r"^/phpinfo(\.php)?$",
+    r"^/server-status$",
+    r"^/server-info$",
+    r"^/(actuator|jmx-console|manager)(/|$)",
+    r"\.(sql|bak|swp|old|orig|save|tar|tar\.gz|tgz|zip|rar|7z)$",
+))
+
+
+@app.before_request
+def _block_scanner_paths():
+    """Reject requests that match well-known scanner / probe path patterns.
+
+    Returns 403 instead of letting Flask fall through to a 404 from the
+    template engine or the static handler. Logged at INFO so we have an
+    audit trail of probes without spamming WARNING.
+    """
+    try:
+        path = request.path or ""
+        for pattern in _BLOCKED_PATH_PATTERNS:
+            if pattern.search(path):
+                logger.info(
+                    "blocked scanner probe: %s %s from %s",
+                    request.method, path, request.headers.get("X-Forwarded-For") or request.remote_addr,
+                )
+                return ("Forbidden", 403, {"Content-Type": "text/plain; charset=utf-8"})
+    except Exception as _hard_err:
+        logger.debug(f"scanner-block hook skipped: {_hard_err}")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Root-level static fallbacks
+#
+# Browsers (and some Slack/Discord/Telegram link previewers) automatically
+# request `/favicon.ico` and `/service-worker.js` at the site root, regardless
+# of what the HTML <link> tags declare. We serve these explicitly so they
+# don't 404 in production logs. The actual icon and service worker live under
+# /static/, but root requests are common because:
+#   - favicon.ico: built-in browser fallback when no <link rel=icon> matches.
+#   - service-worker.js (root): older client browsers may still have a
+#     stale registration pointing to the old root path; we serve a script
+#     that unregisters itself so those clients self-clean.
+# ---------------------------------------------------------------------------
+from flask import send_from_directory, Response as _FlaskResponse
+
+
+@app.route("/favicon.ico")
+def _favicon():
+    return send_from_directory(
+        app.static_folder, "icons/favicon.ico", mimetype="image/vnd.microsoft.icon"
+    )
+
+
+@app.route("/service-worker.js")
+def _root_service_worker_unregister():
+    """Self-unregistering shim for stale root-scoped service workers.
+
+    Older deployments registered the service worker at `/service-worker.js`.
+    Browsers cache that registration indefinitely, so even after we moved the
+    SW to `/static/service-worker.js` those clients keep hitting this path.
+    Returning a script that calls `registration.unregister()` makes those
+    clients clean themselves up on the next page load.
+    """
+    body = (
+        "// Stale root-scoped service worker shim — unregisters itself so the\n"
+        "// browser falls back to /static/service-worker.js on next load.\n"
+        "self.addEventListener('install', () => self.skipWaiting());\n"
+        "self.addEventListener('activate', (event) => {\n"
+        "  event.waitUntil((async () => {\n"
+        "    try { await self.registration.unregister(); } catch (_) {}\n"
+        "    const clients = await self.clients.matchAll();\n"
+        "    for (const c of clients) { try { c.navigate(c.url); } catch (_) {} }\n"
+        "  })());\n"
+        "});\n"
+    )
+    resp = _FlaskResponse(body, mimetype="application/javascript")
+    # Don't cache this aggressively — once stale clients clear, we want them
+    # to stop getting it served.
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
 
 # Blockchain configuration for wallet balance checking
 CELO_RPC_URL = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')  # Default to Celo's public RPC
