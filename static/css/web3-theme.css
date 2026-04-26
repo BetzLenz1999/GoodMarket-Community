@@ -98,12 +98,16 @@ nav.navbar {
     box-shadow: 0 1px 30px rgba(0, 0, 0, 0.4);
 }
 
-/* ---------- gradient logo (re-skins existing solid-purple logos) ---------- */
+/* ---------- gradient logo (re-skins existing solid-purple logos) ----------
+ * Only target classes actually used as the page-level brand wordmark.
+ * Excluded: `.pc-brand-name` — that's the credit-card-style portfolio card
+ * branding in wallet.html, which is intentionally bold-uppercase-white with
+ * wide tracking. The wallet header brand uses `.top-bar-title` (separate).
+ */
 .logo,
 .nav-brand,
 .navbar-brand,
 .logo-link,
-.pc-brand-name,
 .top-bar-title {
     font-family: var(--w3-font-display) !important;
     font-weight: 700 !important;
@@ -269,14 +273,14 @@ button.primary:hover,
 }
 
 /* ---------- mono numerals (for big balances, addresses, tx hashes) ----------
- * Target only the actual numeric value elements. Avoid container classes
- * like `.amount-display` (used in claim.html as a wrapper around both
- * numeric values AND text labels — the mono font would leak to the labels).
+ * Target only classes used exclusively for numeric values. Excluded:
+ *  - `.amount-display` (claim.html container wrapping label + loading text)
+ *  - `.stat-value`     (used in many templates for non-numeric content:
+ *                       usernames, NFT labels, link text, descriptions).
+ * For one-off numeric elements, opt in via the `.web3-mono` utility class.
  */
 .web3-mono,
-.balance-amount,
 .amount-value,
-.stat-value,
 .ps-value {
     font-family: var(--w3-font-mono);
     font-feature-settings: "tnum" 1, "lnum" 1;
