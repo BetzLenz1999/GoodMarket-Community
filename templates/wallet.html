@@ -1040,6 +1040,10 @@
                     <div class="action-circle">⇌</div>
                     <span class="action-label">Uniswap</span>
                 </div>
+                <div class="action-item" id="actionGoodReserve" style="display:none;" onclick="window.location.href='/swap?tab=reserve'">
+                    <div class="action-circle" style="background:linear-gradient(135deg,#7c3aed,#f59e0b);color:#fff;">🪙</div>
+                    <span class="action-label">GoodReserve</span>
+                </div>
                 <div class="action-item" onclick="window.location.href='/xdc-wallet'">
                     <div class="action-circle">💠</div>
                     <span class="action-label">X Swap</span>
@@ -3345,6 +3349,17 @@
         }
         loadBalances();
         loadPortfolioCardholder();
+        // Reveal the GoodReserve action button only when the admin flag is on.
+        (async () => {
+            try {
+                const res = await fetch('/api/feature-visibility', { cache: 'no-store' });
+                const data = await res.json();
+                if (data && data.reserve_swap_visible === true) {
+                    const el = document.getElementById('actionGoodReserve');
+                    if (el) el.style.display = '';
+                }
+            } catch (_) { /* keep hidden on failure */ }
+        })();
     });
     </script>
 </body>
