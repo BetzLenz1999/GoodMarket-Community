@@ -168,6 +168,217 @@ def _add_cache_headers(response):
     return response
 
 
+# ---------------------------------------------------------------------------
+# Security headers
+#
+# Defense in depth for a non-custodial DeFi frontend. The biggest risk to
+# users is NOT server-side custody theft (we don't hold keys) — it's that an
+# attacker who compromises any layer of the page (CDN, hosting, dependency,
+# inline script injection) can swap the smart-contract address or inject a
+# `permit/approve` call that drains user wallets the moment they sign.
+#
+# These headers don't prevent that scenario on their own, but each one
+# narrows the blast radius:
+#   - CSP restricts WHERE scripts/styles/connections can come from.
+#   - X-Frame-Options + frame-ancestors prevent click-jacking inside an iframe.
+#   - X-Content-Type-Options stops MIME sniffing tricks.
+#   - Referrer-Policy reduces leak of session URLs to third parties.
+#   - Permissions-Policy turns off browser features we never use.
+#   - Strict-Transport-Security forces HTTPS for return visits.
+#
+# CSP is intentionally permissive ('unsafe-inline' / 'unsafe-eval') because
+# the existing templates use a lot of inline scripts and ethers.js historically
+# uses Function() at runtime. Tightening should be incremental: convert inline
+# handlers to addEventListener, then drop 'unsafe-inline'; verify ethers works
+# without eval, then drop 'unsafe-eval'. Until then, the host whitelist is
+# still meaningful — an attacker who injects `<script src=//evil.tld/x.js>`
+# will be blocked by the browser even if our HTML is compromised.
+# ---------------------------------------------------------------------------
+_CSP_DIRECTIVES = (
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+    "https://cdn.jsdelivr.net https://cdnjs.cloudflare.com "
+    "https://esm.sh "
+    "https://telegram.org https://*.telegram.org",
+    "style-src 'self' 'unsafe-inline' "
+    "https://fonts.googleapis.com https://cdnjs.cloudflare.com",
+    "font-src 'self' data: "
+    "https://fonts.gstatic.com https://cdnjs.cloudflare.com",
+    "img-src 'self' data: blob: https:",
+    "connect-src 'self' https: wss:",
+    "frame-src 'self' "
+    "https://telegram.org https://*.telegram.org "
+    "https://www.youtube.com https://www.youtube-nocookie.com "
+    "https://platform.twitter.com",
+    "media-src 'self' data: blob:",
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+    "upgrade-insecure-requests",
+)
+_CSP_HEADER_VALUE = "; ".join(_CSP_DIRECTIVES)
+
+
+@app.after_request
+def _add_security_headers(response):
+    """Attach hardening headers to every HTML/JS response.
+
+    Skips static assets (immutable, already cached on CDN/clients) so we
+    don't bloat their headers — the assets themselves are versioned via
+    ASSET_VERSION cache-busting.
+    """
+    try:
+        # Don't add to opaque static binary responses; they don't render
+        # JS/HTML and CSP wouldn't apply anyway.
+        path = request.path or ""
+        if not path.startswith("/static/"):
+            response.headers.setdefault("Content-Security-Policy", _CSP_HEADER_VALUE)
+
+        # Always-on lightweight headers.
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "geolocation=(), microphone=(), camera=(), payment=(), usb=(), "
+            "magnetometer=(), gyroscope=(), accelerometer=()",
+        )
+        # 1 year HSTS, only meaningful when served over HTTPS in production.
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+        # Disable legacy XSS filter (modern browsers ignore this; old ones
+        # have a buggy implementation that can introduce vulnerabilities).
+        response.headers.setdefault("X-XSS-Protection", "0")
+    except Exception as _sec_hdr_err:
+        logger.debug(f"security header hook skipped: {_sec_hdr_err}")
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Scanner / vulnerability-probe hardening
+#
+# Public production sites are continuously hit by automated scanners that
+# probe well-known leaked-secret paths (`.env`, `.git`, CI configs, AWS
+# credentials, wp-admin, phpMyAdmin, etc.). Returning a fast 403 short-circuits
+# the request before it touches any blueprint or the template engine, keeps
+# the access logs cleaner, and signals to scanners that the path is denied.
+#
+# Note: this is defense-in-depth log hygiene, not a substitute for not
+# committing secrets. The repo already does the right thing (only `.env.example`
+# is checked in) — these probes have always returned 404 because the files
+# genuinely don't exist.
+# ---------------------------------------------------------------------------
+import re as _re
+
+_BLOCKED_PATH_PATTERNS = tuple(_re.compile(p, _re.IGNORECASE) for p in (
+    r"^/\.env(\..*)?$",
+    r"^/\.git(/|$)",
+    r"^/\.aws(/|$)",
+    r"^/\.ssh(/|$)",
+    r"^/\.circleci(/|$)",
+    r"^/\.github(/|$)",
+    r"^/\.vscode(/|$)",
+    r"^/\.idea(/|$)",
+    r"^/\.docker(/|$)",
+    r"^/\.npmrc$",
+    r"^/\.htaccess$",
+    r"^/\.htpasswd$",
+    r"^/\.DS_Store$",
+    r"^/config/(secrets|aws|credentials|prod|dev|production)(/|$)",
+    r"^/secrets?(/|$)",
+    r"^/credentials?(/|$)",
+    r"^/aws[_-]?credentials",
+    r"^/backup(\.|/|$)",
+    r"^/dump(\.|/|$)",
+    r"^/wp-(admin|login|content|includes)(/|$)",
+    r"^/phpmyadmin(/|$)",
+    r"^/phpinfo(\.php)?$",
+    r"^/server-status$",
+    r"^/server-info$",
+    r"^/(actuator|jmx-console|manager)(/|$)",
+    r"\.(sql|bak|swp|old|orig|save|tar|tar\.gz|tgz|zip|rar|7z)$",
+))
+
+
+@app.before_request
+def _block_scanner_paths():
+    """Reject requests that match well-known scanner / probe path patterns.
+
+    Returns 403 instead of letting Flask fall through to a 404 from the
+    template engine or the static handler. Logged at INFO so we have an
+    audit trail of probes without spamming WARNING.
+    """
+    try:
+        path = request.path or ""
+        for pattern in _BLOCKED_PATH_PATTERNS:
+            if pattern.search(path):
+                logger.info(
+                    "blocked scanner probe: %s %s from %s",
+                    request.method, path, request.headers.get("X-Forwarded-For") or request.remote_addr,
+                )
+                return ("Forbidden", 403, {"Content-Type": "text/plain; charset=utf-8"})
+    except Exception as _hard_err:
+        logger.debug(f"scanner-block hook skipped: {_hard_err}")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Root-level static fallbacks
+#
+# Browsers (and some Slack/Discord/Telegram link previewers) automatically
+# request `/favicon.ico` and `/service-worker.js` at the site root, regardless
+# of what the HTML <link> tags declare. We serve these explicitly so they
+# don't 404 in production logs. The actual icon and service worker live under
+# /static/, but root requests are common because:
+#   - favicon.ico: built-in browser fallback when no <link rel=icon> matches.
+#   - service-worker.js (root): older client browsers may still have a
+#     stale registration pointing to the old root path; we serve a script
+#     that unregisters itself so those clients self-clean.
+# ---------------------------------------------------------------------------
+from flask import send_from_directory, Response as _FlaskResponse
+
+
+@app.route("/favicon.ico")
+def _favicon():
+    return send_from_directory(
+        app.static_folder, "icons/favicon.ico", mimetype="image/vnd.microsoft.icon"
+    )
+
+
+@app.route("/service-worker.js")
+def _root_service_worker_unregister():
+    """Self-unregistering shim for stale root-scoped service workers.
+
+    Older deployments registered the service worker at `/service-worker.js`.
+    Browsers cache that registration indefinitely, so even after we moved the
+    SW to `/static/service-worker.js` those clients keep hitting this path.
+    Returning a script that calls `registration.unregister()` makes those
+    clients clean themselves up on the next page load.
+    """
+    body = (
+        "// Stale root-scoped service worker shim — unregisters itself so the\n"
+        "// browser falls back to /static/service-worker.js on next load.\n"
+        "self.addEventListener('install', () => self.skipWaiting());\n"
+        "self.addEventListener('activate', (event) => {\n"
+        "  event.waitUntil((async () => {\n"
+        "    try { await self.registration.unregister(); } catch (_) {}\n"
+        "    const clients = await self.clients.matchAll();\n"
+        "    for (const c of clients) { try { c.navigate(c.url); } catch (_) {} }\n"
+        "  })());\n"
+        "});\n"
+    )
+    resp = _FlaskResponse(body, mimetype="application/javascript")
+    # Don't cache this aggressively — once stale clients clear, we want them
+    # to stop getting it served.
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
 
 # Blockchain configuration for wallet balance checking
 CELO_RPC_URL = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')  # Default to Celo's public RPC
