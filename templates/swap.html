@@ -912,7 +912,15 @@
             const data = iface.encodeFunctionData(fnName, args);
             const value = valueHex || '0x0';
 
+            console.log('[MiniPay] _miniPayTx called:', {
+                fn: fnName, to: toAddr, from,
+                dataLen: data.length, value,
+                isMiniPay: !!(ep && ep.isMiniPay),
+                ua: navigator.userAgent,
+            });
+
             let gasHex;
+            let gasEstimateError = null;
             try {
                 const est = await ep.request({
                     method: 'eth_estimateGas',
@@ -920,8 +928,11 @@
                 });
                 const estimated = typeof est === 'string' ? BigInt(est) : BigInt(Number(est));
                 gasHex = '0x' + (estimated * 140n / 100n).toString(16);
-            } catch (_) {
+                console.log('[MiniPay] gas estimated:', { raw: est, withHeadroom: gasHex });
+            } catch (gasErr) {
                 gasHex = '0x7A120';
+                gasEstimateError = gasErr;
+                console.warn('[MiniPay] eth_estimateGas failed:', { error: gasErr?.message, code: gasErr?.code });
             }
 
             const attempts = [
@@ -931,27 +942,43 @@
                 null,
             ];
 
+            const errorLog = [];
             let lastErr;
             for (const fc of attempts) {
                 const txParams = { from, to: toAddr, data, value, gas: gasHex };
                 if (fc) txParams.feeCurrency = fc;
                 try {
+                    console.log('[MiniPay] sending tx attempt:', { feeCurrency: fc, gas: gasHex });
                     const txHash = await ep.request({
                         method: 'eth_sendTransaction',
                         params: [txParams],
                     });
+                    console.log('[MiniPay] tx sent:', txHash);
                     await _miniPayWaitForReceipt(ep, txHash);
                     return txHash;
                 } catch (err) {
                     lastErr = err;
                     const code = err && err.code;
-                    const msg = ((err && (err.message || err.data && err.data.message)) || '').toLowerCase();
+                    const rawMsg = (err && (err.message || err.data && err.data.message)) || '';
+                    const msg = rawMsg.toLowerCase();
+                    const detail = { feeCurrency: fc, code, message: rawMsg.substring(0, 200), dataMsg: err?.data?.message || null };
+                    errorLog.push(detail);
+                    console.error('[MiniPay] tx FAILED:', detail);
                     if (code === 4001 || /reject|denied by user|user denied/i.test(msg)) throw err;
                     if (/revert/i.test(msg)) throw err;
-                    console.warn('[MiniPay] swap tx attempt failed with feeCurrency=' + fc + ':', msg || err);
                 }
             }
-            throw lastErr || new Error('MiniPay transaction failed.');
+
+            const diagParts = errorLog.map((e, i) =>
+                `Attempt ${i + 1} (fc=${e.feeCurrency || 'none'}): code=${e.code}, msg=${e.message}`
+            );
+            const diagMsg = `MiniPay ${fnName}() failed after ${errorLog.length} attempt(s).\n` +
+                diagParts.join('\n') +
+                (gasEstimateError ? `\nGas estimate also failed: ${gasEstimateError.message || gasEstimateError}` : '');
+            console.error('[MiniPay] all attempts exhausted:', diagMsg);
+            const richErr = new Error(diagMsg);
+            richErr._miniPayDiag = { fn: fnName, to: toAddr, errorLog, gasEstimateError: gasEstimateError?.message };
+            throw richErr;
         }
 
         async function _miniPayRawTx(toAddr, data, valueHex) {
@@ -968,7 +995,12 @@
             }
 
             const value = valueHex || '0x0';
+            console.log('[MiniPay] _miniPayRawTx called:', {
+                to: toAddr, from, dataLen: data.length, value,
+            });
+
             let gasHex;
+            let gasEstimateError = null;
             try {
                 const est = await ep.request({
                     method: 'eth_estimateGas',
@@ -976,8 +1008,11 @@
                 });
                 const estimated = typeof est === 'string' ? BigInt(est) : BigInt(Number(est));
                 gasHex = '0x' + (estimated * 140n / 100n).toString(16);
-            } catch (_) {
+                console.log('[MiniPay] gas estimated:', { raw: est, withHeadroom: gasHex });
+            } catch (gasErr) {
                 gasHex = '0x7A120';
+                gasEstimateError = gasErr;
+                console.warn('[MiniPay] eth_estimateGas failed:', { error: gasErr?.message, code: gasErr?.code });
             }
 
             const attempts = [
@@ -987,27 +1022,43 @@
                 null,
             ];
 
+            const errorLog = [];
             let lastErr;
             for (const fc of attempts) {
                 const txParams = { from, to: toAddr, data, value, gas: gasHex };
                 if (fc) txParams.feeCurrency = fc;
                 try {
+                    console.log('[MiniPay] sending raw tx attempt:', { feeCurrency: fc, gas: gasHex });
                     const txHash = await ep.request({
                         method: 'eth_sendTransaction',
                         params: [txParams],
                     });
+                    console.log('[MiniPay] raw tx sent:', txHash);
                     await _miniPayWaitForReceipt(ep, txHash);
                     return txHash;
                 } catch (err) {
                     lastErr = err;
                     const code = err && err.code;
-                    const msg = ((err && (err.message || err.data && err.data.message)) || '').toLowerCase();
+                    const rawMsg = (err && (err.message || err.data && err.data.message)) || '';
+                    const msg = rawMsg.toLowerCase();
+                    const detail = { feeCurrency: fc, code, message: rawMsg.substring(0, 200), dataMsg: err?.data?.message || null };
+                    errorLog.push(detail);
+                    console.error('[MiniPay] raw tx FAILED:', detail);
                     if (code === 4001 || /reject|denied by user|user denied/i.test(msg)) throw err;
                     if (/revert/i.test(msg)) throw err;
-                    console.warn('[MiniPay] swap raw tx attempt failed with feeCurrency=' + fc + ':', msg || err);
                 }
             }
-            throw lastErr || new Error('MiniPay transaction failed.');
+
+            const diagParts = errorLog.map((e, i) =>
+                `Attempt ${i + 1} (fc=${e.feeCurrency || 'none'}): code=${e.code}, msg=${e.message}`
+            );
+            const diagMsg = `MiniPay swap failed after ${errorLog.length} attempt(s).\n` +
+                diagParts.join('\n') +
+                (gasEstimateError ? `\nGas estimate also failed: ${gasEstimateError.message || gasEstimateError}` : '');
+            console.error('[MiniPay] all attempts exhausted:', diagMsg);
+            const richErr = new Error(diagMsg);
+            richErr._miniPayDiag = { fn: 'swap', to: toAddr, errorLog, gasEstimateError: gasEstimateError?.message };
+            throw richErr;
         }
 
         function _normalizeChainIdHex(chainId) {
@@ -1962,8 +2013,16 @@
                     await loadBalances();
                 } catch (err) {
                     stepIndicators.className = "step-indicators";
-                    const msg = err?.message || "Unknown error";
-                    showAlert("alert-error", `❌ Swap failed: ${msg.substring(0, 150)}`);
+                    if (err._miniPayDiag) {
+                        const d = err._miniPayDiag;
+                        showAlert("alert-error",
+                            `❌ MiniPay swap failed<br>` +
+                            `<small style="opacity:.75">Step: ${d.fn} → ${d.to.slice(0,10)}…</small><br>` +
+                            `<small style="opacity:.75">${d.errorLog.map(e => `code=${e.code} msg=${e.message.substring(0, 80)}`).join('<br>')}</small>`);
+                    } else {
+                        const msg = err?.message || "Unknown error";
+                        showAlert("alert-error", `❌ Swap failed: ${msg.substring(0, 150)}`);
+                    }
                     if (currentQuote) setSwapBtnState("ready");
                     else setSwapBtnState("enter");
                 }
@@ -2061,11 +2120,19 @@
                     await loadBalances();
                 } catch (err) {
                     stepIndicators.className = "step-indicators";
-                    const rawMsg = err?.shortMessage || err?.message || "Unknown error";
-                    const msg = rawMsg.toLowerCase().includes("user rejected") || rawMsg.toLowerCase().includes("denied by user")
-                        ? "Transaction cancelled in wallet."
-                        : rawMsg;
-                    showAlert("alert-error", `❌ Swap failed: ${msg.substring(0, 150)}`);
+                    if (err._miniPayDiag) {
+                        const d = err._miniPayDiag;
+                        showAlert("alert-error",
+                            `❌ MiniPay swap failed<br>` +
+                            `<small style="opacity:.75">Step: ${d.fn} → ${d.to.slice(0,10)}…</small><br>` +
+                            `<small style="opacity:.75">${d.errorLog.map(e => `code=${e.code} msg=${e.message.substring(0, 80)}`).join('<br>')}</small>`);
+                    } else {
+                        const rawMsg = err?.shortMessage || err?.message || "Unknown error";
+                        const msg = rawMsg.toLowerCase().includes("user rejected") || rawMsg.toLowerCase().includes("denied by user")
+                            ? "Transaction cancelled in wallet."
+                            : rawMsg;
+                        showAlert("alert-error", `❌ Swap failed: ${msg.substring(0, 150)}`);
+                    }
                     if (currentQuote) setSwapBtnState("ready");
                     else setSwapBtnState("enter");
                 }

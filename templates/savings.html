@@ -701,8 +701,16 @@
         const data = iface.encodeFunctionData(fnName, args);
         const value = valueHex || '0x0';
 
+        console.log('[MiniPay] _miniPayTx called:', {
+            fn: fnName, to: toAddr, from,
+            dataLen: data.length, value,
+            isMiniPay: !!(ep && ep.isMiniPay),
+            ua: navigator.userAgent,
+        });
+
         // Estimate gas so MiniPay doesn't have to guess (reduces failures).
         let gasHex;
+        let gasEstimateError = null;
         try {
             const est = await ep.request({
                 method: 'eth_estimateGas',
@@ -711,8 +719,15 @@
             const estimated = typeof est === 'string' ? BigInt(est) : BigInt(Number(est));
             // Add 40 % headroom — on-chain state can shift between estimate and mine.
             gasHex = '0x' + (estimated * 140n / 100n).toString(16);
-        } catch (_) {
+            console.log('[MiniPay] gas estimated:', { raw: est, withHeadroom: gasHex });
+        } catch (gasErr) {
             gasHex = '0x7A120'; // 500 000 — safe fallback for most contract calls
+            gasEstimateError = gasErr;
+            console.warn('[MiniPay] eth_estimateGas failed, using fallback:', {
+                error: gasErr?.message || gasErr,
+                code: gasErr?.code,
+                fallback: gasHex,
+            });
         }
 
         const attempts = [
@@ -722,21 +737,34 @@
             null, // let MiniPay pick the fee currency itself
         ];
 
+        const errorLog = [];
         let lastErr;
         for (const fc of attempts) {
             const txParams = { from, to: toAddr, data, value, gas: gasHex };
             if (fc) txParams.feeCurrency = fc;
             try {
+                console.log('[MiniPay] sending tx attempt:', { feeCurrency: fc, gas: gasHex });
                 const txHash = await ep.request({
                     method: 'eth_sendTransaction',
                     params: [txParams],
                 });
+                console.log('[MiniPay] tx sent:', txHash);
                 await _miniPayWaitForReceipt(ep, txHash);
                 return txHash;
             } catch (err) {
                 lastErr = err;
                 const code = err && err.code;
-                const msg = ((err && (err.message || err.data && err.data.message)) || '').toLowerCase();
+                const rawMsg = (err && (err.message || err.data && err.data.message)) || '';
+                const msg = rawMsg.toLowerCase();
+                const detail = {
+                    feeCurrency: fc,
+                    code: code,
+                    message: rawMsg.substring(0, 200),
+                    dataMsg: err?.data?.message || null,
+                };
+                errorLog.push(detail);
+                console.error('[MiniPay] tx FAILED:', detail);
+
                 // User explicitly rejected — never retry (no double-signing prompts).
                 if (code === 4001 || /reject|denied by user|user denied/i.test(msg)) {
                     throw err;
@@ -745,11 +773,21 @@
                 if (/revert/i.test(msg)) {
                     throw err;
                 }
-                console.warn('[MiniPay] tx attempt failed with feeCurrency=' + fc + ':', msg || err);
-                // Fall through and try the next feeCurrency option.
             }
         }
-        throw lastErr || new Error('MiniPay transaction failed.');
+
+        // Build a diagnostic error with all attempt details visible in UI.
+        const diagParts = errorLog.map((e, i) =>
+            `Attempt ${i + 1} (fc=${e.feeCurrency || 'none'}): code=${e.code}, msg=${e.message}`
+        );
+        const diagMsg = `MiniPay ${fnName}() failed after ${errorLog.length} attempt(s).\n` +
+            diagParts.join('\n') +
+            (gasEstimateError ? `\nGas estimate also failed: ${gasEstimateError.message || gasEstimateError}` : '');
+        console.error('[MiniPay] all attempts exhausted:', diagMsg);
+
+        const richErr = new Error(diagMsg);
+        richErr._miniPayDiag = { fn: fnName, to: toAddr, errorLog, gasEstimateError: gasEstimateError?.message };
+        throw richErr;
     }
 
     async function getSigner() {
@@ -836,6 +874,12 @@
             if (err.message && err.message.includes('No wallet')) {
                 showAlert('saveAlert', 'error', '⚠️ ' + err.message);
                 document.getElementById('savingsWcSection').style.display = 'block';
+            } else if (err._miniPayDiag) {
+                const d = err._miniPayDiag;
+                showAlert('saveAlert', 'error',
+                    `❌ MiniPay approve() failed<br>` +
+                    `<small style="opacity:.75">Step: ${d.fn} → ${d.to.slice(0,10)}…</small><br>` +
+                    `<small style="opacity:.75">${d.errorLog.map(e => `code=${e.code} msg=${e.message.substring(0, 80)}`).join('<br>')}</small>`);
             } else {
                 showAlert('saveAlert', 'error', '❌ Approval failed: ' + (err.reason || err.message || 'Unknown error'));
             }
@@ -930,7 +974,15 @@
 
         } catch (err) {
             console.error(err);
-            showAlert('saveAlert', 'error', '❌ Save failed: ' + (err.reason || err.message || 'Unknown error'));
+            if (err._miniPayDiag) {
+                const d = err._miniPayDiag;
+                showAlert('saveAlert', 'error',
+                    `❌ MiniPay save failed<br>` +
+                    `<small style="opacity:.75">Step: ${d.fn} → ${d.to.slice(0,10)}…</small><br>` +
+                    `<small style="opacity:.75">${d.errorLog.map(e => `code=${e.code} msg=${e.message.substring(0, 80)}`).join('<br>')}</small>`);
+            } else {
+                showAlert('saveAlert', 'error', '❌ Save failed: ' + (err.reason || err.message || 'Unknown error'));
+            }
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-lock"></i> Step 2 — Lock & Save G$';
         }
@@ -979,7 +1031,15 @@
             loadStats();
         } catch (err) {
             console.error(err);
-            showAlert('depositsAlert', 'error', '❌ Withdrawal failed: ' + (err.reason || err.message || 'Unknown error'));
+            if (err._miniPayDiag) {
+                const d = err._miniPayDiag;
+                showAlert('depositsAlert', 'error',
+                    `❌ MiniPay withdrawal failed<br>` +
+                    `<small style="opacity:.75">Step: ${d.fn} → ${d.to.slice(0,10)}…</small><br>` +
+                    `<small style="opacity:.75">${d.errorLog.map(e => `code=${e.code} msg=${e.message.substring(0, 80)}`).join('<br>')}</small>`);
+            } else {
+                showAlert('depositsAlert', 'error', '❌ Withdrawal failed: ' + (err.reason || err.message || 'Unknown error'));
+            }
         }
     }
 
@@ -1157,7 +1217,15 @@
             btn.innerHTML = '<i class="fas fa-check-circle"></i> Approved ✓';
         } catch (err) {
             console.error(err);
-            showAlert('sponsorAlert', 'error', '❌ Approval failed: ' + (err.reason || err.message || 'Unknown error'));
+            if (err._miniPayDiag) {
+                const d = err._miniPayDiag;
+                showAlert('sponsorAlert', 'error',
+                    `❌ MiniPay approval failed<br>` +
+                    `<small style="opacity:.75">Step: ${d.fn} → ${d.to.slice(0,10)}…</small><br>` +
+                    `<small style="opacity:.75">${d.errorLog.map(e => `code=${e.code} msg=${e.message.substring(0, 80)}`).join('<br>')}</small>`);
+            } else {
+                showAlert('sponsorAlert', 'error', '❌ Approval failed: ' + (err.reason || err.message || 'Unknown error'));
+            }
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-check-circle"></i> Step 1 — Approve G$ Spending';
         }
@@ -1237,7 +1305,15 @@
             loadSponsorStats();
         } catch (err) {
             console.error(err);
-            showAlert('sponsorAlert', 'error', '❌ Transaction failed: ' + (err.reason || err.message || 'Unknown error'));
+            if (err._miniPayDiag) {
+                const d = err._miniPayDiag;
+                showAlert('sponsorAlert', 'error',
+                    `❌ MiniPay transaction failed<br>` +
+                    `<small style="opacity:.75">Step: ${d.fn} → ${d.to.slice(0,10)}…</small><br>` +
+                    `<small style="opacity:.75">${d.errorLog.map(e => `code=${e.code} msg=${e.message.substring(0, 80)}`).join('<br>')}</small>`);
+            } else {
+                showAlert('sponsorAlert', 'error', '❌ Transaction failed: ' + (err.reason || err.message || 'Unknown error'));
+            }
             document.getElementById('poolFundBtn').disabled = false;
             document.getElementById('poolFundBtn').innerHTML = '<i class="fas fa-hand-holding-heart"></i> Step 2 — Add to Reward Pool';
         }
