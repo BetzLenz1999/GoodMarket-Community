@@ -476,6 +476,10 @@ let _pendingOrderData = null;
 let _scanningActive = false;   // true while blockchain polling is running
 let _wcSessionId = null;
 let _wcAddress = null;
+let _wcMode = null; // "sidecar" | "browser"
+let _wcSignClient = null;
+let _wcBrowserSession = null;
+let _wcSdkLoading = null;
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
 function showToast(msg, type = 'success') {
@@ -548,47 +552,141 @@ function isDAppBrowser() {
 
 function _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-async function wcConnectForReloadly() {
-    const uriResp = await fetch('/api/wc-uri');
-    const uriData = await uriResp.json();
-    if (!uriResp.ok || !uriData.success || !uriData.id || !uriData.uri) {
-        throw new Error(uriData.error || 'WalletConnect is unavailable right now.');
-    }
-    _wcSessionId = uriData.id;
-    setDappStatus('info',
-        '<i class="fas fa-qrcode"></i> Scan WalletConnect QR in your wallet app:<br>' +
-        `<img alt="WalletConnect QR" style="margin-top:8px;max-width:180px;border-radius:8px;background:#fff;padding:8px" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(uriData.uri)}">`
-    );
-
-    for (let i = 0; i < 60; i++) {
-        await _delay(2000);
-        const stResp = await fetch('/api/wc-session/' + encodeURIComponent(_wcSessionId));
-        const stData = await stResp.json();
-        if (!stResp.ok || !stData.success) continue;
-        if (stData.status === 'approved' && stData.address) {
-            _wcAddress = stData.address;
-            if (WALLET_ADDRESS && _wcAddress.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
-                throw new Error('Wrong WalletConnect wallet connected. Please connect your GoodMarket wallet.');
-            }
-            return _wcAddress;
+function _wcLoadSdk() {
+    if (_wcSdkLoading) return _wcSdkLoading;
+    _wcSdkLoading = new Promise((resolve, reject) => {
+        const localSrc = '{{ url_for("static", filename="js/wc-bundle.js", v=ASSET_VERSION) }}';
+        const cdnSrc = 'https://cdn.jsdelivr.net/npm/@walletconnect/sign-client@2.17.0/dist/index.umd.js';
+        function loadScript(src, ok, fail) {
+            const s = document.createElement('script');
+            s.src = src; s.onload = ok; s.onerror = fail;
+            document.head.appendChild(s);
         }
-        if (stData.status === 'rejected') throw new Error('WalletConnect request was rejected.');
+        loadScript(localSrc, () => {
+            const sc = (window['@walletconnect/sign-client'] || {}).SignClient;
+            if (sc) resolve(sc);
+            else loadScript(cdnSrc, () => {
+                const sc2 = (window['@walletconnect/sign-client'] || {}).SignClient;
+                sc2 ? resolve(sc2) : reject(new Error('WalletConnect SDK unavailable'));
+            }, () => reject(new Error('WalletConnect SDK unavailable')));
+        }, () => {
+            loadScript(cdnSrc, () => {
+                const sc2 = (window['@walletconnect/sign-client'] || {}).SignClient;
+                sc2 ? resolve(sc2) : reject(new Error('WalletConnect SDK unavailable'));
+            }, () => reject(new Error('WalletConnect SDK unavailable')));
+        });
+    });
+    return _wcSdkLoading;
+}
+
+async function _wcGetClient() {
+    if (_wcSignClient) return _wcSignClient;
+    if (!WC_PROJECT_ID) throw new Error('WALLETCONNECT_PROJECT_ID is not configured');
+    const SignClient = await _wcLoadSdk();
+    _wcSignClient = await SignClient.init({
+        projectId: WC_PROJECT_ID,
+        metadata: {
+            name: 'GoodMarket',
+            description: 'Reloadly checkout with GoodDollar on Celo',
+            url: window.location.origin,
+            icons: [window.location.origin + '/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}']
+        }
+    });
+    return _wcSignClient;
+}
+
+async function wcConnectForReloadly() {
+    if (_wcAddress) return _wcAddress;
+    try {
+        const uriResp = await fetch('/api/wc-uri');
+        const uriData = await uriResp.json();
+        if (!uriResp.ok || !uriData.success || !uriData.id || !uriData.uri) {
+            throw new Error(uriData.error || 'WalletConnect is unavailable right now.');
+        }
+        _wcSessionId = uriData.id;
+        _wcMode = "sidecar";
+        setDappStatus('info',
+            '<i class="fas fa-qrcode"></i> Scan WalletConnect QR in your wallet app:<br>' +
+            `<img alt="WalletConnect QR" style="margin-top:8px;max-width:180px;border-radius:8px;background:#fff;padding:8px" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(uriData.uri)}">`
+        );
+
+        for (let i = 0; i < 60; i++) {
+            await _delay(2000);
+            const stResp = await fetch('/api/wc-session/' + encodeURIComponent(_wcSessionId));
+            const stData = await stResp.json();
+            if (!stResp.ok || !stData.success) continue;
+            if (stData.status === 'approved' && stData.address) {
+                _wcAddress = stData.address;
+                if (WALLET_ADDRESS && _wcAddress.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+                    throw new Error('Wrong WalletConnect wallet connected. Please connect your GoodMarket wallet.');
+                }
+                return _wcAddress;
+            }
+            if (stData.status === 'rejected') throw new Error('WalletConnect request was rejected.');
+        }
+        throw new Error('WalletConnect approval timed out.');
+    } catch (sidecarErr) {
+        console.warn('WalletConnect sidecar unavailable; using browser fallback.', sidecarErr);
     }
-    throw new Error('WalletConnect approval timed out.');
+
+    const client = await _wcGetClient();
+    const result = await client.connect({
+        requiredNamespaces: {},
+        optionalNamespaces: {
+            eip155: {
+                methods: ['eth_accounts', 'eth_sendTransaction', 'eth_getTransactionReceipt', 'eth_chainId', 'personal_sign'],
+                chains: ['eip155:42220'],
+                events: ['chainChanged', 'accountsChanged']
+            }
+        }
+    });
+    _wcMode = "browser";
+    if (result.uri) {
+        setDappStatus('info',
+            '<i class="fas fa-qrcode"></i> Scan WalletConnect QR in your wallet app:<br>' +
+            `<img alt="WalletConnect QR" style="margin-top:8px;max-width:180px;border-radius:8px;background:#fff;padding:8px" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(result.uri)}">`
+        );
+    }
+    _wcBrowserSession = await result.approval();
+    const ns = _wcBrowserSession.namespaces || {};
+    Object.keys(ns).some((key) => {
+        const accts = ns[key]?.accounts || [];
+        if (accts.length) {
+            _wcAddress = accts[0].split(':').pop();
+            return true;
+        }
+        return false;
+    });
+    if (!_wcAddress) throw new Error('No accounts returned from wallet');
+    if (WALLET_ADDRESS && _wcAddress.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+        throw new Error('Wrong WalletConnect wallet connected. Please connect your GoodMarket wallet.');
+    }
+    return _wcAddress;
 }
 
 async function wcSendTxReloadly(txParams) {
-    if (!_wcSessionId) await wcConnectForReloadly();
-    const txResp = await fetch('/api/wc-tx/' + encodeURIComponent(_wcSessionId), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(txParams)
-    });
-    const txData = await txResp.json();
-    if (!txResp.ok || !txData.success || txData.error || !txData.txHash) {
-        throw new Error(txData.error || 'WalletConnect transaction failed');
+    if (!_wcAddress) await wcConnectForReloadly();
+    if (_wcMode === "sidecar") {
+        const txResp = await fetch('/api/wc-tx/' + encodeURIComponent(_wcSessionId), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(txParams)
+        });
+        const txData = await txResp.json();
+        if (!txResp.ok || !txData.success || txData.error || !txData.txHash) {
+            throw new Error(txData.error || 'WalletConnect transaction failed');
+        }
+        return txData.txHash;
     }
-    return txData.txHash;
+    if (!_wcBrowserSession) throw new Error('WalletConnect browser session is not active.');
+    const client = await _wcGetClient();
+    const txHash = await client.request({
+        topic: _wcBrowserSession.topic,
+        chainId: 'eip155:42220',
+        request: { method: 'eth_sendTransaction', params: [txParams] }
+    });
+    if (!txHash) throw new Error('WalletConnect transaction failed');
+    return txHash;
 }
 
 async function dappConnect() {

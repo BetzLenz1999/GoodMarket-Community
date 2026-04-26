@@ -2592,42 +2592,51 @@
             if (qrWrap) qrWrap.style.display = 'none';
             showWalletStatus('walletConnectStatus', '⏳ Starting WalletConnect...', 'info');
             try {
-                const uriResp = await fetch('/api/wc-uri');
-                if (uriResp.ok) {
-                    const uriData = await uriResp.json();
-                    if (uriData.success && uriData.uri && uriData.id) {
-                        drawWalletConnectQr(uriData.uri);
-                        showWalletStatus('walletConnectStatus', '📲 Awaiting wallet approval. Scan QR or open deeplink in your wallet app.', 'info');
-                        const started = Date.now();
-                        while (Date.now() - started < 120000) {
-                            await new Promise(r => setTimeout(r, 2200));
-                            const stResp = await fetch('/api/wc-session/' + encodeURIComponent(uriData.id));
-                            const stData = await stResp.json();
-                            if (stData.status === 'approved' && stData.address) {
-                                const message = makeLoginMessage(stData.address);
-                                showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve login signature in your wallet.', 'info');
-                                const signResp = await fetch('/api/wc-sign/' + encodeURIComponent(uriData.id), {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ message, address: stData.address })
-                                });
-                                const signData = await signResp.json();
-                                if (!signResp.ok || !signData.signature) {
-                                    throw new Error(signData.error || 'WalletConnect signature failed');
-                                }
-                                const wcVerifyData = await postVerifyIdentity(stData.address, signData.signature, message, getPendingReferralCode());
-                                const wcOkMsg = (wcVerifyData && wcVerifyData.referral_warning)
-                                    ? ('✅ Wallet connected via WalletConnect. ⚠️ ' + wcVerifyData.referral_warning + ' Redirecting...')
-                                    : '✅ Wallet connected via WalletConnect. Redirecting...';
-                                showWalletStatus('walletConnectStatus', wcOkMsg, wcVerifyData && wcVerifyData.referral_warning ? 'warning' : 'success');
-                                setTimeout(() => { window.location.href = '/wallet'; }, wcVerifyData && wcVerifyData.referral_warning ? 2400 : 900);
-                                return;
-                            }
-                            if (stData.status === 'rejected') throw new Error('WalletConnect request rejected by wallet.');
-                        }
-                        throw new Error('WalletConnect session timed out. Please try again or use manual wallet guidance.');
-                    }
+                const sidecarCtrl = new AbortController();
+                const sidecarTimeout = setTimeout(() => sidecarCtrl.abort(), 7000);
+                let uriResp = null;
+                try {
+                    uriResp = await fetch('/api/wc-uri', { signal: sidecarCtrl.signal });
+                } finally {
+                    clearTimeout(sidecarTimeout);
                 }
+                if (!uriResp.ok) {
+                    throw new Error('WalletConnect sidecar unavailable');
+                }
+                const uriData = await uriResp.json();
+                if (!(uriData.success && uriData.uri && uriData.id)) {
+                    throw new Error(uriData.error || 'WalletConnect sidecar unavailable');
+                }
+                drawWalletConnectQr(uriData.uri);
+                showWalletStatus('walletConnectStatus', '📲 Awaiting wallet approval. Scan QR or open deeplink in your wallet app.', 'info');
+                const started = Date.now();
+                while (Date.now() - started < 120000) {
+                    await new Promise(r => setTimeout(r, 2200));
+                    const stResp = await fetch('/api/wc-session/' + encodeURIComponent(uriData.id));
+                    const stData = await stResp.json();
+                    if (stData.status === 'approved' && stData.address) {
+                        const message = makeLoginMessage(stData.address);
+                        showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve login signature in your wallet.', 'info');
+                        const signResp = await fetch('/api/wc-sign/' + encodeURIComponent(uriData.id), {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message, address: stData.address })
+                        });
+                        const signData = await signResp.json();
+                        if (!signResp.ok || !signData.signature) {
+                            throw new Error(signData.error || 'WalletConnect signature failed');
+                        }
+                        const wcVerifyData = await postVerifyIdentity(stData.address, signData.signature, message, getPendingReferralCode());
+                        const wcOkMsg = (wcVerifyData && wcVerifyData.referral_warning)
+                            ? ('✅ Wallet connected via WalletConnect. ⚠️ ' + wcVerifyData.referral_warning + ' Redirecting...')
+                            : '✅ Wallet connected via WalletConnect. Redirecting...';
+                        showWalletStatus('walletConnectStatus', wcOkMsg, wcVerifyData && wcVerifyData.referral_warning ? 'warning' : 'success');
+                        setTimeout(() => { window.location.href = '/wallet'; }, wcVerifyData && wcVerifyData.referral_warning ? 2400 : 900);
+                        return;
+                    }
+                    if (stData.status === 'rejected') throw new Error('WalletConnect request rejected by wallet.');
+                }
+                throw new Error('WalletConnect session timed out. Please try again or use manual wallet guidance.');
             } catch (serverErr) {
                 console.warn('Sidecar WalletConnect unavailable, using browser fallback:', serverErr);
                 showWalletStatus('walletConnectStatus', '⚠️ WalletConnect relay unavailable. Trying in-browser WalletConnect fallback…', 'warning');
