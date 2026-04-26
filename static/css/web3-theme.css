@@ -268,10 +268,14 @@ button.primary:hover,
     box-shadow: 0 12px 36px rgba(34, 211, 238, 0.36), inset 0 1px 0 rgba(255,255,255,0.4);
 }
 
-/* ---------- mono numerals (for big balances, addresses, tx hashes) ---------- */
+/* ---------- mono numerals (for big balances, addresses, tx hashes) ----------
+ * Target only the actual numeric value elements. Avoid container classes
+ * like `.amount-display` (used in claim.html as a wrapper around both
+ * numeric values AND text labels — the mono font would leak to the labels).
+ */
 .web3-mono,
 .balance-amount,
-.amount-display,
+.amount-value,
 .stat-value,
 .ps-value {
     font-family: var(--w3-font-mono);
