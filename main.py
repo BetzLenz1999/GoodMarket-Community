@@ -198,6 +198,7 @@ _CSP_DIRECTIVES = (
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
     "https://cdn.jsdelivr.net https://cdnjs.cloudflare.com "
+    "https://esm.sh "
     "https://telegram.org https://*.telegram.org",
     "style-src 'self' 'unsafe-inline' "
     "https://fonts.googleapis.com https://cdnjs.cloudflare.com",
@@ -205,7 +206,10 @@ _CSP_DIRECTIVES = (
     "https://fonts.gstatic.com https://cdnjs.cloudflare.com",
     "img-src 'self' data: blob: https:",
     "connect-src 'self' https: wss:",
-    "frame-src 'self' https://telegram.org https://*.telegram.org",
+    "frame-src 'self' "
+    "https://telegram.org https://*.telegram.org "
+    "https://www.youtube.com https://www.youtube-nocookie.com "
+    "https://platform.twitter.com",
     "media-src 'self' data: blob:",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
