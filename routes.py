@@ -5630,6 +5630,11 @@ def _wc_service_url():
 
 
 def _wc_proxy(method: str, path: str, body: dict = None, timeout: int = 30):
+    has_explicit_sidecar = bool(os.getenv("WC_SERVICE_URL"))
+    is_serverless_runtime = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+    if is_serverless_runtime and not has_explicit_sidecar:
+        return None, 503, "WalletConnect sidecar unavailable in serverless runtime"
+
     url = f"{_wc_service_url()}{path}"
     payload = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(
@@ -5911,7 +5916,12 @@ def swap_page():
                 return render_template("feature_unavailable.html", feature_name="Swap", wallet=wallet)
     except Exception:
         pass
-    return render_template("swap.html", wallet=wallet, login_method=session.get("login_method", "walletconnect"))
+    return render_template(
+        "swap.html",
+        wallet=wallet,
+        login_method=session.get("login_method", "walletconnect"),
+        walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
+    )
 
 
 @routes.route("/send-link")
@@ -5920,7 +5930,12 @@ def send_link_page():
     wallet = session.get("wallet")
     if not wallet or not session.get("verified"):
         return redirect(url_for("routes.index"))
-    return render_template("send-link.html", wallet=wallet, login_method=session.get("login_method", "walletconnect"))
+    return render_template(
+        "send-link.html",
+        wallet=wallet,
+        login_method=session.get("login_method", "walletconnect"),
+        walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
+    )
 
 
 @routes.route("/claim")
