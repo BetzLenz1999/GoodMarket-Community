@@ -268,6 +268,190 @@ class AnalyticsService:
         self._set_cache("gooddollar_insights", insights)
         return insights
 
+    def get_homepage_public_stats(self):
+        """Public stats for the homepage hero (no auth required).
+
+        Returns total G$ disbursed (from disbursement analytics), unique active
+        earners aggregated across every G$-earning feature on the platform, and
+        the number of daily-task completions in the last 30 days.
+        """
+        cached = self._get_cached("homepage_public_stats", ttl_seconds=300)
+        if cached:
+            return cached
+
+        total_g_disbursed = 0.0
+        total_g_disbursed_formatted = "0 G$"
+        try:
+            disbursements_stats = self._get_total_disbursements_stats()
+            total_g_disbursed = float(disbursements_stats.get("total_g_disbursed", 0) or 0)
+            total_g_disbursed_formatted = self._format_compact_number(total_g_disbursed) + " G$"
+        except Exception as e:
+            logger.error(f"homepage_public_stats: disbursements failed: {e}")
+
+        active_earners = self._count_active_earners_across_features()
+        tasks_last_30_days = self._count_daily_tasks_last_30_days()
+        week_growth_pct = self._compute_disbursement_week_growth_pct()
+
+        result = {
+            "total_g_disbursed": total_g_disbursed,
+            "total_g_disbursed_formatted": total_g_disbursed_formatted,
+            "total_g_disbursed_week_growth_pct": week_growth_pct,
+            "active_earners": active_earners,
+            "active_earners_formatted": f"{active_earners:,}",
+            "tasks_last_30_days": tasks_last_30_days,
+            "tasks_last_30_days_formatted": f"{tasks_last_30_days:,}",
+        }
+        self._set_cache("homepage_public_stats", result)
+        return result
+
+    def _format_compact_number(self, value):
+        """Format a number into a compact human-readable string (e.g. 2.84M)."""
+        try:
+            n = float(value)
+        except (TypeError, ValueError):
+            return "0"
+        sign = "-" if n < 0 else ""
+        n = abs(n)
+        if n >= 1_000_000_000:
+            return f"{sign}{n / 1_000_000_000:.2f}B"
+        if n >= 1_000_000:
+            return f"{sign}{n / 1_000_000:.2f}M"
+        if n >= 10_000:
+            return f"{sign}{n / 1_000:.1f}K"
+        if n >= 1_000:
+            return f"{sign}{n:,.0f}"
+        return f"{sign}{n:,.0f}"
+
+    def _count_active_earners_across_features(self):
+        """Union of unique wallet addresses across every earning feature."""
+        try:
+            from supabase_client import supabase, supabase_enabled
+        except Exception as e:
+            logger.error(f"active earners: supabase import failed: {e}")
+            return 0
+
+        if not supabase_enabled:
+            return 0
+
+        unique_wallets = set()
+        feature_tables = [
+            ("learnearn_log", None),
+            ("twitter_task_log", ("status", "completed")),
+            ("telegram_task_log", ("status", "completed")),
+            ("minigame_rewards_log", None),
+            ("minigame_balances", None),
+            ("community_stories_submissions", None),
+            ("voucher_claims_log", None),
+            ("achievement_card_sales", None),
+            ("referral_rewards_log", ("status", "completed")),
+        ]
+        for table_name, eq_filter in feature_tables:
+            try:
+                query = supabase.table(table_name).select("wallet_address")
+                if eq_filter:
+                    query = query.eq(eq_filter[0], eq_filter[1])
+                result = query.execute()
+                for row in (result.data or []):
+                    wallet = row.get("wallet_address")
+                    if wallet:
+                        unique_wallets.add(wallet.lower())
+            except Exception as e:
+                logger.warning(f"active earners: skip {table_name}: {e}")
+        return len(unique_wallets)
+
+    def _count_daily_tasks_last_30_days(self):
+        """Number of completed daily-task entries in the last 30 days."""
+        try:
+            from supabase_client import supabase, supabase_enabled
+        except Exception as e:
+            logger.error(f"daily tasks: supabase import failed: {e}")
+            return 0
+
+        if not supabase_enabled:
+            return 0
+
+        cutoff = (datetime.utcnow() - timedelta(days=30)).isoformat()
+        total = 0
+        for table_name in ("twitter_task_log", "telegram_task_log"):
+            try:
+                result = (
+                    supabase.table(table_name)
+                    .select("id", count="exact")
+                    .eq("status", "completed")
+                    .gte("created_at", cutoff)
+                    .execute()
+                )
+                count = getattr(result, "count", None)
+                if count is None:
+                    count = len(result.data or [])
+                total += int(count or 0)
+            except Exception as e:
+                logger.warning(f"daily tasks: skip {table_name}: {e}")
+        return total
+
+    def _compute_disbursement_week_growth_pct(self):
+        """Week-over-week growth (%) of total disbursed G$.
+
+        Compares the most recent 7 days (`weekly_breakdown`) against the
+        average prior week over the rest of the reporting period (derived from
+        `monthly_breakdown` and `monthly_date_range`). Returns None when there
+        isn't enough history to make a meaningful comparison so the UI can
+        fall back to a neutral label instead of showing fabricated growth.
+        """
+        try:
+            stats = self._get_total_disbursements_stats()
+            weekly = stats.get("weekly_breakdown") or {}
+            monthly = stats.get("monthly_breakdown") or {}
+            date_range = stats.get("monthly_date_range") or {}
+
+            def _sum(d):
+                if not isinstance(d, dict):
+                    return 0.0
+                total = 0.0
+                for v in d.values():
+                    try:
+                        total += float(v or 0)
+                    except (TypeError, ValueError):
+                        continue
+                return total
+
+            this_week = _sum(weekly)
+            month_total = _sum(monthly)
+            if this_week <= 0 or month_total <= this_week:
+                return None
+
+            def _parse_date(value):
+                if not value:
+                    return None
+                value = str(value)
+                for fmt in ("%b %d, %Y", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"):
+                    try:
+                        return datetime.strptime(value, fmt)
+                    except ValueError:
+                        continue
+                try:
+                    return datetime.fromisoformat(value)
+                except ValueError:
+                    return None
+
+            start = _parse_date(date_range.get("start_date"))
+            end = _parse_date(date_range.get("end_date"))
+            period_days = max((end - start).days, 0) if start and end else 0
+
+            prior_days = period_days - 7
+            if prior_days < 7:
+                return None
+
+            prior_total = month_total - this_week
+            avg_prior_week = prior_total / (prior_days / 7.0)
+            if avg_prior_week <= 0:
+                return None
+
+            return round(((this_week - avg_prior_week) / avg_prior_week) * 100.0, 1)
+        except Exception as e:
+            logger.debug(f"week growth pct: {e}")
+        return None
+
     def _get_cached(self, key, ttl_seconds=60):
         """Get value from cache if it exists and hasn't expired"""
         if key in self._cache:
