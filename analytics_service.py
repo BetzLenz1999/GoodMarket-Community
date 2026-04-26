@@ -420,12 +420,23 @@ class AnalyticsService:
             if this_week <= 0 or month_total <= this_week:
                 return None
 
-            try:
-                start = datetime.fromisoformat(str(date_range.get("start_date", "")))
-                end = datetime.fromisoformat(str(date_range.get("end_date", "")))
-                period_days = max((end - start).days, 0)
-            except (TypeError, ValueError):
-                period_days = 0
+            def _parse_date(value):
+                if not value:
+                    return None
+                value = str(value)
+                for fmt in ("%b %d, %Y", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"):
+                    try:
+                        return datetime.strptime(value, fmt)
+                    except ValueError:
+                        continue
+                try:
+                    return datetime.fromisoformat(value)
+                except ValueError:
+                    return None
+
+            start = _parse_date(date_range.get("start_date"))
+            end = _parse_date(date_range.get("end_date"))
+            period_days = max((end - start).days, 0) if start and end else 0
 
             prior_days = period_days - 7
             if prior_days < 7:

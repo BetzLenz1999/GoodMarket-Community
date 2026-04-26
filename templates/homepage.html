@@ -1617,7 +1617,7 @@
                     <div class="stat-value" id="heroStatDisbursed">{{ homepage_stats.total_g_disbursed_formatted }}</div>
                     <div class="stat-foot" id="heroStatDisbursedFoot">
                         {% if homepage_stats.total_g_disbursed_week_growth_pct is not none %}
-                            +{{ homepage_stats.total_g_disbursed_week_growth_pct }}% this week
+                            {% if homepage_stats.total_g_disbursed_week_growth_pct >= 0 %}+{% endif %}{{ homepage_stats.total_g_disbursed_week_growth_pct }}% this week
                         {% else %}
                             On-chain · Celo
                         {% endif %}
