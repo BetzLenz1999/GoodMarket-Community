@@ -2382,7 +2382,7 @@
                         });
                     } catch (err) {
                         if (GMTxPreview.isCancelled(err)) {
-                            setSwapBtnState("idle", "Swap");
+                            setSwapBtnState("ready");
                             stepIndicators.className = "step-indicators";
                             showAlert("alert-info", "Swap cancelled.");
                             return;
@@ -2736,10 +2736,13 @@
                 if (allowance < amountIn) {
                     setReserveBtnState("loading", "Approving token…");
                     try {
+                        // cUSD and G$ on Celo are both 18-decimal; this path
+                        // never touches a non-18-decimal token, so we hardcode
+                        // instead of looking up a non-existent `fromDecimals`.
                         await GMTxPreview.confirm({
                             action: 'approve',
                             token: fromSym,
-                            amount: ethers.formatUnits(amountIn, fromDecimals || 18),
+                            amount: ethers.formatUnits(amountIn, 18),
                             to: RESERVE_BROKER,
                             toLabel: 'GoodReserve / Mento Broker',
                             network: 'Celo',
@@ -2747,7 +2750,7 @@
                         });
                     } catch (err) {
                         if (GMTxPreview.isCancelled(err)) {
-                            setReserveBtnState("idle", reserveDirection === "buy" ? "Buy G$" : "Sell G$");
+                            setReserveBtnState("ready");
                             stepIndicators.className = "step-indicators";
                             showReserveAlert("alert-info", "Swap cancelled.");
                             return;
