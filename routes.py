@@ -1041,11 +1041,12 @@ def public_feature_visibility():
         if not supabase:
             return jsonify({"success": True, "swap_visible": True, "wallet_visible": True,
                             "savings_visible": True, "topup_visible": True, "giftcard_visible": True,
-                            "virtualcard_visible": True, "utility_visible": True})
+                            "virtualcard_visible": True, "utility_visible": True,
+                            "reserve_swap_visible": False})
         result = safe_supabase_operation(
             lambda: supabase.table('maintenance_settings')
                 .select('feature_name,is_maintenance')
-                .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility'])
+                .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility', 'reserve_swap_feature'])
                 .execute(),
             operation_name="get feature visibility"
         )
@@ -1056,6 +1057,7 @@ def public_feature_visibility():
         giftcard_visible = True
         virtualcard_visible = True
         utility_visible = True
+        reserve_swap_visible = False
         if result and result.data:
             for row in result.data:
                 fn = row['feature_name']
@@ -1074,10 +1076,13 @@ def public_feature_visibility():
                     virtualcard_visible = val
                 elif fn == 'store_utility':
                     utility_visible = val
+                elif fn == 'reserve_swap_feature':
+                    reserve_swap_visible = val
         data = {"success": True, "swap_visible": swap_visible, "wallet_visible": wallet_visible,
                 "savings_visible": savings_visible,
                 "topup_visible": topup_visible, "giftcard_visible": giftcard_visible,
-                "virtualcard_visible": virtualcard_visible, "utility_visible": utility_visible}
+                "virtualcard_visible": virtualcard_visible, "utility_visible": utility_visible,
+                "reserve_swap_visible": reserve_swap_visible}
         _feature_visibility_cache["data"] = data
         _feature_visibility_cache["expires"] = now + _PUBLIC_ENDPOINT_CACHE_TTL
         return jsonify(data)
@@ -1085,7 +1090,8 @@ def public_feature_visibility():
         logger.error(f"Feature visibility fetch error: {e}")
         return jsonify({"success": True, "swap_visible": True, "wallet_visible": True,
                         "savings_visible": True, "topup_visible": True, "giftcard_visible": True,
-                        "virtualcard_visible": True, "utility_visible": True})
+                        "virtualcard_visible": True, "utility_visible": True,
+                        "reserve_swap_visible": False})
 
 
 @routes.route("/api/admin/feature-visibility", methods=["GET"])
@@ -1099,7 +1105,7 @@ def get_feature_visibility():
         result = safe_supabase_operation(
             lambda: supabase.table('maintenance_settings')
                 .select('feature_name,is_maintenance')
-                .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility'])
+                .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility', 'reserve_swap_feature'])
                 .execute(),
             operation_name="get feature visibility admin"
         )
@@ -1110,6 +1116,7 @@ def get_feature_visibility():
         giftcard_visible = True
         virtualcard_visible = True
         utility_visible = True
+        reserve_swap_visible = False
         if result and result.data:
             for row in result.data:
                 fn = row['feature_name']
@@ -1128,10 +1135,13 @@ def get_feature_visibility():
                     virtualcard_visible = val
                 elif fn == 'store_utility':
                     utility_visible = val
+                elif fn == 'reserve_swap_feature':
+                    reserve_swap_visible = val
         return jsonify({"success": True, "swap_visible": swap_visible, "wallet_visible": wallet_visible,
                         "savings_visible": savings_visible,
                         "topup_visible": topup_visible, "giftcard_visible": giftcard_visible,
-                        "virtualcard_visible": virtualcard_visible, "utility_visible": utility_visible})
+                        "virtualcard_visible": virtualcard_visible, "utility_visible": utility_visible,
+                        "reserve_swap_visible": reserve_swap_visible})
     except Exception as e:
         logger.error(f"Admin feature visibility fetch error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -1151,7 +1161,7 @@ def set_feature_visibility():
         is_hidden = not visible
         admin_wallet = session.get('wallet')
 
-        if feature not in ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility']:
+        if feature not in ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility', 'reserve_swap_feature']:
             return jsonify({"success": False, "error": "Invalid feature name"}), 400
 
         existing = safe_supabase_operation(
@@ -5868,22 +5878,27 @@ def wallet_page():
 
 @routes.route("/swap")
 def swap_page():
-    """Swap page for G$ <-> CELO via Uniswap V3 on Celo"""
+    """Swap page: DEX (Uniswap V3 on Celo) and GoodReserve (Mento) tabs"""
     wallet = session.get("wallet")
     if not wallet or not session.get("verified"):
         return redirect(url_for("routes.index"))
+    reserve_visible = False
     try:
         supabase = get_supabase_client()
         if supabase:
             result = safe_supabase_operation(
                 lambda: supabase.table('maintenance_settings')
-                    .select('is_maintenance')
-                    .eq('feature_name', 'swap_feature')
+                    .select('feature_name,is_maintenance')
+                    .in_('feature_name', ['swap_feature', 'reserve_swap_feature'])
                     .execute(),
                 operation_name="check swap feature visibility"
             )
-            if result and result.data and result.data[0].get('is_maintenance', False):
-                return render_template("feature_unavailable.html", feature_name="Swap", wallet=wallet)
+            if result and result.data:
+                for row in result.data:
+                    if row.get('feature_name') == 'swap_feature' and row.get('is_maintenance', False):
+                        return render_template("feature_unavailable.html", feature_name="Swap", wallet=wallet)
+                    if row.get('feature_name') == 'reserve_swap_feature' and not row.get('is_maintenance', False):
+                        reserve_visible = True
     except Exception:
         pass
     return render_template(
@@ -5891,7 +5906,157 @@ def swap_page():
         wallet=wallet,
         login_method=session.get("login_method", "walletconnect"),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
+        reserve_swap_visible=reserve_visible,
     )
+
+
+# ── GoodReserve (Mento) constants on Celo mainnet ──────────────────────────
+# Verified from @gooddollar/goodprotocol/releases/deployment.json (production-celo)
+# and live calls against forno.celo.org.
+GOODRESERVE_BROKER_CELO   = "0x88de45906D4F5a57315c133620cfa484cB297541"
+GOODRESERVE_PROVIDER_CELO = "0x2fFBB49055d487DdBBb0C052Cd7c2a02A7971e41"
+GOODRESERVE_GD_CELO       = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"
+GOODRESERVE_CUSD_CELO     = "0x765DE816845861e75A25fCA122bb6898B8B1282a"
+GOODRESERVE_RPC_CELO      = os.environ.get("CELO_RPC_URL", "https://forno.celo.org")
+
+_goodreserve_quote_cache = {"data": {}, "expires": {}}
+_GOODRESERVE_QUOTE_TTL   = 6  # seconds
+
+
+def _goodreserve_eth_call(to_addr, data_hex):
+    """Minimal eth_call helper for GoodReserve quotes (no web3 dep required)."""
+    import requests
+    payload = {
+        "jsonrpc": "2.0", "id": 1, "method": "eth_call",
+        "params": [{"to": to_addr, "data": data_hex}, "latest"],
+    }
+    resp = requests.post(GOODRESERVE_RPC_CELO, json=payload, timeout=8,
+                         headers={"User-Agent": "GoodMarket/1.0"})
+    resp.raise_for_status()
+    body = resp.json()
+    if "error" in body:
+        raise RuntimeError(f"eth_call reverted: {body['error'].get('message','unknown')}")
+    return body.get("result", "0x")
+
+
+def _goodreserve_get_exchange_id():
+    """Fetch the G$/cUSD exchangeId from the MentoExchangeProvider on Celo.
+    Returns a 32-byte hex string (no 0x prefix) or None on failure."""
+    cached = _goodreserve_quote_cache["data"].get("exchange_id")
+    if cached and time.time() < _goodreserve_quote_cache["expires"].get("exchange_id", 0):
+        return cached
+    raw = _goodreserve_eth_call(GOODRESERVE_PROVIDER_CELO, "0x1e2e3a6b")
+    hexd = raw[2:] if raw.startswith("0x") else raw
+    if len(hexd) < 64 * 4:
+        return None
+    arr_off = int(hexd[:64], 16) * 2
+    arr_len = int(hexd[arr_off:arr_off + 64], 16)
+    if arr_len < 1:
+        return None
+    elem_offsets_start = arr_off + 64
+    rel = int(hexd[elem_offsets_start:elem_offsets_start + 64], 16) * 2
+    abs_off = elem_offsets_start + rel
+    exchange_id = hexd[abs_off:abs_off + 64]
+    _goodreserve_quote_cache["data"]["exchange_id"] = exchange_id
+    _goodreserve_quote_cache["expires"]["exchange_id"] = time.time() + 3600
+    return exchange_id
+
+
+def _goodreserve_get_pool(exchange_id):
+    """Fetch the pool struct (returns dict with reserveRatio, exitContribution)."""
+    data_hex = "0x278488a4" + exchange_id
+    raw = _goodreserve_eth_call(GOODRESERVE_PROVIDER_CELO, data_hex)
+    hexd = raw[2:] if raw.startswith("0x") else raw
+    if len(hexd) < 64 * 6:
+        return None
+    return {
+        "reserve_asset":      "0x" + hexd[24:64],
+        "token_address":      "0x" + hexd[64 + 24:128],
+        "token_supply":       int(hexd[128:192], 16),
+        "reserve_balance":    int(hexd[192:256], 16),
+        "reserve_ratio":      int(hexd[256:320], 16),
+        "exit_contribution":  int(hexd[320:384], 16),
+    }
+
+
+def _goodreserve_quote(direction, amount_in_wei):
+    """Quote amountOut for a given direction ('buy' = cUSD->G$, 'sell' = G$->cUSD)."""
+    exchange_id = _goodreserve_get_exchange_id()
+    if not exchange_id:
+        raise RuntimeError("GoodReserve exchange not found on Celo")
+    if direction == "buy":
+        token_in, token_out = GOODRESERVE_CUSD_CELO, GOODRESERVE_GD_CELO
+    else:
+        token_in, token_out = GOODRESERVE_GD_CELO, GOODRESERVE_CUSD_CELO
+    data = (
+        "0xa20f2305"
+        + GOODRESERVE_PROVIDER_CELO[2:].lower().rjust(64, "0")
+        + exchange_id
+        + token_in[2:].lower().rjust(64, "0")
+        + token_out[2:].lower().rjust(64, "0")
+        + format(amount_in_wei, "x").rjust(64, "0")
+    )
+    raw = _goodreserve_eth_call(GOODRESERVE_BROKER_CELO, data)
+    hexd = raw[2:] if raw.startswith("0x") else raw
+    if len(hexd) < 64:
+        raise RuntimeError("empty quote response")
+    return int(hexd[:64], 16)
+
+
+@routes.route("/api/reserve/quote", methods=["POST"])
+def reserve_quote():
+    """Read-only quote for the GoodDollar Reserve (Mento) on Celo.
+
+    Body: { direction: 'buy' | 'sell', amount: '<decimal string of human units>' }
+    Returns: amount_in_wei, amount_out_wei, exit_contribution_bps,
+             reserve_ratio_bps, exchange_id, broker, provider, gd, cusd.
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+        direction = (body.get("direction") or "").strip().lower()
+        amount_str = str(body.get("amount") or "").strip()
+        if direction not in ("buy", "sell"):
+            return jsonify({"success": False, "error": "direction must be 'buy' or 'sell'"}), 400
+        try:
+            amount_human = float(amount_str)
+        except Exception:
+            return jsonify({"success": False, "error": "invalid amount"}), 400
+        if amount_human <= 0:
+            return jsonify({"success": False, "error": "amount must be > 0"}), 400
+        amount_in_wei = int(round(amount_human * (10 ** 18)))
+        cache_key = f"{direction}:{amount_in_wei}"
+        now = time.time()
+        cached = _goodreserve_quote_cache["data"].get(cache_key)
+        cached_exp = _goodreserve_quote_cache["expires"].get(cache_key, 0)
+        if cached and now < cached_exp:
+            return jsonify(cached)
+        exchange_id = _goodreserve_get_exchange_id()
+        if not exchange_id:
+            return jsonify({"success": False, "error": "reserve unavailable"}), 503
+        pool = _goodreserve_get_pool(exchange_id) or {}
+        amount_out_wei = _goodreserve_quote(direction, amount_in_wei)
+        exit_bps = int(round(pool.get("exit_contribution", 0) / 1e8 * 10000))
+        ratio_bps = int(round(pool.get("reserve_ratio", 0) / 1e8 * 10000))
+        result = {
+            "success": True,
+            "direction": direction,
+            "amount_in_wei": str(amount_in_wei),
+            "amount_out_wei": str(amount_out_wei),
+            "exit_contribution_bps": exit_bps,
+            "reserve_ratio_bps": ratio_bps,
+            "exchange_id": "0x" + exchange_id,
+            "broker": GOODRESERVE_BROKER_CELO,
+            "provider": GOODRESERVE_PROVIDER_CELO,
+            "gd": GOODRESERVE_GD_CELO,
+            "cusd": GOODRESERVE_CUSD_CELO,
+            "chain_id": 42220,
+        }
+        _goodreserve_quote_cache["data"][cache_key] = result
+        _goodreserve_quote_cache["expires"][cache_key] = now + _GOODRESERVE_QUOTE_TTL
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"reserve_quote error: {e}")
+        return jsonify({"success": False, "error": "quote failed"}), 500
 
 
 @routes.route("/send-link")

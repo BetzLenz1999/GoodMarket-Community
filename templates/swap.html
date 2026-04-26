@@ -537,6 +537,73 @@
             .swap-card { padding: 1.25rem; }
             .amount-input { font-size: 1.15rem; }
         }
+
+        /* ── GoodReserve tab styles ── */
+        .swap-tabs {
+            display: flex;
+            gap: 0.4rem;
+            margin-bottom: 1rem;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            padding: 0.3rem;
+        }
+        .swap-tab-btn {
+            flex: 1;
+            background: transparent;
+            border: 0;
+            color: rgba(255,255,255,0.55);
+            font-weight: 600;
+            font-size: 0.9rem;
+            padding: 0.6rem 0.5rem;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.18s, color 0.18s;
+            font-family: inherit;
+        }
+        .swap-tab-btn:hover { color: #cbd5e1; }
+        .swap-tab-btn.active {
+            background: rgba(124,58,237,0.18);
+            color: #fff;
+        }
+        .pane.hidden-tab { display: none !important; }
+        .reserve-direction {
+            display: flex;
+            gap: 0.4rem;
+            margin-bottom: 1rem;
+        }
+        .reserve-dir-btn {
+            flex: 1;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.09);
+            color: rgba(255,255,255,0.65);
+            font-weight: 600;
+            font-size: 0.92rem;
+            padding: 0.65rem 0.5rem;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.18s;
+            font-family: inherit;
+        }
+        .reserve-dir-btn:hover { color: #fff; }
+        .reserve-dir-btn.active {
+            background: rgba(124,58,237,0.18);
+            border-color: rgba(124,58,237,0.4);
+            color: #fff;
+        }
+        .reserve-info-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(245,158,11,0.10);
+            border: 1px solid rgba(245,158,11,0.28);
+            border-radius: 999px;
+            padding: 0.3rem 0.75rem;
+            font-size: 0.78rem;
+            color: #fbbf24;
+            font-weight: 600;
+            margin-bottom: 0.85rem;
+        }
     </style>
 </head>
 <body>
@@ -565,8 +632,19 @@
         <!-- Header -->
         <div class="page-header">
             <h1 class="page-title">🔄 Swap</h1>
-            <p class="page-subtitle">Swap G$, CELO, cUSD and USDT via Uniswap V3 on Celo</p>
+            <p class="page-subtitle">Swap G$, CELO, cUSD and USDT via Uniswap V3 on Celo, or buy &amp; sell G$ at the GoodReserve protocol price</p>
         </div>
+
+        {% if reserve_swap_visible %}
+        <!-- Tab Switcher (DEX vs GoodReserve) -->
+        <div class="swap-tabs" role="tablist" aria-label="Swap mode">
+            <button type="button" id="tabBtnDex" class="swap-tab-btn active" role="tab" aria-selected="true" onclick="setSwapTab('dex')">Uniswap V3</button>
+            <button type="button" id="tabBtnReserve" class="swap-tab-btn" role="tab" aria-selected="false" onclick="setSwapTab('reserve')">GoodReserve</button>
+        </div>
+        {% endif %}
+
+        <!-- DEX Pane -->
+        <div class="pane pane-dex">
 
         <!-- Swap Card -->
         <div class="swap-card">
@@ -692,6 +770,124 @@
                 Also available on Uniswap ↗
             </a>
         </div>
+
+        </div><!-- /.pane-dex -->
+
+        {% if reserve_swap_visible %}
+        <!-- GoodReserve Pane -->
+        <div class="pane pane-reserve hidden-tab">
+            <div class="swap-card">
+
+                <div class="network-badge">
+                    <span class="network-dot"></span>
+                    Celo Mainnet · GoodDollar Reserve (Mento)
+                </div>
+
+                <span class="reserve-info-pill" id="reserveExitPill" style="display:none;">
+                    <span>⚠️</span>
+                    <span id="reserveExitText">Exit contribution: —</span>
+                </span>
+
+                <!-- Direction toggle: Buy G$ ↔ Sell G$ -->
+                <div class="reserve-direction" role="tablist" aria-label="Reserve direction">
+                    <button type="button" id="reserveDirBuy" class="reserve-dir-btn active" onclick="setReserveDirection('buy')">Buy G$ with cUSD</button>
+                    <button type="button" id="reserveDirSell" class="reserve-dir-btn" onclick="setReserveDirection('sell')">Sell G$ for cUSD</button>
+                </div>
+
+                <!-- From -->
+                <div class="token-box">
+                    <div class="token-box-label">You pay</div>
+                    <div class="token-row">
+                        <div class="token-selector" style="cursor:default;opacity:0.95;">
+                            <div class="token-icon cusd" id="reserveFromIcon">$</div>
+                            <span id="reserveFromSymbol">cUSD</span>
+                        </div>
+                        <input
+                            type="number"
+                            class="amount-input"
+                            id="reserveAmountIn"
+                            placeholder="0.0"
+                            min="0"
+                            step="any"
+                            oninput="onReserveAmountChange()"
+                        >
+                    </div>
+                    <div class="token-balance">
+                        <span>Balance: <span id="reserveFromBalance">—</span></span>
+                        <button type="button" class="max-btn" onclick="setReserveMax()">MAX</button>
+                    </div>
+                </div>
+
+                <!-- To -->
+                <div class="token-box" style="margin-top:0.85rem;">
+                    <div class="token-box-label">You receive (estimated)</div>
+                    <div class="token-row">
+                        <div class="token-selector" style="cursor:default;opacity:0.95;">
+                            <div class="token-icon gd" id="reserveToIcon">G$</div>
+                            <span id="reserveToSymbol">G$</span>
+                        </div>
+                        <input
+                            type="text"
+                            class="amount-input"
+                            id="reserveAmountOut"
+                            placeholder="—"
+                            readonly
+                            style="cursor:default;"
+                        >
+                    </div>
+                    <div class="token-balance">
+                        <span>Balance: <span id="reserveToBalance">—</span></span>
+                    </div>
+                </div>
+
+                <!-- Quote details -->
+                <div class="quote-box hidden" id="reserveQuoteBox" style="margin-top:1rem;">
+                    <div class="quote-row">
+                        <span>Rate</span>
+                        <strong id="reserveQuoteRate">—</strong>
+                    </div>
+                    <div class="quote-row">
+                        <span>Minimum received</span>
+                        <strong id="reserveQuoteMinOut">—</strong>
+                    </div>
+                    <div class="quote-row" id="reserveExitRow" style="display:none;">
+                        <span>Exit contribution</span>
+                        <strong id="reserveQuoteExit" style="color:#fbbf24;">—</strong>
+                    </div>
+                    <div class="quote-row">
+                        <span>Reserve ratio</span>
+                        <strong id="reserveQuoteRatio">—</strong>
+                    </div>
+                </div>
+
+                <!-- Step indicators -->
+                <div class="step-indicators" id="reserveStepIndicators" style="margin-top:1rem;">
+                    <div class="step" id="reserveStep1">1. Approve</div>
+                    <div class="step" id="reserveStep2">2. Buy / Sell</div>
+                </div>
+
+                <!-- Action button -->
+                <button class="swap-btn" id="reserveBtn" onclick="startReserveSwap()" disabled style="margin-top:1rem;">
+                    Enter an amount
+                </button>
+
+                <!-- Alert -->
+                <div class="alert" id="reserveAlert"></div>
+            </div>
+
+            <!-- Info -->
+            <div class="info-card" style="margin-top:1rem;">
+                <div class="info-card-title">About GoodReserve</div>
+                Buy and sell G$ directly to/from the <strong style="color:#e2e8f0;">GoodDollar Reserve</strong> (Mento-based) on Celo.
+                Prices come from the protocol bonding curve — no DEX slippage from thin pools.
+                Sells include an automatic <strong style="color:#fbbf24;">exit contribution</strong> that goes back into the reserve and grows the GoodDollar economy.
+                <br><br>
+                <a class="info-link" href="https://docs.gooddollar.org/user-guides/buy-and-sell-gusd" target="_blank" rel="noopener">
+                    Learn more in the GoodDollar docs ↗
+                </a>
+            </div>
+        </div><!-- /.pane-reserve -->
+        {% endif %}
 
     </div>
 
@@ -2243,6 +2439,307 @@
                 showAlert("alert-error", `❌ Swap failed: ${msg.substring(0, 150)}`);
                 if (currentQuote) setSwapBtnState("ready");
                 else setSwapBtnState("enter");
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // GoodReserve (Mento) tab: G$ ↔ cUSD direct buy/sell against the protocol
+        // bonding curve. Uses Mento Broker.swapIn(...) on Celo. No DEX, no pool.
+        // ═══════════════════════════════════════════════════════════════════════
+        const RESERVE_BROKER   = "0x88de45906D4F5a57315c133620cfa484cB297541";
+        const RESERVE_PROVIDER = "0x2fFBB49055d487DdBBb0C052Cd7c2a02A7971e41";
+        const RESERVE_BROKER_ABI = [
+            "function getAmountOut(address exchangeProvider, bytes32 exchangeId, address tokenIn, address tokenOut, uint256 amountIn) view returns (uint256 amountOut)",
+            "function swapIn(address exchangeProvider, bytes32 exchangeId, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin) returns (uint256 amountOut)"
+        ];
+        let reserveDirection = "buy";   // "buy" = cUSD->G$, "sell" = G$->cUSD
+        let reserveQuote     = null;    // { amountIn, amountOut, exitBps, ratioBps, exchangeId }
+        let reserveQuoteTimer = null;
+        const RESERVE_SLIPPAGE_BPS = 50n; // 0.5% safety margin between quote and tx
+
+        function setSwapTab(name) {
+            const dexPane = document.querySelector(".pane-dex");
+            const resPane = document.querySelector(".pane-reserve");
+            const dexBtn  = document.getElementById("tabBtnDex");
+            const resBtn  = document.getElementById("tabBtnReserve");
+            if (!dexPane || !resPane) return;
+            const isReserve = name === "reserve";
+            dexPane.classList.toggle("hidden-tab", isReserve);
+            resPane.classList.toggle("hidden-tab", !isReserve);
+            if (dexBtn) {
+                dexBtn.classList.toggle("active", !isReserve);
+                dexBtn.setAttribute("aria-selected", String(!isReserve));
+            }
+            if (resBtn) {
+                resBtn.classList.toggle("active", isReserve);
+                resBtn.setAttribute("aria-selected", String(isReserve));
+            }
+            if (isReserve) updateReserveBalanceDisplay();
+        }
+
+        function setReserveDirection(dir) {
+            reserveDirection = dir === "sell" ? "sell" : "buy";
+            const buyBtn  = document.getElementById("reserveDirBuy");
+            const sellBtn = document.getElementById("reserveDirSell");
+            if (buyBtn)  buyBtn.classList.toggle("active",  reserveDirection === "buy");
+            if (sellBtn) sellBtn.classList.toggle("active", reserveDirection === "sell");
+            // Swap From / To labels
+            const fromIcon = document.getElementById("reserveFromIcon");
+            const fromSym  = document.getElementById("reserveFromSymbol");
+            const toIcon   = document.getElementById("reserveToIcon");
+            const toSym    = document.getElementById("reserveToSymbol");
+            if (reserveDirection === "buy") {
+                fromIcon.className = "token-icon cusd";
+                fromIcon.textContent = "$";
+                fromSym.textContent = "cUSD";
+                toIcon.className = "token-icon gd";
+                toIcon.textContent = "G$";
+                toSym.textContent = "G$";
+            } else {
+                fromIcon.className = "token-icon gd";
+                fromIcon.textContent = "G$";
+                fromSym.textContent = "G$";
+                toIcon.className = "token-icon cusd";
+                toIcon.textContent = "$";
+                toSym.textContent = "cUSD";
+            }
+            // Reset amounts and re-quote
+            const inEl  = document.getElementById("reserveAmountIn");
+            const outEl = document.getElementById("reserveAmountOut");
+            if (inEl)  inEl.value  = "";
+            if (outEl) outEl.value = "";
+            const qb = document.getElementById("reserveQuoteBox");
+            if (qb) qb.classList.add("hidden");
+            setReserveBtnState("enter");
+            updateReserveBalanceDisplay();
+        }
+
+        function updateReserveBalanceDisplay() {
+            const fromEl = document.getElementById("reserveFromBalance");
+            const toEl   = document.getElementById("reserveToBalance");
+            if (!fromEl || !toEl) return;
+            const gd = (typeof gdBalanceNum === "number") ? gdBalanceNum : 0;
+            const cusd = (typeof cusdBalanceNum === "number") ? cusdBalanceNum : 0;
+            if (reserveDirection === "buy") {
+                fromEl.textContent = cusd.toLocaleString(undefined, { maximumFractionDigits: 4 }) + " cUSD";
+                toEl.textContent   = gd.toLocaleString(undefined,   { maximumFractionDigits: 2 }) + " G$";
+            } else {
+                fromEl.textContent = gd.toLocaleString(undefined,   { maximumFractionDigits: 2 }) + " G$";
+                toEl.textContent   = cusd.toLocaleString(undefined, { maximumFractionDigits: 4 }) + " cUSD";
+            }
+        }
+
+        function setReserveMax() {
+            const inEl = document.getElementById("reserveAmountIn");
+            if (!inEl) return;
+            const bal = (reserveDirection === "buy")
+                ? (typeof cusdBalanceNum === "number" ? cusdBalanceNum : 0)
+                : (typeof gdBalanceNum === "number" ? gdBalanceNum : 0);
+            if (!bal || bal <= 0) return;
+            inEl.value = String(bal);
+            onReserveAmountChange();
+        }
+
+        function setReserveBtnState(state, customText) {
+            const btn = document.getElementById("reserveBtn");
+            if (!btn) return;
+            btn.disabled = (state !== "ready");
+            const dirLabel = reserveDirection === "buy" ? "Buy G$" : "Sell G$";
+            const map = {
+                enter:   "Enter an amount",
+                quoting: "Fetching quote…",
+                ready:   dirLabel,
+                loading: customText || "Processing…",
+                done:    "Done!"
+            };
+            btn.textContent = map[state] || dirLabel;
+        }
+
+        function showReserveAlert(cls, html) {
+            const alert = document.getElementById("reserveAlert");
+            if (!alert) return;
+            alert.className = "alert " + cls + " show";
+            alert.innerHTML = html;
+        }
+        function clearReserveAlert() {
+            const alert = document.getElementById("reserveAlert");
+            if (!alert) return;
+            alert.className = "alert";
+            alert.innerHTML = "";
+        }
+
+        function onReserveAmountChange() {
+            const inEl = document.getElementById("reserveAmountIn");
+            const outEl = document.getElementById("reserveAmountOut");
+            const qb = document.getElementById("reserveQuoteBox");
+            if (!inEl || !outEl) return;
+            const raw = (inEl.value || "").trim();
+            if (!raw || parseFloat(raw) <= 0) {
+                outEl.value = "";
+                if (qb) qb.classList.add("hidden");
+                reserveQuote = null;
+                setReserveBtnState("enter");
+                return;
+            }
+            setReserveBtnState("quoting");
+            if (reserveQuoteTimer) clearTimeout(reserveQuoteTimer);
+            reserveQuoteTimer = setTimeout(() => fetchReserveQuote(raw), 350);
+        }
+
+        async function fetchReserveQuote(amount) {
+            try {
+                const resp = await fetch("/api/reserve/quote", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ direction: reserveDirection, amount: String(amount) })
+                });
+                const data = await resp.json();
+                if (!data || !data.success) {
+                    throw new Error(data && data.error ? data.error : "Quote failed");
+                }
+                const amountIn  = BigInt(data.amount_in_wei);
+                const amountOut = BigInt(data.amount_out_wei);
+                reserveQuote = {
+                    amountIn, amountOut,
+                    exitBps:  Number(data.exit_contribution_bps || 0),
+                    ratioBps: Number(data.reserve_ratio_bps || 0),
+                    exchangeId: data.exchange_id,
+                    broker:   data.broker,
+                    provider: data.provider,
+                    gd:       data.gd,
+                    cusd:     data.cusd
+                };
+                renderReserveQuote();
+                setReserveBtnState("ready");
+                clearReserveAlert();
+            } catch (err) {
+                console.error("[reserve] quote error", err);
+                reserveQuote = null;
+                const qb = document.getElementById("reserveQuoteBox");
+                if (qb) qb.classList.add("hidden");
+                setReserveBtnState("enter");
+                showReserveAlert("alert-error", `❌ Could not fetch reserve quote: ${(err.message || err).toString().substring(0,140)}`);
+            }
+        }
+
+        function renderReserveQuote() {
+            if (!reserveQuote) return;
+            const outEl = document.getElementById("reserveAmountOut");
+            const qb    = document.getElementById("reserveQuoteBox");
+            if (!outEl || !qb) return;
+            const fromSym = reserveDirection === "buy" ? "cUSD" : "G$";
+            const toSym   = reserveDirection === "buy" ? "G$"   : "cUSD";
+            const inH  = parseFloat(ethers.formatUnits(reserveQuote.amountIn, 18));
+            const outH = parseFloat(ethers.formatUnits(reserveQuote.amountOut, 18));
+            outEl.value = outH.toLocaleString(undefined, { maximumFractionDigits: reserveDirection === "buy" ? 2 : 4 });
+
+            const rate = inH > 0 ? (outH / inH) : 0;
+            const rateStr = `1 ${fromSym} ≈ ${rate.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${toSym}`;
+            document.getElementById("reserveQuoteRate").textContent = rateStr;
+
+            const minOut = (reserveQuote.amountOut * (10000n - RESERVE_SLIPPAGE_BPS)) / 10000n;
+            const minOutH = parseFloat(ethers.formatUnits(minOut, 18));
+            document.getElementById("reserveQuoteMinOut").textContent =
+                `${minOutH.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${toSym}`;
+
+            const exitRow = document.getElementById("reserveExitRow");
+            const exitPill = document.getElementById("reserveExitPill");
+            const exitTxt  = document.getElementById("reserveExitText");
+            if (reserveDirection === "sell" && reserveQuote.exitBps > 0) {
+                const exitPct = (reserveQuote.exitBps / 100).toFixed(2);
+                exitRow.style.display = "";
+                document.getElementById("reserveQuoteExit").textContent = `${exitPct}%`;
+                exitPill.style.display = "inline-flex";
+                exitTxt.textContent = `Exit contribution: ${exitPct}% (deducted on sells, returns to reserve)`;
+            } else {
+                exitRow.style.display = "none";
+                exitPill.style.display = "none";
+            }
+
+            const ratioPct = (reserveQuote.ratioBps / 100).toFixed(2);
+            document.getElementById("reserveQuoteRatio").textContent = `${ratioPct}%`;
+            qb.classList.remove("hidden");
+        }
+
+        async function startReserveSwap() {
+            if (!reserveQuote) {
+                showReserveAlert("alert-error", "Please enter an amount first.");
+                return;
+            }
+            clearReserveAlert();
+            const stepIndicators = document.getElementById("reserveStepIndicators");
+            const step1 = document.getElementById("reserveStep1");
+            const step2 = document.getElementById("reserveStep2");
+            const fromAddr = reserveDirection === "buy" ? reserveQuote.cusd : reserveQuote.gd;
+            const toAddr   = reserveDirection === "buy" ? reserveQuote.gd   : reserveQuote.cusd;
+            const fromSym  = reserveDirection === "buy" ? "cUSD" : "G$";
+
+            try {
+                const signer = await getConnectedSwapSigner();
+                const amountIn = reserveQuote.amountIn;
+                // Recompute minOut with safety margin from quoted amount
+                const minOut = (reserveQuote.amountOut * (10000n - RESERVE_SLIPPAGE_BPS)) / 10000n;
+
+                // ── Step 1: ensure allowance for the broker ─────────────────────
+                stepIndicators.className = "step-indicators show";
+                step1.className = "step active";
+                step2.className = "step";
+                setReserveBtnState("loading", "Checking allowance…");
+                showReserveAlert("alert-info", `<span class="spinner-inline"></span> Step 1/2 — Approving ${fromSym} for GoodReserve…`);
+
+                const tokenContract = new ethers.Contract(fromAddr, ERC20_ABI, signer);
+                const allowance = await tokenContract.allowance(WALLET_ADDRESS, RESERVE_BROKER);
+                if (allowance < amountIn) {
+                    setReserveBtnState("loading", "Approving token…");
+                    // Exact-amount approval (not unlimited) for safety
+                    const approveTx = await tokenContract.approve(RESERVE_BROKER, amountIn);
+                    await approveTx.wait();
+                }
+                step1.className = "step done";
+
+                // ── Step 2: swapIn on the Mento broker ─────────────────────────
+                step2.className = "step active";
+                setReserveBtnState("loading", reserveDirection === "buy" ? "Buying G$…" : "Selling G$…");
+                showReserveAlert("alert-info", `<span class="spinner-inline"></span> Step 2/2 — Confirm in your wallet…`);
+
+                const broker = new ethers.Contract(RESERVE_BROKER, RESERVE_BROKER_ABI, signer);
+                const swapTx = await broker.swapIn(
+                    RESERVE_PROVIDER,
+                    reserveQuote.exchangeId,
+                    fromAddr,
+                    toAddr,
+                    amountIn,
+                    minOut
+                );
+                showReserveAlert("alert-info", `<span class="spinner-inline"></span> Submitting transaction…`);
+                const receipt = await swapTx.wait();
+                step2.className = "step done";
+                setReserveBtnState("done");
+                const txLink = `https://celoscan.io/tx/${receipt.hash || swapTx.hash}`;
+                showReserveAlert("alert-success",
+                    `✅ ${reserveDirection === "buy" ? "Bought" : "Sold"} successfully! ` +
+                    `<a href="${txLink}" target="_blank" rel="noopener" style="color:#4ade80;text-decoration:underline;">View on CeloScan ↗</a>`);
+
+                // Refresh balances + UI
+                try { await loadBalances(); } catch (_) {}
+                updateReserveBalanceDisplay();
+                document.getElementById("reserveAmountIn").value = "";
+                document.getElementById("reserveAmountOut").value = "";
+                document.getElementById("reserveQuoteBox").classList.add("hidden");
+                reserveQuote = null;
+                setTimeout(() => {
+                    setReserveBtnState("enter");
+                    stepIndicators.className = "step-indicators";
+                }, 4000);
+            } catch (err) {
+                console.error("[reserve] swap error", err);
+                stepIndicators.className = "step-indicators";
+                const rawMsg = err?.shortMessage || err?.message || "Unknown error";
+                const msg = (rawMsg + "").toLowerCase().includes("user rejected") || (rawMsg + "").toLowerCase().includes("denied by user")
+                    ? "Transaction cancelled in wallet."
+                    : rawMsg;
+                showReserveAlert("alert-error", `❌ ${reserveDirection === "buy" ? "Buy" : "Sell"} failed: ${(msg + "").substring(0,180)}`);
+                setReserveBtnState(reserveQuote ? "ready" : "enter");
             }
         }
     </script>
