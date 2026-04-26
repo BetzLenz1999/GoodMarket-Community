@@ -786,6 +786,10 @@
                     });
                     const d = await res.json();
                     if (!d.success) throw new Error(d.error || 'Cancel failed');
+                } else if (_isMiniPay()) {
+                    await _miniPayTx(OTP_ADDRESS,
+                        "function cancel(address) public",
+                        [paymentId]);
                 } else {
                     const ep = _getEthProvider();
                     if (ep) {
