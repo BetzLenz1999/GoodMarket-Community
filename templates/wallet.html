@@ -3355,6 +3355,14 @@
                 throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet and try again.');
             }
 
+            // If we fell back to a plain injected provider (no WC session), the
+            // wallet may still be on the wrong chain — make sure it's on Celo
+            // before signing. Real WC v2 sessions are already chain-bound so we
+            // skip the switch for them.
+            if (!provider.isWalletConnect) {
+                await _ensureCeloChainForSigning(provider);
+            }
+
             const msg = FV_IDENTIFIER_MSG2.replace('<account>', address);
             const msgHex = _toUtf8Hex(msg);
             const attempts = [
