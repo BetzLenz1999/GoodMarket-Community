@@ -2817,7 +2817,7 @@
             // native browser, so the UI funnels everyone through Copy.
             card.innerHTML =
                 '<div style="font-weight:700;color:#fbbf24;margin-bottom:0.35rem;">⚠️ MiniPay detected</div>' +
-                '<div style="margin-bottom:0.65rem;">Face Verification does not work inside MiniPay\'s in-app browser (the face scan consistently fails on Opera\'s restricted WebView). Tap <strong>Copy</strong> below, then <strong>open Chrome (or your preferred browser) outside MiniPay and paste the link there</strong> to complete verification. Your signature is already embedded in the link — you will <em>not</em> need to sign or reconnect. After verifying, return to MiniPay and reopen GoodMarket to claim your G$.</div>' +
+                '<div style="margin-bottom:0.65rem;">Face Verification often fails inside MiniPay\'s in-app browser (the face scan sometimes errors out on Opera\'s restricted WebView), so for the most reliable experience we recommend finishing it outside MiniPay. Tap <strong>Copy</strong> below, then <strong>open Chrome (or your preferred browser) outside MiniPay and paste the link there</strong> to complete verification. Your signature is already embedded in the link — you will <em>not</em> need to sign or reconnect. After verifying, return to MiniPay and reopen GoodMarket to claim your G$.</div>' +
                 '<div style="display:flex;flex-direction:column;gap:0.45rem;">' +
                   '<div style="display:flex;gap:0.4rem;align-items:center;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:0.45rem 0.6rem;font-family:ui-monospace,SFMono-Regular,monospace;font-size:0.72rem;color:#fde68a;overflow:hidden;">' +
                     '<span id="fvMiniPayLinkPreview" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + shortLink + '</span>' +
@@ -2832,7 +2832,7 @@
                       '<li>Return to MiniPay, reopen GoodMarket, and claim your G$.</li>' +
                     '</ol>' +
                   '</div>' +
-                  '<button type="button" id="fvMiniPayForceTryBtn" style="background:transparent;border:1px solid rgba(251,191,36,0.5);color:#fde68a;font-size:0.78rem;font-weight:500;padding:0.4rem 0.9rem;border-radius:10px;cursor:pointer;">Try inside MiniPay anyway (will likely fail)</button>' +
+                  '<button type="button" id="fvMiniPayForceTryBtn" style="background:transparent;border:1px solid rgba(251,191,36,0.5);color:#fde68a;font-size:0.78rem;font-weight:500;padding:0.4rem 0.9rem;border-radius:10px;cursor:pointer;">Try inside MiniPay anyway</button>' +
                 '</div>' +
                 '<div id="fvMiniPayFeedback" style="margin-top:0.55rem;font-size:0.8rem;color:#fde68a;min-height:1em;" aria-live="polite"></div>';
             // Write the outer status BEFORE appending the card — setStatus()
