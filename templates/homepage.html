@@ -3240,13 +3240,23 @@
             if (!qrWrap) return;
             const existing = document.getElementById('wcDeepLinks');
             if (existing) existing.remove();
+            // NOTE: WalletConnect v2 URIs are already prefixed with the
+            // `wc:` scheme (format: `wc:topicId@2?relay-protocol=irn&symKey=…`),
+            // so the generic "open in installed wallet" link must NOT
+            // re-prefix the URI — doing so produces a malformed
+            // `wc:wc:…` href that mobile wallets ignore. We `encodeURI`
+            // here only to defend against any exotic characters in the
+            // URI when writing it into an innerHTML-parsed href; the
+            // reserved WC-URI chars (`:`, `@`, `?`, `&`, `=`) are
+            // preserved by encodeURI.
+            const safeHref = encodeURI(uri);
             const enc = encodeURIComponent(uri);
             const box = document.createElement('div');
             box.id = 'wcDeepLinks';
             box.style.cssText = 'margin-top:10px;display:flex;flex-direction:column;gap:8px;max-width:260px;';
             const btnStyle = 'display:block;text-align:center;padding:10px 14px;border-radius:10px;text-decoration:none;font-weight:600;font-size:0.9rem;color:#fff;';
             box.innerHTML =
-                '<a href="wc:' + uri + '" style="' + btnStyle + 'background:#6366f1;">🔗 Open in installed wallet</a>' +
+                '<a href="' + safeHref + '" style="' + btnStyle + 'background:#6366f1;">🔗 Open in installed wallet</a>' +
                 '<a href="https://link.trustwallet.com/wc?uri=' + enc + '" target="_blank" rel="noopener noreferrer" style="' + btnStyle + 'background:#3375bb;">🛡 Open in Trust Wallet</a>' +
                 '<a href="https://metamask.app.link/wc?uri=' + enc + '" target="_blank" rel="noopener noreferrer" style="' + btnStyle + 'background:#f6851b;">🦊 Open in MetaMask</a>' +
                 '<div style="text-align:center;font-size:0.78rem;color:#9ca3af;margin-top:2px;">On desktop? Scan the QR above with your wallet app instead.</div>';
