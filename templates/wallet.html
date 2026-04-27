@@ -2817,7 +2817,12 @@
                   '</div>' +
                   '<a href="' + link + '" id="fvMiniPayOpenChrome" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;font-weight:600;padding:0.55rem 1rem;border-radius:10px;font-size:0.9rem;">🌐 Open in Chrome</a>' +
                   '<button type="button" id="fvMiniPayForceTryBtn" style="background:transparent;border:1px solid rgba(251,191,36,0.5);color:#fde68a;font-size:0.78rem;font-weight:500;padding:0.4rem 0.9rem;border-radius:10px;cursor:pointer;">Try inside MiniPay anyway (will likely fail)</button>' +
-                '</div>';
+                '</div>' +
+                '<div id="fvMiniPayFeedback" style="margin-top:0.55rem;font-size:0.8rem;color:#fde68a;min-height:1em;" aria-live="polite"></div>';
+            // Write the outer status BEFORE appending the card — setStatus()
+            // replaces status.innerHTML, so any later call while the card is
+            // a child of #ubiClaimStatus would destroy it. Per-copy feedback
+            // goes into #fvMiniPayFeedback (inside the card) instead.
             setStatus('Finish Face Verification in Chrome — your signature is already included.', '#fbbf24');
             wrap.appendChild(card);
 
@@ -2825,6 +2830,12 @@
             const preview = card.querySelector('#fvMiniPayLinkPreview');
             const openBtn = card.querySelector('#fvMiniPayOpenChrome');
             const forceBtn = card.querySelector('#fvMiniPayForceTryBtn');
+            const feedback = card.querySelector('#fvMiniPayFeedback');
+            function _setMiniPayFeedback(text, color) {
+                if (!feedback) return;
+                feedback.textContent = text || '';
+                feedback.style.color = color || '#fde68a';
+            }
 
             function _fallbackCopy(text) {
                 try {
@@ -2852,7 +2863,9 @@
                     if (!ok) ok = _fallbackCopy(link);
                     if (ok) {
                         copyBtn.textContent = '✅ Copied';
-                        setStatus('Link copied — paste it into Chrome to finish Face Verification.', 'var(--green)');
+                        // Feedback goes inside the card (setStatus would
+                        // wipe the card's innerHTML — see note above).
+                        _setMiniPayFeedback('Link copied — paste it into Chrome to finish Face Verification.', '#86efac');
                         setTimeout(() => { copyBtn.textContent = '📋 Copy'; }, 2500);
                     } else {
                         // Last-resort: expose the raw link inline so the user
@@ -2862,7 +2875,7 @@
                             preview.style.wordBreak = 'break-all';
                             preview.textContent = link;
                         }
-                        setStatus('Could not copy automatically — long-press the link above to copy it manually.', '#fbbf24');
+                        _setMiniPayFeedback('Could not copy automatically — long-press the link above to copy it manually.', '#fbbf24');
                     }
                 });
             }
