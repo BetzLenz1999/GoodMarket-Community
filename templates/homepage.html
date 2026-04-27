@@ -2655,8 +2655,11 @@
             // start a second tick() chain that shares the same `elapsed`
             // counter with the still-running first chain and would
             // double-advance it, halving the intended dispatch window.
+            // Also skip re-ticking if a provider has already been
+            // discovered — there is nothing left to announce for.
             window.addEventListener('load', () => {
-                if (elapsed >= totalDuration || !!getPreferredInjectedProvider()) return;
+                if (elapsed < totalDuration) return;
+                if (getPreferredInjectedProvider()) return;
                 setTimeout(tick, 200);
             }, { once: true });
         })();
