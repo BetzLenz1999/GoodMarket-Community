@@ -2751,7 +2751,7 @@
             btn.disabled = true;
             icon.textContent = '⏳';
             label.textContent = 'Preparing verification…';
-            setStatus('Please approve the signature request in your wallet.', '#a78bfa');
+            setStatus('Approve the Celo network switch (if prompted) and the signature request in your wallet.', '#a78bfa');
 
             // Some mobile dApp browsers (notably older Trust Wallet builds) can
             // leave personal_sign promises pending after the user already taps
@@ -3211,6 +3211,50 @@
             return sig.startsWith('0x') ? sig : '0x' + sig;
         }
 
+        async function _ensureCeloChainForSigning(provider) {
+            // FV signing is Celo-bound (the link encodes chain=42220 and the
+            // claim follow-up runs on Celo). Some injected wallets — notably
+            // Trust Wallet's mobile dApp browser — default to Ethereum mainnet,
+            // which causes personal_sign prompts to silently hang or be issued
+            // under the wrong chain context. Force-switch to Celo first.
+            try {
+                if (typeof _isMiniPay === 'function' && _isMiniPay()) return; // MiniPay is Celo-only
+            } catch (_) { /* no-op */ }
+            const CELO_CHAIN_HEX = '0xa4ec';
+            let current;
+            try {
+                current = await provider.request({ method: 'eth_chainId' });
+            } catch (_) {
+                current = null;
+            }
+            if (_normalizeChainIdHex(current) === CELO_CHAIN_HEX) return;
+            try {
+                await provider.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: CELO_CHAIN_HEX }]
+                });
+            } catch (switchErr) {
+                if (switchErr && (switchErr.code === 4001 || switchErr.code === 5000)) {
+                    throw switchErr; // user cancelled — let outer catch report it
+                }
+                // 4902 / -32603 — chain not added in the wallet yet; try to add it.
+                try {
+                    await provider.request({
+                        method: 'wallet_addEthereumChain',
+                        params: [{
+                            chainId: CELO_CHAIN_HEX,
+                            chainName: 'Celo Mainnet',
+                            nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+                            rpcUrls: ['https://forno.celo.org'],
+                            blockExplorerUrls: ['https://celoscan.io']
+                        }]
+                    });
+                } catch (addErr) {
+                    throw new Error('Could not switch your wallet to Celo. Please switch manually and try again.');
+                }
+            }
+        }
+
         async function signWithWallet(address) {
             const provider = await _vAwaitEthProvider();
             if (!provider) {
@@ -3226,6 +3270,9 @@
             if (connected.toLowerCase() !== address.toLowerCase()) {
                 throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet and try again.');
             }
+
+            // Make sure the wallet is on Celo before issuing personal_sign.
+            await _ensureCeloChainForSigning(provider);
 
             // Use EIP-191 hex-encoded message for personal_sign — Trust Wallet's
             // mobile dApp browser hangs on plain-text payloads with newlines, and
