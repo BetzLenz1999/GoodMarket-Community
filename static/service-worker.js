@@ -8,9 +8,19 @@
  *   in templates, so a new deployment busts the cache automatically).
  * - On every activation, all old caches that don't match the current version
  *   are deleted.
+ *
+ * Auto-update mechanism:
+ *   `__BUILD_VERSION__` is replaced at request time by the Flask route that
+ *   serves this file (see `_dynamic_service_worker` in main.py). Embedding the
+ *   build version in the SW body guarantees the file content changes on every
+ *   deployment, so the browser's byte-for-byte SW comparison detects an update
+ *   and triggers install -> activate -> SW_UPDATED -> in-page refresh banner.
+ *   If the file is ever served raw without substitution, the literal string
+ *   below is used as a safe fallback (caches still work, just without
+ *   per-deploy invalidation).
  */
 
-const CACHE_VERSION = 'goodmarket-v1';
+const CACHE_VERSION = 'goodmarket-__BUILD_VERSION__';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 self.addEventListener('install', (event) => {

@@ -350,6 +350,50 @@ def _favicon():
     )
 
 
+@app.route("/static/service-worker.js")
+def _dynamic_service_worker():
+    """Serve the service worker with the current build version baked into
+    the response body.
+
+    The browser decides whether to install a new service worker by doing a
+    byte-for-byte comparison of the fetched SW file against the currently
+    registered one. If we ship `static/service-worker.js` as a regular static
+    asset, its bytes never change between deployments, so the browser keeps
+    the old worker forever and the in-page "New Version Available" banner
+    (see login.html / dashboard.html) never fires.
+
+    By substituting `__BUILD_VERSION__` with `ASSET_VERSION` (which is derived
+    from the git commit SHA, see `_compute_asset_version`), the SW file
+    content changes on every deployment. That triggers the standard SW update
+    lifecycle: install -> skipWaiting -> activate -> postMessage SW_UPDATED.
+
+    Notes:
+    - This route takes precedence over Flask's default `/static/<path>` rule
+      because Werkzeug matches more-specific rules first.
+    - Cache-Control is `no-cache` so browsers always revalidate the SW. The
+      file is small, so the bandwidth cost is negligible.
+    - `Service-Worker-Allowed` keeps the registration scope at `/static/`
+      (the default for this URL); we don't widen it here.
+    """
+    sw_path = os.path.join(app.static_folder or "static", "service-worker.js")
+    try:
+        with open(sw_path, "r", encoding="utf-8") as fh:
+            body = fh.read()
+    except OSError as exc:
+        logger.error(f"service worker read failed: {exc}")
+        return _FlaskResponse("// service worker unavailable\n",
+                              status=500, mimetype="application/javascript")
+
+    body = body.replace("__BUILD_VERSION__", ASSET_VERSION)
+
+    resp = _FlaskResponse(body, mimetype="application/javascript")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    resp.headers["Service-Worker-Allowed"] = "/static/"
+    return resp
+
+
 @app.route("/service-worker.js")
 def _root_service_worker_unregister():
     """Self-unregistering shim for stale root-scoped service workers.
