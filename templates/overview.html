@@ -1538,13 +1538,64 @@ document.addEventListener('DOMContentLoaded', function() {
         // Replicates ClaimSDK.generateFVLink(firstName, callbackUrl, popupMode=false, chainId)
         // The SDK: 1) signs FV_IDENTIFIER_MSG2 via signer.signMessage(), 2) lz-compresses params,
         //          3) returns https://goodid.gooddollar.org?lz=<compressed>
+        async function _fvEnsureCeloChain(provider) {
+            // FV signing is Celo-bound (the link encodes chain=42220 and the
+            // GoodID claim follow-up runs on Celo). Many injected wallets
+            // default to Ethereum mainnet, which causes personal_sign prompts
+            // to silently hang or be issued under the wrong chain context.
+            const CELO_CHAIN_HEX = '0xa4ec';
+            let current;
+            try {
+                current = await provider.request({ method: 'eth_chainId' });
+            } catch (_) {
+                current = null;
+            }
+            const normalized = (function (cid) {
+                if (cid === null || cid === undefined) return '';
+                if (typeof cid === 'number' && Number.isFinite(cid)) return '0x' + cid.toString(16);
+                if (typeof cid === 'bigint') return '0x' + cid.toString(16);
+                const raw = String(cid).trim().toLowerCase();
+                if (!raw) return '';
+                if (raw.startsWith('0x')) return raw;
+                if (/^\d+$/.test(raw)) return '0x' + Number(raw).toString(16);
+                return raw;
+            })(current);
+            if (normalized === CELO_CHAIN_HEX) return;
+            try {
+                await provider.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: CELO_CHAIN_HEX }]
+                });
+            } catch (switchErr) {
+                if (switchErr && (switchErr.code === 4001 || switchErr.code === 5000)) {
+                    throw switchErr;
+                }
+                try {
+                    await provider.request({
+                        method: 'wallet_addEthereumChain',
+                        params: [{
+                            chainId: CELO_CHAIN_HEX,
+                            chainName: 'Celo Mainnet',
+                            nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+                            rpcUrls: ['https://forno.celo.org'],
+                            blockExplorerUrls: ['https://celoscan.io']
+                        }]
+                    });
+                } catch (addErr) {
+                    throw new Error('Could not switch your wallet to Celo. Please switch manually and try again.');
+                }
+            }
+        }
+
         async function generateFVLink(hintAccount) {
             let provider;
             let account;
+            let isInjected = false;
 
             if (window._wcSignClient && window._wcSession) {
                 // WalletConnect path — wrap the WC session so we can use the same
-                // provider.request signing helper.
+                // provider.request signing helper. The shim already pins chainId
+                // to eip155:42220, so we don't need to ask the wallet to switch.
                 provider = new WCProviderShim(window._wcSignClient, window._wcSession, hintAccount);
                 account  = ethers.utils.getAddress(hintAccount);
             } else if (window.ethereum) {
@@ -1553,10 +1604,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 // checksummed form expected by GoodID's signature recovery.
                 await window.ethereum.request({ method: 'eth_requestAccounts' });
                 provider = window.ethereum;
+                isInjected = true;
                 const ethersProvider = new ethers.providers.Web3Provider(window.ethereum, { name: 'celo', chainId: 42220 });
                 account = await ethersProvider.getSigner().getAddress();
             } else {
                 throw new Error('No wallet provider available');
+            }
+
+            if (isInjected) {
+                await _fvEnsureCeloChain(provider);
             }
 
             const fvSig = await _fvSignWithProvider(provider, account);
