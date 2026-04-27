@@ -2097,6 +2097,35 @@
                     <div id="wcQrCode" style="display:flex;justify-content:center;"></div>
                     <p style="font-size:0.78rem;color:#6b7280;margin-top:0.55rem;">Scan using MetaMask, Trust Wallet, Valora, Rainbow, etc.</p>
                 </div>
+
+                <!-- "Wallet not detected?" helper shown when detectInjectedWallet()
+                     cannot find an injected provider after its initial retry round.
+                     Some Trust Wallet / MetaMask Mobile builds inject very late —
+                     this gives the user an explicit "try again now" tap plus a
+                     debug dump they can share with support. -->
+                <div id="walletDetectionHelp" style="display:none;margin-top:0.8rem;padding:0.75rem 0.9rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;font-size:0.82rem;color:#92400e;line-height:1.5;">
+                    <div style="font-weight:700;color:#b45309;margin-bottom:0.4rem;">Injected wallet not detected yet?</div>
+                    <div style="margin-bottom:0.55rem;">Trust Wallet and some MetaMask Mobile builds inject their provider late. Tap <strong>Refresh detection</strong> to re-scan, or use WalletConnect above.</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:0.4rem;">
+                        <button type="button" id="walletDetectionRefreshBtn" onclick="refreshWalletDetection()" style="background:linear-gradient(135deg,#f59e0b,#d97706);border:none;color:#fff;font-size:0.78rem;font-weight:600;padding:0.45rem 0.9rem;border-radius:8px;cursor:pointer;">🔄 Refresh detection</button>
+                        <button type="button" id="walletDetectionDebugBtn" onclick="showWalletDebugInfo()" style="background:transparent;border:1px solid #d97706;color:#b45309;font-size:0.78rem;font-weight:600;padding:0.45rem 0.9rem;border-radius:8px;cursor:pointer;">🐛 Show debug info</button>
+                    </div>
+                </div>
+
+                <!-- Debug dump panel for testers. Populated on demand from
+                     _gmDebugDumpWallets(). Hidden by default. -->
+                <div id="walletDebugPanel" style="display:none;margin-top:0.8rem;padding:0.75rem 0.9rem;background:#0b1120;border:1px solid #1e293b;border-radius:10px;font-size:0.74rem;color:#cbd5e1;line-height:1.5;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;gap:0.5rem;">
+                        <span style="font-weight:700;color:#e2e8f0;">🐛 Wallet detection debug info</span>
+                        <div style="display:flex;gap:0.35rem;">
+                            <button type="button" id="walletDebugCopyBtn" onclick="copyWalletDebugOutput()" style="background:#1e293b;border:1px solid #334155;color:#cbd5e1;font-size:0.72rem;font-weight:600;padding:0.3rem 0.6rem;border-radius:6px;cursor:pointer;">📋 Copy</button>
+                            <button type="button" onclick="hideWalletDebugInfo()" style="background:transparent;border:1px solid #334155;color:#94a3b8;font-size:0.72rem;font-weight:500;padding:0.3rem 0.55rem;border-radius:6px;cursor:pointer;">✕</button>
+                        </div>
+                    </div>
+                    <textarea id="walletDebugOutput" readonly style="width:100%;min-height:160px;max-height:260px;background:#020617;border:1px solid #1e293b;border-radius:6px;color:#cbd5e1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.7rem;line-height:1.4;padding:0.55rem;resize:vertical;" aria-label="Wallet detection debug output"></textarea>
+                    <p style="margin:0.4rem 0 0;font-size:0.7rem;color:#64748b;">Share this output with support so we can see exactly what your browser is announcing.</p>
+                </div>
+
                 <div id="walletConnectStatus" class="status-message"></div>
             </div>
 
@@ -2516,6 +2545,21 @@
             });
         }
 
+        // Maximum retry depth for detectInjectedWallet's auto-retry loop.
+        // Trust Wallet mobile gets a longer budget because its injection
+        // timing is the most variable. Each retry waits (350 + depth*250)ms,
+        // so depth=12 ≈ 8.6s total; depth=6 ≈ 2.5s.
+        function _walletDetectionMaxDepth() {
+            return isTrustWalletMobileContext() ? 12 : (isLikelyMobileWalletContext() ? 9 : 6);
+        }
+
+        function _setWalletDetectionHelpVisible(visible) {
+            const help = document.getElementById('walletDetectionHelp');
+            if (!help) return;
+            help.style.display = visible ? 'block' : 'none';
+            if (!visible) hideWalletDebugInfo();
+        }
+
         function detectInjectedWallet(_retryDepth) {
             // Re-dispatch EIP-6963 requestProvider on every call — wallets that
             // inject late (Trust Wallet mobile in some builds) will announce
@@ -2528,20 +2572,24 @@
             const btn = document.getElementById('injectedWalletBtn');
             const icon = document.getElementById('injectedWalletIcon');
             if (!title || !desc || !btn) return;
+            const depth = Number(_retryDepth || 0);
+            const maxDepth = _walletDetectionMaxDepth();
             if (!provider) {
                 title.textContent = 'Injected Wallet';
                 if (icon) icon.textContent = '👛';
                 if (isMobileDappContext()) {
-                    desc.textContent = 'No injected wallet detected. Open in MiniPay/MetaMask/Trust Wallet dapp browser, or use WalletConnect.';
+                    desc.textContent = depth >= 2
+                        ? 'Still looking for your wallet… tap "Refresh detection" below if it stays stuck.'
+                        : 'Detecting wallet… open in MiniPay/MetaMask/Trust Wallet dapp browser, or use WalletConnect.';
                 } else {
                     desc.textContent = 'Not detected — install MetaMask extension or use WalletConnect QR / manual fallback guidance.';
                 }
                 btn.style.opacity = '0.78';
-                // Some mobile dApp browsers inject after DOMContentLoaded. Retry
-                // a couple times with small backoff so a user opening the modal
-                // fast still gets Trust Wallet / MetaMask Mobile detected.
-                const depth = Number(_retryDepth || 0);
-                if (depth < 6) {
+                // Show the "wallet not detected?" helper after the first couple
+                // of retries so users who opened the modal fast aren't nagged
+                // with a failure card the instant it appears.
+                if (depth >= 2) _setWalletDetectionHelpVisible(true);
+                if (depth < maxDepth) {
                     setTimeout(() => detectInjectedWallet(depth + 1), 350 + depth * 250);
                 }
                 return;
@@ -2551,6 +2599,131 @@
             if (icon) icon.textContent = getInjectedProviderIcon(provider);
             desc.textContent = `${name} detected — connect wallet, then approve signature to login`;
             btn.style.opacity = '1';
+            _setWalletDetectionHelpVisible(false);
+        }
+
+        // Aggressive EIP-6963 re-dispatch loop for mobile dApp contexts.
+        // Most wallets that implement EIP-6963 listen for the synchronous
+        // `eip6963:requestProvider` event and respond with an `:announceProvider`
+        // event. Late-initialising wallets miss the first dispatch, so we
+        // dispatch frequently for the first few seconds after page load.
+        (function _startEip6963DispatchLoop() {
+            if (typeof window === 'undefined') return;
+            const dispatch = () => {
+                try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+            };
+            // Burst every 200ms for the first 3 seconds, then every 600ms for
+            // another 5 seconds. Stops early once a provider is discovered so
+            // we don't spam announcers on the session forever.
+            let elapsed = 0;
+            const burstEvery = 200;
+            const burstDuration = 3000;
+            const coolEvery = 600;
+            const totalDuration = 8000;
+            const tick = () => {
+                if (getPreferredInjectedProvider()) return;
+                dispatch();
+                elapsed += (elapsed < burstDuration) ? burstEvery : coolEvery;
+                if (elapsed < totalDuration) {
+                    setTimeout(tick, elapsed < burstDuration ? burstEvery : coolEvery);
+                }
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', tick, { once: true });
+            } else {
+                tick();
+            }
+            // Also re-tick on full page load (catches wallets that inject on
+            // `load` rather than `DOMContentLoaded`).
+            window.addEventListener('load', () => setTimeout(tick, 200), { once: true });
+        })();
+
+        // Listen for the legacy "ethereum#initialized" signal some wallets
+        // dispatch when their EIP-1193 provider finishes hydrating. Also
+        // listen for the generic `ethereum` object being assigned via a
+        // late polyfill.
+        (function _hookLateEthereumInitializers() {
+            if (typeof window === 'undefined') return;
+            const retrigger = () => {
+                try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+                detectInjectedWallet();
+            };
+            window.addEventListener('ethereum#initialized', retrigger, { once: false });
+            // Some Trust Wallet builds fire a custom `TrustWallet#initialized`.
+            window.addEventListener('TrustWallet#initialized', retrigger, { once: false });
+            // Also retrigger on visibility flips back into the tab — users
+            // sometimes background the tab, open Trust, and come back.
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') retrigger();
+            });
+        })();
+
+        // Manual "Refresh detection" tap handler — re-runs the full discovery
+        // pipeline from depth 0 so users who waited for their wallet to
+        // inject can force a rescan.
+        function refreshWalletDetection() {
+            const btn = document.getElementById('walletDetectionRefreshBtn');
+            if (btn) {
+                const originalText = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = '🔄 Scanning…';
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }, 1500);
+            }
+            // Fire several EIP-6963 dispatches back-to-back, then re-run detection.
+            try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+            setTimeout(() => { try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {} }, 150);
+            setTimeout(() => { try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {} }, 400);
+            setTimeout(() => detectInjectedWallet(0), 200);
+        }
+
+        function showWalletDebugInfo() {
+            const panel = document.getElementById('walletDebugPanel');
+            const out = document.getElementById('walletDebugOutput');
+            if (!panel || !out) return;
+            let snapshot;
+            try {
+                snapshot = window._gmDebugDumpWallets ? window._gmDebugDumpWallets() : { error: '_gmDebugDumpWallets not available' };
+            } catch (e) {
+                snapshot = { error: String((e && e.message) || e) };
+            }
+            try { out.value = JSON.stringify(snapshot, null, 2); }
+            catch (_) { out.value = String(snapshot); }
+            panel.style.display = 'block';
+        }
+
+        function hideWalletDebugInfo() {
+            const panel = document.getElementById('walletDebugPanel');
+            if (panel) panel.style.display = 'none';
+        }
+
+        function copyWalletDebugOutput() {
+            const out = document.getElementById('walletDebugOutput');
+            const btn = document.getElementById('walletDebugCopyBtn');
+            if (!out) return;
+            const text = out.value || '';
+            const done = (ok) => {
+                if (!btn) return;
+                const orig = btn.textContent;
+                btn.textContent = ok ? '✅ Copied' : '❌ Copy failed';
+                setTimeout(() => { btn.textContent = orig; }, 1800);
+            };
+            const fallback = () => {
+                try {
+                    out.focus();
+                    out.select();
+                    out.setSelectionRange(0, text.length);
+                    const ok = document.execCommand('copy');
+                    done(ok);
+                } catch (_) { done(false); }
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => done(true)).catch(fallback);
+            } else {
+                fallback();
+            }
         }
 
 
