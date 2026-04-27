@@ -2769,6 +2769,10 @@
                   '<a href="/logout" style="display:block;text-align:center;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;font-weight:600;padding:0.55rem 1rem;border-radius:10px;font-size:0.9rem;">🔐 Log out & reconnect via WalletConnect</a>' +
                   '<button type="button" id="fvTrustForceTryBtn" style="background:transparent;border:1px solid rgba(251,191,36,0.5);color:#fde68a;font-size:0.8rem;font-weight:500;padding:0.45rem 0.9rem;border-radius:10px;cursor:pointer;">Try in-app sign anyway (may hang)</button>' +
                 '</div>';
+            // Set the status text BEFORE appending the card. setStatus()
+            // writes to status.innerHTML which would otherwise wipe the card
+            // we just appended (status === wrap, both point at #ubiClaimStatus).
+            setStatus('Trust Wallet in-app signing is unreliable — please switch to WalletConnect.', '#fbbf24');
             wrap.appendChild(card);
             const forceBtn = card.querySelector('#fvTrustForceTryBtn');
             if (forceBtn) {
@@ -2777,7 +2781,6 @@
                     _startFvSigningFlow(true);
                 });
             }
-            setStatus('Trust Wallet in-app signing is unreliable — please switch to WalletConnect.', '#fbbf24');
         }
 
         function startFV() {
