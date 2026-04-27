@@ -2573,20 +2573,49 @@
         // wallet's internal RPC client (typical when a public RPC returns
         // an HTML challenge or is rate-limited).
         function _isRpcHtmlError(err) {
+            if (err && err.__rpcHtml) return true;
             const msg = ((err && (err.shortMessage || err.message)) || '').toLowerCase();
             if (!msg) return false;
             return (
                 msg.includes("unexpected token '<")
                 || msg.includes('unexpected token <')
                 || msg.includes('<!doctype')
+                || msg.includes('<html')
                 || msg.includes('is not valid json')
                 || msg.includes('json.parse')
+                || msg.includes('unexpected end of json')
                 || msg.includes('failed to fetch')
                 || msg.includes('network error')
+                || msg.includes('load failed')
             );
         }
         // Backward-compatible alias.
         const _isXdcRpcHtmlError = _isRpcHtmlError;
+
+        // Wraps a Response so that if the body is HTML (server returned a
+        // Cloudflare / maintenance / 4xx-5xx error page), we throw a clean
+        // descriptive Error before the caller's `await res.json()` would
+        // throw a raw "Unexpected token '<'".
+        async function _safeFetchJson(input, init) {
+            const res = await fetch(input, init);
+            const ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
+            const looksJson = ct.toLowerCase().includes('application/json');
+            const text = await res.text();
+            if (!looksJson || /^\s*</.test(text)) {
+                const err = new Error('Server returned a non-JSON response (network/upstream error).');
+                err.__rpcHtml = true;
+                err.status = res.status;
+                throw err;
+            }
+            try {
+                return JSON.parse(text);
+            } catch (parseErr) {
+                const err = new Error('Server returned an unparseable response.');
+                err.__rpcHtml = true;
+                err.cause = parseErr;
+                throw err;
+            }
+        }
 
         function _isUserRejectedError(err) {
             if (!err) return false;
@@ -3115,17 +3144,32 @@
         }
 
         async function getProviderGasSnapshot(provider) {
-            const gasLimitHex = await provider.request({
-                method: 'eth_estimateGas',
-                params: [{ from: WALLET, to: UBI_CONTRACT, data: CLAIM_DATA, value: '0x0' }]
-            });
-            const gasPriceHex = await provider.request({ method: 'eth_gasPrice' });
-            const balanceHex = await provider.request({ method: 'eth_getBalance', params: [WALLET, 'latest'] });
-            const gasLimit = BigInt(gasLimitHex);
-            const gasPrice = BigInt(gasPriceHex);
-            const balance = BigInt(balanceHex);
-            const required = (gasLimit * gasPrice * 135n) / 100n;
-            return { gasLimit, gasPrice, balance, required, gasReady: balance >= required };
+            // The injected wallet routes these calls through whatever Celo
+            // RPC it has configured (typically forno.celo.org). When that
+            // endpoint is rate-limited / behind Cloudflare it can return an
+            // HTML page, which the wallet's RPC client surfaces as
+            // "Unexpected token '<'". Retry once on transient parser errors
+            // before bubbling up.
+            const snapshot = async () => {
+                const gasLimitHex = await provider.request({
+                    method: 'eth_estimateGas',
+                    params: [{ from: WALLET, to: UBI_CONTRACT, data: CLAIM_DATA, value: '0x0' }]
+                });
+                const gasPriceHex = await provider.request({ method: 'eth_gasPrice' });
+                const balanceHex = await provider.request({ method: 'eth_getBalance', params: [WALLET, 'latest'] });
+                const gasLimit = BigInt(gasLimitHex);
+                const gasPrice = BigInt(gasPriceHex);
+                const balance = BigInt(balanceHex);
+                const required = (gasLimit * gasPrice * 135n) / 100n;
+                return { gasLimit, gasPrice, balance, required, gasReady: balance >= required };
+            };
+            try {
+                return await snapshot();
+            } catch (e1) {
+                if (!_isRpcHtmlError(e1)) throw e1;
+                await new Promise(r => setTimeout(r, 2500));
+                return await snapshot();
+            }
         }
 
         async function pollForGasArrival(maxDurationMs = 180000) {
@@ -3139,12 +3183,21 @@
                 await new Promise(resolve => setTimeout(resolve, delay));
                 attempt += 1;
 
-                const statusRes = await fetch('/api/faucet/status', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-Correlation-ID': correlationId },
-                    body: JSON.stringify({ wallet: WALLET, correlation_id: correlationId })
-                });
-                const statusData = await statusRes.json();
+                let statusData;
+                try {
+                    statusData = await _safeFetchJson('/api/faucet/status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-Correlation-ID': correlationId },
+                        body: JSON.stringify({ wallet: WALLET, correlation_id: correlationId })
+                    });
+                } catch (fetchErr) {
+                    if (_isRpcHtmlError(fetchErr)) {
+                        // Transient upstream HTML page — try again next tick.
+                        setClaimGasUiState('waiting_credit');
+                        continue;
+                    }
+                    throw fetchErr;
+                }
                 if (statusData.success && statusData.gas_ready) {
                     return { gasReady: true, statusData };
                 }
@@ -3171,12 +3224,11 @@
             window.__claimFaucetCorrelationId = correlationId;
             setClaimGasUiState('checking_balance');
 
-            const statusRes = await fetch('/api/faucet/status', {
+            const statusData = await _safeFetchJson('/api/faucet/status', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-Correlation-ID': correlationId },
                 body: JSON.stringify({ wallet: WALLET, correlation_id: correlationId })
             });
-            const statusData = await statusRes.json();
             if (!statusData.success) {
                 throw new Error(statusData.error || 'Unable to check wallet gas.');
             }
@@ -3186,12 +3238,11 @@
             }
 
             const requestFaucetGas = async (forceFlag) => {
-                const gasRes = await fetch('/api/faucet/gas', {
+                const gasData = await _safeFetchJson('/api/faucet/gas', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-Correlation-ID': correlationId },
                     body: JSON.stringify({ wallet: WALLET, correlation_id: correlationId, force_onchain: !!forceFlag })
                 });
-                const gasData = await gasRes.json();
                 return {
                     gasData,
                     terminal: gasData.terminal_status || gasData.status
@@ -3419,9 +3470,10 @@
                     appendStatusLine('⚠️ ' + xdcMsg, '#fbbf24');
                 }
             } catch (err) {
+                console.warn('[claim] Celo claim error:', err);
                 const raw = (err && (err.shortMessage || err.message)) || 'Claim failed';
                 let msg;
-                if ((raw || '').toLowerCase().includes('user rejected')) {
+                if (_isUserRejectedError(err) || (raw || '').toLowerCase().includes('user rejected')) {
                     msg = 'Transaction cancelled.';
                 } else if (_isRpcHtmlError(err)) {
                     msg = 'Celo network is temporarily busy (RPC returned a non-JSON response). Please retry your claim in 30–60 seconds.';
