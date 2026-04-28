@@ -70,6 +70,12 @@ ALTER TABLE public.p2p_orders
     ADD COLUMN IF NOT EXISTS price_gd_usd           numeric(20, 6),
     ADD COLUMN IF NOT EXISTS updated_at             timestamptz DEFAULT now();
 
+-- Enforce uniqueness on order_id even on legacy tables where the column was
+-- added via ALTER TABLE (which doesn't carry the original UNIQUE constraint).
+CREATE UNIQUE INDEX IF NOT EXISTS p2p_orders_order_id_uq
+    ON public.p2p_orders (order_id)
+    WHERE order_id IS NOT NULL;
+
 CREATE UNIQUE INDEX IF NOT EXISTS p2p_orders_ad_id_onchain_uq
     ON public.p2p_orders (ad_id_onchain)
     WHERE ad_id_onchain IS NOT NULL;
@@ -156,6 +162,12 @@ ALTER TABLE public.p2p_trades
     ADD COLUMN IF NOT EXISTS dispute_buyer_wins       boolean,
     ADD COLUMN IF NOT EXISTS dispute_winner           text,
     ADD COLUMN IF NOT EXISTS updated_at               timestamptz DEFAULT now();
+
+-- Enforce uniqueness on trade_id even on legacy tables where the column was
+-- added via ALTER TABLE (which doesn't carry the original UNIQUE constraint).
+CREATE UNIQUE INDEX IF NOT EXISTS p2p_trades_trade_id_uq
+    ON public.p2p_trades (trade_id)
+    WHERE trade_id IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS p2p_trades_trade_id_onchain_uq
     ON public.p2p_trades (trade_id_onchain)
