@@ -313,6 +313,19 @@ class P2PEscrowService:
         rate = float(order.get("rate") or 0)
         fiat_amount = round(amount_g_dollar * rate, 6) if rate else None
 
+        # Build the unsigned tx FIRST so a payment-window validation error
+        # doesn't leave behind an orphan p2p_trades row.
+        try:
+            place_order_tx = self.contract.build_place_order_tx(
+                buyer_wallet,
+                ad_id_hex,
+                trade_id_hex,
+                amount_g_dollar,
+                payment_window_seconds,
+            )
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+
         row = {
             "trade_id": f"TRADE-{uuid.uuid4().hex[:8].upper()}",
             "order_id": order_id,
@@ -343,17 +356,6 @@ class P2PEscrowService:
         if not insert.data:
             return {"success": False, "error": "Failed to create trade row"}
 
-        try:
-            place_order_tx = self.contract.build_place_order_tx(
-                buyer_wallet,
-                ad_id_hex,
-                trade_id_hex,
-                amount_g_dollar,
-                payment_window_seconds,
-            )
-        except ValueError as exc:
-            return {"success": False, "error": str(exc)}
-
         return {
             "success": True,
             "trade": insert.data[0],
@@ -373,6 +375,25 @@ class P2PEscrowService:
             return {"success": False, "error": "Not your trade"}
         if not proof_url:
             return {"success": False, "error": "Missing proof URL"}
+        # Reject anything that isn't a plain http(s) URL: the value is later
+        # rendered into an <a href="..."> attribute, so a "javascript:" URL
+        # or one carrying quotes / angle brackets would let a malicious
+        # buyer inject script into the seller's or admin's view.
+        proof_url = proof_url.strip()
+        if not (
+            proof_url.startswith("https://") or proof_url.startswith("http://")
+        ):
+            return {
+                "success": False,
+                "error": "Proof URL must start with https:// or http://",
+            }
+        if any(ch in proof_url for ch in ('"', "'", "<", ">", " ", "\n", "\r", "\t")):
+            return {
+                "success": False,
+                "error": "Proof URL contains invalid characters",
+            }
+        if len(proof_url) > 500:
+            return {"success": False, "error": "Proof URL too long"}
         try:
             self.supabase.table("p2p_trades").update(
                 {

@@ -269,6 +269,14 @@
   }
 
   function escapeHtml(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  // For URLs interpolated into href="..." attributes: only allow http(s),
+  // strip quotes/angle brackets/whitespace, then HTML-escape what's left.
+  function escapeAttr(s) {
+    const raw = String(s||'').trim();
+    if (!/^https?:\/\//i.test(raw)) return '#';
+    if (/["'<>\s]/.test(raw)) return '#';
+    return escapeHtml(raw);
+  }
 
   async function refreshAds() {
     adsGrid.innerHTML = '<div class="empty">Loading...</div>';
@@ -434,7 +442,7 @@
       <div class="row between"><h3>${fmt(t.g_dollar_amount)} G$</h3><span class="badge ${stat}">${stat.replace(/_/g,' ')}</span></div>
       <div class="meta">Role: ${role} · ${t.payment_method || ''} · ${t.fiat_currency || ''}</div>
       <div class="meta">Counter: <code>${shortAddr(role === 'Buyer' ? t.seller_wallet : t.buyer_wallet)}</code> · Fiat: ${t.fiat_amount || '—'} ${t.fiat_currency || ''}</div>
-      ${t.payment_proof_url ? `<div class="small"><a href="${t.payment_proof_url}" target="_blank">Proof</a></div>` : ''}
+      ${t.payment_proof_url ? `<div class="small"><a href="${escapeAttr(t.payment_proof_url)}" target="_blank" rel="noopener noreferrer">Proof</a></div>` : ''}
       ${t.place_order_tx ? `<div class="small"><a href="${txLink(t.place_order_tx)}" target="_blank">place tx</a>${t.mark_paid_tx ? ` · <a href="${txLink(t.mark_paid_tx)}" target="_blank">paid tx</a>` : ''}${t.release_tx ? ` · <a href="${txLink(t.release_tx)}" target="_blank">release tx</a>` : ''}${t.dispute_tx ? ` · <a href="${txLink(t.dispute_tx)}" target="_blank">dispute tx</a>` : ''}</div>` : ''}
       <div class="row" style="justify-content:flex-end;">${tradeActions(t)}</div>
     </div>`;
@@ -477,7 +485,7 @@
       <div class="meta">Buyer: <code>${shortAddr(t.buyer_wallet)}</code> · Seller: <code>${shortAddr(t.seller_wallet)}</code></div>
       <div class="meta">Fiat: ${t.fiat_amount || '—'} ${t.fiat_currency || ''} · ${t.payment_method || ''}</div>
       <div class="meta">Disputed by: ${t.disputed_by ? shortAddr(t.disputed_by) : '—'}</div>
-      ${t.payment_proof_url ? `<div class="small"><a href="${t.payment_proof_url}" target="_blank">Proof</a></div>` : '<div class="small">No proof uploaded</div>'}
+      ${t.payment_proof_url ? `<div class="small"><a href="${escapeAttr(t.payment_proof_url)}" target="_blank" rel="noopener noreferrer">Proof</a></div>` : '<div class="small">No proof uploaded</div>'}
       <div class="row" style="justify-content:flex-end;">
         <button class="primary" data-buyerwins="${t.trade_id}">Buyer wins</button>
         <button class="danger" data-sellerwins="${t.trade_id}">Seller wins</button>
