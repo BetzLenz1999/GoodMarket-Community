@@ -17,6 +17,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
+            --page-scale: 0.7;
             --bg: #070b1a;
             --bg2: #0e1530;
             --card: rgba(255,255,255,0.05);
@@ -43,15 +44,15 @@
            the whole wallet view fits in one screen on desktop, mobile, and
            dapp browsers. Pure visual scaling — no markup or JS changed. */
         html {
-            zoom: 0.7;
+            zoom: var(--page-scale);
         }
         @supports not (zoom: 1) {
             /* Firefox <126 fallback */
             body {
-                transform: scale(0.7);
+                transform: scale(var(--page-scale));
                 transform-origin: top center;
-                width: 142.857%;
-                margin-left: -21.4285%;
+                width: calc(100% / var(--page-scale));
+                margin-left: calc((100% - (100% / var(--page-scale))) / 2);
             }
         }
 

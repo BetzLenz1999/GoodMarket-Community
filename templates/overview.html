@@ -109,6 +109,23 @@ document.addEventListener('DOMContentLoaded', function() {
             box-sizing: border-box;
         }
 
+        :root {
+            --overview-scale: 0.7;
+        }
+
+        /* ── Compact 70% page scale (desktop + mobile + dapp browsers) ── */
+        html {
+            zoom: var(--overview-scale);
+        }
+        @supports not (zoom: 1) {
+            body {
+                transform: scale(var(--overview-scale));
+                transform-origin: top center;
+                width: calc(100% / var(--overview-scale));
+                margin-left: calc((100% - (100% / var(--overview-scale))) / 2);
+            }
+        }
+
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: linear-gradient(135deg, #0B0F2A 0%, #130D35 50%, #1A103D 100%);
