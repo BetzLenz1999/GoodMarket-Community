@@ -2593,26 +2593,19 @@
         // Backward-compatible alias.
         const _isXdcRpcHtmlError = _isRpcHtmlError;
 
-        // Wraps a Response so that if the body is HTML (server returned a
-        // Cloudflare / maintenance / 4xx-5xx error page), we throw a clean
-        // descriptive Error before the caller's `await res.json()` would
-        // throw a raw "Unexpected token '<'".
+        // Lenient JSON fetch: tries res.json() and only flags the error as
+        // an HTML/upstream issue when the body is genuinely unparseable
+        // (e.g. Flask 404 HTML, Cloudflare challenge). Valid JSON responses
+        // — regardless of how the upstream sets the content-type header —
+        // pass through untouched.
         async function _safeFetchJson(input, init) {
             const res = await fetch(input, init);
-            const ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
-            const looksJson = ct.toLowerCase().includes('application/json');
-            const text = await res.text();
-            if (!looksJson || /^\s*</.test(text)) {
+            try {
+                return await res.json();
+            } catch (parseErr) {
                 const err = new Error('Server returned a non-JSON response (network/upstream error).');
                 err.__rpcHtml = true;
                 err.status = res.status;
-                throw err;
-            }
-            try {
-                return JSON.parse(text);
-            } catch (parseErr) {
-                const err = new Error('Server returned an unparseable response.');
-                err.__rpcHtml = true;
                 err.cause = parseErr;
                 throw err;
             }
