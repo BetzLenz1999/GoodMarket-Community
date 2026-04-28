@@ -2521,6 +2521,7 @@
         const UBI_CONTRACT  = '0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1';
         const XDC_UBI_CONTRACT = '0x22867567E2D80f2049200E25C6F31CB6Ec2F0faf';
         const XDC_CHAIN_ID_HEX = '0x32';
+        const CELO_CHAIN_ID_HEX = '0xa4ec';
         const CLAIM_DATA    = '0x4e71d92d';
         const SESSION_WALLET = WALLET.toLowerCase();
         let claimed = false;
@@ -2678,6 +2679,66 @@
                 // try once more before giving up.
                 await new Promise(r => setTimeout(r, 3500));
                 return await sendXdcTx();
+            }
+        }
+
+        // Mirror of claimXdcInjected for the Celo claim. Same shape: chain
+        // check → switch → add (with multi-RPC fallback for the wallet's
+        // own JSON-RPC) → send tx → one-shot retry on transient HTML/parser
+        // errors. Used by the unified flow's standard (non-MiniPay) path.
+        async function claimCeloInjected(provider, from) {
+            const currentChain = await provider.request({ method: 'eth_chainId' });
+            const normalizedCurrentChain = _normalizeChainIdHex(currentChain);
+            if (normalizedCurrentChain !== CELO_CHAIN_ID_HEX) {
+                try {
+                    await provider.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: CELO_CHAIN_ID_HEX }]
+                    });
+                } catch (switchErr) {
+                    if (switchErr && switchErr.code === 4001) {
+                        throw new Error('Celo network switch was cancelled.');
+                    }
+                    if (switchErr && switchErr.code !== 4902) {
+                        throw new Error(switchErr.message || 'Could not switch to Celo network.');
+                    }
+                    try {
+                        await provider.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: CELO_CHAIN_ID_HEX,
+                                chainName: 'Celo Mainnet',
+                                rpcUrls: CELO_RPC_URLS.slice(),
+                                nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+                                blockExplorerUrls: ['https://celoscan.io']
+                            }]
+                        });
+                    } catch (addErr) {
+                        if (addErr && addErr.code === 4001) {
+                            throw new Error('Adding Celo network was cancelled.');
+                        }
+                        throw new Error((addErr && addErr.message) || 'Could not add Celo network.');
+                    }
+                }
+            }
+
+            // Same defensive shape as XDC: omit non-standard `chainId`
+            // from tx params (some wallets reject it). The chain switch
+            // above already pinned the wallet to Celo.
+            const sendCeloTx = () => provider.request({
+                method: 'eth_sendTransaction',
+                params: [{ from, to: UBI_CONTRACT, data: CLAIM_DATA, value: '0x0' }]
+            });
+
+            try {
+                return await sendCeloTx();
+            } catch (sendErr) {
+                if (_isUserRejectedError(sendErr)) throw sendErr;
+                if (!_isRpcHtmlError(sendErr)) throw sendErr;
+                // Transient public-RPC HTML/parse error — wait a moment and
+                // try once more before giving up.
+                await new Promise(r => setTimeout(r, 3500));
+                return await sendCeloTx();
             }
         }
 
@@ -3381,32 +3442,6 @@
                     throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
                 }
 
-                // MiniPay is always on Celo — skip wallet_switchEthereumChain.
-                if (!isMiniPayClaim) {
-                    const currentChain = await provider.request({ method: 'eth_chainId' });
-                    const celoChainHex = '0xa4ec';
-                    const normalizedCurrentChain = _normalizeChainIdHex(currentChain);
-                    if (normalizedCurrentChain !== celoChainHex) {
-                        try {
-                            await provider.request({
-                                method: 'wallet_switchEthereumChain',
-                                params: [{ chainId: celoChainHex }]
-                            });
-                        } catch (switchErr) {
-                            await provider.request({
-                                method: 'wallet_addEthereumChain',
-                                params: [{
-                                    chainId: celoChainHex,
-                                    chainName: 'Celo Mainnet',
-                                    nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
-                                    rpcUrls: CELO_RPC_URLS.slice(),
-                                    blockExplorerUrls: ['https://celoscan.io']
-                                }]
-                            });
-                        }
-                    }
-                }
-
                 // Preflight one more time right before sending tx because gas price can spike.
                 // MiniPay pays gas with stablecoins — no CELO gas preflight needed.
                 if (!isMiniPayClaim) {
@@ -3421,30 +3456,35 @@
                     }
                 }
 
-                // Wrap sendClaimTransaction with a one-shot retry on transient
-                // RPC HTML/parse errors (forno.celo.org occasionally returns a
-                // Cloudflare/maintenance HTML page, which the wallet's RPC
-                // client surfaces as "Unexpected token '<'").
-                const sendCeloClaimWithParserRetry = async () => {
-                    try {
-                        return await sendClaimTransaction(provider, from);
-                    } catch (e1) {
-                        if (_isUserRejectedError(e1)) throw e1;
-                        if (!_isRpcHtmlError(e1)) throw e1;
-                        await new Promise(r => setTimeout(r, 3500));
-                        return await sendClaimTransaction(provider, from);
+                // Standard (non-MiniPay) Celo claim now uses claimCeloInjected,
+                // which mirrors claimXdcInjected exactly (chain switch with
+                // multi-RPC, no chainId in tx params, one-shot retry on
+                // transient HTML/parser errors). MiniPay still uses the
+                // CIP-64 feeCurrency loop in sendClaimTransaction.
+                const sendCeloClaim = async () => {
+                    if (isMiniPayClaim) {
+                        try {
+                            return await sendClaimTransaction(provider, from);
+                        } catch (e1) {
+                            if (_isUserRejectedError(e1)) throw e1;
+                            if (!_isRpcHtmlError(e1)) throw e1;
+                            await new Promise(r => setTimeout(r, 3500));
+                            return await sendClaimTransaction(provider, from);
+                        }
                     }
+                    setClaimGasUiState('approve_wallet');
+                    return await claimCeloInjected(provider, from);
                 };
 
                 let txHash;
                 try {
-                    txHash = await sendCeloClaimWithParserRetry();
+                    txHash = await sendCeloClaim();
                 } catch (sendErr) {
                     if (!isInsufficientFundsError(sendErr)) throw sendErr;
                     if (isMiniPayClaim) throw sendErr;
                     setStatus('Gas became insufficient at send time. Re-running faucet fallback once…', '#facc15');
                     await ensureGasReadyBeforeClaim();
-                    txHash = await sendCeloClaimWithParserRetry();
+                    txHash = await sendCeloClaim();
                 }
                 label.textContent = 'Confirming…';
                 setStatus('✅ Celo claim submitted. Waiting for confirmation…', 'var(--text-dim)');
