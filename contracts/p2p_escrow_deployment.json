@@ -1,23 +1,13 @@
 {
   "contract": "GoodMarketP2PEscrow",
-  "address": "0x38Ba17dd68C1A0B80C5E2e767e6053F8299E9C85",
+  "address": "0x2B9FA9b85BBB44b8FCBa550b6C9cA8792ce00f03",
   "deployer": "0x6C2fC342aD726fb67a9cDf9B03078f66F3c71bF0",
   "arbiter": "0x6C2fC342aD726fb67a9cDf9B03078f66F3c71bF0",
   "g_dollar": "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A",
   "chain_id": 42220,
-  "tx_hash": "0x9484a197388d65291768326e17393ba3979ceff323ecea9780bc5eab58d660f4",
-  "block_number": 65443146,
-  "gas_used": 2561117,
-  "deployed_at": "2026-04-28T02:38:23Z",
-  "celoscan_address_url": "https://celoscan.io/address/0x38Ba17dd68C1A0B80C5E2e767e6053F8299E9C85",
-  "celoscan_tx_url": "https://celoscan.io/tx/0x9484a197388d65291768326e17393ba3979ceff323ecea9780bc5eab58d660f4",
-  "verified_post_deploy": {
-    "owner": "0x6C2fC342aD726fb67a9cDf9B03078f66F3c71bF0",
-    "arbiter": "0x6C2fC342aD726fb67a9cDf9B03078f66F3c71bF0",
-    "gDollar": "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A",
-    "paused": false,
-    "totalEscrowed": 0
-  },
+  "tx_hash": "0x6c9fcc123a7e0c818de48d62d672b89858f05b8f0a8eb4cca68f35a7f8db1d7a",
+  "block_number": 65444929,
+  "deployed_at": "2026-04-28T03:08:15.312906Z",
   "abi": [
     {
       "inputs": [

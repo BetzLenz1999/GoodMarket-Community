@@ -660,6 +660,15 @@ if init_learn_and_earn(app):
 else:
     logger.error("❌ Learn & Earn initialization failed")
 
+# Initialize trustless P2P Trading (GoodMarketP2PEscrow contract)
+logger.info("🤝 Initializing P2P Trading system...")
+try:
+    from p2p_trading import init_p2p_trading
+    init_p2p_trading(app)
+    logger.info("✅ P2P Trading system initialized")
+except Exception as e:
+    logger.error(f"❌ P2P Trading initialization failed: {e}")
+
 
 @app.route("/health")
 def health_check():
