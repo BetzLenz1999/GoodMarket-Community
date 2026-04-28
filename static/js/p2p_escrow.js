@@ -243,6 +243,41 @@
     );
   }
 
+  // ---------- chat ----------
+
+  function listChat(tradeId, opts) {
+    const since = (opts && opts.since) ? "?since=" + encodeURIComponent(opts.since) : "";
+    return jsonGet(
+      "/p2p/api/trades/" + encodeURIComponent(tradeId) + "/chat" + since
+    );
+  }
+
+  async function sendChat(tradeId, body, file) {
+    const url = "/p2p/api/trades/" + encodeURIComponent(tradeId) + "/chat";
+    let res;
+    if (file) {
+      const form = new FormData();
+      if (body) form.append("body", body);
+      form.append("file", file, file.name || "attachment");
+      res = await fetch(url, { method: "POST", body: form });
+    } else {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: body || "" }),
+      });
+    }
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok || !data.success) {
+      const err = new Error(data.error || ("HTTP " + res.status));
+      err.data = data;
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  }
+
   async function _signTradeAction(tradeId, prepUrl) {
     const prep = await jsonPost(prepUrl);
     const txKey = Object.keys(prep.transactions || {})[0];
@@ -307,6 +342,8 @@
     uploadProof,
     uploadProofFile,
     listProofs,
+    listChat,
+    sendChat,
     markPaid,
     release,
     cancelOrder,
