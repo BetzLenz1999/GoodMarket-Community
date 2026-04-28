@@ -258,6 +258,17 @@ class P2PEscrowService:
                     "all open trades first"
                 ),
             }
+        # Mirror the state guards on the other prepare_* methods: refuse to
+        # build a closeAd tx for an ad that isn't open on-chain (would just
+        # revert and burn the seller's gas).
+        if (order.get("onchain_status") or "") != "open":
+            return {
+                "success": False,
+                "error": (
+                    "Ad is not open on-chain; current state="
+                    f"{order.get('onchain_status')}"
+                ),
+            }
         tx = self.contract.build_close_ad_tx(seller_wallet, ad_id_hex)
         return {
             "success": True,

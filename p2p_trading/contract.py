@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -296,6 +297,10 @@ class P2PEscrowContract:
         else:
             self._admin_account = None
             self.admin_address = None
+        # Serialize ADMIN_KEY-signed txs so two concurrent dispute
+        # resolutions don't read the same nonce and have the second tx
+        # rejected with "nonce too low".
+        self._admin_tx_lock = threading.Lock()
 
         if self.w3.is_connected():
             logger.info(
@@ -584,17 +589,27 @@ class P2PEscrowContract:
         trade_id_b = _ensure_bytes32(trade_id)
         try:
             fn = self.contract.functions.resolveDispute(trade_id_b, buyer_wins)
-            tx_params: TxParams = {
-                "from": self.admin_address,
-                "chainId": self.chain_id,
-                "nonce": self.w3.eth.get_transaction_count(self.admin_address),
-            }
-            estimated = fn.estimate_gas(tx_params)
-            tx_params["gas"] = int(estimated * 1.2)
-            tx_params["gasPrice"] = self.w3.eth.gas_price
-            tx = fn.build_transaction(tx_params)
-            signed = self.w3.eth.account.sign_transaction(tx, self._admin_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
+            # Hold the admin lock from nonce read through send_raw_transaction
+            # so concurrent calls can't grab the same nonce. Dispute resolution
+            # is infrequent so the contention is negligible.
+            with self._admin_tx_lock:
+                tx_params: TxParams = {
+                    "from": self.admin_address,
+                    "chainId": self.chain_id,
+                    "nonce": self.w3.eth.get_transaction_count(
+                        self.admin_address, "pending"
+                    ),
+                }
+                estimated = fn.estimate_gas(tx_params)
+                tx_params["gas"] = int(estimated * 1.2)
+                tx_params["gasPrice"] = self.w3.eth.gas_price
+                tx = fn.build_transaction(tx_params)
+                signed = self.w3.eth.account.sign_transaction(
+                    tx, self._admin_key
+                )
+                tx_hash = self.w3.eth.send_raw_transaction(
+                    signed.raw_transaction
+                )
             tx_hash_hex = tx_hash.hex()
             if not tx_hash_hex.startswith("0x"):
                 tx_hash_hex = "0x" + tx_hash_hex
