@@ -97,6 +97,37 @@
     });
   }
 
+  /**
+   * Poll eth_getTransactionReceipt until the tx is mined, then return the
+   * receipt. Throws on revert (status !== "0x1") or after `timeoutMs`.
+   * Used between two dependent transactions (e.g. approve → openAd) so we
+   * don't queue the second tx if the first one reverts.
+   */
+  async function waitForReceipt(txHash, opts) {
+    const provider = getProvider();
+    if (!provider) throw new Error("No wallet detected.");
+    const intervalMs = (opts && opts.intervalMs) || 3000;
+    const timeoutMs = (opts && opts.timeoutMs) || 120000;
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      let receipt = null;
+      try {
+        receipt = await provider.request({
+          method: "eth_getTransactionReceipt",
+          params: [txHash],
+        });
+      } catch (_) { /* keep polling */ }
+      if (receipt && receipt.blockNumber) {
+        if (receipt.status && receipt.status !== "0x1") {
+          throw new Error("Transaction reverted: " + txHash);
+        }
+        return receipt;
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    throw new Error("Timed out waiting for tx confirmation: " + txHash);
+  }
+
   /** Notify the backend that a tx was submitted, so it can show "pending". */
   async function reportSubmitted(kind, identifier, txHash) {
     try {
@@ -148,6 +179,11 @@
 
     if (prep.approve_needed && txs.approve) {
       txHashes.approve = await sendPreparedTx(txs.approve);
+      // Wait for approve to be mined before sending openAd. Otherwise a
+      // reverted approve (e.g. token requires reset-to-zero, or wallet
+      // overrode the gas limit) would queue a second tx that's guaranteed
+      // to fail and burn gas.
+      await waitForReceipt(txHashes.approve);
     }
     if (txs.open_ad) {
       txHashes.open_ad = await sendPreparedTx(txs.open_ad);
@@ -235,6 +271,7 @@
 
   window.P2PEscrow = {
     sendPreparedTx,
+    waitForReceipt,
     openAd,
     closeAd,
     placeOrder,

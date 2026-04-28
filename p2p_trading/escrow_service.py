@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -63,6 +64,9 @@ def _utcnow_iso() -> str:
 
 def _hex(b: bytes) -> str:
     return "0x" + b.hex()
+
+
+_TX_HASH_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
 
 
 class P2PEscrowService:
@@ -545,6 +549,12 @@ class P2PEscrowService:
         actor = (actor_wallet or "").lower()
         if not actor:
             return {"success": False, "error": "Missing actor"}
+
+        # tx_hash is later interpolated into <a href="..."> in the UI; reject
+        # anything that isn't a real Ethereum-style tx hash so a malicious
+        # actor cannot inject script or break out of the attribute.
+        if not isinstance(tx_hash, str) or not _TX_HASH_RE.match(tx_hash):
+            return {"success": False, "error": "Invalid tx_hash format"}
 
         if kind == "ad":
             order = self._fetch_order(identifier)
