@@ -721,11 +721,17 @@ def make_random_bytes32(prefix: str = "") -> bytes:
 
 # Singleton instance for the rest of the module to import. Lazy so importers
 # that only need helpers (e.g. tests) don't pay the cost of a Web3 connection.
+# We run under threaded gunicorn, so use double-checked locking to prevent
+# two concurrent first-callers from each instantiating their own
+# P2PEscrowContract (and, importantly, their own _admin_tx_lock).
 _INSTANCE: Optional[P2PEscrowContract] = None
+_INSTANCE_LOCK = threading.Lock()
 
 
 def get_contract() -> P2PEscrowContract:
     global _INSTANCE
     if _INSTANCE is None:
-        _INSTANCE = P2PEscrowContract()
+        with _INSTANCE_LOCK:
+            if _INSTANCE is None:
+                _INSTANCE = P2PEscrowContract()
     return _INSTANCE

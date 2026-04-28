@@ -477,11 +477,17 @@ class P2PEscrowIndexer:
 
 # Lazy singleton ------------------------------------------------------------
 
+# Threaded gunicorn means multiple workers can hit get_indexer() at once on
+# first request; double-checked locking prevents two concurrent
+# P2PEscrowIndexer instances (each spinning up their own polling thread).
 _INDEXER: Optional[P2PEscrowIndexer] = None
+_INDEXER_LOCK = threading.Lock()
 
 
 def get_indexer() -> P2PEscrowIndexer:
     global _INDEXER
     if _INDEXER is None:
-        _INDEXER = P2PEscrowIndexer()
+        with _INDEXER_LOCK:
+            if _INDEXER is None:
+                _INDEXER = P2PEscrowIndexer()
     return _INDEXER

@@ -42,6 +42,24 @@ p2p_bp = Blueprint("p2p", __name__)
 # ---------------------------------------------------------------------------
 
 
+def _safe_limit(default: int = 50, cap: int = 200) -> int:
+    """Parse the ``limit`` query arg without raising on garbage like ``?limit=abc``.
+
+    Falls back to ``default`` for missing / non-numeric / non-positive values
+    so we never bubble up a ValueError as an opaque HTTP 500.
+    """
+    raw = request.args.get("limit")
+    if raw is None or raw == "":
+        return default
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return default
+    if n <= 0:
+        return default
+    return min(n, cap)
+
+
 def _wallet_from_session() -> str:
     return (session.get("wallet") or session.get("wallet_address") or "").lower()
 
@@ -202,7 +220,7 @@ def api_list_ads():
     wallet = _wallet_from_session()
     fiat = request.args.get("fiat_currency")
     method = request.args.get("payment_method")
-    limit = min(int(request.args.get("limit", 50)), 200)
+    limit = _safe_limit()
     ads = escrow_service.list_open_ads(
         viewer_wallet=wallet,
         fiat_currency=fiat,
@@ -224,7 +242,7 @@ def api_my_ads():
 @p2p_terms_required
 def api_my_trades():
     wallet = _wallet_from_session()
-    limit = min(int(request.args.get("limit", 50)), 200)
+    limit = _safe_limit()
     trades = escrow_service.get_my_trades(wallet, limit=limit)
     return jsonify({"success": True, "trades": trades, "count": len(trades)})
 
