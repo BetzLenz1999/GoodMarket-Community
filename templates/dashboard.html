@@ -322,6 +322,47 @@
             overflow: hidden;
         }
 
+        .balance-card {
+            background: linear-gradient(90deg, #6d28d9 0%, #a855f7 100%);
+            border-radius: 14px;
+            padding: 1rem 1.05rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 6px 18px rgba(124, 58, 237, 0.35);
+        }
+        .balance-card-actions {
+            display: flex;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .menu-group-label {
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.11em;
+            text-transform: uppercase;
+            color: rgba(196, 181, 253, 0.95);
+            margin: 0 0 0.55rem 0.2rem;
+        }
+        .tx-history-menu {
+            margin-bottom: 1rem;
+            margin-top: 0.2rem;
+            background: rgba(168,85,247,0.08);
+            border: 1px solid rgba(168,85,247,0.24);
+            border-radius: 14px;
+            overflow: hidden;
+        }
+        .tx-history-menu-header {
+            padding: 0.78rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .tx-history-menu-header:hover {
+            background: rgba(168,85,247,0.16);
+        }
+
         .stat-card:hover {
             transform: translateY(-4px);
             box-shadow: 0 8px 32px rgba(124, 58, 237, 0.18);
@@ -1225,31 +1266,6 @@
             </button>
         </div>
 
-        <!-- Platform Stats Strip (web3 style, matches homepage hero) -->
-        <div class="platform-stats-strip" aria-label="Live platform statistics">
-            <div class="platform-stat-card stat-disbursed">
-                <div class="ps-eyebrow">🌐 Total G$ Distributed</div>
-                <div class="ps-value">{{ homepage_stats.total_g_disbursed_formatted }}</div>
-                <div class="ps-foot">
-                    {% if homepage_stats.total_g_disbursed_week_growth_pct is not none %}
-                        {% if homepage_stats.total_g_disbursed_week_growth_pct >= 0 %}+{% endif %}{{ homepage_stats.total_g_disbursed_week_growth_pct }}% this week
-                    {% else %}
-                        On-chain · Celo
-                    {% endif %}
-                </div>
-            </div>
-            <div class="platform-stat-card stat-earners">
-                <div class="ps-eyebrow">👥 Active Earners</div>
-                <div class="ps-value">{{ homepage_stats.active_earners_formatted }}</div>
-                <div class="ps-foot">Across all features</div>
-            </div>
-            <div class="platform-stat-card stat-tasks">
-                <div class="ps-eyebrow">✅ Tasks Completed This Month</div>
-                <div class="ps-value">{{ homepage_stats.tasks_last_30_days_formatted }}</div>
-                <div class="ps-foot">Last 30 days</div>
-            </div>
-        </div>
-
         <div id="editUsernameModal">
             <div class="modal-content">
                 <h3>✏️ Update Username</h3>
@@ -1273,7 +1289,7 @@
         </div>
 
         <!-- GoodDollar Balance Card (always visible) -->
-        <div style="background: linear-gradient(135deg, #7c3aed, #a855f7); border-radius: 12px; padding: 0.7rem 1rem; margin-bottom: 1rem; box-shadow: 0 4px 14px rgba(124, 58, 237, 0.3);">
+        <div class="balance-card">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                 <div>
                     <div style="font-size: 0.65rem; color: rgba(255,255,255,0.75); margin-bottom: 0.1rem; text-transform: uppercase; letter-spacing: 0.8px;">Your GoodDollar Balance</div>
@@ -1298,7 +1314,7 @@
                         </div>
                     </div>
                 </div>
-                <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                <div class="balance-card-actions">
                     <a href="/minigames/" style="background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); padding: 0.35rem 0.7rem; border-radius: 8px; color: white; text-decoration: none; font-weight: 600; font-size: 0.75rem; transition: all 0.3s ease; border: 1px solid rgba(255,255,255,0.3);" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
                         🎮 Play & Earn
                     </a>
@@ -1456,12 +1472,13 @@
 
         <!-- Collapsible Menus -->
         <div class="menus-wrapper">
+            <div class="menu-group-label">Quick Earnings - More Ways to Earn</div>
 
             <!-- Menu 1: Quick Earnings -->
             <div class="coll-menu">
                 <div class="coll-menu-header" id="menuHeader-quick" onclick="toggleCollMenu('quick')">
                     <div class="coll-menu-title">
-                        <span>⚡</span><span>Quick Earnings</span>
+                        <span>⚡</span><span>QUICK EARNINGS</span>
                     </div>
                     <svg class="coll-chevron" id="menuChevron-quick" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="6 9 12 15 18 9"></polyline>
@@ -1617,7 +1634,7 @@
             <div class="coll-menu">
                 <div class="coll-menu-header" id="menuHeader-earn" onclick="toggleCollMenu('earn')">
                     <div class="coll-menu-title">
-                        <span>💎</span><span>More Ways to Earn</span>
+                        <span>💎</span><span>MORE WAYS TO EARN</span>
                     </div>
                     <svg class="coll-chevron" id="menuChevron-earn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="6 9 12 15 18 9"></polyline>
@@ -1692,11 +1709,13 @@
                 </div>
             </div>
 
+            <div class="menu-group-label">Platform Features - Transaction History</div>
+
             <!-- Menu 3: Platform Features -->
             <div class="coll-menu">
                 <div class="coll-menu-header" id="menuHeader-platform" onclick="toggleCollMenu('platform')">
                     <div class="coll-menu-title">
-                        <span>🛠️</span><span>Platform Features</span>
+                        <span>🛠️</span><span>PLATFORM FEATURES</span>
                     </div>
                     <svg class="coll-chevron" id="menuChevron-platform" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="6 9 12 15 18 9"></polyline>
@@ -1767,11 +1786,11 @@
         </div><!-- /menus-wrapper -->
 
         <!-- Transaction History Section -->
-        <div id="txHistorySection" style="margin-bottom: 1rem; margin-top: 1rem;">
-            <div id="txHistoryHeader" onclick="toggleTxHistory()" style="background: rgba(168,85,247,0.1); border: 1px solid rgba(168,85,247,0.3); border-radius: 12px 12px 0 0; padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.2s;">
+        <div id="txHistorySection" class="tx-history-menu">
+            <div id="txHistoryHeader" class="tx-history-menu-header" onclick="toggleTxHistory()">
                 <div style="display: flex; align-items: center; gap: 0.6rem;">
                     <span style="font-size: 1.1rem;">📋</span>
-                    <span style="font-weight: 700; font-size: 0.95rem; color: white;">Transaction History</span>
+                    <span style="font-weight: 700; font-size: 0.95rem; color: white;">TRANSACTION HISTORY</span>
                     <span id="txHistoryBadge" style="display: none; background: rgba(168,85,247,0.3); border: 1px solid rgba(168,85,247,0.5); color: #c084fc; border-radius: 20px; padding: 0.1rem 0.5rem; font-size: 0.7rem; font-weight: 700;"></span>
                 </div>
                 <svg id="txHistoryChevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 18px; height: 18px; color: rgba(255,255,255,0.6); transition: transform 0.3s; transform: rotate(180deg);">
@@ -2271,11 +2290,14 @@
             const body = document.getElementById('txHistoryBody');
             const chevron = document.getElementById('txHistoryChevron');
             const header = document.getElementById('txHistoryHeader');
+            const section = document.getElementById('txHistorySection');
             body.style.display = txHistoryOpen ? 'block' : 'none';
             chevron.style.transform = txHistoryOpen ? 'rotate(180deg)' : 'rotate(0deg)';
             header.style.background = txHistoryOpen ? 'rgba(168,85,247,0.1)' : 'rgba(255,255,255,0.05)';
-            header.style.borderColor = txHistoryOpen ? 'rgba(168,85,247,0.3)' : 'rgba(255,255,255,0.12)';
             header.style.borderRadius = txHistoryOpen ? '12px 12px 0 0' : '12px';
+            if (section) {
+                section.style.borderColor = txHistoryOpen ? 'rgba(168,85,247,0.24)' : 'rgba(255,255,255,0.18)';
+            }
             if (txHistoryOpen && !txHistoryLoaded) {
                 loadTxHistory();
             }
