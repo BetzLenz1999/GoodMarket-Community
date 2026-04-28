@@ -395,7 +395,14 @@ def api_admin_list_disputes():
 @admin_required
 def api_admin_resolve_dispute(trade_id: str):
     body = _json_body()
-    buyer_wins = bool(body.get("buyer_wins"))
+    if "buyer_wins" not in body or not isinstance(body["buyer_wins"], bool):
+        return jsonify(
+            {
+                "success": False,
+                "error": "buyer_wins (strict boolean) is required",
+            }
+        ), 400
+    buyer_wins = body["buyer_wins"]
     arbiter = _wallet_from_session()
     result = escrow_service.resolve_dispute(trade_id, buyer_wins, arbiter)
     return jsonify(result), (200 if result.get("success") else 400)

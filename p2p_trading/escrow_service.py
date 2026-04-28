@@ -515,25 +515,57 @@ class P2PEscrowService:
         The indexer is the authoritative state source; this just lets us
         log the optimistic step and surface it in the UI ("waiting for
         confirmation"). Idempotent.
+
+        Authorization: only the row owner can record a tx hash, and we
+        only allow regressing into ``submitted`` from
+        ``pending_user_signature`` so a late-arriving call cannot wipe
+        out the indexer's authoritative state.
         """
+        actor = (actor_wallet or "").lower()
+        if not actor:
+            return {"success": False, "error": "Missing actor"}
+
         if kind == "ad":
+            order = self._fetch_order(identifier)
+            if not order:
+                return {"success": False, "error": "Order not found"}
+            if (order.get("seller_wallet") or "").lower() != actor:
+                return {"success": False, "error": "Not your ad"}
+            if (order.get("onchain_status") or "") != "pending_user_signature":
+                # Already advanced by indexer or another actor; ignore.
+                return {"success": True, "skipped": True}
             try:
                 self.supabase.table("p2p_orders").update(
                     {
                         "ad_open_tx": tx_hash,
                         "onchain_status": "submitted",
                     }
-                ).eq("order_id", identifier).execute()
+                ).eq("order_id", identifier).eq(
+                    "onchain_status", "pending_user_signature"
+                ).execute()
             except Exception as exc:  # noqa: BLE001
                 return {"success": False, "error": str(exc)}
         elif kind == "trade":
+            trade = self._fetch_trade(identifier)
+            if not trade:
+                return {"success": False, "error": "Trade not found"}
+            owners = {
+                (trade.get("buyer_wallet") or "").lower(),
+                (trade.get("seller_wallet") or "").lower(),
+            }
+            if actor not in owners:
+                return {"success": False, "error": "Not your trade"}
+            if (trade.get("onchain_status") or "") != "pending_user_signature":
+                return {"success": True, "skipped": True}
             try:
                 self.supabase.table("p2p_trades").update(
                     {
                         "place_order_tx": tx_hash,
                         "onchain_status": "submitted",
                     }
-                ).eq("trade_id", identifier).execute()
+                ).eq("trade_id", identifier).eq(
+                    "onchain_status", "pending_user_signature"
+                ).execute()
             except Exception as exc:  # noqa: BLE001
                 return {"success": False, "error": str(exc)}
         else:
