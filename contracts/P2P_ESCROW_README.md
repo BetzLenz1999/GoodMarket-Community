@@ -157,24 +157,14 @@ deployment artefact (including ABI) to `contracts/p2p_escrow_deployment.json`.
 ## Mainnet deployment
 
 The contract is live on Celo mainnet at
-[`0x38Ba17dd68C1A0B80C5E2e767e6053F8299E9C85`](https://celoscan.io/address/0x38Ba17dd68C1A0B80C5E2e767e6053F8299E9C85)
+[`0x2B9FA9b85BBB44b8FCBa550b6C9cA8792ce00f03`](https://celoscan.io/address/0x2B9FA9b85BBB44b8FCBa550b6C9cA8792ce00f03)
 (deployed in tx
-[`0x9484a197...d660f4`](https://celoscan.io/tx/0x9484a197388d65291768326e17393ba3979ceff323ecea9780bc5eab58d660f4),
-block 65,443,146).
+[`0x6c9fcc12...db1d7a`](https://celoscan.io/tx/0x6c9fcc123a7e0c818de48d62d672b89858f05b8f0a8eb4cca68f35a7f8db1d7a),
+block 65,444,929).
 
-**Known cosmetic issue in the deployed bytecode**
-
-The deployed bytecode contains a non-fatal ordering issue in `placeOrder`: the
-`uint256(deadline) - block.timestamp` subtraction sits before the
-`require(deadline > block.timestamp)` check. When a buyer submits a deadline in
-the past, the function still reverts (Solidity 0.8+ panics on underflow), but
-the on-chain error is `Panic(0x11)` instead of the descriptive
-`"P2P: deadline in past"` message. There is **no security impact**: bad input
-is still rejected. The fix is in the source on `main` (the require has been
-moved above the subtraction), but redeploying purely for the error-message
-improvement is not justified given the cost. The frontend should validate
-`deadline > now` client-side before signing, which makes the path unreachable
-in practice.
-
-If the contract is ever redeployed for any other reason, the new bytecode will
-include the fix automatically.
+This is the second deployment, replacing the original at
+[`0x38Ba17dd...E9C85`](https://celoscan.io/address/0x38Ba17dd68C1A0B80C5E2e767e6053F8299E9C85).
+The new bytecode includes the `placeOrder` deadline-check ordering fix (PR #259)
+so that a past deadline reverts with the descriptive `"P2P: deadline in past"`
+message instead of `Panic(0x11)`. The first deployment is no longer used by
+the application; it has zero state and zero G$ escrowed.

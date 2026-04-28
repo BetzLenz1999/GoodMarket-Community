@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>P2P Trading · GoodMarket</title>
+<link rel="icon" href="/static/favicon.png">
+<style>
+  :root { --bg:#0b0f2a; --panel:rgba(255,255,255,.04); --line:rgba(255,255,255,.07); --ink:#e9edff; --muted:rgba(233,237,255,.65); --accent:#a78bfa; --accent2:#7c3aed; --good:#34d399; --warn:#f59e0b; --bad:#f87171; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; }
+  body { background:var(--bg); color:var(--ink); font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height:1.5; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .nav { background:rgba(11,15,42,.92); border-bottom:1px solid var(--line); padding:.6rem 1.25rem; position:sticky; top:0; z-index:50; backdrop-filter:blur(20px); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.5rem; }
+  .nav .brand { font-weight:700; font-size:1rem; }
+  .nav .meta { color:var(--muted); font-size:.8rem; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .nav .meta span.dot { display:inline-block; width:.55rem; height:.55rem; border-radius:50%; background:var(--good); margin-right:.4rem; vertical-align:middle; }
+  .wrap { max-width:1100px; margin:0 auto; padding:1.25rem 1rem 4rem; }
+  .tabs { display:flex; gap:.25rem; border-bottom:1px solid var(--line); margin-bottom:1.25rem; flex-wrap:wrap; }
+  .tab { padding:.55rem .85rem; cursor:pointer; color:var(--muted); border-bottom:2px solid transparent; font-weight:500; font-size:.92rem; }
+  .tab.active { color:var(--ink); border-color:var(--accent); }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:1.25rem; margin-bottom:1rem; }
+  h2 { margin:0 0 .65rem; font-size:1.1rem; color:var(--ink); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:1rem; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:1rem; display:flex; flex-direction:column; gap:.45rem; }
+  .card h3 { margin:0; font-size:1rem; }
+  .card .meta { color:var(--muted); font-size:.85rem; }
+  .badge { display:inline-block; font-size:.72rem; padding:.15rem .55rem; border-radius:999px; font-weight:600; }
+  .badge.open { background:rgba(52,211,153,.15); color:var(--good); }
+  .badge.pending { background:rgba(245,158,11,.15); color:var(--warn); }
+  .badge.disputed { background:rgba(248,113,113,.15); color:var(--bad); }
+  .badge.completed { background:rgba(167,139,250,.18); color:var(--accent); }
+  .badge.closed, .badge.cancelled, .badge.expired, .badge.refunded { background:rgba(255,255,255,.06); color:var(--muted); }
+  .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+  .row.between { justify-content:space-between; }
+  .form-row { display:flex; flex-direction:column; gap:.3rem; margin-bottom:.85rem; }
+  .form-row label { color:var(--muted); font-size:.85rem; }
+  input, select, textarea { background:rgba(0,0,0,.25); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:.55rem .7rem; font-size:.95rem; font-family:inherit; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent); }
+  button { border:0; padding:.55rem 1rem; border-radius:9px; font-weight:600; cursor:pointer; font-size:.9rem; font-family:inherit; }
+  button.primary { background:var(--accent); color:#1a1230; }
+  button.primary:disabled { opacity:.55; cursor:not-allowed; }
+  button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); }
+  button.danger { background:rgba(248,113,113,.18); color:var(--bad); border:1px solid rgba(248,113,113,.3); }
+  .toast-host { position:fixed; bottom:1.5rem; right:1.5rem; display:flex; flex-direction:column; gap:.5rem; z-index:90; }
+  .toast { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:.75rem 1rem; min-width:240px; max-width:380px; }
+  .toast.error { border-color:rgba(248,113,113,.4); }
+  .toast.success { border-color:rgba(52,211,153,.4); }
+  .small { font-size:.8rem; color:var(--muted); }
+  .empty { text-align:center; padding:2rem 1rem; color:var(--muted); }
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.75); display:none; align-items:center; justify-content:center; z-index:80; padding:1rem; }
+  .modal-bg.open { display:flex; }
+  .modal { background:#171a3a; border:1px solid var(--line); border-radius:14px; padding:1.5rem; max-width:480px; width:100%; max-height:90vh; overflow:auto; }
+  .modal h2 { margin-bottom:1rem; }
+  .key-val { display:flex; justify-content:space-between; padding:.35rem 0; border-bottom:1px solid var(--line); font-size:.9rem; }
+  .key-val:last-child { border-bottom:0; }
+  .key-val .k { color:var(--muted); }
+  .key-val .v { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85rem; }
+  code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .hint { background:rgba(167,139,250,.08); border:1px solid rgba(167,139,250,.2); padding:.6rem .85rem; border-radius:8px; font-size:.85rem; color:var(--muted); margin:.5rem 0; }
+</style>
+</head>
+<body>
+<div class="nav">
+  <div class="brand">P2P Trading <span class="small">· GoodMarket</span></div>
+  <div class="meta">
+    <span class="dot"></span>
+    Contract: <a id="contractLink" target="_blank" rel="noopener">{{ contract.address }}</a>
+    · Wallet: <code>{{ wallet[:6] }}…{{ wallet[-4:] }}</code>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-tab="browse">Browse</div>
+    <div class="tab" data-tab="sell">Sell G$</div>
+    <div class="tab" data-tab="myAds">My Ads</div>
+    <div class="tab" data-tab="myTrades">My Trades</div>
+    {% if is_admin %}<div class="tab" data-tab="disputes">Disputes</div>{% endif %}
+  </div>
+
+  <!-- Browse -->
+  <div data-pane="browse">
+    <div class="panel">
+      <div class="row between">
+        <h2>Open offers</h2>
+        <div class="row">
+          <select id="filterCurrency"><option value="">All currencies</option>
+            {% for c in fiat_currencies %}<option>{{ c }}</option>{% endfor %}
+          </select>
+          <select id="filterMethod"><option value="">All payment methods</option>
+            {% for m in payment_methods %}<option>{{ m }}</option>{% endfor %}
+          </select>
+          <button class="ghost" id="refreshAds">Refresh</button>
+        </div>
+      </div>
+      <div class="grid" id="adsGrid"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- Sell -->
+  <div data-pane="sell" hidden>
+    <div class="panel">
+      <h2>Create a sell offer</h2>
+      <p class="small">You will be asked to sign two transactions: an ERC-20 approval, then the on-chain <code>openAd</code> call. The full G$ amount is locked in the escrow contract until the ad is closed or fully traded.</p>
+      <div class="hint">Minimum ad &amp; per-trade size is <strong>20,000 G$</strong> (contract constant <code>MIN_AD_AMOUNT</code>).</div>
+      <form id="sellForm">
+        <div class="row" style="gap:1rem;">
+          <div class="form-row" style="flex:1;">
+            <label>Total G$ to lock</label>
+            <input type="number" min="20000" step="0.01" required name="total_g_dollar" placeholder="e.g. 50000">
+          </div>
+          <div class="form-row" style="flex:1;">
+            <label>Min per trade (G$)</label>
+            <input type="number" min="20000" step="0.01" required name="min_order_g_dollar" placeholder="e.g. 20000">
+          </div>
+          <div class="form-row" style="flex:1;">
+            <label>Max per trade (G$)</label>
+            <input type="number" min="20000" step="0.01" required name="max_order_g_dollar" placeholder="e.g. 50000">
+          </div>
+        </div>
+        <div class="row" style="gap:1rem;">
+          <div class="form-row" style="flex:1;">
+            <label>Total fiat asking price</label>
+            <input type="number" min="0" step="0.01" required name="fiat_amount" placeholder="e.g. 5000">
+          </div>
+          <div class="form-row" style="flex:1;">
+            <label>Currency</label>
+            <select name="fiat_currency" required>
+              {% for c in fiat_currencies %}<option>{{ c }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="form-row" style="flex:1;">
+            <label>Payment method</label>
+            <select name="payment_method" required>
+              {% for m in payment_methods %}<option>{{ m }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Payment details (account number, GCash handle, etc.)</label>
+          <input type="text" name="payment_details" placeholder="e.g. 09171234567 / Juan Dela Cruz">
+        </div>
+        <div class="form-row">
+          <label>Description / instructions for buyers (optional)</label>
+          <textarea name="description" rows="2" placeholder="e.g. Send GCash within 30 minutes. Include trade ID in the note."></textarea>
+        </div>
+        <button type="submit" class="primary" id="sellBtn">Sign &amp; publish ad</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- My Ads -->
+  <div data-pane="myAds" hidden>
+    <div class="panel">
+      <div class="row between"><h2>My ads</h2><button class="ghost" id="refreshMyAds">Refresh</button></div>
+      <div class="grid" id="myAdsGrid"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- My Trades -->
+  <div data-pane="myTrades" hidden>
+    <div class="panel">
+      <div class="row between"><h2>My trades</h2><button class="ghost" id="refreshMyTrades">Refresh</button></div>
+      <div class="grid" id="myTradesGrid"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
+  {% if is_admin %}
+  <!-- Disputes (admin) -->
+  <div data-pane="disputes" hidden>
+    <div class="panel">
+      <div class="row between"><h2>Open disputes</h2><button class="ghost" id="refreshDisputes">Refresh</button></div>
+      <div class="grid" id="disputesGrid"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Place-order modal -->
+<div class="modal-bg" id="placeOrderModal">
+  <div class="modal">
+    <h2>Buy G$</h2>
+    <div id="placeOrderInfo"></div>
+    <div class="form-row"><label>Amount (G$)</label><input type="number" id="placeOrderAmount" step="0.01"></div>
+    <div class="form-row"><label>Payment window (minutes)</label><input type="number" id="placeOrderWindow" min="15" max="360" value="30"></div>
+    <div class="row" style="justify-content:flex-end;">
+      <button class="ghost" id="placeOrderCancel">Cancel</button>
+      <button class="primary" id="placeOrderSubmit">Sign &amp; place order</button>
+    </div>
+  </div>
+</div>
+
+<!-- Proof upload modal -->
+<div class="modal-bg" id="proofModal">
+  <div class="modal">
+    <h2>Upload payment proof</h2>
+    <p class="small">Paste a public image URL (screenshot of bank/GCash transfer). Required before you can mark the trade as paid.</p>
+    <div class="form-row"><label>Proof URL</label><input type="url" id="proofUrl" placeholder="https://..."></div>
+    <div class="row" style="justify-content:flex-end;">
+      <button class="ghost" id="proofCancel">Cancel</button>
+      <button class="primary" id="proofSubmit">Save proof</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-host" id="toastHost"></div>
+
+<script src="/static/js/p2p_escrow.js"></script>
+<script>
+(function () {
+  // -------- toast helpers --------
+  const toastHost = document.getElementById('toastHost');
+  function toast(message, kind) {
+    const el = document.createElement('div');
+    el.className = 'toast ' + (kind || '');
+    el.textContent = message;
+    toastHost.appendChild(el);
+    setTimeout(() => el.remove(), 6000);
+  }
+  function toastErr(err) { toast(err && err.message || String(err), 'error'); }
+  function txLink(h) {
+    // Defense-in-depth: only build a Celoscan link if `h` is a real tx hash.
+    // The backend already validates this, but a corrupt DB row must not
+    // turn into <a href="javascript:..."> when interpolated below.
+    return /^0x[0-9a-fA-F]{64}$/.test(String(h || '')) ? ('https://celoscan.io/tx/' + h) : '#';
+  }
+  function fmt(n) { return Number(n || 0).toLocaleString(undefined, {maximumFractionDigits: 2}); }
+  function shortAddr(a) { return a ? a.slice(0,6) + '…' + a.slice(-4) : '—'; }
+
+  // -------- contract link --------
+  const link = document.getElementById('contractLink');
+  if (link) link.href = 'https://celoscan.io/address/' + link.textContent.trim();
+
+  // -------- tab switching --------
+  const tabs = document.querySelectorAll('.tab');
+  const panes = {};
+  document.querySelectorAll('[data-pane]').forEach(p => { panes[p.dataset.pane] = p; });
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    Object.entries(panes).forEach(([k, el]) => { el.hidden = k !== t.dataset.tab; });
+    if (t.dataset.tab === 'browse') refreshAds();
+    if (t.dataset.tab === 'myAds') refreshMyAds();
+    if (t.dataset.tab === 'myTrades') refreshMyTrades();
+    if (t.dataset.tab === 'disputes') refreshDisputes();
+  }));
+
+  // -------- browse ads --------
+  const adsGrid = document.getElementById('adsGrid');
+  const filterCurrency = document.getElementById('filterCurrency');
+  const filterMethod = document.getElementById('filterMethod');
+
+  function adCard(ad) {
+    const remaining = Number(ad.remaining_amount_gd || 0);
+    const total = Number(ad.total_locked_gd || 0);
+    const rate = Number(ad.rate || 0);
+    const seller = (ad.seller_wallet || '').toLowerCase();
+    return `
+      <div class="card">
+        <div class="row between">
+          <h3>${fmt(remaining)} G$ available</h3>
+          <span class="badge open">${ad.onchain_status || 'pending'}</span>
+        </div>
+        <div class="meta">${ad.payment_method || ''} · ${ad.fiat_currency || ''}${rate ? ' · ' + rate.toFixed(4) + ' ' + (ad.fiat_currency||'') + '/G$' : ''}</div>
+        <div class="meta">Seller: <code>${shortAddr(seller)}</code></div>
+        <div class="meta">Range: ${fmt(ad.min_order_gd)} – ${fmt(ad.max_order_gd)} G$ · Locked: ${fmt(total)} G$</div>
+        ${ad.description ? `<div class="small">${escapeHtml(ad.description)}</div>` : ''}
+        <div class="row" style="justify-content:flex-end;">
+          <button class="primary" data-buy="${ad.order_id}">Buy</button>
+        </div>
+      </div>`;
+  }
+
+  function escapeHtml(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  // For URLs interpolated into href="..." attributes: only allow http(s),
+  // strip quotes/angle brackets/whitespace, then HTML-escape what's left.
+  function escapeAttr(s) {
+    const raw = String(s||'').trim();
+    if (!/^https?:\/\//i.test(raw)) return '#';
+    if (/["'<>\s]/.test(raw)) return '#';
+    return escapeHtml(raw);
+  }
+
+  async function refreshAds() {
+    adsGrid.innerHTML = '<div class="empty">Loading...</div>';
+    try {
+      const params = {};
+      if (filterCurrency.value) params.fiat_currency = filterCurrency.value;
+      if (filterMethod.value) params.payment_method = filterMethod.value;
+      const data = await window.P2PEscrow.listAds(params);
+      if (!data.ads.length) {
+        adsGrid.innerHTML = '<div class="empty">No open ads. Be the first to publish one.</div>';
+        return;
+      }
+      adsGrid.innerHTML = data.ads.map(adCard).join('');
+      adsGrid.querySelectorAll('[data-buy]').forEach(btn => {
+        btn.addEventListener('click', () => openPlaceOrderModal(btn.dataset.buy, data.ads.find(a => a.order_id === btn.dataset.buy)));
+      });
+    } catch (e) { toastErr(e); adsGrid.innerHTML = '<div class="empty">Failed to load ads</div>'; }
+  }
+  filterCurrency.addEventListener('change', refreshAds);
+  filterMethod.addEventListener('change', refreshAds);
+  document.getElementById('refreshAds').addEventListener('click', refreshAds);
+
+  // -------- create ad (sell) --------
+  document.getElementById('sellForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('sellBtn');
+    const fd = new FormData(e.target);
+    const inputs = {};
+    fd.forEach((v, k) => { inputs[k] = ['total_g_dollar','min_order_g_dollar','max_order_g_dollar','fiat_amount'].includes(k) ? Number(v) : v; });
+    btn.disabled = true; btn.textContent = 'Awaiting wallet…';
+    try {
+      const { order, txHashes } = await window.P2PEscrow.openAd(inputs);
+      let msg = 'Ad submitted.';
+      if (txHashes.approve) msg += ' approve=' + txHashes.approve.slice(0,10) + '…';
+      if (txHashes.open_ad) msg += ' openAd=' + txHashes.open_ad.slice(0,10) + '…';
+      toast(msg + ' Indexer will mark it open in ~15s.', 'success');
+      e.target.reset();
+      // Switch to "My Ads" so the user can see status.
+      document.querySelector('[data-tab="myAds"]').click();
+    } catch (err) { toastErr(err); }
+    finally { btn.disabled = false; btn.textContent = 'Sign & publish ad'; }
+  });
+
+  // -------- place order modal --------
+  const placeOrderModal = document.getElementById('placeOrderModal');
+  const placeOrderInfo = document.getElementById('placeOrderInfo');
+  const placeOrderAmount = document.getElementById('placeOrderAmount');
+  const placeOrderWindow = document.getElementById('placeOrderWindow');
+  let _activePlaceOrder = null;
+
+  function openPlaceOrderModal(orderId, ad) {
+    _activePlaceOrder = { orderId, ad };
+    placeOrderInfo.innerHTML = `
+      <div class="key-val"><span class="k">Seller</span><span class="v">${shortAddr(ad.seller_wallet)}</span></div>
+      <div class="key-val"><span class="k">Available</span><span class="v">${fmt(ad.remaining_amount_gd)} G$</span></div>
+      <div class="key-val"><span class="k">Range</span><span class="v">${fmt(ad.min_order_gd)} – ${fmt(ad.max_order_gd)} G$</span></div>
+      <div class="key-val"><span class="k">Rate</span><span class="v">${(Number(ad.rate)||0).toFixed(4)} ${ad.fiat_currency}/G$</span></div>
+      <div class="key-val"><span class="k">Method</span><span class="v">${ad.payment_method}</span></div>`;
+    placeOrderAmount.value = ad.min_order_gd;
+    placeOrderModal.classList.add('open');
+  }
+  document.getElementById('placeOrderCancel').addEventListener('click', () => placeOrderModal.classList.remove('open'));
+  document.getElementById('placeOrderSubmit').addEventListener('click', async () => {
+    if (!_activePlaceOrder) return;
+    const amount = Number(placeOrderAmount.value);
+    const minutes = Number(placeOrderWindow.value);
+    if (!amount || amount <= 0) return toast('Invalid amount', 'error');
+    if (!minutes || minutes < 15 || minutes > 360) return toast('Window must be 15–360 minutes', 'error');
+    const btn = document.getElementById('placeOrderSubmit');
+    btn.disabled = true; btn.textContent = 'Awaiting wallet…';
+    try {
+      const { trade, txHash } = await window.P2PEscrow.placeOrder(_activePlaceOrder.orderId, amount, minutes * 60);
+      toast(`Order placed (${txHash.slice(0,10)}…). Pay the seller off-chain, then upload proof and mark paid.`, 'success');
+      placeOrderModal.classList.remove('open');
+      document.querySelector('[data-tab="myTrades"]').click();
+    } catch (err) { toastErr(err); }
+    finally { btn.disabled = false; btn.textContent = 'Sign & place order'; }
+  });
+
+  // -------- proof upload modal --------
+  const proofModal = document.getElementById('proofModal');
+  const proofUrl = document.getElementById('proofUrl');
+  let _activeProofTradeId = null;
+  function openProofModal(tradeId) {
+    _activeProofTradeId = tradeId;
+    proofUrl.value = '';
+    proofModal.classList.add('open');
+  }
+  document.getElementById('proofCancel').addEventListener('click', () => proofModal.classList.remove('open'));
+  document.getElementById('proofSubmit').addEventListener('click', async () => {
+    if (!_activeProofTradeId) return;
+    if (!proofUrl.value) return toast('Enter a URL', 'error');
+    try {
+      await window.P2PEscrow.uploadProof(_activeProofTradeId, proofUrl.value);
+      toast('Proof saved.', 'success');
+      proofModal.classList.remove('open');
+      refreshMyTrades();
+    } catch (err) { toastErr(err); }
+  });
+
+  // -------- my ads --------
+  const myAdsGrid = document.getElementById('myAdsGrid');
+  function myAdCard(ad) {
+    const stat = (ad.onchain_status || 'pending').toLowerCase();
+    const canClose = stat === 'open' && (Number(ad.active_trade_count) || 0) === 0;
+    return `<div class="card">
+      <div class="row between"><h3>${fmt(ad.remaining_amount_gd)} G$ left</h3><span class="badge ${stat}">${stat}</span></div>
+      <div class="meta">${ad.payment_method || ''} · ${ad.fiat_currency || ''}</div>
+      <div class="meta">Active trades: ${ad.active_trade_count || 0} · Locked: ${fmt(ad.total_locked_gd)} G$</div>
+      ${ad.ad_open_tx ? `<div class="small"><a href="${txLink(ad.ad_open_tx)}" target="_blank">openAd tx</a></div>` : ''}
+      ${ad.ad_close_tx ? `<div class="small"><a href="${txLink(ad.ad_close_tx)}" target="_blank">closeAd tx</a></div>` : ''}
+      <div class="row" style="justify-content:flex-end;">
+        ${canClose ? `<button class="danger" data-close="${ad.order_id}">Close ad &amp; refund</button>` : ''}
+      </div>
+    </div>`;
+  }
+  async function refreshMyAds() {
+    myAdsGrid.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const data = await window.P2PEscrow.myAds();
+      if (!data.ads.length) { myAdsGrid.innerHTML = '<div class="empty">You have not published any ads.</div>'; return; }
+      myAdsGrid.innerHTML = data.ads.map(myAdCard).join('');
+      myAdsGrid.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+          const { txHash } = await window.P2PEscrow.closeAd(b.dataset.close);
+          toast(`closeAd submitted (${txHash.slice(0,10)}…)`, 'success');
+          setTimeout(refreshMyAds, 18000);
+        } catch (e) { toastErr(e); b.disabled = false; }
+      }));
+    } catch (e) { toastErr(e); myAdsGrid.innerHTML = '<div class="empty">Failed to load</div>'; }
+  }
+  document.getElementById('refreshMyAds').addEventListener('click', refreshMyAds);
+
+  // -------- my trades --------
+  const myTradesGrid = document.getElementById('myTradesGrid');
+  const SESSION_WALLET = "{{ wallet }}".toLowerCase();
+
+  function tradeActions(t) {
+    const stat = (t.onchain_status || '').toLowerCase();
+    const isBuyer = (t.buyer_wallet || '').toLowerCase() === SESSION_WALLET;
+    const isSeller = (t.seller_wallet || '').toLowerCase() === SESSION_WALLET;
+    const buttons = [];
+    if (isBuyer && stat === 'payment_pending') {
+      if (!t.payment_proof_url) buttons.push(`<button class="ghost" data-proof="${t.trade_id}">Upload proof</button>`);
+      else buttons.push(`<button class="primary" data-markpaid="${t.trade_id}">Mark paid</button>`);
+      buttons.push(`<button class="danger" data-cancel="${t.trade_id}">Cancel</button>`);
+    }
+    if (isBuyer && stat === 'awaiting_release') {
+      buttons.push(`<button class="danger" data-dispute="${t.trade_id}">Open dispute</button>`);
+    }
+    if (isSeller && stat === 'awaiting_release') {
+      buttons.push(`<button class="primary" data-release="${t.trade_id}">Release G$</button>`);
+      buttons.push(`<button class="danger" data-dispute="${t.trade_id}">Open dispute</button>`);
+    }
+    return buttons.join(' ');
+  }
+
+  function tradeCard(t) {
+    const stat = (t.onchain_status || 'pending').toLowerCase();
+    const role = (t.buyer_wallet || '').toLowerCase() === SESSION_WALLET ? 'Buyer' : 'Seller';
+    return `<div class="card">
+      <div class="row between"><h3>${fmt(t.g_dollar_amount)} G$</h3><span class="badge ${stat}">${stat.replace(/_/g,' ')}</span></div>
+      <div class="meta">Role: ${role} · ${t.payment_method || ''} · ${t.fiat_currency || ''}</div>
+      <div class="meta">Counter: <code>${shortAddr(role === 'Buyer' ? t.seller_wallet : t.buyer_wallet)}</code> · Fiat: ${t.fiat_amount || '—'} ${t.fiat_currency || ''}</div>
+      ${t.payment_proof_url ? `<div class="small"><a href="${escapeAttr(t.payment_proof_url)}" target="_blank" rel="noopener noreferrer">Proof</a></div>` : ''}
+      ${t.place_order_tx ? `<div class="small"><a href="${txLink(t.place_order_tx)}" target="_blank">place tx</a>${t.mark_paid_tx ? ` · <a href="${txLink(t.mark_paid_tx)}" target="_blank">paid tx</a>` : ''}${t.release_tx ? ` · <a href="${txLink(t.release_tx)}" target="_blank">release tx</a>` : ''}${t.dispute_tx ? ` · <a href="${txLink(t.dispute_tx)}" target="_blank">dispute tx</a>` : ''}</div>` : ''}
+      <div class="row" style="justify-content:flex-end;">${tradeActions(t)}</div>
+    </div>`;
+  }
+
+  async function refreshMyTrades() {
+    myTradesGrid.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const data = await window.P2PEscrow.myTrades();
+      if (!data.trades.length) { myTradesGrid.innerHTML = '<div class="empty">No trades yet.</div>'; return; }
+      myTradesGrid.innerHTML = data.trades.map(tradeCard).join('');
+      bindTradeActions(myTradesGrid);
+    } catch (e) { toastErr(e); myTradesGrid.innerHTML = '<div class="empty">Failed to load</div>'; }
+  }
+  document.getElementById('refreshMyTrades').addEventListener('click', refreshMyTrades);
+
+  function bindTradeActions(scope) {
+    scope.querySelectorAll('[data-proof]').forEach(b => b.addEventListener('click', () => openProofModal(b.dataset.proof)));
+    const sign = (selector, fn, label) => scope.querySelectorAll(selector).forEach(b => b.addEventListener('click', async () => {
+      const id = b.getAttribute(selector.replace('[','').replace(']',''));
+      b.disabled = true;
+      try {
+        const { txHash } = await fn(id);
+        toast(`${label} submitted (${txHash.slice(0,10)}…)`, 'success');
+        setTimeout(refreshMyTrades, 18000);
+      } catch (e) { toastErr(e); b.disabled = false; }
+    }));
+    sign('[data-markpaid]', window.P2PEscrow.markPaid, 'markPaid');
+    sign('[data-release]', window.P2PEscrow.release, 'release');
+    sign('[data-cancel]', window.P2PEscrow.cancelOrder, 'cancelOrder');
+    sign('[data-dispute]', window.P2PEscrow.dispute, 'dispute');
+  }
+
+  {% if is_admin %}
+  // -------- disputes (admin) --------
+  const disputesGrid = document.getElementById('disputesGrid');
+  function disputeCard(t) {
+    return `<div class="card">
+      <div class="row between"><h3>${fmt(t.g_dollar_amount)} G$ disputed</h3><span class="badge disputed">disputed</span></div>
+      <div class="meta">Buyer: <code>${shortAddr(t.buyer_wallet)}</code> · Seller: <code>${shortAddr(t.seller_wallet)}</code></div>
+      <div class="meta">Fiat: ${t.fiat_amount || '—'} ${t.fiat_currency || ''} · ${t.payment_method || ''}</div>
+      <div class="meta">Disputed by: ${t.disputed_by ? shortAddr(t.disputed_by) : '—'}</div>
+      ${t.payment_proof_url ? `<div class="small"><a href="${escapeAttr(t.payment_proof_url)}" target="_blank" rel="noopener noreferrer">Proof</a></div>` : '<div class="small">No proof uploaded</div>'}
+      <div class="row" style="justify-content:flex-end;">
+        <button class="primary" data-buyerwins="${t.trade_id}">Buyer wins</button>
+        <button class="danger" data-sellerwins="${t.trade_id}">Seller wins</button>
+      </div>
+    </div>`;
+  }
+  async function refreshDisputes() {
+    disputesGrid.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const res = await fetch('/p2p/api/admin/disputes');
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      if (!data.disputes.length) { disputesGrid.innerHTML = '<div class="empty">No disputes.</div>'; return; }
+      disputesGrid.innerHTML = data.disputes.map(disputeCard).join('');
+      const resolve = (selector, buyerWins) => disputesGrid.querySelectorAll(selector).forEach(b => b.addEventListener('click', async () => {
+        const id = b.getAttribute(selector.replace('[','').replace(']',''));
+        if (!confirm(`Resolve trade ${id} → ${buyerWins ? 'BUYER wins' : 'SELLER wins'}?`)) return;
+        b.disabled = true;
+        try {
+          const r = await fetch(`/p2p/api/admin/disputes/${encodeURIComponent(id)}/resolve`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ buyer_wins: buyerWins }),
+          });
+          const j = await r.json();
+          if (!j.success) throw new Error(j.error);
+          toast(`Resolved (${(j.tx_hash||'').slice(0,10)}…)`, 'success');
+          setTimeout(refreshDisputes, 18000);
+        } catch (e) { toastErr(e); b.disabled = false; }
+      }));
+      resolve('[data-buyerwins]', true);
+      resolve('[data-sellerwins]', false);
+    } catch (e) { toastErr(e); disputesGrid.innerHTML = '<div class="empty">Failed to load</div>'; }
+  }
+  document.getElementById('refreshDisputes').addEventListener('click', refreshDisputes);
+  {% endif %}
+
+  // initial load
+  refreshAds();
+})();
+</script>
+</body>
+</html>

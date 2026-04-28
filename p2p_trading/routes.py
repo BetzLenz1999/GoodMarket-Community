@@ -1,778 +1,479 @@
+"""
+Flask routes for the trustless P2P escrow flow.
+
+Every route here either:
+* returns an **unsigned** transaction payload that the user's wallet (the
+  browser via WalletConnect / MiniPay) is expected to sign and broadcast,
+  *or*
+* returns read-only state combined from the on-chain contract and the
+  Supabase mirror.
+
+The only route that touches a private key on the server side is
+``/p2p/admin/resolve-dispute``, which uses the ADMIN_KEY set on the
+environment for arbiter actions.
+"""
+
+from __future__ import annotations
 
 import logging
-import asyncio
-from flask import Blueprint, request, jsonify, render_template, session, redirect, url_for
-from .p2p_service import p2p_trading_service
+from functools import wraps
+from typing import Any, Dict
+
+from flask import (
+    Blueprint,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+
+from .escrow_service import escrow_service
+from .indexer import get_indexer
 
 logger = logging.getLogger(__name__)
 
-# Create P2P Trading Blueprint
-p2p_bp = Blueprint('p2p', __name__)
+p2p_bp = Blueprint("p2p", __name__)
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+
+
+def _safe_limit(default: int = 50, cap: int = 200) -> int:
+    """Parse the ``limit`` query arg without raising on garbage like ``?limit=abc``.
+
+    Falls back to ``default`` for missing / non-numeric / non-positive values
+    so we never bubble up a ValueError as an opaque HTTP 500.
+    """
+    raw = request.args.get("limit")
+    if raw is None or raw == "":
+        return default
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return default
+    if n <= 0:
+        return default
+    return min(n, cap)
+
+
+def _wallet_from_session() -> str:
+    return (session.get("wallet") or session.get("wallet_address") or "").lower()
+
+
+def _is_admin(wallet: str) -> bool:
+    """Return True if the connected wallet is the contract arbiter (ADMIN_KEY).
+
+    Falls back to any address listed in the ``P2P_ADMIN_WALLETS`` env var
+    (comma-separated) so we can support multiple admin reviewers without
+    sharing the ADMIN_KEY.
+    """
+    import os
+
+    if not wallet:
+        return False
+    wallet = wallet.lower()
+    admin_addr = (escrow_service.contract.admin_address or "").lower()
+    if wallet == admin_addr:
+        return True
+    extras = os.getenv("P2P_ADMIN_WALLETS", "")
+    for addr in (a.strip().lower() for a in extras.split(",")):
+        if addr and addr == wallet:
+            return True
+    return False
+
 
 def p2p_auth_required(f):
-    """Decorator for P2P endpoints requiring authentication"""
+    @wraps(f)
     def wrapper(*args, **kwargs):
-        if not session.get("verified") or not session.get("wallet"):
-            return jsonify({"success": False, "error": "Authentication required"}), 401
+        if not session.get("verified") or not _wallet_from_session():
+            if request.is_json or request.path.startswith("/p2p/api/"):
+                return jsonify(
+                    {"success": False, "error": "Authentication required"}
+                ), 401
+            return redirect(url_for("home"))
         return f(*args, **kwargs)
-    wrapper.__name__ = f.__name__
+
     return wrapper
+
 
 def p2p_terms_required(f):
-    """Decorator for P2P endpoints requiring terms acceptance"""
+    @wraps(f)
     def wrapper(*args, **kwargs):
-        if not session.get("verified") or not session.get("wallet"):
-            return jsonify({"success": False, "error": "Authentication required"}), 401
+        if not session.get("verified") or not _wallet_from_session():
+            if request.is_json or request.path.startswith("/p2p/api/"):
+                return jsonify(
+                    {"success": False, "error": "Authentication required"}
+                ), 401
+            return redirect(url_for("home"))
         if not session.get("p2p_terms_accepted"):
-            return jsonify({"success": False, "error": "P2P terms acceptance required"}), 403
+            if request.is_json or request.path.startswith("/p2p/api/"):
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "P2P terms acceptance required",
+                        "redirect": url_for("p2p.p2p_terms"),
+                    }
+                ), 403
+            return redirect(url_for("p2p.p2p_terms"))
         return f(*args, **kwargs)
-    wrapper.__name__ = f.__name__
+
     return wrapper
 
-@p2p_bp.route('/terms')
+
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        wallet = _wallet_from_session()
+        if not wallet or not session.get("verified"):
+            return jsonify(
+                {"success": False, "error": "Authentication required"}
+            ), 401
+        if not _is_admin(wallet):
+            return jsonify({"success": False, "error": "Forbidden"}), 403
+        return f(*args, **kwargs)
+
+    return wrapper
+
+
+def _json_body() -> Dict[str, Any]:
+    return request.get_json(silent=True) or {}
+
+
+# ---------------------------------------------------------------------------
+# HTML pages
+# ---------------------------------------------------------------------------
+
+
+@p2p_bp.route("/terms")
 @p2p_auth_required
 def p2p_terms():
-    """P2P Trading Terms & Conditions"""
-    wallet = session.get("wallet")
-    return render_template('p2p_terms.html', wallet=wallet)
+    return render_template("p2p_terms.html", wallet=_wallet_from_session())
 
-@p2p_bp.route('/accept-terms', methods=['POST'])
+
+@p2p_bp.route("/accept-terms", methods=["POST"])
 @p2p_auth_required
 def accept_p2p_terms():
-    """Accept P2P Trading terms"""
-    try:
-        wallet = session.get("wallet")
-        data = request.get_json()
-
-        # Store P2P terms acceptance in session
-        session["p2p_terms_accepted"] = True
-        session.permanent = True  # Make session permanent
-
-        logger.info(f"✅ P2P Terms accepted by {wallet[:8]}...")
-
-        return jsonify({
+    session["p2p_terms_accepted"] = True
+    session.permanent = True
+    return jsonify(
+        {
             "success": True,
-            "message": "P2P Trading terms accepted successfully",
-            "redirect_to": "/p2p/"
-        })
+            "message": "P2P Trading terms accepted",
+            "redirect_to": "/p2p/",
+        }
+    )
 
-    except Exception as e:
-        logger.error(f"❌ Error accepting P2P terms: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
 
-@p2p_bp.route('/')
-@p2p_auth_required
+@p2p_bp.route("/")
+@p2p_terms_required
 def p2p_dashboard():
-    """P2P Trading dashboard"""
-    wallet = session.get("wallet")
+    wallet = _wallet_from_session()
+    return render_template(
+        "p2p_trading.html",
+        wallet=wallet,
+        contract=escrow_service.contract_status(),
+        payment_methods=escrow_service.payment_methods,
+        fiat_currencies=escrow_service.fiat_currencies,
+        is_admin=_is_admin(wallet),
+    )
 
-    # Get user's recent trades
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        recent_trades = loop.run_until_complete(
-            p2p_trading_service.get_user_trades(wallet, limit=5)
+
+# ---------------------------------------------------------------------------
+# Contract / config endpoints
+# ---------------------------------------------------------------------------
+
+
+@p2p_bp.route("/api/contract")
+@p2p_auth_required
+def api_contract_info():
+    return jsonify({"success": True, **escrow_service.contract_status()})
+
+
+@p2p_bp.route("/api/config")
+@p2p_auth_required
+def api_config():
+    return jsonify(
+        {
+            "success": True,
+            "payment_methods": escrow_service.payment_methods,
+            "fiat_currencies": escrow_service.fiat_currencies,
+            "min_ad_amount_gd": 20_000,
+            "default_payment_window_seconds": (
+                escrow_service.DEFAULT_PAYMENT_WINDOW_SECONDS
+            ),
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Browse / read APIs
+# ---------------------------------------------------------------------------
+
+
+@p2p_bp.route("/api/ads")
+@p2p_terms_required
+def api_list_ads():
+    wallet = _wallet_from_session()
+    fiat = request.args.get("fiat_currency")
+    method = request.args.get("payment_method")
+    limit = _safe_limit()
+    ads = escrow_service.list_open_ads(
+        viewer_wallet=wallet,
+        fiat_currency=fiat,
+        payment_method=method,
+        limit=limit,
+    )
+    return jsonify({"success": True, "ads": ads, "count": len(ads)})
+
+
+@p2p_bp.route("/api/ads/mine")
+@p2p_terms_required
+def api_my_ads():
+    wallet = _wallet_from_session()
+    ads = escrow_service.get_my_ads(wallet)
+    return jsonify({"success": True, "ads": ads, "count": len(ads)})
+
+
+@p2p_bp.route("/api/trades/mine")
+@p2p_terms_required
+def api_my_trades():
+    wallet = _wallet_from_session()
+    limit = _safe_limit()
+    trades = escrow_service.get_my_trades(wallet, limit=limit)
+    return jsonify({"success": True, "trades": trades, "count": len(trades)})
+
+
+@p2p_bp.route("/api/orders/<order_id>")
+@p2p_terms_required
+def api_get_order(order_id: str):
+    order = escrow_service.get_order(order_id)
+    if not order:
+        return jsonify({"success": False, "error": "Order not found"}), 404
+    return jsonify({"success": True, "order": order})
+
+
+@p2p_bp.route("/api/trades/<trade_id>")
+@p2p_terms_required
+def api_get_trade(trade_id: str):
+    trade = escrow_service.get_trade(trade_id)
+    if not trade:
+        return jsonify({"success": False, "error": "Trade not found"}), 404
+    wallet = _wallet_from_session()
+    if (
+        wallet
+        and wallet not in (
+            (trade.get("buyer_wallet") or "").lower(),
+            (trade.get("seller_wallet") or "").lower(),
         )
+        and not _is_admin(wallet)
+    ):
+        return jsonify({"success": False, "error": "Forbidden"}), 403
+    return jsonify({"success": True, "trade": trade})
 
-        # Get available orders
-        available_orders = loop.run_until_complete(
-            p2p_trading_service.get_available_orders(buyer_wallet=wallet, limit=10)
+
+# ---------------------------------------------------------------------------
+# Tx-prep endpoints — return unsigned transactions for wallet signing
+# ---------------------------------------------------------------------------
+
+
+@p2p_bp.route("/api/ads/prepare-open", methods=["POST"])
+@p2p_terms_required
+def api_prepare_open_ad():
+    wallet = _wallet_from_session()
+    body = _json_body()
+    try:
+        result = escrow_service.prepare_open_ad(
+            seller_wallet=wallet,
+            total_g_dollar=float(body.get("total_g_dollar")),
+            min_order_g_dollar=float(body.get("min_order_g_dollar")),
+            max_order_g_dollar=float(body.get("max_order_g_dollar")),
+            fiat_amount=float(body.get("fiat_amount")),
+            fiat_currency=body.get("fiat_currency"),
+            payment_method=body.get("payment_method"),
+            payment_details=body.get("payment_details", ""),
+            description=body.get("description", ""),
         )
+    except (TypeError, ValueError) as exc:
+        return jsonify({"success": False, "error": f"Invalid input: {exc}"}), 400
+    return jsonify(result), (200 if result.get("success") else 400)
 
-        # Get trading stats
-        trading_stats = p2p_trading_service.get_trading_stats()
 
-        # Get user rating
-        user_rating = loop.run_until_complete(
-            p2p_trading_service.get_user_rating(wallet)
-        )
+@p2p_bp.route("/api/ads/<order_id>/prepare-close", methods=["POST"])
+@p2p_terms_required
+def api_prepare_close_ad(order_id: str):
+    wallet = _wallet_from_session()
+    result = escrow_service.prepare_close_ad(wallet, order_id)
+    return jsonify(result), (200 if result.get("success") else 400)
 
-    finally:
-        loop.close()
 
-    return render_template('p2p_trading.html', 
-                         wallet=wallet,
-                         recent_trades=recent_trades,
-                         available_orders=available_orders,
-                         trading_stats=trading_stats,
-                         user_rating=user_rating,
-                         payment_methods=p2p_trading_service.payment_methods,
-                         fiat_currencies=p2p_trading_service.fiat_currencies)
-
-@p2p_bp.route('/create-order', methods=['POST'])
-@p2p_auth_required
-def create_sell_order():
-    """Create a new sell order"""
+@p2p_bp.route("/api/orders/<order_id>/prepare-place", methods=["POST"])
+@p2p_terms_required
+def api_prepare_place_order(order_id: str):
+    wallet = _wallet_from_session()
+    body = _json_body()
     try:
-        wallet = session.get("wallet")
-        data = request.get_json()
-
-        required_fields = ['g_dollar_amount', 'g_dollar_price_usd', 'fiat_amount', 'fiat_currency', 'payment_method']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"success": False, "error": f"Missing field: {field}"}), 400
-
-        # Run async function
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                p2p_trading_service.create_sell_order(
-                    seller_wallet=wallet,
-                    g_dollar_amount=float(data['g_dollar_amount']),
-                    g_dollar_price_usd=float(data['g_dollar_price_usd']),
-                    fiat_amount=float(data['fiat_amount']),
-                    fiat_currency=data['fiat_currency'],
-                    payment_method=data['payment_method'],
-                    description=data.get('description', ''),
-                    payment_details=data.get('payment_details', '')
-                )
-            )
-        finally:
-            loop.close()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"❌ Error creating sell order: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/orders', methods=['GET'])
-@p2p_auth_required
-def get_available_orders():
-    """Get available sell orders"""
+        amount = float(body.get("amount_g_dollar"))
+    except (TypeError, ValueError):
+        return jsonify(
+            {"success": False, "error": "Missing/invalid amount_g_dollar"}
+        ), 400
+    window = body.get("payment_window_seconds")
     try:
-        wallet = session.get("wallet")
-
-        # Get query parameters
-        fiat_currency = request.args.get('fiat_currency')
-        payment_method = request.args.get('payment_method')
-        limit = int(request.args.get('limit', 20))
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            orders = loop.run_until_complete(
-                p2p_trading_service.get_available_orders(
-                    buyer_wallet=wallet,
-                    fiat_currency=fiat_currency,
-                    payment_method=payment_method,
-                    limit=limit
-                )
-            )
-        finally:
-            loop.close()
-
-        return jsonify({
-            "success": True,
-            "orders": orders,
-            "total": len(orders)
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error getting orders: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/accept-order', methods=['POST'])
-@p2p_auth_required
-def accept_order():
-    """Accept a sell order"""
-    try:
-        wallet = session.get("wallet")
-        data = request.get_json()
-
-        if 'order_id' not in data:
-            return jsonify({"success": False, "error": "Order ID required"}), 400
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                p2p_trading_service.accept_order(wallet, data['order_id'])
-            )
-        finally:
-            loop.close()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"❌ Error accepting order: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/confirm-deposit', methods=['POST'])
-@p2p_auth_required
-def confirm_seller_deposit():
-    """Confirm seller has deposited G$ to escrow"""
-    try:
-        wallet = session.get("wallet")
-        data = request.get_json()
-
-        if 'trade_id' not in data:
-            return jsonify({"success": False, "error": "Trade ID required"}), 400
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                p2p_trading_service.confirm_seller_deposit(data['trade_id'], wallet)
-            )
-        finally:
-            loop.close()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"❌ Error confirming deposit: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/confirm-payment', methods=['POST'])
-@p2p_auth_required
-def confirm_buyer_payment():
-    """Confirm buyer has sent fiat payment"""
-    try:
-        wallet = session.get("wallet")
-        data = request.get_json()
-
-        if 'trade_id' not in data:
-            return jsonify({"success": False, "error": "Trade ID required"}), 400
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                p2p_trading_service.confirm_buyer_payment(
-                    data['trade_id'], 
-                    wallet, 
-                    data.get('payment_proof_url')
-                )
-            )
-        finally:
-            loop.close()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"❌ Error confirming payment: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/upload-payment-proof', methods=['POST'])
-@p2p_auth_required
-def upload_payment_proof():
-    """Upload payment proof via ImgBB"""
-    try:
-        wallet = session.get("wallet")
-        data = request.get_json()
-
-        required_fields = ['trade_id', 'proof_url']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"success": False, "error": f"Missing field: {field}"}), 400
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                p2p_trading_service.upload_payment_proof(
-                    data['trade_id'], 
-                    wallet, 
-                    data['proof_url']
-                )
-            )
-        finally:
-            loop.close()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"❌ Error uploading payment proof: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/confirm-receipt', methods=['POST'])
-@p2p_auth_required
-def confirm_payment_receipt():
-    """Confirm seller received fiat payment"""
-    try:
-        wallet = session.get("wallet")
-        data = request.get_json()
-
-        if 'trade_id' not in data:
-            return jsonify({"success": False, "error": "Trade ID required"}), 400
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                p2p_trading_service.confirm_seller_received_payment(data['trade_id'], wallet)
-            )
-        finally:
-            loop.close()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"❌ Error confirming receipt: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/cancel-trade', methods=['POST'])
-@p2p_auth_required
-def cancel_trade():
-    """Cancel a trade"""
-    try:
-        wallet = session.get("wallet")
-        data = request.get_json()
-
-        if 'trade_id' not in data:
-            return jsonify({"success": False, "error": "Trade ID required"}), 400
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                p2p_trading_service.cancel_trade(
-                    data['trade_id'], 
-                    wallet, 
-                    data.get('reason', '')
-                )
-            )
-        finally:
-            loop.close()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"❌ Error cancelling trade: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/my-orders', methods=['GET'])
-@p2p_auth_required
-def get_my_orders():
-    """Get user's own sell orders"""
-    try:
-        wallet = session.get("wallet")
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            orders = loop.run_until_complete(
-                p2p_trading_service.get_user_orders(wallet)
-            )
-        finally:
-            loop.close()
-
-        return jsonify({
-            "success": True,
-            "orders": orders,
-            "total": len(orders)
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error getting user orders: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/my-orders-with-trades', methods=['GET'])
-@p2p_auth_required
-def get_my_orders_with_trades():
-    """Get user's own sell orders with active trade information"""
-    try:
-        wallet = session.get("wallet")
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            orders = loop.run_until_complete(
-                p2p_trading_service.get_user_orders_with_trades(wallet)
-            )
-        finally:
-            loop.close()
-
-        return jsonify({
-            "success": True,
-            "orders": orders,
-            "total": len(orders)
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error getting user orders with trades: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/my-trades', methods=['GET'])
-@p2p_auth_required
-def get_my_trades():
-    """Get user's trade history"""
-    try:
-        wallet = session.get("wallet")
-        limit = int(request.args.get('limit', 20))
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            trades = loop.run_until_complete(
-                p2p_trading_service.get_user_trades(wallet, limit)
-            )
-        finally:
-            loop.close()
-
-        return jsonify({
-            "success": True,
-            "trades": trades,
-            "total": len(trades)
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error getting user trades: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/trade/<trade_id>', methods=['GET'])
-@p2p_auth_required
-def get_trade_details(trade_id):
-    """Get detailed trade information"""
-    try:
-        wallet = session.get("wallet")
-        logger.info(f"🔍 Trade details request: user {wallet[:8]}... requesting trade {trade_id}")
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            trade = loop.run_until_complete(
-                p2p_trading_service.get_trade_by_id(trade_id)
-            )
-        finally:
-            loop.close()
-
-        if not trade:
-            logger.error(f"❌ Trade not found: {trade_id}")
-            return jsonify({"success": False, "error": "Trade not found"}), 404
-
-        logger.info(f"✅ Found trade: {trade_id}, buyer: {trade['buyer_wallet'][:8]}..., seller: {trade['seller_wallet'][:8]}...")
-
-        # Check if user is involved in this trade
-        if wallet.lower() not in [trade["buyer_wallet"].lower(), trade["seller_wallet"].lower()]:
-            logger.error(f"❌ Unauthorized access attempt: user {wallet} not in trade participants {trade['buyer_wallet']}, {trade['seller_wallet']}")
-            return jsonify({"success": False, "error": "Unauthorized"}), 403
-
-        return jsonify({
-            "success": True,
-            "trade": trade
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error getting trade details: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/stats', methods=['GET'])
-@p2p_auth_required
-def get_trading_stats():
-    """Get platform trading statistics"""
-    try:
-        stats = p2p_trading_service.get_trading_stats()
-
-        return jsonify({
-            "success": True,
-            "stats": stats
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error getting stats: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/order/<order_id>', methods=['GET'])
-@p2p_auth_required
-def get_order_details(order_id):
-    """Get detailed order information"""
-    try:
-        wallet = session.get("wallet")
-        logger.info(f"🔍 Order details request: user {wallet[:8]}... requesting order {order_id}")
-
-        if not p2p_trading_service.supabase:
-            return jsonify({"success": False, "error": "Database not available"}), 500
-
-        # Get order details
-        order_result = p2p_trading_service.supabase.table("p2p_orders")\
-            .select("*")\
-            .eq("order_id", order_id)\
-            .execute()
-
-        if not order_result.data:
-            logger.error(f"❌ Order not found: {order_id}")
-            return jsonify({"success": False, "error": "Order not found"}), 404
-
-        order = order_result.data[0]
-        
-        # Check if there's an active trade for this order
-        trade_result = p2p_trading_service.supabase.table("p2p_trades")\
-            .select("*")\
-            .eq("order_id", order_id)\
-            .order("created_at", desc=True)\
-            .limit(1)\
-            .execute()
-
-        active_trade = None
-        if trade_result.data:
-            active_trade = trade_result.data[0]
-
-        logger.info(f"✅ Found order: {order_id}, seller: {order['seller_wallet'][:8]}...")
-
-        return jsonify({
-            "success": True,
-            "order": order,
-            "active_trade": active_trade
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error getting order details: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/user-rating/<wallet_address>', methods=['GET'])
-@p2p_auth_required
-def get_user_rating(wallet_address):
-    """Get user's trading rating"""
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            rating = loop.run_until_complete(
-                p2p_trading_service.get_user_rating(wallet_address)
-            )
-        finally:
-            loop.close()
-
-        return jsonify({
-            "success": True,
-            "rating": rating
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error getting user rating: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/merchant-info', methods=['GET'])
-@p2p_auth_required
-def get_merchant_info():
-    """Get merchant address for deposits"""
-    try:
-        from .blockchain import p2p_blockchain_service
-
-        return jsonify({
-            "success": True,
-            "merchant_address": p2p_blockchain_service.merchant_address,
-            "message": "Send G$ to this address for escrow"
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error getting merchant info: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/monitor-deposits', methods=['POST'])
-@p2p_auth_required
-def monitor_deposits():
-    """Monitor and verify pending deposits automatically"""
-    try:
-        wallet = session.get("wallet")
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                p2p_trading_service.auto_verify_pending_deposits()
-            )
-        finally:
-            loop.close()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"❌ Error monitoring deposits: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-
-@p2p_bp.route('/start-monitoring', methods=['POST'])
-@p2p_auth_required
-def start_monitoring():
-    """Start blockchain monitoring service"""
-    try:
-        wallet = session.get("wallet")
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                p2p_trading_service.start_monitoring_service()
-            )
-        finally:
-            loop.close()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"❌ Error starting monitoring: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/history', methods=['GET'])
-@p2p_auth_required
-def get_p2p_history():
-    """Get P2P trading history for dashboard integration"""
-    try:
-        wallet = session.get("wallet")
-        limit = int(request.args.get('limit', 50))
-
-        logger.info(f"📋 Getting P2P history for {wallet[:8]}... (limit: {limit})")
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            trades = loop.run_until_complete(
-                p2p_trading_service.get_user_trades(wallet, limit)
-            )
-        finally:
-            loop.close()
-
-        # Format trades for dashboard display
-        formatted_trades = []
-        for trade in trades:
-            # Get the appropriate transaction hash based on role and status
-            tx_hash = None
-            if trade.get('status') == 'completed':
-                tx_hash = trade.get('release_tx_hash') or trade.get('seller_deposit_tx')
-            elif trade.get('status') in ['escrow_active', 'payment_sent']:
-                tx_hash = trade.get('seller_deposit_tx')
-            
-            # Ensure transaction hash has 0x prefix if it exists
-            if tx_hash and not tx_hash.startswith('0x'):
-                tx_hash = '0x' + tx_hash
-
-            formatted_trade = {
-                'trade_id': trade.get('trade_id'),
-                'g_dollar_amount': trade.get('g_dollar_amount'),
-                'fiat_amount': trade.get('fiat_amount'),
-                'fiat_currency': trade.get('fiat_currency'),
-                'payment_method': trade.get('payment_method'),
-                'status': trade.get('status'),
-                'user_role': trade.get('user_role'),
-                'counterpart': trade.get('counterpart_display'),
-                'created_at': trade.get('created_at'),
-                'completed_at': trade.get('completed_at'),
-                'transaction_hash': tx_hash,
-                'seller_wallet': trade.get('seller_wallet'),
-                'buyer_wallet': trade.get('buyer_wallet'),
-                'seller_deposit_tx': trade.get('seller_deposit_tx'),
-                'release_tx_hash': trade.get('release_tx_hash')
+        window = int(window) if window is not None else None
+    except (TypeError, ValueError):
+        return jsonify(
+            {"success": False, "error": "Invalid payment_window_seconds"}
+        ), 400
+    result = escrow_service.prepare_place_order(
+        buyer_wallet=wallet,
+        order_id=order_id,
+        amount_g_dollar=amount,
+        payment_window_seconds=window,
+    )
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@p2p_bp.route("/api/trades/<trade_id>/upload-proof", methods=["POST"])
+@p2p_terms_required
+def api_upload_proof(trade_id: str):
+    wallet = _wallet_from_session()
+    body = _json_body()
+    proof_url = (body.get("proof_url") or "").strip()
+    result = escrow_service.upload_payment_proof(wallet, trade_id, proof_url)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@p2p_bp.route("/api/trades/<trade_id>/prepare-mark-paid", methods=["POST"])
+@p2p_terms_required
+def api_prepare_mark_paid(trade_id: str):
+    wallet = _wallet_from_session()
+    result = escrow_service.prepare_mark_paid(wallet, trade_id)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@p2p_bp.route("/api/trades/<trade_id>/prepare-release", methods=["POST"])
+@p2p_terms_required
+def api_prepare_release(trade_id: str):
+    wallet = _wallet_from_session()
+    result = escrow_service.prepare_release(wallet, trade_id)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@p2p_bp.route("/api/trades/<trade_id>/prepare-cancel", methods=["POST"])
+@p2p_terms_required
+def api_prepare_cancel(trade_id: str):
+    wallet = _wallet_from_session()
+    result = escrow_service.prepare_cancel_order(wallet, trade_id)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@p2p_bp.route("/api/trades/<trade_id>/prepare-dispute", methods=["POST"])
+@p2p_terms_required
+def api_prepare_dispute(trade_id: str):
+    wallet = _wallet_from_session()
+    result = escrow_service.prepare_dispute(wallet, trade_id)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@p2p_bp.route("/api/tx-submitted", methods=["POST"])
+@p2p_terms_required
+def api_tx_submitted():
+    wallet = _wallet_from_session()
+    body = _json_body()
+    kind = body.get("kind")
+    identifier = body.get("identifier")
+    tx_hash = body.get("tx_hash")
+    if kind not in ("ad", "trade") or not identifier or not tx_hash:
+        return jsonify(
+            {"success": False, "error": "kind, identifier, tx_hash required"}
+        ), 400
+    result = escrow_service.record_tx_submitted(
+        kind, identifier, tx_hash, wallet
+    )
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+# ---------------------------------------------------------------------------
+# Admin / arbiter endpoints
+# ---------------------------------------------------------------------------
+
+
+@p2p_bp.route("/api/admin/disputes")
+@admin_required
+def api_admin_list_disputes():
+    disputes = escrow_service.get_disputes()
+    return jsonify({"success": True, "disputes": disputes})
+
+
+@p2p_bp.route("/api/admin/disputes/<trade_id>/resolve", methods=["POST"])
+@admin_required
+def api_admin_resolve_dispute(trade_id: str):
+    body = _json_body()
+    if "buyer_wins" not in body or not isinstance(body["buyer_wins"], bool):
+        return jsonify(
+            {
+                "success": False,
+                "error": "buyer_wins (strict boolean) is required",
             }
-            formatted_trades.append(formatted_trade)
+        ), 400
+    buyer_wins = body["buyer_wins"]
+    arbiter = _wallet_from_session()
+    result = escrow_service.resolve_dispute(trade_id, buyer_wins, arbiter)
+    return jsonify(result), (200 if result.get("success") else 400)
 
-        logger.info(f"✅ Found {len(formatted_trades)} P2P trades for {wallet[:8]}...")
 
-        return jsonify({
+# ---------------------------------------------------------------------------
+# Indexer / health endpoints
+# ---------------------------------------------------------------------------
+
+
+@p2p_bp.route("/api/indexer/poll", methods=["POST"])
+@admin_required
+def api_indexer_poll():
+    counts = get_indexer().poll_once()
+    last = get_indexer().get_last_indexed_block()
+    return jsonify(
+        {"success": True, "events": counts, "last_indexed_block": last}
+    )
+
+
+@p2p_bp.route("/api/indexer/state")
+@admin_required
+def api_indexer_state():
+    indexer = get_indexer()
+    return jsonify(
+        {
             "success": True,
-            "trades": formatted_trades,
-            "total": len(formatted_trades)
-        })
+            "last_indexed_block": indexer.get_last_indexed_block(),
+            "head_block": indexer.w3.eth.block_number
+            if indexer.w3.is_connected()
+            else None,
+            "contract_address": indexer.contract.address,
+            "deployed_block": indexer.contract.deployed_block,
+        }
+    )
 
-    except Exception as e:
-        logger.error(f"❌ Error getting P2P history: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+
+# ---------------------------------------------------------------------------
+# Module init helper, called from main.py
+# ---------------------------------------------------------------------------
 
 
-@p2p_bp.route('/debug-orders', methods=['GET'])
-@p2p_auth_required
-def debug_orders():
-    """Debug endpoint to check orders in database"""
-    try:
-        if not p2p_trading_service.supabase:
-            return jsonify({"success": False, "error": "Database not available"})
+def init_p2p_trading(app) -> None:
+    """Register the blueprint and (optionally) start the background indexer.
 
-        # Get all orders
-        all_orders = p2p_trading_service.supabase.table("p2p_orders").select("*").execute()
+    The indexer is opt-in via the ``P2P_INDEXER_ENABLED`` env var so unit
+    tests and short-lived workers don't spin up background threads.
+    """
+    import os
 
-        # Get active orders
-        active_orders = p2p_trading_service.supabase.table("p2p_orders").select("*").eq("status", "active").execute()
-
-        return jsonify({
-            "success": True,
-            "total_orders": len(all_orders.data) if all_orders.data else 0,
-            "active_orders": len(active_orders.data) if active_orders.data else 0,
-            "all_orders": all_orders.data[:5] if all_orders.data else [],  # First 5 for debugging
-            "active_orders_list": active_orders.data if active_orders.data else []
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error debugging orders: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/fix-orders', methods=['POST'])
-@p2p_auth_required
-def fix_orders():
-    """Fix order statuses and make them available"""
-    try:
-        if not p2p_trading_service.supabase:
-            return jsonify({"success": False, "error": "Database not available"})
-
-        # Get all orders
-        all_orders = p2p_trading_service.supabase.table("p2p_orders").select("*").execute()
-        
-        if not all_orders.data:
-            return jsonify({"success": False, "error": "No orders found"})
-
-        fixed_orders = []
-        
-        for order in all_orders.data:
-            # Check if order has any completed trades
-            trades = p2p_trading_service.supabase.table("p2p_trades")\
-                .select("*")\
-                .eq("order_id", order["order_id"])\
-                .execute()
-            
-            # If no trades or no completed trades, make order active
-            has_completed_trade = any(trade.get("status") == "completed" for trade in (trades.data or []))
-            
-            if not has_completed_trade and order.get("status") != "active":
-                # Fix the order status
-                update_result = p2p_trading_service.supabase.table("p2p_orders")\
-                    .update({"status": "active"})\
-                    .eq("id", order["id"])\
-                    .execute()
-                
-                if update_result.data:
-                    fixed_orders.append(order["order_id"])
-                    logger.info(f"✅ Fixed order {order['order_id']} - set to active")
-
-        return jsonify({
-            "success": True,
-            "message": f"Fixed {len(fixed_orders)} orders",
-            "fixed_orders": fixed_orders
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error fixing orders: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@p2p_bp.route('/create-test-order', methods=['POST'])
-@p2p_auth_required
-def create_test_order():
-    """Create test order for debugging"""
-    try:
-        wallet = session.get("wallet")
-
-        # Create a test sell order
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    app.register_blueprint(p2p_bp, url_prefix="/p2p")
+    if os.getenv("P2P_INDEXER_ENABLED", "").lower() in ("1", "true", "yes"):
         try:
-            result = loop.run_until_complete(
-                p2p_trading_service.create_sell_order(
-                    seller_wallet="0x742d35Cc6634C0532925a3b8D7389Fa63B1F5a6f",  # Different wallet for testing
-                    g_dollar_amount=100.0,
-                    g_dollar_price_usd=0.001,  # Add missing required field
-                    fiat_amount=50.0,
-                    fiat_currency="USD",
-                    payment_method="PayPal",
-                    description="Test order for debugging"
-                )
-            )
-        finally:
-            loop.close()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"❌ Error creating test order: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+            get_indexer().start()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Failed to start P2P escrow indexer: %s", exc)
