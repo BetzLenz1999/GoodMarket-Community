@@ -36,5 +36,8 @@ CREATE INDEX IF NOT EXISTS p2p_trade_chat_trade_id_idx
     ON public.p2p_trade_chat (trade_id, created_at)
     WHERE deleted_at IS NULL;
 
+-- Wallets are always lowercased before insert in chat_service.send(), and
+-- queried with PostgREST's plain ``.eq("sender_wallet", value.lower())``,
+-- so a plain B-tree index is what the planner can actually use here.
 CREATE INDEX IF NOT EXISTS p2p_trade_chat_sender_idx
-    ON public.p2p_trade_chat (lower(sender_wallet));
+    ON public.p2p_trade_chat (sender_wallet);

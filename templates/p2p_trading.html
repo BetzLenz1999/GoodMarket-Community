@@ -477,6 +477,11 @@
   let _chatReadOnly = false;
   let _chatLastTs = null;      // ISO of newest known message
   let _chatPollHandle = null;
+  // ID-based dedup: a chatSubmit response may arrive before an in-flight
+  // poll's response, and the poll (using the older `since` cursor) will
+  // re-fetch the just-sent message. Tracking rendered IDs prevents that
+  // from rendering as a duplicate bubble.
+  let _chatRenderedIds = new Set();
   const CHAT_POLL_MS = 3000;
 
   function chatLabelFor(role) {
@@ -506,10 +511,22 @@
   }
 
   function chatRender(messages, append) {
+    if (!append) _chatRenderedIds = new Set();
+    // Dedup: drop messages whose id has already been rendered (e.g. a
+    // poll response that overlaps with a just-sent message).
+    const fresh = (messages || []).filter(m => {
+      const id = m && m.id;
+      if (!id || _chatRenderedIds.has(id)) return false;
+      _chatRenderedIds.add(id);
+      return true;
+    });
     const wasNearBottom = chatList.scrollTop + chatList.clientHeight >= chatList.scrollHeight - 24;
-    const html = messages.map(chatBubble).join('');
-    if (append) chatList.insertAdjacentHTML('beforeend', html);
-    else chatList.innerHTML = html || '<div class="empty">No messages yet. Say hi!</div>';
+    const html = fresh.map(chatBubble).join('');
+    if (append) {
+      if (html) chatList.insertAdjacentHTML('beforeend', html);
+    } else {
+      chatList.innerHTML = html || '<div class="empty">No messages yet. Say hi!</div>';
+    }
     if (!append || wasNearBottom) chatList.scrollTop = chatList.scrollHeight;
   }
 
