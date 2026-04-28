@@ -32,6 +32,23 @@ CREATE TABLE IF NOT EXISTS public.p2p_orders (
     created_at      timestamptz NOT NULL DEFAULT now()
 );
 
+-- Backfill base columns when the table already existed from the legacy schema.
+-- (CREATE TABLE IF NOT EXISTS above is a no-op if the table is already there,
+-- so we have to ADD COLUMN IF NOT EXISTS for any columns later code/indexes
+-- depend on.)
+ALTER TABLE public.p2p_orders
+    ADD COLUMN IF NOT EXISTS order_id        text,
+    ADD COLUMN IF NOT EXISTS seller_wallet   text,
+    ADD COLUMN IF NOT EXISTS g_dollar_amount numeric(20, 6),
+    ADD COLUMN IF NOT EXISTS fiat_amount     numeric(20, 6),
+    ADD COLUMN IF NOT EXISTS fiat_currency   text,
+    ADD COLUMN IF NOT EXISTS payment_method  text,
+    ADD COLUMN IF NOT EXISTS payment_details text,
+    ADD COLUMN IF NOT EXISTS rate            numeric(20, 6),
+    ADD COLUMN IF NOT EXISTS description     text,
+    ADD COLUMN IF NOT EXISTS status          text DEFAULT 'draft',
+    ADD COLUMN IF NOT EXISTS created_at      timestamptz DEFAULT now();
+
 ALTER TABLE public.p2p_orders
     ADD COLUMN IF NOT EXISTS ad_id_onchain          text,
     ADD COLUMN IF NOT EXISTS contract_address       text,
@@ -52,6 +69,12 @@ ALTER TABLE public.p2p_orders
     ADD COLUMN IF NOT EXISTS exhausted_at           timestamptz,
     ADD COLUMN IF NOT EXISTS price_gd_usd           numeric(20, 6),
     ADD COLUMN IF NOT EXISTS updated_at             timestamptz DEFAULT now();
+
+-- Enforce uniqueness on order_id even on legacy tables where the column was
+-- added via ALTER TABLE (which doesn't carry the original UNIQUE constraint).
+CREATE UNIQUE INDEX IF NOT EXISTS p2p_orders_order_id_uq
+    ON public.p2p_orders (order_id)
+    WHERE order_id IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS p2p_orders_ad_id_onchain_uq
     ON public.p2p_orders (ad_id_onchain)
@@ -84,6 +107,24 @@ CREATE TABLE IF NOT EXISTS public.p2p_trades (
     payment_proof_uploaded_at timestamptz,
     buyer_paid_at      timestamptz
 );
+
+-- Backfill base columns when the table already existed from the legacy schema.
+ALTER TABLE public.p2p_trades
+    ADD COLUMN IF NOT EXISTS trade_id           text,
+    ADD COLUMN IF NOT EXISTS order_id           text,
+    ADD COLUMN IF NOT EXISTS buyer_wallet       text,
+    ADD COLUMN IF NOT EXISTS seller_wallet      text,
+    ADD COLUMN IF NOT EXISTS g_dollar_amount    numeric(20, 6),
+    ADD COLUMN IF NOT EXISTS fiat_amount        numeric(20, 6),
+    ADD COLUMN IF NOT EXISTS fiat_currency      text,
+    ADD COLUMN IF NOT EXISTS payment_method     text,
+    ADD COLUMN IF NOT EXISTS rate               numeric(20, 6),
+    ADD COLUMN IF NOT EXISTS status             text DEFAULT 'draft',
+    ADD COLUMN IF NOT EXISTS timeout_at         timestamptz,
+    ADD COLUMN IF NOT EXISTS created_at         timestamptz DEFAULT now(),
+    ADD COLUMN IF NOT EXISTS payment_proof_url  text,
+    ADD COLUMN IF NOT EXISTS payment_proof_uploaded_at timestamptz,
+    ADD COLUMN IF NOT EXISTS buyer_paid_at      timestamptz;
 
 ALTER TABLE public.p2p_trades
     ADD COLUMN IF NOT EXISTS trade_id_onchain         text,
@@ -122,6 +163,12 @@ ALTER TABLE public.p2p_trades
     ADD COLUMN IF NOT EXISTS dispute_winner           text,
     ADD COLUMN IF NOT EXISTS updated_at               timestamptz DEFAULT now();
 
+-- Enforce uniqueness on trade_id even on legacy tables where the column was
+-- added via ALTER TABLE (which doesn't carry the original UNIQUE constraint).
+CREATE UNIQUE INDEX IF NOT EXISTS p2p_trades_trade_id_uq
+    ON public.p2p_trades (trade_id)
+    WHERE trade_id IS NOT NULL;
+
 CREATE UNIQUE INDEX IF NOT EXISTS p2p_trades_trade_id_onchain_uq
     ON public.p2p_trades (trade_id_onchain)
     WHERE trade_id_onchain IS NOT NULL;
@@ -153,6 +200,21 @@ CREATE TABLE IF NOT EXISTS public.p2p_escrow_logs (
     notes        text,
     created_at   timestamptz NOT NULL DEFAULT now()
 );
+
+-- Backfill columns when the legacy p2p_escrow_logs table already exists.
+-- The old schema only had (trade_id, action, g_dollar_amount, transaction_hash,
+-- timestamp), so order_id / actor / tx_hash / amount_gd / notes / block_number
+-- need to be added before the indexes and inserts below can succeed.
+ALTER TABLE public.p2p_escrow_logs
+    ADD COLUMN IF NOT EXISTS trade_id     text,
+    ADD COLUMN IF NOT EXISTS order_id     text,
+    ADD COLUMN IF NOT EXISTS actor        text,
+    ADD COLUMN IF NOT EXISTS action       text,
+    ADD COLUMN IF NOT EXISTS tx_hash      text,
+    ADD COLUMN IF NOT EXISTS block_number bigint,
+    ADD COLUMN IF NOT EXISTS amount_gd    numeric(30, 8),
+    ADD COLUMN IF NOT EXISTS notes        text,
+    ADD COLUMN IF NOT EXISTS created_at   timestamptz DEFAULT now();
 
 CREATE INDEX IF NOT EXISTS p2p_escrow_logs_trade_id_idx
     ON public.p2p_escrow_logs (trade_id);
