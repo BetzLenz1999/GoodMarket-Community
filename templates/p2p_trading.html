@@ -216,6 +216,34 @@
   </div>
 </div>
 
+<!-- Chat modal -->
+<div class="modal-bg" id="chatModal">
+  <div class="modal" style="max-width:640px; width:96%;">
+    <div class="row between" style="align-items:center;">
+      <h2 style="margin:0;">Trade chat</h2>
+      <button class="ghost" id="chatCloseBtn" type="button">Close</button>
+    </div>
+    <div class="small" id="chatHeader" style="margin:0.25rem 0 0.5rem;">—</div>
+    <div id="chatList" style="
+        height:340px; overflow:auto; border:1px solid var(--border, #2a2a2a);
+        border-radius:6px; padding:0.5rem; background:var(--bg-soft, #181818);
+        font-size:0.92rem;
+        ">
+      <div class="empty">Loading…</div>
+    </div>
+    <div id="chatComposer" class="row" style="gap:0.5rem; margin-top:0.5rem; align-items:center;">
+      <input type="text" id="chatInput" placeholder="Type a message (max 500 chars)" maxlength="500"
+             style="flex:1; min-width:0;">
+      <label class="ghost" style="cursor:pointer; padding:0.25rem 0.5rem; border:1px solid var(--border, #2a2a2a); border-radius:4px;">
+        📎<input type="file" id="chatFile" accept="image/png,image/jpeg,image/webp" style="display:none;">
+      </label>
+      <button class="primary" id="chatSendBtn" type="button">Send</button>
+    </div>
+    <div id="chatFileBadge" class="small" style="margin-top:0.25rem; display:none;"></div>
+    <div id="chatNotice" class="small" style="margin-top:0.25rem; color:var(--muted,#888);"></div>
+  </div>
+</div>
+
 <div class="toast-host" id="toastHost"></div>
 
 <script src="/static/js/p2p_escrow.js"></script>
@@ -285,11 +313,16 @@
   }
 
   function escapeHtml(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  // For URLs interpolated into href="..." attributes: only allow http(s),
-  // strip quotes/angle brackets/whitespace, then HTML-escape what's left.
+  // For URLs interpolated into href="..." attributes: only allow http(s)
+  // or root-relative paths (we mint our own /p2p/api/... view URLs server-
+  // side via Flask url_for(), so those are trusted). Reject anything with
+  // quotes / angle brackets / whitespace, then HTML-escape what's left.
   function escapeAttr(s) {
     const raw = String(s||'').trim();
-    if (!/^https?:\/\//i.test(raw)) return '#';
+    // Reject protocol-relative URLs ("//evil.com") which a naive `^/`
+    // match would let through; only accept a single leading slash followed
+    // by a non-slash (or end-of-string), or an explicit http(s) scheme.
+    if (!/^(\/[^\/]|\/$|https?:\/\/)/i.test(raw)) return '#';
     if (/["'<>\s]/.test(raw)) return '#';
     return escapeHtml(raw);
   }
@@ -428,6 +461,163 @@
     }
   });
 
+  // -------- chat modal --------
+  const chatModal      = document.getElementById('chatModal');
+  const chatList       = document.getElementById('chatList');
+  const chatHeader     = document.getElementById('chatHeader');
+  const chatInput      = document.getElementById('chatInput');
+  const chatFile       = document.getElementById('chatFile');
+  const chatFileBadge  = document.getElementById('chatFileBadge');
+  const chatSendBtn    = document.getElementById('chatSendBtn');
+  const chatCloseBtn   = document.getElementById('chatCloseBtn');
+  const chatNotice     = document.getElementById('chatNotice');
+
+  let _chatTradeId = null;
+  let _chatRole = null;        // "buyer" | "seller" | "arbiter"
+  let _chatReadOnly = false;
+  let _chatLastTs = null;      // ISO of newest known message
+  let _chatPollHandle = null;
+  // ID-based dedup: a chatSubmit response may arrive before an in-flight
+  // poll's response, and the poll (using the older `since` cursor) will
+  // re-fetch the just-sent message. Tracking rendered IDs prevents that
+  // from rendering as a duplicate bubble.
+  let _chatRenderedIds = new Set();
+  const CHAT_POLL_MS = 3000;
+
+  function chatLabelFor(role) {
+    return ({ buyer: 'Buyer', seller: 'Seller', arbiter: 'Arbiter' })[role] || role || '—';
+  }
+
+  function chatBubble(msg) {
+    const isMine = (msg.sender_wallet || '').toLowerCase() === SESSION_WALLET;
+    const label = chatLabelFor(msg.sender_role) + (isMine ? ' (you)' : '');
+    const ts = msg.created_at ? new Date(msg.created_at).toLocaleString() : '';
+    const align = isMine ? 'flex-end' : 'flex-start';
+    const bg    = isMine ? 'var(--accent-soft,#234)' : 'var(--bg-card,#222)';
+    const bodyHtml = msg.body
+      ? '<div style="white-space:pre-wrap; word-break:break-word;">' + escapeHtml(msg.body) + '</div>'
+      : '';
+    const att = msg.attachment;
+    const attHtml = att
+      ? '<div style="margin-top:0.25rem;"><a href="' + escapeAttr(att.view_url) +
+        '" target="_blank" rel="noopener noreferrer">📎 attachment (' +
+        Math.max(1, Math.round((att.size_bytes||0)/1024)) + ' KB)</a></div>'
+      : '';
+    return '<div style="display:flex; justify-content:' + align + '; margin:0.35rem 0;">' +
+      '<div style="max-width:80%; background:' + bg + '; padding:0.4rem 0.55rem; border-radius:8px;">' +
+        '<div class="small" style="opacity:0.75; margin-bottom:0.15rem;">' + escapeHtml(label) + ' · ' + escapeHtml(ts) + '</div>' +
+        bodyHtml + attHtml +
+      '</div></div>';
+  }
+
+  function chatRender(messages, append) {
+    if (!append) _chatRenderedIds = new Set();
+    // Dedup: drop messages whose id has already been rendered (e.g. a
+    // poll response that overlaps with a just-sent message).
+    const fresh = (messages || []).filter(m => {
+      const id = m && m.id;
+      if (!id || _chatRenderedIds.has(id)) return false;
+      _chatRenderedIds.add(id);
+      return true;
+    });
+    const wasNearBottom = chatList.scrollTop + chatList.clientHeight >= chatList.scrollHeight - 24;
+    const html = fresh.map(chatBubble).join('');
+    if (append) {
+      if (html) chatList.insertAdjacentHTML('beforeend', html);
+    } else {
+      chatList.innerHTML = html || '<div class="empty">No messages yet. Say hi!</div>';
+    }
+    if (!append || wasNearBottom) chatList.scrollTop = chatList.scrollHeight;
+  }
+
+  function setChatReadOnly(readOnly) {
+    _chatReadOnly = !!readOnly;
+    chatInput.disabled = _chatReadOnly;
+    chatFile.disabled  = _chatReadOnly;
+    chatSendBtn.disabled = _chatReadOnly;
+    chatNotice.textContent = _chatReadOnly
+      ? 'This trade is closed — chat is read-only.'
+      : '';
+  }
+
+  async function chatPollOnce() {
+    if (!_chatTradeId) return;
+    try {
+      const data = await window.P2PEscrow.listChat(_chatTradeId, { since: _chatLastTs });
+      const msgs = data.messages || [];
+      if (msgs.length) {
+        chatRender(msgs, true);
+        _chatLastTs = msgs[msgs.length - 1].created_at || _chatLastTs;
+      }
+      if (typeof data.read_only === 'boolean') setChatReadOnly(data.read_only);
+    } catch (_e) { /* swallow polling errors */ }
+  }
+
+  async function openChatModal(tradeId, counterparty) {
+    _chatTradeId = tradeId;
+    _chatLastTs = null;
+    chatList.innerHTML = '<div class="empty">Loading…</div>';
+    chatInput.value = '';
+    chatFile.value = '';
+    chatFileBadge.style.display = 'none';
+    chatHeader.textContent = 'Trade ' + tradeId + (counterparty ? ' · with ' + shortAddr(counterparty) : '');
+    chatModal.classList.add('open');
+    try {
+      const data = await window.P2PEscrow.listChat(tradeId);
+      _chatRole = data.your_role || null;
+      setChatReadOnly(!!data.read_only);
+      const msgs = data.messages || [];
+      chatRender(msgs, false);
+      if (msgs.length) _chatLastTs = msgs[msgs.length - 1].created_at;
+    } catch (err) {
+      chatList.innerHTML = '<div class="empty">Failed to load chat: ' + escapeHtml(err.message || String(err)) + '</div>';
+    }
+    if (_chatPollHandle) clearInterval(_chatPollHandle);
+    _chatPollHandle = setInterval(chatPollOnce, CHAT_POLL_MS);
+  }
+
+  function closeChatModal() {
+    chatModal.classList.remove('open');
+    if (_chatPollHandle) { clearInterval(_chatPollHandle); _chatPollHandle = null; }
+    _chatTradeId = null;
+  }
+  chatCloseBtn.addEventListener('click', closeChatModal);
+
+  chatFile.addEventListener('change', () => {
+    const f = chatFile.files && chatFile.files[0];
+    if (!f) { chatFileBadge.style.display = 'none'; return; }
+    chatFileBadge.style.display = '';
+    chatFileBadge.textContent = '📎 ' + f.name + ' (' + Math.max(1, Math.round(f.size/1024)) + ' KB)';
+  });
+
+  async function chatSubmit() {
+    if (!_chatTradeId || _chatReadOnly) return;
+    const body = chatInput.value.trim();
+    const file = chatFile.files && chatFile.files[0];
+    if (!body && !file) return toast('Type a message or attach a file', 'error');
+    chatSendBtn.disabled = true;
+    try {
+      const data = await window.P2PEscrow.sendChat(_chatTradeId, body, file);
+      const msg = data.message;
+      if (msg) {
+        chatRender([msg], true);
+        _chatLastTs = msg.created_at || _chatLastTs;
+      }
+      chatInput.value = '';
+      chatFile.value = '';
+      chatFileBadge.style.display = 'none';
+    } catch (err) {
+      toastErr(err);
+    } finally {
+      chatSendBtn.disabled = false;
+      chatInput.focus();
+    }
+  }
+  chatSendBtn.addEventListener('click', chatSubmit);
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chatSubmit(); }
+  });
+
   // -------- my ads --------
   const myAdsGrid = document.getElementById('myAdsGrid');
   function myAdCard(ad) {
@@ -470,7 +660,17 @@
     const stat = (t.onchain_status || '').toLowerCase();
     const isBuyer = (t.buyer_wallet || '').toLowerCase() === SESSION_WALLET;
     const isSeller = (t.seller_wallet || '').toLowerCase() === SESSION_WALLET;
+    const counter = isBuyer ? (t.seller_wallet || '') : (t.buyer_wallet || '');
     const buttons = [];
+    // Chat is available for any active or disputed trade. History stays
+    // visible (read-only) on terminal states, surfaced via the same button.
+    const chatStates = new Set([
+      'payment_pending', 'awaiting_release', 'disputed',
+      'released', 'cancelled', 'refunded',
+    ]);
+    if (chatStates.has(stat)) {
+      buttons.push(`<button class="ghost" data-chat="${t.trade_id}" data-counter="${escapeHtml(counter)}">Chat</button>`);
+    }
     if (isBuyer && stat === 'payment_pending') {
       buttons.push(`<button class="ghost" data-proof="${t.trade_id}">${t.payment_proof_url ? 'Add proof' : 'Upload proof'}</button>`);
       if (t.payment_proof_url) buttons.push(`<button class="primary" data-markpaid="${t.trade_id}">Mark paid</button>`);
@@ -517,6 +717,7 @@
 
   function bindTradeActions(scope) {
     scope.querySelectorAll('[data-proof]').forEach(b => b.addEventListener('click', () => openProofModal(b.dataset.proof)));
+    scope.querySelectorAll('[data-chat]').forEach(b => b.addEventListener('click', () => openChatModal(b.dataset.chat, b.dataset.counter)));
     const sign = (selector, fn, label) => scope.querySelectorAll(selector).forEach(b => b.addEventListener('click', async () => {
       const id = b.getAttribute(selector.replace('[','').replace(']',''));
       b.disabled = true;
@@ -543,6 +744,8 @@
       <div class="meta">Disputed by: ${t.disputed_by ? shortAddr(t.disputed_by) : '—'}</div>
       ${t.payment_proof_url ? `<div class="small"><a href="${escapeAttr(t.payment_proof_url)}" target="_blank" rel="noopener noreferrer">Proof</a></div>` : '<div class="small">No proof uploaded</div>'}
       <div class="row" style="justify-content:flex-end;">
+        <button class="ghost" data-chat="${t.trade_id}" data-counter="">Chat</button>
+        <button class="ghost" data-proof="${t.trade_id}">View proofs</button>
         <button class="primary" data-buyerwins="${t.trade_id}">Buyer wins</button>
         <button class="danger" data-sellerwins="${t.trade_id}">Seller wins</button>
       </div>
@@ -556,6 +759,8 @@
       if (!data.success) throw new Error(data.error);
       if (!data.disputes.length) { disputesGrid.innerHTML = '<div class="empty">No disputes.</div>'; return; }
       disputesGrid.innerHTML = data.disputes.map(disputeCard).join('');
+      disputesGrid.querySelectorAll('[data-chat]').forEach(b => b.addEventListener('click', () => openChatModal(b.dataset.chat, b.dataset.counter)));
+      disputesGrid.querySelectorAll('[data-proof]').forEach(b => b.addEventListener('click', () => openProofModal(b.dataset.proof)));
       const resolve = (selector, buyerWins) => disputesGrid.querySelectorAll(selector).forEach(b => b.addEventListener('click', async () => {
         const id = b.getAttribute(selector.replace('[','').replace(']',''));
         if (!confirm(`Resolve trade ${id} → ${buyerWins ? 'BUYER wins' : 'SELLER wins'}?`)) return;

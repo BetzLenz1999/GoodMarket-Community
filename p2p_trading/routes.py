@@ -16,8 +16,9 @@ environment for arbiter actions.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from functools import wraps
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from flask import (
     Blueprint,
@@ -29,6 +30,13 @@ from flask import (
     url_for,
 )
 
+from .chat_service import (
+    ATTACHMENT_MIME_TYPES as CHAT_ATTACHMENT_MIME_TYPES,
+    ChatValidationError,
+    MAX_ATTACHMENT_BYTES as CHAT_MAX_ATTACHMENT_BYTES,
+    MAX_BODY_CHARS as CHAT_MAX_BODY_CHARS,
+    chat_service,
+)
 from .escrow_service import escrow_service
 from .indexer import get_indexer
 from .proofs_service import (
@@ -38,6 +46,11 @@ from .proofs_service import (
     guess_mime_type,
     proofs_service,
 )
+
+# Minimum delay between two messages from the same wallet in the same trade,
+# enforced at the route layer to discourage burst-spam without needing a
+# proper rate-limiter dependency.
+CHAT_RATE_LIMIT_SECONDS = 1.0
 
 logger = logging.getLogger(__name__)
 
@@ -534,6 +547,217 @@ def api_proof_limits():
                 "image/webp",
                 "application/pdf",
             ],
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# In-trade chat between buyer / seller / arbiter
+# ---------------------------------------------------------------------------
+
+
+def _chat_attachment_view_url(trade_id: str, message_id: str) -> str:
+    return url_for(
+        "p2p.api_chat_attachment_view",
+        trade_id=trade_id,
+        message_id=message_id,
+    )
+
+
+def _serialize_chat_message(
+    msg: Dict[str, Any], trade_id: str
+) -> Dict[str, Any]:
+    """Shape a DB row for the API response. Never returns the raw storage
+    path — clients always go through the signed-URL redirect endpoint."""
+    out: Dict[str, Any] = {
+        "id": msg.get("id"),
+        "trade_id": msg.get("trade_id"),
+        "sender_wallet": msg.get("sender_wallet"),
+        "sender_role": msg.get("sender_role"),
+        "body": msg.get("body"),
+        "created_at": msg.get("created_at"),
+    }
+    if msg.get("attachment_path"):
+        out["attachment"] = {
+            "mime_type": msg.get("attachment_mime"),
+            "size_bytes": msg.get("attachment_size"),
+            "view_url": _chat_attachment_view_url(trade_id, msg.get("id")),
+        }
+    return out
+
+
+@p2p_bp.route("/api/trades/<trade_id>/chat", methods=["GET"])
+@p2p_terms_required
+def api_list_chat(trade_id: str):
+    """List chat messages for a trade. Buyer / seller / arbiter only.
+
+    Optional ``since`` query arg (ISO-8601 timestamp) acts as a polling
+    cursor — only messages strictly newer are returned.
+    """
+    wallet = _wallet_from_session()
+    membership = _trade_membership(wallet, trade_id)
+    if "error" in membership:
+        return jsonify(
+            {"success": False, "error": membership["error"]}
+        ), membership["status"]
+
+    since = (request.args.get("since") or "").strip() or None
+    msgs = chat_service.list_for_trade(
+        trade_id, since_iso=since, limit=_safe_limit(default=200, cap=500)
+    )
+    safe = [_serialize_chat_message(m, trade_id) for m in msgs]
+    trade = membership["trade"]
+    return jsonify(
+        {
+            "success": True,
+            "messages": safe,
+            "count": len(safe),
+            "read_only": chat_service.is_read_only(trade),
+            "your_role": membership["role"],
+        }
+    )
+
+
+@p2p_bp.route("/api/trades/<trade_id>/chat", methods=["POST"])
+@p2p_terms_required
+def api_send_chat(trade_id: str):
+    """Send a chat message (text and/or single image attachment).
+
+    Accepts either ``application/json`` ``{"body": "..."}`` for text-only
+    messages or ``multipart/form-data`` with ``body`` and/or ``file`` for
+    attachments.
+    """
+    wallet = _wallet_from_session()
+    membership = _trade_membership(wallet, trade_id)
+    if "error" in membership:
+        return jsonify(
+            {"success": False, "error": membership["error"]}
+        ), membership["status"]
+
+    trade = membership["trade"]
+    if chat_service.is_read_only(trade):
+        return jsonify(
+            {
+                "success": False,
+                "error": "Trade is closed; chat is read-only",
+            }
+        ), 409
+
+    # Parse body + optional file from either JSON or multipart.
+    body_text: Optional[str] = None
+    file_bytes: Optional[bytes] = None
+    file_mime: Optional[str] = None
+    file_name: Optional[str] = None
+    if request.content_type and request.content_type.startswith(
+        "multipart/form-data"
+    ):
+        body_text = request.form.get("body")
+        upload = request.files.get("file")
+        if upload is not None:
+            file_bytes = upload.read()
+            if len(file_bytes) > CHAT_MAX_ATTACHMENT_BYTES:
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": (
+                            f"Attachment too large (max "
+                            f"{CHAT_MAX_ATTACHMENT_BYTES} bytes)"
+                        ),
+                    }
+                ), 413
+            file_mime = (upload.mimetype or "").lower() or guess_mime_type(
+                upload.filename or ""
+            )
+            file_name = upload.filename
+    else:
+        payload = _json_body()
+        body_text = payload.get("body")
+
+    # Lightweight rate limit: reject if the same sender already posted in
+    # the last second. Protects against runaway scripts / accidental double-
+    # clicks; not a substitute for a real abuse system.
+    last = chat_service.latest_for_sender(trade_id, wallet)
+    if last and last.get("created_at"):
+        try:
+            last_ts = datetime.fromisoformat(
+                str(last["created_at"]).replace("Z", "+00:00")
+            )
+            now = datetime.now(timezone.utc)
+            delta = (now - last_ts).total_seconds()
+            if delta < CHAT_RATE_LIMIT_SECONDS:
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "Too many messages — please slow down",
+                    }
+                ), 429
+        except Exception:  # noqa: BLE001
+            # If timestamp parsing fails, fail open rather than block users.
+            pass
+
+    try:
+        row = chat_service.send(
+            trade_id=trade_id,
+            sender_wallet=wallet,
+            sender_role=membership["role"],
+            body=body_text,
+            file_bytes=file_bytes,
+            mime_type=file_mime,
+            original_name=file_name,
+        )
+    except ChatValidationError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except RuntimeError as exc:
+        logger.exception("chat_service.send failed")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+    return jsonify(
+        {
+            "success": True,
+            "message": _serialize_chat_message(row, trade_id),
+        }
+    )
+
+
+@p2p_bp.route(
+    "/api/trades/<trade_id>/chat/<message_id>/attachment", methods=["GET"]
+)
+@p2p_terms_required
+def api_chat_attachment_view(trade_id: str, message_id: str):
+    """Redirect to a fresh signed URL for a chat message's attachment."""
+    wallet = _wallet_from_session()
+    membership = _trade_membership(wallet, trade_id)
+    if "error" in membership:
+        return jsonify(
+            {"success": False, "error": membership["error"]}
+        ), membership["status"]
+
+    msg = chat_service.get_message(message_id)
+    if not msg or msg.get("trade_id") != trade_id:
+        return jsonify({"success": False, "error": "Message not found"}), 404
+    storage_path = msg.get("attachment_path")
+    if not storage_path:
+        return jsonify(
+            {"success": False, "error": "No attachment on this message"}
+        ), 404
+    signed = chat_service.signed_url(storage_path)
+    if not signed:
+        return jsonify(
+            {"success": False, "error": "Failed to sign URL"}
+        ), 500
+    return redirect(signed, code=302)
+
+
+@p2p_bp.route("/api/chat/limits", methods=["GET"])
+@p2p_terms_required
+def api_chat_limits():
+    return jsonify(
+        {
+            "success": True,
+            "max_body_chars": CHAT_MAX_BODY_CHARS,
+            "max_attachment_bytes": CHAT_MAX_ATTACHMENT_BYTES,
+            "allowed_attachment_mime_types": sorted(CHAT_ATTACHMENT_MIME_TYPES),
+            "rate_limit_seconds": CHAT_RATE_LIMIT_SECONDS,
         }
     )
 
