@@ -47,7 +47,11 @@ MAX_PROOFS_PER_TRADE = 10
 SIGNED_URL_TTL_SECONDS = 60 * 60  # 1 hour
 
 
-_TRADE_ID_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
+# Off-chain DB trade_id format minted in escrow_service.create_trade(),
+# e.g. ``TRADE-A1B2C3D4``. Note: this is the off-chain DB row identifier; the
+# 0x-prefixed 64-hex on-chain ID lives in ``p2p_trades.trade_id_onchain`` and
+# is not what the routes / frontend pass around.
+_TRADE_ID_RE = re.compile(r"^TRADE-[0-9A-F]{8}$")
 
 
 def _utcnow_iso() -> str:
