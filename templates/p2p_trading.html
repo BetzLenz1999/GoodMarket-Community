@@ -442,80 +442,95 @@
     <h3>8. FAQ</h3>
 
     <details>
-      <summary>Bakit 20,000 G$ ang minimum? Pwede bang gawing mas maliit?</summary>
-      <p>Hardcoded constant ito sa smart contract (<code>MIN_AD_AMOUNT = 20_000 ether</code>),
-      so kahit yung Min per trade kailangan ≥ 20,000 G$. To allow smaller trades, kailangan
-      i-deploy ulit yung contract with a lower constant — hindi ito changeable on-the-fly.</p>
+      <summary>Why is 20,000 G$ the minimum? Can it be made smaller?</summary>
+      <p>It is a hard-coded constant in the smart contract
+      (<code>MIN_AD_AMOUNT = 20_000 ether</code>), so even the Min-per-trade has to be
+      ≥ 20,000 G$. Lowering it would require deploying a new version of the contract
+      with a smaller constant — it cannot be changed on the fly.</p>
     </details>
 
     <details>
-      <summary>Yung "Total fiat asking price" — USD ba o local currency?</summary>
-      <p>Whatever currency mong i-select sa Currency dropdown sa tabi. Kung PHP, ₱-denominated
-      yung number; kung USD, $-denominated. Walang auto-conversion — ikaw mismo ang nag-de-decide
-      ng exchange rate.</p>
+      <summary>Is there an upper limit on the ad size?</summary>
+      <p>No. 20,000 G$ is only the floor; the contract does not impose a maximum.
+      You can set Total to 100,000, 1,000,000, or higher — as long as you actually have
+      that many G$ in your wallet to lock, and Max-per-trade stays ≤ Total.</p>
     </details>
 
     <details>
-      <summary>Pwede bang ma-lose yung locked G$ ng seller?</summary>
-      <p>Hindi nawawala by accident — laging may path pabalik (close ad, expire, dispute). Yung
-      <em>only</em> way mawalan ka ng G$ na walang katapat na fiat ay kapag (a) nag-release ka
-      kahit hindi ka pa binabayaran, o (b) hindi ka nag-act sa loob ng 48 h after buyer mark-paid
-      kaya nag-trigger yung auto-release. Kapag ghinost ka ng buyer / hindi ka talaga binayaran,
-      <strong>mag-dispute kaagad</strong> bago mag-48 h.</p>
+      <summary>Is "Total fiat asking price" in USD or in my local currency?</summary>
+      <p>It is in whatever currency you pick from the Currency dropdown next to it.
+      If you choose PHP, the number is in pesos; if you choose USD, the number is in
+      dollars. There is no auto-conversion — you decide your own exchange rate.</p>
     </details>
 
     <details>
-      <summary>Kailan nag-uumpisa yung chat?</summary>
-      <p>Pagka-may trade na (after buyer signed in <code>payment_pending</code>). Walang chat sa
-      pre-order phase para hindi spam — gamitin yung ad description / payment details for that.</p>
+      <summary>Can the seller actually lose the locked G$?</summary>
+      <p>It does not disappear by accident — there is always a path back (close the ad,
+      buyer expiry, dispute). The <em>only</em> ways you can lose G$ without receiving
+      fiat are: (a) you click Release before payment actually arrives, or (b) you take
+      no action within 48 hours after the buyer marks-paid, which lets the auto-release
+      fire. If a buyer ghosts you or you never received fiat,
+      <strong>open a dispute before the 48-hour window closes</strong>.</p>
     </details>
 
     <details>
-      <summary>Nababasa ba ng admin yung mga chats namin?</summary>
-      <p>Technically yes — naka-store as plaintext sa Supabase. Yung auth gate ay sa API layer
-      lang. Kung gusto mo ng totoo-totoong privacy from the platform, kailangan ng client-side
-      end-to-end encryption (separate work, hindi pa naka-implement).</p>
+      <summary>When does the chat become available?</summary>
+      <p>Once a trade exists (after the buyer signs into <code>payment_pending</code>).
+      There is no chat in the pre-order / browsing phase to prevent spam — use the ad
+      description and payment details for any pre-order info instead.</p>
     </details>
 
     <details>
-      <summary>Anong nangyayari sa G$ ko kapag walang bumili?</summary>
-      <p>Nakatigil lang siya sa escrow contract (locked sa ad) hangga't hindi ka nag-<code>closeAd</code>.
-      Pagka-cinose mo yung ad, agad bumabalik buong unsold portion sa wallet mo. Walang time
-      decay — pwede mong iwanan as long as you want hangga't walang active trades, pero
-      tumatakbo lang yung yield/staking benefits sa main wallet, hindi habang naka-lock.</p>
+      <summary>Can the admins read our chats?</summary>
+      <p>Technically yes — messages are stored as plaintext in Supabase, and the auth
+      gate is enforced only at the API layer. If you need true privacy from the platform
+      itself, that requires client-side end-to-end encryption (separate work, not
+      implemented yet).</p>
     </details>
 
     <details>
-      <summary>Pwede bang pagsabay-sabayin yung Total ko sa multiple buyers?</summary>
-      <p>Yes. Kung Total = 100,000 G$ at Min/Max = 20,000 / 50,000, pwedeng kumuha si Buyer A
-      ng 30,000 at si Buyer B ng 20,000 sabay (partial fills). Yung remainingAmount ng ad
-      mababawas sa bawat order na nag-succeed.</p>
+      <summary>What happens to my G$ when nobody buys?</summary>
+      <p>It just sits in the escrow contract (locked to the ad) until you call
+      <code>closeAd</code>. Once you close the ad, the unsold remainder returns to your
+      wallet immediately. There is no time decay, so you can leave an ad open as long
+      as you want, as long as it has no active trades. (Note: yield / staking on the
+      main wallet does not accrue while the G$ is locked in escrow.)</p>
     </details>
 
     <details>
-      <summary>Bakit may 48-hour auto-release?</summary>
-      <p>Para hindi ma-stuck yung G$ kapag biglang nag-disappear si seller after marked-paid
-      yung buyer. Pero ito din yung pinaka-importante mong bantayan as seller — kapag may
-      buyer na nag-mark paid pero wala kang natanggap, mag-<em>dispute</em> agad. Kapag
-      lumagpas yung 48 h walang dispute, pumupunta na sa buyer yung G$.</p>
+      <summary>Can my Total be split across multiple buyers?</summary>
+      <p>Yes. With Total = 100,000 G$ and Min/Max = 20,000 / 50,000, Buyer A can take
+      30,000 and Buyer B can take 20,000 in parallel (partial fills). The ad's
+      <code>remainingAmount</code> is decremented on each successful order.</p>
     </details>
 
     <details>
-      <summary>Pwede ba akong mag-upload ng PDF sa chat?</summary>
-      <p>PDF allowed lang sa <em>payment proofs</em> upload, hindi sa chat. Sa chat, image-only
-      muna (PNG/JPG/WebP). Kung kailangan mo mag-share ng PDF, gamitin mo yung proof upload
-      (papasa sa parehong auth check).</p>
+      <summary>Why is there a 48-hour auto-release?</summary>
+      <p>So funds do not get stuck if the seller suddenly disappears after the buyer
+      has marked-paid. But this is also the most important window for sellers to
+      watch: if a buyer marks-paid but nothing actually arrived in your account,
+      open a dispute before the 48 hours expire. After that window the contract
+      automatically releases the G$ to the buyer.</p>
     </details>
 
     <details>
-      <summary>Sino nag-aappoint ng arbiter?</summary>
-      <p>Yung contract owner (admin) ang nagde-designate ng arbiter wallets. Sa app side,
-      kapag yung naka-login na wallet ay isa sa arbiter list, lumalabas yung
-      <em>Disputes</em> tab.</p>
+      <summary>Can I upload a PDF in chat?</summary>
+      <p>PDFs are only allowed in <em>payment proofs</em>, not in chat. Chat
+      attachments are image-only (PNG / JPG / WebP). If you need to share a PDF
+      with your counterparty, upload it as a payment proof — it goes through the
+      same auth check.</p>
+    </details>
+
+    <details>
+      <summary>Who appoints the arbiter?</summary>
+      <p>The contract owner (admin) designates the arbiter wallet(s). On the app
+      side, the <em>Disputes</em> tab is shown only when the logged-in wallet is on
+      the arbiter list.</p>
     </details>
 
     <p class="muted" style="margin-top:1.25rem;">
-      May tanong na hindi nasagot dito? Open a GitHub issue at idadagdag ko sa list.
+      Got a question that is not answered here? Open a GitHub issue and we will add
+      it to the list.
     </p>
   </div>
 </div>
