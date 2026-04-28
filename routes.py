@@ -7007,3 +7007,874 @@ def admin_treasury_distribute():
     except Exception as e:
         logger.error(f"admin_treasury_distribute error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ── UBI Gas Faucet (safe claim flow support) ─────────────────────────────────
+# Short-term anti-duplicate cache: wallet_address -> unix timestamp of last
+# successful refill request (API or on-chain).
+_faucet_recent_refill: dict = {}
+_faucet_api_pending: dict = {}
+_faucet_lock = threading.Lock()
+
+FAUCET_MIN_CELO = float(os.getenv("FAUCET_MIN_CELO", "0.002"))
+FAUCET_MIN_XDC = float(os.getenv("FAUCET_MIN_XDC", "0.003"))
+FAUCET_BUFFER_MULTIPLIER = float(os.getenv("FAUCET_BUFFER_MULTIPLIER", "1.35"))
+FAUCET_DUPLICATE_WINDOW_MIN = int(os.getenv("FAUCET_DUPLICATE_WINDOW_MIN", "30"))
+FAUCET_API_GRACE_SECONDS = int(os.getenv("FAUCET_API_GRACE_SECONDS", "30"))
+FAUCET_PENDING_TTL_SECONDS = int(os.getenv("FAUCET_PENDING_TTL_SECONDS", "180"))
+FAUCET_ONCHAIN_MAX_ATTEMPTS = max(1, int(os.getenv("FAUCET_ONCHAIN_MAX_ATTEMPTS", "3")))
+GOODDOLLAR_FAUCET_CONTRACT = os.getenv(
+    "GOODDOLLAR_FAUCET_CONTRACT",
+    "0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84"
+)
+GOODDOLLAR_FAUCET_API_URL = os.getenv(
+    "GOODDOLLAR_FAUCET_API_URL",
+    "https://goodserver.gooddollar.org/verify/topWallet"
+)
+GOODDOLLAR_XDC_FAUCET_API_URL = os.getenv(
+    "GOODDOLLAR_XDC_FAUCET_API_URL",
+    "https://goodserver.gooddollar.org/verify/topWallet"
+)
+GOODDOLLAR_XDC_FAUCET_CONTRACT = os.getenv(
+    "GOODDOLLAR_XDC_FAUCET_CONTRACT",
+    "0x7344Da1Be296f03fbb8082aDaC5696058B5a9bd9"
+)
+
+
+def _validate_and_authorize_wallet(data: dict) -> tuple:
+    """Validate requested wallet and ensure it belongs to current session."""
+    wallet = session.get("wallet")
+    if not wallet:
+        return None, jsonify({"success": False, "error": "Not logged in"}), 401
+
+    requested_wallet = (data.get("wallet") or wallet).strip()
+    if requested_wallet.lower() != wallet.lower():
+        return None, jsonify({
+            "success": False,
+            "error": "Wrong wallet connected. Please use your logged-in wallet."
+        }), 403
+
+    try:
+        checksum_wallet = Web3.to_checksum_address(requested_wallet)
+    except Exception:
+        return None, jsonify({"success": False, "error": "Invalid wallet address"}), 400
+
+    return checksum_wallet, None, None
+
+
+def _get_gas_status(w3, checksum_wallet: str) -> dict:
+    """Estimate claim gas reserve and compare with current CELO balance."""
+    from blockchain import GOODDOLLAR_CONTRACTS
+
+    claim_selector = "0x4e71d92d"  # claim()
+    try:
+        estimated_gas = w3.eth.estimate_gas({
+            "from": checksum_wallet,
+            "to": Web3.to_checksum_address(GOODDOLLAR_CONTRACTS["UBI_PROXY"]),
+            "data": claim_selector,
+            "value": 0,
+        })
+    except Exception:
+        estimated_gas = 220000
+
+    gas_price_wei = int(w3.eth.gas_price)
+    required_wei = int(estimated_gas * gas_price_wei * FAUCET_BUFFER_MULTIPLIER)
+    minimum_wei = w3.to_wei(FAUCET_MIN_CELO, "ether")
+    required_wei = max(required_wei, int(minimum_wei))
+
+    balance_wei = int(w3.eth.get_balance(checksum_wallet))
+    return {
+        "balance_wei": str(balance_wei),
+        "balance_celo": float(w3.from_wei(balance_wei, "ether")),
+        "estimated_gas": int(estimated_gas),
+        "gas_price_wei": str(gas_price_wei),
+        "required_gas_wei": str(required_wei),
+        "required_gas_celo": float(w3.from_wei(required_wei, "ether")),
+        "gas_ready": balance_wei >= required_wei,
+    }
+
+
+def _get_xdc_gas_status(w3, checksum_wallet: str) -> dict:
+    """Estimate XDC claim gas reserve and compare with current XDC balance."""
+    from blockchain import XDC_UBI_SCHEME
+
+    claim_selector = "0x4e71d92d"  # claim()
+    try:
+        estimated_gas = w3.eth.estimate_gas({
+            "from": checksum_wallet,
+            "to": Web3.to_checksum_address(XDC_UBI_SCHEME),
+            "data": claim_selector,
+            "value": 0,
+        })
+    except Exception:
+        estimated_gas = 220000
+
+    gas_price_wei = int(w3.eth.gas_price)
+    required_wei = int(estimated_gas * gas_price_wei * FAUCET_BUFFER_MULTIPLIER)
+    minimum_wei = w3.to_wei(FAUCET_MIN_XDC, "ether")
+    required_wei = max(required_wei, int(minimum_wei))
+
+    balance_wei = int(w3.eth.get_balance(checksum_wallet))
+    required_xdc = float(w3.from_wei(required_wei, "ether"))
+    balance_xdc = float(w3.from_wei(balance_wei, "ether"))
+    return {
+        "balance_wei": str(balance_wei),
+        "balance_xdc": balance_xdc,
+        "estimated_gas": int(estimated_gas),
+        "gas_price_wei": str(gas_price_wei),
+        "required_gas_wei": str(required_wei),
+        "required_gas_xdc": required_xdc,
+        "required_gas_celo": required_xdc,  # compatibility for shared FE parsers
+        "gas_ready": balance_wei >= required_wei,
+    }
+
+
+def _has_recent_refill(checksum_wallet: str) -> tuple:
+    now = time.time()
+    with _faucet_lock:
+        last = _faucet_recent_refill.get(checksum_wallet.lower(), 0)
+    if now - last < FAUCET_DUPLICATE_WINDOW_MIN * 60:
+        remaining = int((FAUCET_DUPLICATE_WINDOW_MIN * 60) - (now - last))
+        return True, remaining
+    return False, 0
+
+
+def _record_recent_refill(checksum_wallet: str, reason: str = "unknown", source: str = "unknown", tx_hash: str = None):
+    with _faucet_lock:
+        _faucet_recent_refill[checksum_wallet.lower()] = time.time()
+    logger.info(
+        f"🧾 Faucet cooldown recorded wallet={checksum_wallet.lower()} source={source} "
+        f"reason={reason} tx={tx_hash or 'n/a'}"
+    )
+
+
+def _set_api_pending(checksum_wallet: str, api_tx_hash: str, pre_balance_wei: int):
+    with _faucet_lock:
+        _faucet_api_pending[checksum_wallet.lower()] = {
+            "started_at": time.time(),
+            "api_tx_hash": api_tx_hash,
+            "pre_balance_wei": int(pre_balance_wei),
+        }
+
+
+def _get_api_pending(checksum_wallet: str):
+    now = time.time()
+    key = checksum_wallet.lower()
+    with _faucet_lock:
+        pending = _faucet_api_pending.get(key)
+        if not pending:
+            return None
+        age = now - float(pending.get("started_at", now))
+        if age > FAUCET_PENDING_TTL_SECONDS:
+            _faucet_api_pending.pop(key, None)
+            return None
+        return {**pending, "age_seconds": int(age)}
+
+
+def _clear_api_pending(checksum_wallet: str):
+    with _faucet_lock:
+        _faucet_api_pending.pop(checksum_wallet.lower(), None)
+
+
+def _poll_balance_increase(w3, checksum_wallet: str, pre_balance_wei: int, wait_seconds: int, interval_seconds: int = 5):
+    """Poll wallet balance for a bounded grace period."""
+    checks = max(1, int(wait_seconds / max(1, interval_seconds)))
+    for _ in range(checks):
+        time.sleep(interval_seconds)
+        post_wei = int(w3.eth.get_balance(checksum_wallet))
+        if post_wei > pre_balance_wei:
+            return post_wei, True
+    post_wei = int(w3.eth.get_balance(checksum_wallet))
+    return post_wei, post_wei > pre_balance_wei
+
+def _mask_wallet(addr: str) -> str:
+    if not addr or len(addr) < 10:
+        return addr or "n/a"
+    return f"{addr[:6]}...{addr[-4:]}"
+
+
+def _new_faucet_flow_result(checksum_wallet: str, gas_status: dict, correlation_id: str) -> dict:
+    return {
+        "wallet": checksum_wallet.lower(),
+        "correlation_id": correlation_id,
+        "attempted_api": False,
+        "attempted_onchain": False,
+        "api_result": None,
+        "onchain_result": None,
+        "topup_source": None,
+        "gas_ready": bool(gas_status.get("gas_ready")),
+        "terminal_status": "gas_ready" if gas_status.get("gas_ready") else "needs_topup",
+    }
+
+
+def _get_faucet_correlation_id(data: dict) -> str:
+    supplied = (request.headers.get("X-Correlation-ID") or data.get("correlation_id") or "").strip()
+    return supplied or f"faucet-{uuid.uuid4().hex[:12]}"
+
+
+def _execute_onchain_faucet_topup(w3, checksum_wallet: str, correlation_id: str = "n/a") -> dict:
+    """Internal helper to send topWallet(address) tx with GAMES_KEY."""
+    from blockchain import CELO_CHAIN_ID
+    from eth_account import Account
+
+    games_key = (os.getenv("GAMES_KEY") or "").strip()
+    if not games_key:
+        logger.error(
+            f"❌ Faucet onchain unavailable wallet={checksum_wallet.lower()} source=onchain "
+            f"reason=missing_games_key correlation_id={correlation_id}"
+        )
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": "not_configured",
+            "error": "On-chain faucet not configured (missing GAMES_KEY)"
+        }
+
+    key = games_key if games_key.startswith("0x") else "0x" + games_key
+    faucet_acct = Account.from_key(key)
+    faucet_contract = Web3.to_checksum_address(GOODDOLLAR_FAUCET_CONTRACT)
+    signer_masked = _mask_wallet(faucet_acct.address)
+    logger.info(
+        f"🖊️ Faucet onchain signer wallet={checksum_wallet.lower()} signer={signer_masked} "
+        f"source=games_key correlation_id={correlation_id}"
+    )
+
+    # calldata for topWallet(address): 0x3771dcf8 + padded wallet bytes
+    call_data = "0x3771dcf8" + "000000000000000000000000" + checksum_wallet[2:].lower()
+    nonce = w3.eth.get_transaction_count(faucet_acct.address, "pending")
+
+    try:
+        gas_est = w3.eth.estimate_gas({
+            "from": faucet_acct.address,
+            "to": faucet_contract,
+            "data": call_data,
+        })
+    except Exception:
+        gas_est = 140000
+
+    tx = {
+        "chainId": CELO_CHAIN_ID,
+        "nonce": nonce,
+        "gasPrice": int(w3.eth.gas_price * 1.2),
+        "gas": int(gas_est * 1.2),
+        "to": faucet_contract,
+        "value": 0,
+        "data": call_data,
+    }
+
+    # Preflight signer CELO balance to avoid opaque RPC failures.
+    signer_balance_wei = int(w3.eth.get_balance(faucet_acct.address))
+    estimated_tx_cost_wei = int(tx["gas"] * tx["gasPrice"] + tx.get("value", 0))
+    if signer_balance_wei < estimated_tx_cost_wei:
+        logger.error(
+            f"❌ Faucet onchain insufficient signer funds wallet={checksum_wallet.lower()} source=onchain "
+            f"signer={signer_masked} signer_balance_wei={signer_balance_wei} tx_cost_wei={estimated_tx_cost_wei} "
+            f"shortfall_wei={estimated_tx_cost_wei - signer_balance_wei} correlation_id={correlation_id}"
+        )
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": "signer_insufficient_funds",
+            "error": "On-chain faucet signer has insufficient CELO for gas",
+            "signer_balance_wei": str(signer_balance_wei),
+            "estimated_tx_cost_wei": str(estimated_tx_cost_wei),
+            "shortfall_wei": str(estimated_tx_cost_wei - signer_balance_wei),
+        }
+
+    try:
+        signed = faucet_acct.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        tx_hash_hex = "0x" + tx_hash.hex()
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+    except Exception as e:
+        err = str(e)
+        reason = "rpc_error"
+        if "insufficient funds for gas" in err.lower():
+            reason = "signer_insufficient_funds"
+        logger.error(
+            f"❌ Faucet onchain exception wallet={checksum_wallet.lower()} source=onchain reason={reason} "
+            f"error={err} correlation_id={correlation_id}"
+        )
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": reason,
+            "error": err,
+            "signer_balance_wei": str(signer_balance_wei),
+            "estimated_tx_cost_wei": str(estimated_tx_cost_wei),
+        }
+
+    if receipt and receipt.get("status") == 1:
+        logger.info(
+            f"✅ Faucet onchain success wallet={checksum_wallet.lower()} source=onchain tx={tx_hash_hex} "
+            f"correlation_id={correlation_id}"
+        )
+        _record_recent_refill(
+            checksum_wallet,
+            reason="onchain_tx_success",
+            source="onchain",
+            tx_hash=tx_hash_hex
+        )
+        return {"success": True, "status": "onchain_sent", "tx_hash": tx_hash_hex}
+
+    logger.error(
+        f"❌ Faucet onchain failed wallet={checksum_wallet.lower()} source=onchain tx={tx_hash_hex} "
+        f"correlation_id={correlation_id}"
+    )
+    return {
+        "success": False,
+        "status": "onchain_failed",
+        "error": "On-chain faucet transaction failed",
+        "tx_hash": tx_hash_hex
+    }
+
+
+def _execute_onchain_xdc_faucet_topup(w3, checksum_wallet: str, correlation_id: str = "n/a") -> dict:
+    """Internal helper to send topWallet(address) on XDC with XDC_GAMES_KEY."""
+    from blockchain import XDC_CHAIN_ID
+    from eth_account import Account
+
+    games_key = (os.getenv("XDC_GAMES_KEY") or os.getenv("GAMES_KEY") or "").strip()
+    if not games_key:
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": "not_configured",
+            "error": "On-chain XDC faucet not configured (missing XDC_GAMES_KEY)",
+        }
+
+    key = games_key if games_key.startswith("0x") else "0x" + games_key
+    faucet_acct = Account.from_key(key)
+    faucet_contract = Web3.to_checksum_address(GOODDOLLAR_XDC_FAUCET_CONTRACT)
+
+    # calldata for topWallet(address): 0x3771dcf8 + padded wallet bytes
+    call_data = "0x3771dcf8" + "000000000000000000000000" + checksum_wallet[2:].lower()
+    nonce = w3.eth.get_transaction_count(faucet_acct.address, "pending")
+
+    try:
+        gas_est = w3.eth.estimate_gas({
+            "from": faucet_acct.address,
+            "to": faucet_contract,
+            "data": call_data,
+        })
+    except Exception:
+        gas_est = 160000
+
+    tx = {
+        "chainId": XDC_CHAIN_ID,
+        "nonce": nonce,
+        "gasPrice": int(w3.eth.gas_price * 12 // 10),
+        "gas": int(gas_est * 12 // 10),
+        "to": faucet_contract,
+        "value": 0,
+        "data": call_data,
+    }
+
+    try:
+        signed = faucet_acct.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+        tx_hash_hex = "0x" + tx_hash.hex()
+    except Exception as e:
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": "rpc_error",
+            "error": str(e),
+        }
+
+    if receipt and receipt.get("status") == 1:
+        _record_recent_refill(
+            checksum_wallet,
+            reason="onchain_xdc_tx_success",
+            source="onchain_xdc",
+            tx_hash=tx_hash_hex,
+        )
+        return {"success": True, "status": "onchain_sent", "tx_hash": tx_hash_hex}
+
+    return {
+        "success": False,
+        "status": "onchain_failed",
+        "error": "On-chain XDC faucet transaction failed",
+        "tx_hash": tx_hash_hex,
+    }
+
+
+@routes.route("/api/faucet/status", methods=["POST"])
+@auth_required
+def faucet_status():
+    """Step A for safe-claim flow: gas readiness + duplicate refill status."""
+    try:
+        data = request.get_json(silent=True) or {}
+        correlation_id = _get_faucet_correlation_id(data)
+        checksum_wallet, err_resp, status_code = _validate_and_authorize_wallet(data)
+        if err_resp:
+            return err_resp, status_code
+
+        from blockchain import CELO_RPC
+        w3 = Web3(Web3.HTTPProvider(CELO_RPC, request_kwargs={"timeout": 15}))
+        gas_status = _get_gas_status(w3, checksum_wallet)
+        recent_refill, seconds_remaining = _has_recent_refill(checksum_wallet)
+        pending_api = _get_api_pending(checksum_wallet)
+        status = "gas_ready" if gas_status.get("gas_ready") else (
+            "recent_refill" if recent_refill else ("api_accepted_pending" if pending_api else "api_failed")
+        )
+        logger.info(
+            f"⛽ Faucet status wallet={checksum_wallet.lower()} status={status} "
+            f"balance_wei={gas_status.get('balance_wei')} required_wei={gas_status.get('required_gas_wei')} "
+            f"correlation_id={correlation_id}"
+        )
+
+        return jsonify({
+            "success": True,
+            "status": status,
+            "correlation_id": correlation_id,
+            "wallet": checksum_wallet.lower(),
+            "is_recent_refill": recent_refill,
+            "recent_refill_cooldown_seconds": seconds_remaining,
+            "pending_api": pending_api,
+            "debug": {
+                "required_gas_wei": gas_status.get("required_gas_wei"),
+                "required_gas_celo": gas_status.get("required_gas_celo"),
+                "current_balance_wei": gas_status.get("balance_wei"),
+                "current_balance_celo": gas_status.get("balance_celo"),
+            },
+            **gas_status,
+        })
+    except Exception as e:
+        logger.error(f"faucet_status error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/faucet/onchain", methods=["POST"])
+@auth_required
+def faucet_onchain():
+    """Step C fallback: sign/send topWallet(address) using GAMES_KEY."""
+    try:
+        data = request.get_json(silent=True) or {}
+        correlation_id = _get_faucet_correlation_id(data)
+        checksum_wallet, err_resp, status_code = _validate_and_authorize_wallet(data)
+        if err_resp:
+            return err_resp, status_code
+
+        from blockchain import CELO_RPC
+        w3 = Web3(Web3.HTTPProvider(CELO_RPC, request_kwargs={"timeout": 15}))
+        onchain_result = _execute_onchain_faucet_topup(w3, checksum_wallet, correlation_id=correlation_id)
+        status_code = 200 if onchain_result.get("success") else 502
+        if onchain_result.get("reason") == "not_configured":
+            status_code = 503
+        return jsonify({**onchain_result, "attempted_onchain": True, "correlation_id": correlation_id}), status_code
+    except Exception as e:
+        err = str(e)
+        logger.error(f"faucet_onchain error: {err}")
+        return jsonify({"success": False, "status": "error", "error": err}), 500
+
+
+@routes.route("/api/faucet/gas", methods=["POST"])
+@auth_required
+def faucet_gas():
+    """Step B: API faucet first, then fallback to /api/faucet/onchain if needed."""
+    try:
+        data = request.get_json(silent=True) or {}
+        correlation_id = _get_faucet_correlation_id(data)
+        force_onchain = _coerce_bool(data.get("force_onchain"))
+        diagnostics = {
+            "correlation_id": correlation_id,
+            "force_onchain": force_onchain,
+            "duplicate_window_minutes": FAUCET_DUPLICATE_WINDOW_MIN,
+            "stage": "init",
+        }
+        checksum_wallet, err_resp, status_code = _validate_and_authorize_wallet(data)
+        if err_resp:
+            return err_resp, status_code
+
+        from blockchain import CELO_RPC
+        w3 = Web3(Web3.HTTPProvider(CELO_RPC, request_kwargs={"timeout": 15}))
+        status_before = _get_gas_status(w3, checksum_wallet)
+        pre_balance_wei = int(status_before["balance_wei"])
+        flow_result = _new_faucet_flow_result(checksum_wallet, status_before, correlation_id)
+        logger.info(
+            f"⛽ Faucet gas request wallet={checksum_wallet.lower()} source=api+fallback "
+            f"pre_balance_wei={pre_balance_wei} required_wei={status_before['required_gas_wei']} "
+            f"correlation_id={correlation_id}"
+        )
+        if status_before["gas_ready"]:
+            flow_result["terminal_status"] = "gas_ready"
+            return jsonify({
+                "success": True,
+                "topped_up": False,
+                "status": "gas_ready",
+                **flow_result,
+                "debug": {
+                    "pre_balance_wei": str(pre_balance_wei),
+                    "post_balance_wei": str(pre_balance_wei),
+                    "required_gas_wei": status_before["required_gas_wei"],
+                    "required_gas_celo": status_before["required_gas_celo"],
+                },
+                **status_before,
+            })
+
+        recent_refill, seconds_remaining = _has_recent_refill(checksum_wallet)
+        diagnostics.update({
+            "recent_refill": bool(recent_refill),
+            "recent_refill_cooldown_seconds": int(seconds_remaining),
+        })
+        if recent_refill and not force_onchain:
+            flow_result["terminal_status"] = "recent_refill"
+            diagnostics["stage"] = "blocked_recent_refill"
+            return jsonify({
+                "success": True,
+                "topped_up": False,
+                "status": "recent_refill",
+                "reason": f"Recent refill detected. Retry after ~{seconds_remaining}s.",
+                "recent_refill_cooldown_seconds": seconds_remaining,
+                "diagnostics": diagnostics,
+                **flow_result,
+                "debug": {
+                    "pre_balance_wei": str(pre_balance_wei),
+                    "post_balance_wei": str(pre_balance_wei),
+                    "required_gas_wei": status_before["required_gas_wei"],
+                    "required_gas_celo": status_before["required_gas_celo"],
+                    "cooldown_reason": "recent_refill",
+                },
+                **status_before,
+            })
+        if recent_refill and force_onchain:
+            logger.warning(
+                f"⚠️ Faucet cooldown bypass wallet={checksum_wallet.lower()} source=force_onchain "
+                f"cooldown_remaining={seconds_remaining}s correlation_id={correlation_id}"
+            )
+
+        # Step B: GoodDollar API faucet
+        api_ok = False
+        api_tx_hash = None
+        api_error = None
+        if not force_onchain:
+            flow_result["attempted_api"] = True
+            diagnostics["stage"] = "api_faucet"
+            try:
+                payload = json.dumps({"chainId": 42220, "account": checksum_wallet}).encode("utf-8")
+                req = urllib.request.Request(
+                    GOODDOLLAR_FAUCET_API_URL,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                api_ok = body.get("ok", -1) == 1
+                api_tx_hash = body.get("txHash") or body.get("tx_hash")
+                api_error = None if api_ok else (body.get("error") or "API faucet declined")
+            except Exception as e:
+                api_error = str(e)
+            flow_result["api_result"] = {
+                "success": bool(api_ok),
+                "tx_hash": api_tx_hash,
+                "error": api_error,
+            }
+            diagnostics.update({
+                "api_ok": bool(api_ok),
+                "api_tx_hash": api_tx_hash,
+                "api_error": api_error,
+            })
+        else:
+            api_error = "force_onchain_requested"
+            onchain_fallback_reason = "forced_onchain"
+            flow_result["api_result"] = {
+                "success": False,
+                "tx_hash": None,
+                "error": api_error,
+            }
+            diagnostics.update({
+                "api_ok": False,
+                "api_tx_hash": None,
+                "api_error": api_error,
+            })
+
+        onchain_result = None
+        topup_source = None
+        onchain_fallback_reason = "forced_onchain" if force_onchain else None
+
+        if api_ok and not force_onchain:
+            _set_api_pending(checksum_wallet, api_tx_hash, pre_balance_wei)
+            logger.info(
+                f"✅ Faucet API accepted wallet={checksum_wallet.lower()} source=api tx={api_tx_hash or 'n/a'} "
+                f"pre_balance_wei={pre_balance_wei} correlation_id={correlation_id}"
+            )
+            post_balance_wei, increased = _poll_balance_increase(
+                w3, checksum_wallet, pre_balance_wei, FAUCET_API_GRACE_SECONDS
+            )
+            if increased and api_tx_hash:
+                status_after_api = _get_gas_status(w3, checksum_wallet)
+                _clear_api_pending(checksum_wallet)
+                _record_recent_refill(
+                    checksum_wallet,
+                    reason="api_balance_increase_confirmed",
+                    source="api",
+                    tx_hash=api_tx_hash
+                )
+                return jsonify({
+                    "success": True,
+                    "gas_ready": status_after_api["gas_ready"],
+                    "topped_up": True,
+                    "topup_source": "api",
+                    "api_tx_hash": api_tx_hash,
+                    "api_error": api_error,
+                    "onchain_result": None,
+                    "status": "gas_ready" if status_after_api["gas_ready"] else "api_accepted_pending",
+                    "attempted_api": True,
+                    "attempted_onchain": False,
+                    "api_result": flow_result["api_result"],
+                    "terminal_status": "gas_ready" if status_after_api["gas_ready"] else "api_accepted_pending",
+                    "correlation_id": correlation_id,
+                    "wallet": checksum_wallet.lower(),
+                    "diagnostics": {
+                        **diagnostics,
+                        "stage": "api_success",
+                    },
+                    "debug": {
+                        "pre_balance_wei": str(pre_balance_wei),
+                        "post_balance_wei": str(post_balance_wei),
+                        "required_gas_wei": status_after_api["required_gas_wei"],
+                        "required_gas_celo": status_after_api["required_gas_celo"],
+                        "required_gas_reserve_wei": status_after_api["required_gas_wei"],
+                        "required_gas_reserve_celo": status_after_api["required_gas_celo"],
+                    },
+                    **status_after_api,
+                })
+            onchain_fallback_reason = "api_ok_missing_txhash_or_no_balance_increase"
+            logger.warning(
+                f"⚠️ Faucet API pending unresolved wallet={checksum_wallet.lower()} source=api tx={api_tx_hash or 'n/a'} "
+                f"post_balance_wei={post_balance_wei} fallback=onchain reason={onchain_fallback_reason} "
+                f"correlation_id={correlation_id}"
+            )
+        elif not force_onchain:
+            onchain_fallback_reason = "api_failed"
+
+        # Step C: on-chain fallback
+        flow_result["attempted_onchain"] = True
+        onchain_attempts = FAUCET_ONCHAIN_MAX_ATTEMPTS if force_onchain else 1
+        onchain_attempt_history = []
+        diagnostics["stage"] = "onchain_fallback"
+        for attempt in range(onchain_attempts):
+            onchain_result = _execute_onchain_faucet_topup(w3, checksum_wallet, correlation_id=correlation_id)
+            onchain_attempt_history.append({
+                "attempt": attempt + 1,
+                "success": bool((onchain_result or {}).get("success")),
+                "status": (onchain_result or {}).get("status"),
+                "reason": (onchain_result or {}).get("reason"),
+                "tx_hash": (onchain_result or {}).get("tx_hash"),
+            })
+            if onchain_result.get("success"):
+                break
+            if (onchain_result or {}).get("reason") == "signer_insufficient_funds":
+                # Retrying without replenishing signer CELO will not help.
+                break
+        flow_result["onchain_result"] = onchain_result
+        flow_result["onchain_attempt_history"] = onchain_attempt_history
+        flow_result["onchain_attempts"] = len(onchain_attempt_history)
+        if onchain_result.get("success"):
+            topup_source = "onchain"
+            flow_result["topup_source"] = topup_source
+            _clear_api_pending(checksum_wallet)
+            diagnostics["stage"] = "onchain_success"
+        else:
+            if api_ok:
+                # Keep pending marker visible for status polling/troubleshooting.
+                _set_api_pending(checksum_wallet, api_tx_hash, pre_balance_wei)
+            diagnostics["stage"] = "onchain_failed"
+
+        status_after = _get_gas_status(w3, checksum_wallet)
+        post_balance_wei = int(status_after["balance_wei"])
+        topped_up = bool(topup_source)
+        logger.info(
+            f"⛽ Faucet gas result wallet={checksum_wallet.lower()} source={topup_source or 'none'} "
+            f"api_tx={api_tx_hash or 'n/a'} onchain_tx={(onchain_result or {}).get('tx_hash', 'n/a')} "
+            f"pre_balance_wei={pre_balance_wei} post_balance_wei={post_balance_wei} "
+            f"required_wei={status_after['required_gas_wei']} "
+            f"fallback_reason={onchain_fallback_reason or 'none'} correlation_id={correlation_id}"
+        )
+        terminal_status = (
+            "gas_ready" if status_after["gas_ready"] else
+            ("onchain_sent" if topped_up else ("not_configured" if (onchain_result or {}).get("reason") == "not_configured" else "onchain_failed"))
+        )
+
+        return jsonify({
+            "success": bool(status_after["gas_ready"] or topped_up),
+            "wallet": checksum_wallet.lower(),
+            "gas_ready": status_after["gas_ready"],
+            "topped_up": topped_up,
+            "topup_source": topup_source,
+            "api_tx_hash": api_tx_hash,
+            "api_error": api_error,
+            "onchain_result": onchain_result,
+            "status": (
+                "gas_ready" if status_after["gas_ready"] else
+                ("onchain_sent" if topped_up else ("api_failed" if onchain_fallback_reason == "api_failed" else "onchain_failed"))
+            ),
+            "diagnostics": {
+                **diagnostics,
+                "fallback_reason": onchain_fallback_reason,
+                "onchain_success": bool((onchain_result or {}).get("success")),
+                "onchain_reason": (onchain_result or {}).get("reason"),
+                "onchain_tx_hash": (onchain_result or {}).get("tx_hash"),
+                "onchain_attempts": len(onchain_attempt_history),
+            },
+            "attempted_api": flow_result["attempted_api"],
+            "attempted_onchain": flow_result["attempted_onchain"],
+            "api_result": flow_result["api_result"],
+            "onchain_attempts": flow_result.get("onchain_attempts", 0),
+            "onchain_attempt_history": flow_result.get("onchain_attempt_history", []),
+            "terminal_status": terminal_status,
+            "correlation_id": correlation_id,
+            "debug": {
+                "pre_balance_wei": str(pre_balance_wei),
+                "post_balance_wei": str(post_balance_wei),
+                "required_gas_wei": status_after["required_gas_wei"],
+                "required_gas_celo": status_after["required_gas_celo"],
+                "required_gas_reserve_wei": status_after["required_gas_wei"],
+                "required_gas_reserve_celo": status_after["required_gas_celo"],
+                "fallback_reason": onchain_fallback_reason,
+                "force_onchain": force_onchain,
+            },
+            **status_after,
+        })
+    except Exception as e:
+        logger.error(f"faucet_gas error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# Backward-compat endpoint used by existing clients.
+@routes.route("/api/gas-faucet", methods=["POST"])
+@auth_required
+def gas_faucet_compat():
+    return faucet_gas()
+
+
+@routes.route("/api/xdc/faucet/gas", methods=["POST"])
+@auth_required
+def xdc_faucet_gas():
+    """XDC claim-safe flow: gas readiness check + faucet top-up attempts."""
+    try:
+        data = request.get_json(silent=True) or {}
+        correlation_id = _get_faucet_correlation_id(data)
+        force_onchain = _coerce_bool(data.get("force_onchain"))
+        checksum_wallet, err_resp, status_code = _validate_and_authorize_wallet(data)
+        if err_resp:
+            return err_resp, status_code
+
+        from blockchain import XDC_RPC
+        w3 = Web3(Web3.HTTPProvider(XDC_RPC, request_kwargs={"timeout": 15}))
+
+        status_before = _get_xdc_gas_status(w3, checksum_wallet)
+        pre_balance_wei = int(status_before["balance_wei"])
+        if status_before["gas_ready"]:
+            return jsonify({
+                "success": True,
+                "status": "gas_ready",
+                "gas_ready": True,
+                "topped_up": False,
+                "topup_source": None,
+                "correlation_id": correlation_id,
+                "wallet": checksum_wallet.lower(),
+                "terminal_status": "gas_ready",
+                **status_before,
+            })
+
+        recent_refill, seconds_remaining = _has_recent_refill(checksum_wallet)
+        if recent_refill and not force_onchain:
+            return jsonify({
+                "success": True,
+                "status": "recent_refill",
+                "gas_ready": False,
+                "topped_up": False,
+                "terminal_status": "recent_refill",
+                "recent_refill_cooldown_seconds": seconds_remaining,
+                "correlation_id": correlation_id,
+                "wallet": checksum_wallet.lower(),
+                **status_before,
+            })
+
+        api_ok = False
+        api_tx_hash = None
+        api_error = None
+        if not force_onchain:
+            try:
+                payload = json.dumps({"chainId": 50, "account": checksum_wallet}).encode("utf-8")
+                req = urllib.request.Request(
+                    GOODDOLLAR_XDC_FAUCET_API_URL,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                api_ok = body.get("ok", -1) == 1
+                api_tx_hash = body.get("txHash") or body.get("tx_hash")
+                api_error = None if api_ok else (body.get("error") or "API faucet declined")
+            except Exception as e:
+                api_error = str(e)
+
+        if api_ok and not force_onchain:
+            _set_api_pending(checksum_wallet, api_tx_hash, pre_balance_wei)
+            post_balance_wei, _ = _poll_balance_increase(
+                w3, checksum_wallet, pre_balance_wei, FAUCET_API_GRACE_SECONDS
+            )
+            status_after_api = _get_xdc_gas_status(w3, checksum_wallet)
+            if status_after_api["gas_ready"]:
+                _clear_api_pending(checksum_wallet)
+                _record_recent_refill(
+                    checksum_wallet,
+                    reason="api_xdc_balance_increase_confirmed",
+                    source="api_xdc",
+                    tx_hash=api_tx_hash,
+                )
+                return jsonify({
+                    "success": True,
+                    "status": "gas_ready",
+                    "gas_ready": True,
+                    "topped_up": True,
+                    "topup_source": "api",
+                    "api_tx_hash": api_tx_hash,
+                    "api_error": api_error,
+                    "terminal_status": "gas_ready",
+                    "correlation_id": correlation_id,
+                    "wallet": checksum_wallet.lower(),
+                    "debug": {
+                        "pre_balance_wei": str(pre_balance_wei),
+                        "post_balance_wei": str(post_balance_wei),
+                        "required_gas_wei": status_after_api["required_gas_wei"],
+                        "required_gas_xdc": status_after_api["required_gas_xdc"],
+                    },
+                    **status_after_api,
+                })
+
+        onchain_result = _execute_onchain_xdc_faucet_topup(w3, checksum_wallet, correlation_id=correlation_id)
+        status_after = _get_xdc_gas_status(w3, checksum_wallet)
+        topped_up = bool(onchain_result.get("success"))
+
+        terminal_status = (
+            "gas_ready" if status_after["gas_ready"] else
+            ("not_configured" if onchain_result.get("reason") == "not_configured" else "onchain_failed")
+        )
+
+        return jsonify({
+            "success": bool(status_after["gas_ready"] or topped_up),
+            "status": "gas_ready" if status_after["gas_ready"] else "onchain_failed",
+            "gas_ready": status_after["gas_ready"],
+            "topped_up": topped_up,
+            "topup_source": "onchain" if topped_up else None,
+            "api_tx_hash": api_tx_hash,
+            "api_error": api_error,
+            "onchain_result": onchain_result,
+            "terminal_status": terminal_status,
+            "recent_refill_cooldown_seconds": seconds_remaining if recent_refill else 0,
+            "correlation_id": correlation_id,
+            "wallet": checksum_wallet.lower(),
+            **status_after,
+        })
+    except Exception as e:
+        logger.error(f"xdc_faucet_gas error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
