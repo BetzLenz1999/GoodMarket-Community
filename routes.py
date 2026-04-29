@@ -515,7 +515,7 @@ def get_daily_task_history():
 
 @routes.route("/api/recent-daily-tasks", methods=["GET"])
 def get_recent_daily_tasks():
-    """Get recent daily task submissions from last 24 hours"""
+    """Get recent daily task submissions from last 72 hours"""
     try:
         from datetime import datetime, timedelta
         from supabase_client import get_supabase_client
@@ -536,14 +536,14 @@ def get_recent_daily_tasks():
             response.headers['Content-Type'] = 'application/json'
             return response, 200
 
-        # Calculate 24 hours ago
-        twenty_four_hours_ago = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+        # Calculate 72 hours ago (aligned with daily task cooldown window)
+        cooldown_window_start = (datetime.utcnow() - timedelta(hours=72)).isoformat()
 
-        # Get Twitter task submissions from last 24 hours
+        # Get Twitter task submissions from last 72 hours
         twitter_submissions = safe_supabase_operation(
             lambda: supabase.table('twitter_task_log')\
                 .select('wallet_address, reward_amount, created_at, twitter_url')\
-                .gte('created_at', twenty_four_hours_ago)\
+                .gte('created_at', cooldown_window_start)\
                 .order('created_at', desc=True)\
                 .limit(50)\
                 .execute(),
@@ -551,11 +551,11 @@ def get_recent_daily_tasks():
             operation_name="get recent twitter tasks"
         )
 
-        # Get Telegram task submissions from last 24 hours
+        # Get Telegram task submissions from last 72 hours
         telegram_submissions = safe_supabase_operation(
             lambda: supabase.table('telegram_task_log')\
                 .select('wallet_address, reward_amount, created_at, telegram_url')\
-                .gte('created_at', twenty_four_hours_ago)\
+                .gte('created_at', cooldown_window_start)\
                 .order('created_at', desc=True)\
                 .limit(50)\
                 .execute(),
@@ -1536,7 +1536,7 @@ def dashboard():
     except Exception as e:
         logger.error(f"dashboard stats failed: {e}")
         homepage_stats = {
-            "total_g_disbursed_formatted": "—",
+            "total_g_disbursed_formatted": "���",
             "total_g_disbursed_week_growth_pct": None,
             "active_earners_formatted": "—",
             "tasks_last_30_days_formatted": "—",
@@ -6709,7 +6709,7 @@ def mark_notifications_read():
 
 # ─────────────────────────────────────────────────────────
 #  DAILY VOUCHER
-# ─────────────────────────────────────────────────────────
+# ────────────────────────────────────��────────────────────
 
 def _get_today_pht():
     """Return the current date string (YYYY-MM-DD) in PHT (UTC+8)."""

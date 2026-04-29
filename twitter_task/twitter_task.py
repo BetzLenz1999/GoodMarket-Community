@@ -13,7 +13,7 @@ class TwitterTaskService:
         # Custom messages for Twitter posts (keeps @GoodDollarTeam @gooddollarorg mentions)
         self.custom_messages = self._generate_custom_messages()
 
-        self.cooldown_hours = 24  # 24 hour cooldown
+        self.cooldown_hours = 72  # 72 hour cooldown
 
         logger.info("🐦 Twitter Task Service initialized")
         logger.info(f"⏰ Cooldown: {self.cooldown_hours} hours")
@@ -256,23 +256,23 @@ class TwitterTaskService:
                 
                 return result
 
-            # Check last COMPLETED claim time (only approved submissions trigger cooldown)
-            today = datetime.now(timezone.utc).date()
+            # Check last COMPLETED claim within the cooldown window (only approved submissions trigger cooldown)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=self.cooldown_hours)
             last_claim = self.supabase.table('twitter_task_log')\
                 .select('created_at, status')\
                 .eq('wallet_address', wallet_address)\
                 .eq('status', 'completed')\
-                .gte('created_at', today.isoformat())\
+                .gte('created_at', cutoff_time.isoformat())\
                 .order('created_at', desc=True)\
                 .limit(1)\
                 .execute()
 
-            logger.info(f"🔍 Completed claims today: {len(last_claim.data) if last_claim.data else 0}")
+            logger.info(f"🔍 Completed claims (last {self.cooldown_hours}h): {len(last_claim.data) if last_claim.data else 0}")
             if last_claim.data:
                 logger.info(f"🔍 Last completed claim: {last_claim.data[0]}")
 
             if last_claim.data:
-                # User already has approved claim today - cooldown active
+                # User already has approved claim within cooldown window - cooldown active
                 last_claim_time = datetime.fromisoformat(last_claim.data[0]['created_at'].replace('Z', '+00:00'))
                 next_claim_time = last_claim_time + timedelta(hours=self.cooldown_hours)
 
@@ -280,7 +280,7 @@ class TwitterTaskService:
 
                 result = {
                     'can_claim': False,
-                    'reason': 'Already claimed today',
+                    'reason': f'Already claimed within the last {self.cooldown_hours} hours',
                     'next_claim_time': next_claim_time.isoformat(),
                     'last_claim': last_claim_time.isoformat()
                 }
@@ -291,7 +291,7 @@ class TwitterTaskService:
                 
                 return result
 
-            logger.info(f"✅ User can claim - no completed claims today")
+            logger.info(f"✅ User can claim - no completed claims within cooldown window")
 
             result = {
                 'can_claim': True,
