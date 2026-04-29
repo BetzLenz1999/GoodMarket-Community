@@ -4021,23 +4021,11 @@
             } catch (_) { /* keep hidden on failure */ }
         })();
 
-        // MiniPay users: keep only GoodReserve as the swap entry point.
-        (function applyMiniPayWalletNav() {
+        // Keep Uniswap visible in all wallet environments.
+        (function ensureUniswapVisible() {
             try {
-                const isMP = (
-                    (window.ethereum && window.ethereum.isMiniPay) ||
-                    (window.ethereum && window.ethereum.providers
-                        && window.ethereum.providers.some
-                        && window.ethereum.providers.some(p => p && p.isMiniPay)) ||
-                    /minipay/i.test(navigator.userAgent || '')
-                );
-                if (!isMP) return;
-                ['actionUniswap', 'actionSavings'].forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.style.display = 'none';
-                });
-                const grEl = document.getElementById('actionGoodReserve');
-                if (grEl) grEl.style.display = '';
+                const uniswapEl = document.getElementById('actionUniswap');
+                if (uniswapEl) uniswapEl.style.display = '';
             } catch (_) { /* no-op */ }
         })();
     });
