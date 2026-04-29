@@ -649,18 +649,14 @@
             <p class="page-subtitle">Swap G$, CELO, cUSD and USDT via Uniswap V3 on Celo, or buy &amp; sell G$ at the GoodReserve protocol price</p>
         </div>
 
-        {% if reserve_swap_visible and not is_minipay %}
-        <!-- Tab Switcher (DEX vs GoodReserve) -->
+        {% if reserve_swap_visible %}
+        <!-- Tab Switcher (DEX vs GoodReserve). Shown for all users, including
+             MiniPay. The Uniswap V3 path now uses CIP-64 fee abstraction with a
+             MiniPay-aware tx helper, so both modes are accessible. -->
         <div id="swapTabSwitcher" class="swap-tabs" role="tablist" aria-label="Swap mode">
             <button type="button" id="tabBtnDex" class="swap-tab-btn active" role="tab" aria-selected="true" onclick="setSwapTab('dex')">Uniswap V3</button>
             <button type="button" id="tabBtnReserve" class="swap-tab-btn" role="tab" aria-selected="false" onclick="setSwapTab('reserve')">GoodReserve</button>
         </div>
-        {% endif %}
-        {% if is_minipay %}
-        <style>
-            .pane-dex { display: none !important; }
-            .pane-reserve.hidden-tab { display: block !important; }
-        </style>
         {% endif %}
 
         <!-- DEX Pane -->
@@ -1086,10 +1082,14 @@
             return false;
         }
 
+        // CIP-64 fee currency addresses on Celo. MiniPay typically auto-selects the
+        // gas token based on the user's balance, so `null` (let MiniPay decide) is
+        // attempted first. Explicit values are kept as fallbacks for older MiniPay
+        // builds that still honour the `feeCurrency` field.
         const MINIPAY_FEE_CURRENCY = {
-            USDM:         '0x765DE816845861e75A25fCA122bb6898B8B1282a',
-            USDT_ADAPTER: '0x0E2A3e05bc9A16F5292A6170456A710cb89C6f72',
-            USDC_ADAPTER: '0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B',
+            CUSD:         '0x765DE816845861e75A25fCA122bb6898B8B1282a', // cUSD
+            USDT_ADAPTER: '0x0E2A3e05bc9A16F5292A6170456A710cb89C6f72', // USDT (CELO/USDT adapter)
+            USDC_ADAPTER: '0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B', // USDC (CELO/USDC adapter)
         };
 
         async function _miniPayWaitForReceipt(ep, txHash, maxAttempts = 60) {
@@ -1113,10 +1113,120 @@
             return null;
         }
 
-        async function _miniPayTx(toAddr, abiFragment, args, valueHex) {
-            const ep = _getEthProvider();
-            if (!ep) throw new Error('No injected wallet provider available.');
+        // Estimate gas WITHOUT a feeCurrency param. MiniPay's gas estimator is
+        // sometimes fussy about feeCurrency on `eth_estimateGas`, but the raw
+        // EVM gas usage doesn't depend on which token pays the fee, so we
+        // estimate cleanly and then attach feeCurrency only on `eth_sendTransaction`.
+        async function _miniPayEstimateGas(ep, from, toAddr, data, value, opName) {
+            const baseParams = { from, to: toAddr, data, value };
+            try {
+                const est = await ep.request({ method: 'eth_estimateGas', params: [baseParams] });
+                const estimated = typeof est === 'string' ? BigInt(est) : BigInt(Number(est));
+                // 80% headroom — MiniPay multi-hop swaps can spike, especially via Uniswap V3.
+                const withHeadroom = '0x' + (estimated * 180n / 100n).toString(16);
+                console.log('[MiniPay] gas estimated:', { op: opName, raw: est, withHeadroom });
+                return { gasHex: withHeadroom, error: null };
+            } catch (gasErr) {
+                // Fallback budgets sized for realistic MiniPay flows:
+                //  - approve / simple transfers: ~80k actual, give 200k
+                //  - swap / multi-hop: ~250k–600k, give 1.2M
+                const isSwap = /swap|exactInput|exactOutput/i.test(opName || '');
+                const fallback = isSwap ? '0x124F80' : '0x30D40'; // 1.2M : 200k
+                console.warn('[MiniPay] eth_estimateGas failed, using fallback:', {
+                    op: opName, fallback, error: gasErr?.message, code: gasErr?.code,
+                });
+                return { gasHex: fallback, error: gasErr };
+            }
+        }
 
+        // Execute an eth_sendTransaction with MiniPay's CIP-64 fee abstraction.
+        // Strategy (current MiniPay behavior, late-2025/2026):
+        //   1) Send WITHOUT feeCurrency first — MiniPay auto-picks the gas token
+        //      from the user's balance. This is the recommended path per the
+        //      MiniPay docs and avoids "blocked" prompts when the user doesn't
+        //      hold a specific stablecoin.
+        //   2) If MiniPay returns a fee-related error (not user-rejected,
+        //      not on-chain revert), fall back to explicit CIP-64 adapters
+        //      so older MiniPay builds and edge cases still work.
+        async function _miniPaySendWithFeeRetry(ep, baseParams, opName) {
+            const errorLog = [];
+
+            // Auto-select first, then explicit fallbacks.
+            const attempts = [
+                null,
+                MINIPAY_FEE_CURRENCY.USDT_ADAPTER,
+                MINIPAY_FEE_CURRENCY.USDC_ADAPTER,
+                MINIPAY_FEE_CURRENCY.CUSD,
+            ];
+
+            for (const fc of attempts) {
+                const txParams = { ...baseParams };
+                if (fc) txParams.feeCurrency = fc;
+                else delete txParams.feeCurrency;
+
+                try {
+                    console.log('[MiniPay] sending tx attempt:', {
+                        op: opName, feeCurrency: fc || 'auto', gas: txParams.gas,
+                    });
+                    const txHash = await ep.request({
+                        method: 'eth_sendTransaction',
+                        params: [txParams],
+                    });
+                    console.log('[MiniPay] tx sent:', { op: opName, txHash, feeCurrency: fc || 'auto' });
+                    await _miniPayWaitForReceipt(ep, txHash);
+                    return { txHash, errorLog };
+                } catch (err) {
+                    const code = err && err.code;
+                    const rawMsg = (err && (err.message || (err.data && err.data.message))) || '';
+                    const msg = rawMsg.toLowerCase();
+                    const detail = {
+                        feeCurrency: fc || 'auto',
+                        code,
+                        message: rawMsg.substring(0, 200),
+                        dataMsg: err?.data?.message || null,
+                    };
+                    errorLog.push(detail);
+                    console.error('[MiniPay] tx FAILED:', { op: opName, ...detail });
+
+                    // User cancelled — never retry.
+                    if (code === 4001 || /reject|denied by user|user denied|cancel/i.test(msg)) {
+                        const richErr = new Error(rawMsg || 'Transaction cancelled in wallet.');
+                        richErr.code = 4001;
+                        richErr._miniPayCancel = true;
+                        throw richErr;
+                    }
+
+                    // On-chain revert — different feeCurrency won't fix it.
+                    if (/revert|insufficient|out of gas|allowance|stf|transferhelper/i.test(msg)) {
+                        const richErr = new Error(rawMsg || 'Transaction reverted.');
+                        richErr._miniPayRevert = true;
+                        richErr._miniPayDiag = { fn: opName, errorLog };
+                        throw richErr;
+                    }
+                }
+            }
+
+            return { txHash: null, errorLog };
+        }
+
+        function _buildMiniPayDiagError(opName, toAddr, errorLog, gasEstimateError) {
+            const diagParts = errorLog.map((e, i) =>
+                `Attempt ${i + 1} (fc=${e.feeCurrency}): code=${e.code}, msg=${e.message}`
+            );
+            const diagMsg = `MiniPay ${opName} failed after ${errorLog.length} attempt(s).\n` +
+                diagParts.join('\n') +
+                (gasEstimateError ? `\nGas estimate also failed: ${gasEstimateError.message || gasEstimateError}` : '');
+            const richErr = new Error(diagMsg);
+            richErr._miniPayDiag = {
+                fn: opName,
+                to: toAddr,
+                errorLog,
+                gasEstimateError: gasEstimateError?.message,
+            };
+            return richErr;
+        }
+
+        async function _miniPayResolveFrom(ep) {
             const accounts = await ep.request({ method: 'eth_requestAccounts' });
             const from = (accounts && accounts[0]) || WALLET_ADDRESS;
             if (from && WALLET_ADDRESS && from.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
@@ -1125,7 +1235,14 @@
                     WALLET_ADDRESS.slice(0, 6) + '…' + WALLET_ADDRESS.slice(-4) + ' and try again.'
                 );
             }
+            return from;
+        }
 
+        async function _miniPayTx(toAddr, abiFragment, args, valueHex) {
+            const ep = _getEthProvider();
+            if (!ep) throw new Error('No injected wallet provider available.');
+
+            const from = await _miniPayResolveFrom(ep);
             const iface = new ethers.Interface([abiFragment]);
             const fnName = abiFragment.match(/function (\w+)/)[1];
             const data = iface.encodeFunctionData(fnName, args);
@@ -1138,146 +1255,42 @@
                 ua: navigator.userAgent,
             });
 
-            let gasHex;
-            let gasEstimateError = null;
-            try {
-                const est = await ep.request({
-                    method: 'eth_estimateGas',
-                    params: [{ from, to: toAddr, data, value }],
-                });
-                const estimated = typeof est === 'string' ? BigInt(est) : BigInt(Number(est));
-                gasHex = '0x' + (estimated * 140n / 100n).toString(16);
-                console.log('[MiniPay] gas estimated:', { raw: est, withHeadroom: gasHex });
-            } catch (gasErr) {
-                gasHex = '0x7A120';
-                gasEstimateError = gasErr;
-                console.warn('[MiniPay] eth_estimateGas failed:', { error: gasErr?.message, code: gasErr?.code });
-            }
+            const { gasHex, error: gasEstimateError } =
+                await _miniPayEstimateGas(ep, from, toAddr, data, value, fnName);
 
-            const attempts = [
-                MINIPAY_FEE_CURRENCY.USDM,
-                MINIPAY_FEE_CURRENCY.USDT_ADAPTER,
-                MINIPAY_FEE_CURRENCY.USDC_ADAPTER,
-                null,
-            ];
+            const baseParams = { from, to: toAddr, data, value, gas: gasHex };
+            const { txHash, errorLog } =
+                await _miniPaySendWithFeeRetry(ep, baseParams, fnName);
 
-            const errorLog = [];
-            let lastErr;
-            for (const fc of attempts) {
-                const txParams = { from, to: toAddr, data, value, gas: gasHex };
-                if (fc) txParams.feeCurrency = fc;
-                try {
-                    console.log('[MiniPay] sending tx attempt:', { feeCurrency: fc, gas: gasHex });
-                    const txHash = await ep.request({
-                        method: 'eth_sendTransaction',
-                        params: [txParams],
-                    });
-                    console.log('[MiniPay] tx sent:', txHash);
-                    await _miniPayWaitForReceipt(ep, txHash);
-                    return txHash;
-                } catch (err) {
-                    lastErr = err;
-                    const code = err && err.code;
-                    const rawMsg = (err && (err.message || err.data && err.data.message)) || '';
-                    const msg = rawMsg.toLowerCase();
-                    const detail = { feeCurrency: fc, code, message: rawMsg.substring(0, 200), dataMsg: err?.data?.message || null };
-                    errorLog.push(detail);
-                    console.error('[MiniPay] tx FAILED:', detail);
-                    if (code === 4001 || /reject|denied by user|user denied/i.test(msg)) throw err;
-                    if (/revert/i.test(msg)) throw err;
-                }
-            }
+            if (txHash) return txHash;
 
-            const diagParts = errorLog.map((e, i) =>
-                `Attempt ${i + 1} (fc=${e.feeCurrency || 'none'}): code=${e.code}, msg=${e.message}`
-            );
-            const diagMsg = `MiniPay ${fnName}() failed after ${errorLog.length} attempt(s).\n` +
-                diagParts.join('\n') +
-                (gasEstimateError ? `\nGas estimate also failed: ${gasEstimateError.message || gasEstimateError}` : '');
-            console.error('[MiniPay] all attempts exhausted:', diagMsg);
-            const richErr = new Error(diagMsg);
-            richErr._miniPayDiag = { fn: fnName, to: toAddr, errorLog, gasEstimateError: gasEstimateError?.message };
-            throw richErr;
+            console.error('[MiniPay] all attempts exhausted for', fnName);
+            throw _buildMiniPayDiagError(fnName + '()', toAddr, errorLog, gasEstimateError);
         }
 
-        async function _miniPayRawTx(toAddr, data, valueHex) {
+        async function _miniPayRawTx(toAddr, data, valueHex, opName) {
             const ep = _getEthProvider();
             if (!ep) throw new Error('No injected wallet provider available.');
 
-            const accounts = await ep.request({ method: 'eth_requestAccounts' });
-            const from = (accounts && accounts[0]) || WALLET_ADDRESS;
-            if (from && WALLET_ADDRESS && from.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
-                throw new Error(
-                    'Wrong MiniPay account. Please switch to ' +
-                    WALLET_ADDRESS.slice(0, 6) + '…' + WALLET_ADDRESS.slice(-4) + ' and try again.'
-                );
-            }
-
+            const from = await _miniPayResolveFrom(ep);
             const value = valueHex || '0x0';
+            const op = opName || 'rawTx';
+
             console.log('[MiniPay] _miniPayRawTx called:', {
-                to: toAddr, from, dataLen: data.length, value,
+                op, to: toAddr, from, dataLen: data.length, value,
             });
 
-            let gasHex;
-            let gasEstimateError = null;
-            try {
-                const est = await ep.request({
-                    method: 'eth_estimateGas',
-                    params: [{ from, to: toAddr, data, value }],
-                });
-                const estimated = typeof est === 'string' ? BigInt(est) : BigInt(Number(est));
-                gasHex = '0x' + (estimated * 140n / 100n).toString(16);
-                console.log('[MiniPay] gas estimated:', { raw: est, withHeadroom: gasHex });
-            } catch (gasErr) {
-                gasHex = '0x7A120';
-                gasEstimateError = gasErr;
-                console.warn('[MiniPay] eth_estimateGas failed:', { error: gasErr?.message, code: gasErr?.code });
-            }
+            const { gasHex, error: gasEstimateError } =
+                await _miniPayEstimateGas(ep, from, toAddr, data, value, op);
 
-            const attempts = [
-                MINIPAY_FEE_CURRENCY.USDM,
-                MINIPAY_FEE_CURRENCY.USDT_ADAPTER,
-                MINIPAY_FEE_CURRENCY.USDC_ADAPTER,
-                null,
-            ];
+            const baseParams = { from, to: toAddr, data, value, gas: gasHex };
+            const { txHash, errorLog } =
+                await _miniPaySendWithFeeRetry(ep, baseParams, op);
 
-            const errorLog = [];
-            let lastErr;
-            for (const fc of attempts) {
-                const txParams = { from, to: toAddr, data, value, gas: gasHex };
-                if (fc) txParams.feeCurrency = fc;
-                try {
-                    console.log('[MiniPay] sending raw tx attempt:', { feeCurrency: fc, gas: gasHex });
-                    const txHash = await ep.request({
-                        method: 'eth_sendTransaction',
-                        params: [txParams],
-                    });
-                    console.log('[MiniPay] raw tx sent:', txHash);
-                    await _miniPayWaitForReceipt(ep, txHash);
-                    return txHash;
-                } catch (err) {
-                    lastErr = err;
-                    const code = err && err.code;
-                    const rawMsg = (err && (err.message || err.data && err.data.message)) || '';
-                    const msg = rawMsg.toLowerCase();
-                    const detail = { feeCurrency: fc, code, message: rawMsg.substring(0, 200), dataMsg: err?.data?.message || null };
-                    errorLog.push(detail);
-                    console.error('[MiniPay] raw tx FAILED:', detail);
-                    if (code === 4001 || /reject|denied by user|user denied/i.test(msg)) throw err;
-                    if (/revert/i.test(msg)) throw err;
-                }
-            }
+            if (txHash) return txHash;
 
-            const diagParts = errorLog.map((e, i) =>
-                `Attempt ${i + 1} (fc=${e.feeCurrency || 'none'}): code=${e.code}, msg=${e.message}`
-            );
-            const diagMsg = `MiniPay swap failed after ${errorLog.length} attempt(s).\n` +
-                diagParts.join('\n') +
-                (gasEstimateError ? `\nGas estimate also failed: ${gasEstimateError.message || gasEstimateError}` : '');
-            console.error('[MiniPay] all attempts exhausted:', diagMsg);
-            const richErr = new Error(diagMsg);
-            richErr._miniPayDiag = { fn: 'swap', to: toAddr, errorLog, gasEstimateError: gasEstimateError?.message };
-            throw richErr;
+            console.error('[MiniPay] all attempts exhausted for', op);
+            throw _buildMiniPayDiagError(op, toAddr, errorLog, gasEstimateError);
         }
 
         function _normalizeChainIdHex(chainId) {
@@ -2262,14 +2275,16 @@
                     setSwapBtnState("loading", "Approving token...");
                     showAlert("alert-info", `<span class="spinner-inline"></span> Step 1/2 — Approve ${from.symbol} in MiniPay…`);
 
-                    // Check allowance first
+                    // Check allowance first. If insufficient, request a MaxUint256
+                    // approval so the user only ever sees ONE approve prompt for
+                    // this token+router pair (industry standard for Uniswap V3).
                     const rpcProvider = new ethers.JsonRpcProvider(CELO_RPC);
                     const tokenRead = new ethers.Contract(from.address, ERC20_ABI, rpcProvider);
                     const allowance = await tokenRead.allowance(WALLET_ADDRESS, UNISWAP_ROUTER);
                     if (allowance < amountIn) {
                         await _miniPayTx(from.address,
                             "function approve(address spender, uint256 amount) returns (bool)",
-                            [UNISWAP_ROUTER, amountIn * 2n]);
+                            [UNISWAP_ROUTER, ethers.MaxUint256]);
                     }
                     step1.className = "step done";
 
@@ -2321,7 +2336,7 @@
                         }]);
                     }
 
-                    const txHash = await _miniPayRawTx(UNISWAP_ROUTER, swapData, '0x0');
+                    const txHash = await _miniPayRawTx(UNISWAP_ROUTER, swapData, '0x0', 'uniswap.exactInput');
                     step2.className = "step done";
 
                     const outHuman = parseFloat(ethers.formatUnits(currentQuote.amountOut, to.decimals));
@@ -2501,16 +2516,16 @@
 
         // Auto-switch to a specific tab if requested via ?tab=reserve or #reserve.
         // Runs once on load; ignored if the GoodReserve pane wasn't rendered (flag off).
-        // MiniPay users always start on the reserve tab regardless of URL params,
-        // since the DEX pane is hidden for them.
+        // MiniPay users get both tabs — Uniswap V3 (CIP-64 fee abstraction) and
+        // GoodReserve. The default landing tab is the same for everyone (DEX),
+        // and users can switch freely.
         (function autoSelectSwapTab() {
             try {
                 const params = new URLSearchParams(window.location.search);
                 const fromQuery = (params.get("tab") || "").toLowerCase();
                 const fromHash  = (window.location.hash || "").replace("#", "").toLowerCase();
                 const want = fromQuery || fromHash;
-                const forceReserve = {{ 'true' if is_minipay else 'false' }};
-                if (!forceReserve && want !== "reserve" && want !== "goodreserve") return;
+                if (want !== "reserve" && want !== "goodreserve") return;
                 const apply = () => {
                     const resPane = document.querySelector(".pane-reserve");
                     if (resPane && typeof setSwapTab === "function") setSwapTab("reserve");
