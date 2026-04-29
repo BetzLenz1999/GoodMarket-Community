@@ -1114,6 +1114,10 @@
                     </div>
                     <span class="action-label">Claim</span>
                 </div>
+                <div class="action-item" onclick="openModal('dailyCheckinModal');loadDailyCheckin();">
+                    <div class="action-circle" style="background:linear-gradient(135deg,#7f8cff,#5ff2d2);color:#fff;">📅</div>
+                    <span class="action-label">Check-in</span>
+                </div>
                 <div class="action-item" id="actionSavings" onclick="return navigateWithFeedback('/savings', 'Opening Savings…')">
                     <div class="action-circle">🏦</div>
                     <span class="action-label">Savings</span>
@@ -1305,6 +1309,25 @@
     </div>
 
     <!-- Send Modal -->
+
+    <div class="modal-overlay" id="dailyCheckinModal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="modal-title">📅 Daily Check-in</div>
+            <div class="claim-status" id="dc-status">Loading...</div>
+            <div style="margin-top:0.8rem;">
+                <button class="btn-primary" id="dc-checkin-btn" onclick="dailyCheckinClaim()">Check-in Today (0.01 CELO)</button>
+            </div>
+            <div style="margin-top:1rem;">
+                <strong>History (last 20)</strong>
+                <ul id="dc-history" style="margin-top:.4rem;padding-left:1rem;max-height:180px;overflow:auto;"></ul>
+            </div>
+            <div style="margin-top:1rem;">
+                <button class="btn-secondary" onclick="closeModal('dailyCheckinModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="sendModal">
         <div class="modal-sheet">
             <div class="modal-handle"></div>
@@ -3935,6 +3958,35 @@
         }
     }
 
+    async function loadDailyCheckin(){
+        try{
+            const st = await fetch('/daily-checkin/api/status');
+            const data = await st.json();
+            if(!st.ok){document.getElementById('dc-status').innerText = data.message || data.error || 'Unavailable'; return;}
+            document.getElementById('dc-status').innerText = `Streak: ${data.current_streak}/7 | ${data.can_checkin ? 'Available now (UTC)' : 'Already checked in today (UTC)'}`;
+            document.getElementById('dc-checkin-btn').disabled = !data.can_checkin;
+            const h = await fetch('/daily-checkin/api/history');
+            const hd = await h.json();
+            const ul = document.getElementById('dc-history');
+            ul.innerHTML = '';
+            (hd.history || []).forEach(row => {
+                const li = document.createElement('li');
+                li.innerText = `${row.event_type}: ${row.amount_celo} CELO`;
+                ul.appendChild(li);
+            });
+        }catch(_){
+            const s = document.getElementById('dc-status');
+            if (s) s.innerText = 'Daily check-in unavailable';
+        }
+    }
+
+    async function dailyCheckinClaim(){
+        const r = await fetch('/daily-checkin/api/checkin', {method:'POST'});
+        const d = await r.json();
+        alert(d.success ? '✅ Check-in success' : '❌ ' + (d.error || 'Failed'));
+        loadDailyCheckin();
+    }
+
     // ── Init ──────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', () => {
         const reminderBanner = document.getElementById('walletReminderBanner');
@@ -3985,5 +4037,8 @@
         })();
     });
     </script>
+
+
+
 </body>
 </html>
