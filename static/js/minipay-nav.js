@@ -22,33 +22,12 @@
         });
     }
 
-    // Swap page hardening for MiniPay: never expose DEX/Uniswap UI if the
-    // backend user-agent check misses MiniPay on first render.
-    function applySwapMiniPayMode() {
-        var tabSwitcher = document.getElementById('swapTabSwitcher');
-        if (tabSwitcher) tabSwitcher.style.display = 'none';
-
-        var dexBtn = document.getElementById('tabBtnDex');
-        if (dexBtn) dexBtn.style.display = 'none';
-
-        var dexPane = document.getElementById('swapPaneDex') || document.querySelector('.pane-dex');
-        if (dexPane) dexPane.style.display = 'none';
-
-        var reservePane = document.getElementById('swapPaneReserve') || document.querySelector('.pane-reserve');
-        if (reservePane) {
-            reservePane.style.display = '';
-            reservePane.classList.remove('hidden-tab');
-        }
-
-        if (typeof window.setSwapTab === 'function') {
-            try { window.setSwapTab('reserve'); } catch (_) { /* no-op */ }
-        }
-    }
-
     function apply() {
         if (!isMiniPay()) return;
         hideSavingsLinks();
-        applySwapMiniPayMode();
+        // Note: Uniswap V3 swap is now MiniPay-compatible via CIP-64 fee
+        // abstraction in the tx helpers. The DEX pane is no longer hidden for
+        // MiniPay users — both Uniswap and GoodReserve tabs are available.
     }
 
     if (document.readyState === 'loading') {

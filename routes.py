@@ -5955,8 +5955,10 @@ def swap_page():
                         reserve_visible = True
     except Exception:
         pass
-    # MiniPay users get GoodReserve only — force-render the reserve pane
-    # even if the admin flag is off, since Uniswap is hidden for them.
+    # MiniPay users now have full access to BOTH the Uniswap V3 and GoodReserve
+    # swap modes (the Uniswap path uses CIP-64 fee abstraction so MiniPay can
+    # pay gas in cUSD/USDT/USDC). We still ensure the reserve pane renders so
+    # MiniPay always has at least the no-slippage reserve fallback available.
     ua = (request.headers.get("User-Agent") or "").lower()
     is_minipay = "minipay" in ua
     if is_minipay:
