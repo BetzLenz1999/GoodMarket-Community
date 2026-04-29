@@ -31,13 +31,44 @@ class FaucetFlowTests(unittest.TestCase):
             sess["verified"] = True
             sess["wallet"] = wallet
 
-    def test_onchain_endpoint_disabled(self):
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._execute_onchain_faucet_topup")
+    def test_onchain_endpoint_success(self, mock_onchain):
         self._auth_session()
-        resp = self.client.post("/api/faucet/onchain", json={"wallet": "0x1111111111111111111111111111111111111111"})
+        mock_onchain.return_value = {
+            "success": True,
+            "status": "onchain_sent",
+            "tx_hash": "0xabc",
+        }
+        resp = self.client.post(
+            "/api/faucet/onchain",
+            json={"wallet": "0x1111111111111111111111111111111111111111"},
+        )
         body = resp.get_json()
-        self.assertEqual(resp.status_code, 410)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(body["success"])
+        self.assertEqual(body["status"], "onchain_sent")
+        self.assertEqual(body["tx_hash"], "0xabc")
+        self.assertTrue(body["attempted_onchain"])
+
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._execute_onchain_faucet_topup")
+    def test_onchain_endpoint_not_configured(self, mock_onchain):
+        self._auth_session()
+        mock_onchain.return_value = {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": "not_configured",
+            "error": "On-chain faucet not configured (missing GAMES_KEY)",
+        }
+        resp = self.client.post(
+            "/api/faucet/onchain",
+            json={"wallet": "0x1111111111111111111111111111111111111111"},
+        )
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 503)
         self.assertFalse(body["success"])
-        self.assertEqual(body["status"], "disabled")
+        self.assertEqual(body["reason"], "not_configured")
 
     @patch("routes.Web3", new=FakeWeb3)
     @patch("routes._has_recent_refill")
@@ -107,12 +138,13 @@ class FaucetFlowTests(unittest.TestCase):
         self.assertFalse(body["attempted_onchain"])
         self.assertEqual(body["terminal_status"], "gas_ready")
 
+    @patch("routes._execute_onchain_faucet_topup")
     @patch("routes.urllib.request.urlopen")
     @patch("routes.Web3", new=FakeWeb3)
     @patch("routes._get_gas_status")
     @patch("routes._has_recent_refill")
-    def test_case3_api_fail_returns_api_failed_without_onchain(
-        self, mock_recent, mock_get_gas, mock_urlopen
+    def test_case3_api_fail_triggers_onchain_success(
+        self, mock_recent, mock_get_gas, mock_urlopen, mock_onchain
     ):
         self._auth_session()
         mock_recent.return_value = (False, 0)
@@ -122,19 +154,28 @@ class FaucetFlowTests(unittest.TestCase):
                 "required_gas_wei": "1000000000000000", "required_gas_celo": 0.001, "gas_ready": False,
             },
             {
-                "balance_wei": "0", "balance_celo": 0.0, "estimated_gas": 220000, "gas_price_wei": "1000000000",
-                "required_gas_wei": "1000000000000000", "required_gas_celo": 0.001, "gas_ready": False,
+                "balance_wei": "2000000000000000", "balance_celo": 0.002, "estimated_gas": 220000, "gas_price_wei": "1000000000",
+                "required_gas_wei": "1000000000000000", "required_gas_celo": 0.001, "gas_ready": True,
             },
         ]
         mock_urlopen.side_effect = Exception("api down")
+        mock_onchain.return_value = {
+            "success": True,
+            "status": "onchain_sent",
+            "tx_hash": "0xfallback",
+        }
 
         resp = self.client.post("/api/faucet/gas", json={"wallet": "0x1111111111111111111111111111111111111111"})
         body = resp.get_json()
         self.assertEqual(resp.status_code, 200)
-        self.assertFalse(body["attempted_onchain"])
-        self.assertEqual(body["status"], "api_failed")
-        self.assertEqual(body["terminal_status"], "api_failed")
-        self.assertEqual(body["reason"], "api down")
+        self.assertTrue(body["attempted_api"])
+        self.assertTrue(body["attempted_onchain"])
+        self.assertEqual(body["topup_source"], "onchain")
+        self.assertTrue(body["gas_ready"])
+        self.assertEqual(body["terminal_status"], "gas_ready")
+        self.assertEqual(body["api_error"], "api down")
+        self.assertEqual(body["diagnostics"]["fallback_reason"], "api_failed")
+        self.assertEqual(body["onchain_result"]["tx_hash"], "0xfallback")
 
     @patch("routes.Web3", new=FakeWeb3)
     @patch("routes._has_recent_refill")
@@ -154,12 +195,13 @@ class FaucetFlowTests(unittest.TestCase):
         self.assertFalse(body["attempted_api"])
         self.assertFalse(body["attempted_onchain"])
 
+    @patch("routes._execute_onchain_faucet_topup")
     @patch("routes.Web3", new=FakeWeb3)
     @patch("routes._has_recent_refill")
     @patch("routes._get_gas_status")
     @patch("routes.urllib.request.urlopen")
-    def test_case5_missing_games_key_no_longer_used(
-        self, mock_urlopen, mock_get_gas, mock_recent
+    def test_case5_missing_games_key_returns_not_configured(
+        self, mock_urlopen, mock_get_gas, mock_recent, mock_onchain
     ):
         self._auth_session()
         mock_recent.return_value = (False, 0)
@@ -174,24 +216,30 @@ class FaucetFlowTests(unittest.TestCase):
             },
         ]
         mock_urlopen.side_effect = Exception("api down")
+        mock_onchain.return_value = {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": "not_configured",
+            "error": "On-chain faucet not configured (missing GAMES_KEY)",
+        }
 
         resp = self.client.post("/api/faucet/gas", json={"wallet": "0x1111111111111111111111111111111111111111"})
         body = resp.get_json()
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(body["terminal_status"], "api_failed")
-        self.assertEqual(body["status"], "api_failed")
-        self.assertFalse(body["attempted_onchain"])
-        self.assertIsNone(body["onchain_result"])
-        self.assertEqual(body["reason"], "api down")
-        self.assertEqual(body["error"], "api down")
+        self.assertTrue(body["attempted_api"])
+        self.assertTrue(body["attempted_onchain"])
+        self.assertFalse(body["gas_ready"])
+        self.assertEqual(body["terminal_status"], "not_configured")
+        self.assertEqual(body["diagnostics"]["fallback_reason"], "api_failed")
+        self.assertEqual(body["onchain_result"]["reason"], "not_configured")
 
+    @patch("routes._execute_onchain_faucet_topup")
     @patch("routes.urllib.request.urlopen")
     @patch("routes.Web3", new=FakeWeb3)
     @patch("routes._has_recent_refill")
     @patch("routes._get_gas_status")
-    @patch("routes._poll_balance_increase")
-    def test_case6_force_onchain_is_ignored_and_api_path_is_used(
-        self, mock_poll, mock_get_gas, mock_recent, mock_urlopen
+    def test_case6_force_onchain_skips_api_and_uses_onchain(
+        self, mock_get_gas, mock_recent, mock_urlopen, mock_onchain
     ):
         self._auth_session()
         mock_recent.return_value = (False, 0)
@@ -205,13 +253,11 @@ class FaucetFlowTests(unittest.TestCase):
                 "required_gas_wei": "1000000000000000", "required_gas_celo": 0.001, "gas_ready": True,
             },
         ]
-        mock_poll.return_value = (1500000000000000, True)
-
-        class _Resp:
-            def __enter__(self): return self
-            def __exit__(self, *args): return False
-            def read(self): return b'{"ok":1,"txHash":"0xapi"}'
-        mock_urlopen.return_value = _Resp()
+        mock_onchain.return_value = {
+            "success": True,
+            "status": "onchain_sent",
+            "tx_hash": "0xforce",
+        }
 
         resp = self.client.post(
             "/api/faucet/gas",
@@ -219,21 +265,23 @@ class FaucetFlowTests(unittest.TestCase):
         )
         body = resp.get_json()
         self.assertEqual(resp.status_code, 200)
-        self.assertFalse(body["attempted_onchain"])
-        self.assertTrue(body["attempted_api"])
-        self.assertEqual(body["topup_source"], "api")
+        self.assertFalse(body["attempted_api"])
+        self.assertTrue(body["attempted_onchain"])
+        self.assertEqual(body["topup_source"], "onchain")
         self.assertTrue(body["gas_ready"])
         self.assertTrue(body["debug"]["force_onchain"])
-        self.assertEqual(body["onchain_attempts"], 0)
-        self.assertEqual(len(body["onchain_attempt_history"]), 0)
+        self.assertEqual(body["onchain_attempts"], 1)
+        self.assertEqual(mock_urlopen.call_count, 0)
 
+    @patch("routes._poll_balance_increase")
     @patch("routes.urllib.request.urlopen")
     @patch("routes.Web3", new=FakeWeb3)
     @patch("routes._has_recent_refill")
     @patch("routes._get_gas_status")
     def test_case7_force_onchain_string_false_does_not_force(
-        self, mock_get_gas, mock_recent, mock_urlopen
+        self, mock_get_gas, mock_recent, mock_urlopen, mock_poll
     ):
+        mock_poll.return_value = (2000000000000000, True)
         self._auth_session()
         mock_recent.return_value = (False, 0)
         mock_get_gas.side_effect = [
