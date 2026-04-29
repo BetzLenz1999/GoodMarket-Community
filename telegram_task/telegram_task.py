@@ -197,7 +197,7 @@ class TelegramTaskService:
         self.custom_messages = _TELEGRAM_MESSAGES
 
         self.telegram_channel = "GoodDollarX"
-        self.cooldown_hours = 24  # 24 hour cooldown
+        self.cooldown_hours = 72  # 72 hour cooldown
 
         logger.info("📱 Telegram Task Service initialized")
         # logger.info(f"💰 Reward: {self.task_reward} G$") # REMOVED - dynamic reward
@@ -406,8 +406,8 @@ class TelegramTaskService:
                     'last_claim': pending_time.isoformat()
                 }
 
-            # Check last COMPLETED or REJECTED claim within 24 hours
-            # Only check claims from the last 24 hours
+            # Check last COMPLETED or REJECTED claim within 72 hours
+            # Only check claims from the last 72 hours
             cutoff_time = datetime.now(timezone.utc) - timedelta(hours=self.cooldown_hours)
             last_claim = self.supabase.table('telegram_task_log')\
                 .select('created_at, status')\
@@ -418,7 +418,7 @@ class TelegramTaskService:
                 .limit(1)\
                 .execute()
 
-            logger.info(f"🔍 Recent claims (last 24h): {len(last_claim.data) if last_claim.data else 0}")
+            logger.info(f"🔍 Recent claims (last 72h): {len(last_claim.data) if last_claim.data else 0}")
             if last_claim.data:
                 logger.info(f"🔍 Last claim: {last_claim.data[0]}")
 
