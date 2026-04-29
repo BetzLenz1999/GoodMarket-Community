@@ -3001,16 +3001,41 @@
         async function logGoodMarketClaim(txHash, network, status) {
             try {
                 if (!txHash) return;
-                await fetch('/api/claims/v2/confirm', {
+                // Re-use the same claim_attempt_id across submitted → confirmed
+                // updates for a single tx so the events trail and facts row
+                // line up via that key.
+                window.__claimAttemptIds = window.__claimAttemptIds || {};
+                let attemptId = window.__claimAttemptIds[txHash];
+                if (!attemptId) {
+                    attemptId = (window.crypto && crypto.randomUUID)
+                        ? crypto.randomUUID()
+                        : ('attempt-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10));
+                    window.__claimAttemptIds[txHash] = attemptId;
+                }
+
+                const resp = await fetch('/api/claims/v2/confirm', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         tx_hash: txHash,
                         network: network || 'celo',
                         status: status || 'confirmed',
-                        correlation_id: window.__claimFaucetCorrelationId || null
+                        correlation_id: window.__claimFaucetCorrelationId || null,
+                        claim_attempt_id: attemptId
                     })
                 });
+                if (!resp.ok) {
+                    let body = '';
+                    try { body = await resp.text(); } catch (_) {}
+                    console.warn('[claim-log] /api/claims/v2/confirm returned', resp.status, body);
+                    return;
+                }
+                if (window.__claimDebug) {
+                    try {
+                        const data = await resp.json();
+                        console.log('[claim-log] recorded', data);
+                    } catch (_) {}
+                }
             } catch (e) {
                 console.warn('[claim-log] failed to record claim metric:', e);
             }
@@ -3609,6 +3634,11 @@
                 }
                 label.textContent = 'Confirming…';
                 setStatus('✅ Celo claim submitted. Waiting for confirmation…', 'var(--text-dim)');
+                // Log submission attribution immediately. If the user closes the
+                // page before pollReceipt sees the receipt, we still keep the
+                // 'submitted' row in goodmarket_claim_facts and the async
+                // verifier (or a follow-up confirm call) can upgrade it.
+                logGoodMarketClaim(txHash, 'celo', 'submitted');
                 pollReceipt(txHash, 20);
 
                 appendStatusLine('⏳ Attempting XDC claim…', '#60a5fa');

@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, make_response
 from blockchain import has_recent_ubi_claim, GOODDOLLAR_CONTRACTS
 from analytics_service import analytics
-from supabase_client import get_supabase_client, safe_supabase_operation, supabase_logger, log_admin_action
+from supabase_client import get_supabase_client, get_supabase_admin_client, safe_supabase_operation, supabase_logger, log_admin_action
 from notifications_service import NotificationService
 from web3 import Web3
 import json
@@ -98,29 +98,49 @@ def _coerce_bool(value) -> bool:
 @routes.route("/api/claims/v2/confirm", methods=["POST"])
 @auth_required
 def confirm_goodmarket_claim():
-    """Record GoodMarket-attributed claim transaction in Supabase facts/events tables."""
-    try:
-        payload = request.get_json(silent=True) or {}
-        wallet = (session.get("wallet") or "").strip().lower()
-        if not wallet:
-            return jsonify({"success": False, "error": "Authentication required"}), 401
+    """Record GoodMarket-attributed claim transaction in Supabase facts/events tables.
 
-        tx_hash = str(payload.get("tx_hash") or "").strip().lower()
-        network = str(payload.get("network") or "celo").strip().lower()
-        status = str(payload.get("status") or "confirmed").strip().lower()
-        correlation_id = str(payload.get("correlation_id") or "").strip() or None
-        claim_attempt_id = str(payload.get("claim_attempt_id") or "").strip() or str(uuid.uuid4())
+    Writes go through the service-role client (``get_supabase_admin_client``)
+    because the wallet user is *not* a Supabase Auth user and the tables have
+    RLS enabled with no anon-key policy. The anon client is kept as a
+    last-resort fallback for local/dev setups that haven't configured a
+    service-role key yet.
+    """
+    payload = request.get_json(silent=True) or {}
+    wallet = (session.get("wallet") or "").strip().lower()
+    if not wallet:
+        return jsonify({"success": False, "error": "Authentication required"}), 401
 
-        if not tx_hash.startswith("0x") or len(tx_hash) < 10:
-            return jsonify({"success": False, "error": "Invalid tx_hash"}), 400
-        if network not in ("celo", "xdc"):
-            return jsonify({"success": False, "error": "Invalid network"}), 400
-        if status not in ("submitted", "confirmed", "failed", "rejected", "unknown"):
-            return jsonify({"success": False, "error": "Invalid status"}), 400
+    tx_hash = str(payload.get("tx_hash") or "").strip().lower()
+    network = str(payload.get("network") or "celo").strip().lower()
+    status = str(payload.get("status") or "confirmed").strip().lower()
+    correlation_id = str(payload.get("correlation_id") or "").strip() or None
+    claim_attempt_id = str(payload.get("claim_attempt_id") or "").strip() or str(uuid.uuid4())
 
+    if not tx_hash.startswith("0x") or len(tx_hash) < 10:
+        return jsonify({"success": False, "error": "Invalid tx_hash"}), 400
+    if network not in ("celo", "xdc"):
+        return jsonify({"success": False, "error": "Invalid network"}), 400
+    if status not in ("submitted", "confirmed", "failed", "rejected", "unknown"):
+        return jsonify({"success": False, "error": "Invalid status"}), 400
+
+    # Prefer the service-role client so RLS doesn't silently drop writes.
+    sb = get_supabase_admin_client()
+    client_kind = "service_role"
+    if sb is None:
         sb = get_supabase_client()
-        now_iso = datetime.now(timezone.utc).isoformat()
+        client_kind = "anon_fallback"
+        logger.warning(
+            "[gm-claim-confirm] SUPABASE_SERVICE_ROLE_KEY not set — falling back to anon client. "
+            "Inserts will fail if RLS is enabled on goodmarket_claim_facts/_events."
+        )
+    if sb is None:
+        logger.error("[gm-claim-confirm] No Supabase client available")
+        return jsonify({"success": False, "error": "Storage unavailable"}), 503
 
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    try:
         existing_resp = sb.table("goodmarket_claim_facts")\
             .select("id, status, submitted_at, confirmed_at")\
             .eq("tx_hash", tx_hash)\
@@ -146,34 +166,63 @@ def confirm_goodmarket_claim():
 
         if existing:
             sb.table("goodmarket_claim_facts").update(row).eq("id", existing["id"]).execute()
+            logger.info(
+                f"[gm-claim-confirm] facts UPDATE wallet={wallet} network={network} "
+                f"tx={tx_hash[:12]}… status={status} client={client_kind}"
+            )
         else:
             row["created_at"] = now_iso
             sb.table("goodmarket_claim_facts").insert(row).execute()
+            logger.info(
+                f"[gm-claim-confirm] facts INSERT wallet={wallet} network={network} "
+                f"tx={tx_hash[:12]}… status={status} client={client_kind}"
+            )
+    except Exception as e_facts:
+        # Most common cause in production is "relation does not exist" when the
+        # SQL migration in sql/goodmarket_claim_attribution_v2.sql hasn't been
+        # applied yet. Surface it clearly instead of silently 500-ing.
+        msg = str(e_facts)
+        is_missing_table = "does not exist" in msg.lower() or "relation" in msg.lower()
+        logger.error(
+            f"[gm-claim-confirm] facts upsert failed (client={client_kind}, "
+            f"missing_table={is_missing_table}): {msg}"
+        )
+        return jsonify({
+            "success": False,
+            "error": (
+                "GoodMarket claim attribution tables not provisioned. "
+                "Run sql/goodmarket_claim_attribution_v2.sql in the Supabase SQL editor."
+            ) if is_missing_table else "Could not record claim",
+            "diagnostic": msg[:240],
+        }), 500
 
-        # Best-effort event log
-        try:
-            event_type = "claim_tx_confirmed" if status == "confirmed" else "claim_tx_submitted"
-            if status == "failed":
-                event_type = "claim_tx_failed"
-            elif status == "rejected":
-                event_type = "claim_tx_rejected"
-            sb.table("goodmarket_claim_events").insert({
-                "claim_attempt_id": claim_attempt_id,
-                "wallet_address": wallet,
-                "network": network,
-                "tx_hash": tx_hash,
-                "event_type": event_type,
-                "source": "goodmarket_wallet_ui",
-                "correlation_id": correlation_id,
-                "created_at": now_iso,
-            }).execute()
-        except Exception as e_evt:
-            logger.warning(f"claim event insert skipped: {e_evt}")
+    # Best-effort event log — never block the claim record on this.
+    try:
+        event_type = "claim_tx_confirmed" if status == "confirmed" else "claim_tx_submitted"
+        if status == "failed":
+            event_type = "claim_tx_failed"
+        elif status == "rejected":
+            event_type = "claim_tx_rejected"
+        sb.table("goodmarket_claim_events").insert({
+            "claim_attempt_id": claim_attempt_id,
+            "wallet_address": wallet,
+            "network": network,
+            "tx_hash": tx_hash,
+            "event_type": event_type,
+            "source": "goodmarket_wallet_ui",
+            "correlation_id": correlation_id,
+            "created_at": now_iso,
+        }).execute()
+    except Exception as e_evt:
+        # Idempotency unique-index violations are expected on repeat calls.
+        logger.warning(f"[gm-claim-confirm] event insert skipped: {e_evt}")
 
-        return jsonify({"success": True, "tx_hash": tx_hash, "status": status})
-    except Exception as e:
-        logger.error(f"confirm_goodmarket_claim error: {e}")
-        return jsonify({"success": False, "error": "Could not record claim"}), 500
+    return jsonify({
+        "success": True,
+        "tx_hash": tx_hash,
+        "status": status,
+        "claim_attempt_id": claim_attempt_id,
+    })
 
 
 def _parse_xdc_revert_message(raw_message: str, fallback_reason: str = "Transaction reverted on XDC.") -> dict:
@@ -6227,7 +6276,7 @@ def claim_page():
     )
 
 
-# ── Payment Link helpers ────────────────────────────────────────────────────
+# ── Payment Link helpers ─────────────────────────────────────────���──────────
 # Payment link private keys are NOT stored server-side.
 # The ephemeral key lives only in the browser (localStorage + URL hash).
 
