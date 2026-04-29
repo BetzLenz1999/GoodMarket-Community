@@ -7692,6 +7692,10 @@ def faucet_gas():
                 "not_configured" if (onchain_result or {}).get("reason") == "not_configured" else "onchain_failed"
             ))
         )
+        failure_message = (
+            None if (status_after["gas_ready"] or topped_up)
+            else ((onchain_result or {}).get("error") or api_error or "Gas top-up failed")
+        )
 
         return jsonify({
             "success": bool(status_after["gas_ready"] or topped_up),
@@ -7703,6 +7707,8 @@ def faucet_gas():
             "api_error": api_error,
             "onchain_result": onchain_result,
             "status": terminal_status,
+            "reason": failure_message,
+            "error": failure_message,
             "diagnostics": {
                 **diagnostics,
                 "fallback_reason": onchain_fallback_reason,
