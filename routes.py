@@ -286,6 +286,66 @@ def goodmarket_claim_health():
     return jsonify(out), 200
 
 
+@routes.route("/api/claims/v2/reconcile-one", methods=["POST"])
+@admin_required
+def goodmarket_claim_reconcile_one():
+    """Admin one-shot recheck of a single GoodMarket claim tx.
+
+    Body: ``{"tx_hash": "0x…", "network": "celo"|"xdc"}``.
+
+    Performs the same receipt fetch + DB update as the periodic reconciler
+    for a single row. Idempotent — calling it on an already-confirmed row
+    returns ``{"no_change": true, "status": "confirmed"}`` and does not
+    duplicate ``goodmarket_claim_events``.
+
+    Useful for rescuing rows that got stuck at ``status='submitted'``
+    because the wallet UI never delivered the receipt callback.
+    """
+    payload = request.get_json(silent=True) or {}
+    tx_hash = str(payload.get("tx_hash") or "").strip().lower()
+    network = str(payload.get("network") or "").strip().lower()
+
+    if not tx_hash.startswith("0x") or len(tx_hash) < 10:
+        return jsonify({"success": False, "error": "Invalid tx_hash"}), 400
+    if network not in ("celo", "xdc"):
+        return jsonify({"success": False, "error": "Invalid network"}), 400
+
+    try:
+        from goodmarket_claim_reconciler import reconcile_one
+        result = reconcile_one(tx_hash, network)
+    except Exception as exc:
+        logger.error(f"[gm-reconcile-one] crashed tx={tx_hash}: {exc}")
+        return jsonify({"success": False, "error": str(exc)[:240]}), 500
+
+    admin_wallet = (session.get("wallet") or "").lower()
+    logger.info(
+        f"[gm-reconcile-one] admin={admin_wallet[:10]}… tx={tx_hash[:12]}… "
+        f"network={network} result={result}"
+    )
+
+    status_code = 200 if result.get("success") else 400
+    return jsonify(result), status_code
+
+
+@routes.route("/api/claims/v2/reconciler-status", methods=["GET"])
+@admin_required
+def goodmarket_claim_reconciler_status():
+    """Diagnostic snapshot of the GoodMarket claim reconciler worker.
+
+    Returns whether the background loop is running, its config, and the
+    last cycle's summary. Use this to sanity-check that the reconciler
+    is actually polling in production:
+
+        await fetch('/api/claims/v2/reconciler-status').then(r => r.json())
+    """
+    try:
+        from goodmarket_claim_reconciler import get_reconciler
+        return jsonify({"success": True, **get_reconciler().status()}), 200
+    except Exception as exc:
+        logger.error(f"[gm-reconciler-status] error: {exc}")
+        return jsonify({"success": False, "error": str(exc)[:240]}), 500
+
+
 def _parse_xdc_revert_message(raw_message: str, fallback_reason: str = "Transaction reverted on XDC.") -> dict:
     """Normalize XDC revert outputs into user-facing and technical fields."""
     raw_msg = str(raw_message or "").strip()
