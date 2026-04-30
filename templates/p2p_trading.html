@@ -16,6 +16,9 @@
   .nav .brand { font-weight:700; font-size:1rem; }
   .nav .meta { color:var(--muted); font-size:.8rem; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
   .nav .meta span.dot { display:inline-block; width:.55rem; height:.55rem; border-radius:50%; background:var(--good); margin-right:.4rem; vertical-align:middle; }
+  .nav .right { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; justify-content:flex-end; }
+  .nav .dashboard-btn { display:inline-flex; align-items:center; justify-content:center; padding:.35rem .75rem; border:1px solid var(--line); border-radius:8px; color:var(--ink); font-size:.85rem; font-weight:600; background:rgba(255,255,255,.04); }
+  .nav .dashboard-btn:hover { text-decoration:none; background:rgba(255,255,255,.1); }
   .wrap { max-width:1100px; margin:0 auto; padding:1.25rem 1rem 4rem; }
   .tabs { display:flex; gap:.25rem; border-bottom:1px solid var(--line); margin-bottom:1.25rem; flex-wrap:wrap; align-items:center; }
   .tab { padding:.55rem .85rem; cursor:pointer; color:var(--muted); border-bottom:2px solid transparent; font-weight:500; font-size:.92rem; }
@@ -86,10 +89,13 @@
 <body>
 <div class="nav">
   <div class="brand">P2P Trading <span class="small">· GoodMarket</span></div>
-  <div class="meta">
-    <span class="dot"></span>
-    Contract: <a id="contractLink" target="_blank" rel="noopener">{{ contract.address }}</a>
-    · Wallet: <code>{{ wallet[:6] }}…{{ wallet[-4:] }}</code>
+  <div class="right">
+    <div class="meta">
+      <span class="dot"></span>
+      Contract: <a id="contractLink" target="_blank" rel="noopener">{{ contract.address }}</a>
+      · Wallet: <code>{{ wallet[:6] }}…{{ wallet[-4:] }}</code>
+    </div>
+    <a href="/dashboard" class="dashboard-btn" aria-label="Back to Dashboard">← Back to Dashboard</a>
   </div>
 </div>
 
