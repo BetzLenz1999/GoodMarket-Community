@@ -3789,10 +3789,27 @@ def reject_daily_task():
         logger.error(f"🔍 Traceback: {traceback.format_exc()}")
         return jsonify({"success": False, "error": str(e)}), 500
 
+# DEPRECATED: the threading.Thread + in-memory _bulk_jobs pattern below
+# does NOT survive Vercel's serverless function lifecycle — the lambda is
+# frozen/killed shortly after the response is returned, so the thread is
+# terminated mid-batch and the polling endpoint lands on a different
+# instance with an empty _bulk_jobs dict. The admin UI now drives bulk
+# approve/reject from the browser using the per-item endpoints
+# (/api/admin/daily-tasks/approve and /reject), which works reliably on
+# serverless because each call is its own short-lived request.
+#
+# These endpoints are kept for backwards compat in case external callers
+# still hit them, but the admin dashboard no longer uses them. Do NOT
+# build new functionality on top of this background-thread pattern; it
+# will silently lose work in production.
 _bulk_jobs = {}
 
 def _run_bulk_approve_job(job_id, tasks, delay_seconds, admin_wallet):
-    """Background thread worker for bulk approve daily tasks"""
+    """[DEPRECATED] Background thread worker for bulk approve daily tasks.
+
+    See the note above _bulk_jobs — the admin dashboard now drives bulk
+    operations from the browser instead of using this background job.
+    """
     import time as time_module
     import asyncio
 
