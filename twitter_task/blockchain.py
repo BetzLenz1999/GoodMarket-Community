@@ -241,8 +241,50 @@ class TwitterTaskBlockchain:
                     tx_hash_hex = '0x' + tx_hash_hex
                 logger.info(f"📤 Transaction sent: {tx_hash_hex}")
             except Exception as send_error:
-                logger.error(f"❌ Failed to send transaction: {send_error}")
-                return {"success": False, "error": f"Failed to send transaction: {str(send_error)}"}
+                send_error_str = str(send_error)
+                error_lower = send_error_str.lower()
+
+                # Sequencer/mempool price race: retry once with fresh nonce
+                # and a bumped gas price to avoid "transaction underpriced".
+                if any(msg in error_lower for msg in [
+                    "underpriced",
+                    "replacement transaction underpriced",
+                    "error_forwarding_sequencer",
+                    "already known",
+                    "nonce too low"
+                ]):
+                    try:
+                        logger.warning(f"⚠️ Initial send failed ({send_error_str}). Retrying with bumped gas price...")
+                        retry_nonce = self.w3.eth.get_transaction_count(task_account.address, 'pending')
+                        bumped_gas_price = min(int(gas_price * 1.25), MAX_GAS_PRICE_WEI)
+
+                        retry_txn = contract.functions.disburseReward(
+                            Web3.to_checksum_address(wallet_address),
+                            str(task_id),
+                            "twitter"
+                        ).build_transaction({
+                            'chainId': self.chain_id,
+                            'gas': gas_limit,
+                            'gasPrice': bumped_gas_price,
+                            'nonce': retry_nonce,
+                            'from': task_account.address
+                        })
+
+                        retry_signed = self.w3.eth.account.sign_transaction(retry_txn, task_key)
+                        tx_hash = self.w3.eth.send_raw_transaction(retry_signed.raw_transaction)
+                        tx_hash_hex = tx_hash.hex()
+                        if not tx_hash_hex.startswith('0x'):
+                            tx_hash_hex = '0x' + tx_hash_hex
+                        logger.info(
+                            f"📤 Retry transaction sent: {tx_hash_hex} "
+                            f"(nonce={retry_nonce}, gasPrice={bumped_gas_price/10**9:.2f} gwei)"
+                        )
+                    except Exception as retry_error:
+                        logger.error(f"❌ Retry send failed: {retry_error}")
+                        return {"success": False, "error": f"Failed to send transaction: {str(retry_error)}"}
+                else:
+                    logger.error(f"❌ Failed to send transaction: {send_error}")
+                    return {"success": False, "error": f"Failed to send transaction: {send_error_str}"}
 
             try:
                 receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
