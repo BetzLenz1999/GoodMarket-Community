@@ -142,10 +142,107 @@ class TwitterTaskBlockchain:
                 logger.error(f"❌ Failed to check contract balance: {balance_error}")
                 return {"success": False, "error": "Failed to check contract balance"}
 
+            # ----------------------------------------------------------
+            # Gas + balance preflight.
+            #
+            # The previous version hardcoded `gas: 600000`, so the L2
+            # sequencer reserved gas_limit × gas_price upfront from the
+            # task wallet even though disburseReward() really only burns
+            # ~120k. With sequencer spikes of ~200 gwei that meant
+            # ~0.15 CELO had to be sitting in the wallet before *any*
+            # tx could go out, producing the misleading
+            # "error_forwarding_sequencer: insufficient funds" error.
+            #
+            # Now: estimate real gas via eth_estimateGas, add a 20%
+            # safety buffer (capped at 500k as a sanity ceiling), cap
+            # gas price at 200 gwei, and verify the wallet can actually
+            # cover gas_limit × gas_price before broadcasting — surfacing
+            # a clear top-up message if not.
+            # ----------------------------------------------------------
             try:
                 nonce = self.w3.eth.get_transaction_count(task_account.address)
-                gas_price = int(self.w3.eth.gas_price * 1.2)
-                logger.info(f"⛽ Gas price: {gas_price} wei")
+
+                raw_gas_price = self.w3.eth.gas_price
+                gas_price = int(raw_gas_price * 1.2)
+                # Safety cap: 200 gwei. Celo L2 should never legitimately
+                # need more than this; if the sequencer reports higher we
+                # fail clearly instead of draining the task wallet.
+                MAX_GAS_PRICE_WEI = 200 * 10**9
+                if gas_price > MAX_GAS_PRICE_WEI:
+                    logger.warning(
+                        f"⚠️ Sequencer gas price {gas_price/10**9:.1f} gwei exceeds "
+                        f"safety cap {MAX_GAS_PRICE_WEI/10**9:.0f} gwei — clamping."
+                    )
+                    gas_price = MAX_GAS_PRICE_WEI
+
+                # Estimate the real gas this call needs.
+                try:
+                    estimated_gas = contract.functions.disburseReward(
+                        Web3.to_checksum_address(wallet_address),
+                        str(task_id),
+                        "twitter"
+                    ).estimate_gas({'from': task_account.address})
+                    gas_limit = min(int(estimated_gas * 1.2), 500_000)
+                    logger.info(
+                        f"⛽ Estimated gas: {estimated_gas} | limit (×1.2): {gas_limit} | "
+                        f"price: {gas_price/10**9:.2f} gwei"
+                    )
+                except Exception as est_err:
+                    # If estimate_gas reverts, the underlying call would also
+                    # revert on-chain — surface the reason instead of paying
+                    # to find out.
+                    err_str = str(est_err)
+                    revert_reason = err_str
+                    if hasattr(est_err, 'data') and est_err.data:
+                        raw = est_err.data
+                        if isinstance(raw, str):
+                            try:
+                                raw = bytes.fromhex(raw.replace('0x', ''))
+                                revert_reason = _decode_revert_reason(raw)
+                            except Exception:
+                                pass
+                    reason_lower = revert_reason.lower()
+                    if any(k in reason_lower for k in ['already', 'duplicate', 'rewarded', 'claimed']):
+                        error_type = "already_rewarded"
+                    elif any(k in reason_lower for k in ['balance', 'insufficient', 'funds']):
+                        error_type = "insufficient_balance"
+                    elif any(k in reason_lower for k in ['access', 'owner', 'authorized', 'permission']):
+                        error_type = "access_denied"
+                    else:
+                        error_type = "contract_revert"
+                    logger.error(f"❌ estimate_gas reverted [{error_type}]: {revert_reason}")
+                    return {
+                        "success": False,
+                        "error": f"Pre-flight check failed: {revert_reason}",
+                        "error_type": error_type,
+                        "revert_reason": revert_reason,
+                    }
+
+                # Wallet balance preflight — fail clearly with topup amount
+                # before broadcasting.
+                wallet_balance = self.w3.eth.get_balance(task_account.address)
+                tx_cost = gas_limit * gas_price
+                if wallet_balance < tx_cost:
+                    needed_eth = (tx_cost - wallet_balance) / 10**18
+                    have_eth = wallet_balance / 10**18
+                    cost_eth = tx_cost / 10**18
+                    logger.error(
+                        f"❌ Task wallet underfunded: have {have_eth:.6f} CELO, "
+                        f"need {cost_eth:.6f} CELO (top up ~{needed_eth:.6f} CELO)"
+                    )
+                    return {
+                        "success": False,
+                        "error": (
+                            f"Task wallet has {have_eth:.6f} CELO but this disbursement "
+                            f"needs {cost_eth:.6f} CELO for gas. Top up ~{needed_eth:.6f} "
+                            f"CELO to {task_account.address} and retry."
+                        ),
+                        "error_type": "task_wallet_underfunded",
+                        "task_wallet": task_account.address,
+                        "balance_celo": have_eth,
+                        "required_celo": cost_eth,
+                        "topup_celo": needed_eth,
+                    }
             except Exception as network_error:
                 logger.error(f"❌ Failed to get network info: {network_error}")
                 return {"success": False, "error": "Network error"}
@@ -157,7 +254,7 @@ class TwitterTaskBlockchain:
                     "twitter"
                 ).build_transaction({
                     'chainId': self.chain_id,
-                    'gas': 600000,
+                    'gas': gas_limit,
                     'gasPrice': gas_price,
                     'nonce': nonce,
                     'from': task_account.address
@@ -205,7 +302,7 @@ class TwitterTaskBlockchain:
                             "twitter"
                         ).build_transaction({
                             'chainId': self.chain_id,
-                            'gas': 600000,
+                            'gas': gas_limit,
                             'gasPrice': gas_price,
                             'nonce': nonce,
                             'from': task_account.address
