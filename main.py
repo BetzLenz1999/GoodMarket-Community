@@ -677,6 +677,23 @@ try:
 except Exception as e:
     logger.error(f"❌ P2P Trading initialization failed: {e}")
 
+# Initialize GoodMarket claim reconciler (opt-in via
+# GOODMARKET_CLAIM_RECONCILER_ENABLED). The reconciler is the server-side
+# safety net for goodmarket_claim_facts: it polls rows stuck at
+# status='submitted' and flips them to confirmed/failed/unknown based on
+# real on-chain receipts, so users who successfully claimed but whose
+# wallet UI never fired the receipt callback still roll into the
+# goodmarket_unique_claimers KPI.
+logger.info("🧮 Initializing GoodMarket claim reconciler...")
+try:
+    from goodmarket_claim_reconciler import init_goodmarket_claim_reconciler
+    if init_goodmarket_claim_reconciler(app):
+        logger.info("✅ GoodMarket claim reconciler started")
+    else:
+        logger.info("ℹ️ GoodMarket claim reconciler not started (disabled)")
+except Exception as e:
+    logger.error(f"❌ GoodMarket claim reconciler initialization failed: {e}")
+
 
 @app.route("/health")
 def health_check():
