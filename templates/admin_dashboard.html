@@ -4634,7 +4634,7 @@ async function loadMinigamesMaintenance() {
             modal.innerHTML = `
                 <div style="background: #1e1b4b; border: 1px solid rgba(99,102,241,0.4); border-radius: 16px; padding: 2rem; width: 100%; max-width: 560px; max-height: 80vh; overflow-y: auto;">
                     <h3 style="color: #a5b4fc; margin-bottom: 0.5rem; font-size: 1.2rem;">${title}</h3>
-                    <p style="color: rgba(241,245,249,0.6); font-size: 0.85rem; margin-bottom: 1.5rem;">Processing tasks one by one with a delay between each blockchain transaction...</p>
+                    <p style="color: rgba(241,245,249,0.6); font-size: 0.85rem; margin-bottom: 1.5rem;">Processing tasks one by one with a delay between each blockchain transaction. Keep this tab open until done.</p>
                     <div id="dtProgressList">${itemRows}</div>
                     <div id="dtProgressSummary" style="display: none; margin-top: 1.5rem; padding: 1rem; background: rgba(16,185,129,0.1); border-radius: 8px; text-align: center;">
                         <p id="dtSummaryText" style="color: #10b981; font-weight: 600; font-size: 1rem;"></p>
@@ -4657,77 +4657,124 @@ async function loadMinigamesMaintenance() {
             if (rowEl && icon === '❌') rowEl.style.background = 'rgba(239,68,68,0.07)';
         }
 
+        // ---------------------------------------------------------------
+        // Browser-driven bulk processing for daily tasks.
+        //
+        // Background:
+        //   The previous implementation POSTed all selected tasks to a
+        //   /bulk-approve endpoint that spawned a `threading.Thread` on
+        //   the server, then polled /bulk-status/<job_id>. That works on
+        //   a long-running server but breaks on Vercel serverless: the
+        //   instance is frozen/killed shortly after the HTTP response is
+        //   returned, so the thread is terminated mid-batch. The polling
+        //   call lands on a *different* lambda whose in-memory
+        //   _bulk_jobs dict is empty → returns {success:false} → frontend
+        //   silently exits → UI shows "Waiting..." forever.
+        //
+        // Fix:
+        //   Drive the loop from the browser using the existing per-item
+        //   endpoints. Each request is short and self-contained, so it
+        //   completes within the function's per-request budget.
+        // ---------------------------------------------------------------
+
+        async function _dtFetchWithTimeout(url, options, timeoutMs) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const resp = await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+                return resp;
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
+        async function _dtRunBulkSequential({ tasks, delaySeconds, perItemTimeoutMs, runOne, onItemDone }) {
+            let succeeded = 0;
+            let failed = 0;
+
+            for (let i = 0; i < tasks.length; i++) {
+                const t = tasks[i];
+                const key = `${t.submission_id}|${t.platform}`;
+                updateDtProgressItem(key, 'Processing...', '⏳', '#fbbf24');
+
+                try {
+                    const result = await runOne(t, perItemTimeoutMs);
+                    if (result && result.success) {
+                        succeeded++;
+                    } else {
+                        failed++;
+                    }
+                    if (typeof onItemDone === 'function') onItemDone(key, result);
+                } catch (err) {
+                    failed++;
+                    const isTimeout = err && err.name === 'AbortError';
+                    const msg = isTimeout
+                        ? 'Timed out — tx may still confirm; refresh to check'
+                        : (err && err.message) || 'Unknown error';
+                    updateDtProgressItem(key, `❌ ${msg}`, '❌', '#ef4444');
+                }
+
+                if (i < tasks.length - 1 && delaySeconds > 0) {
+                    await new Promise(r => setTimeout(r, delaySeconds * 1000));
+                }
+            }
+
+            return { succeeded, failed, total: tasks.length };
+        }
+
         async function bulkApproveDailyTasks() {
             const tasks = getDtSelectedTasks();
             if (tasks.length === 0) { alert('Please select at least one task.'); return; }
 
             const delayEl = document.getElementById('dtBulkDelaySeconds');
-            const delay = delayEl ? parseInt(delayEl.value) : 4;
+            let delay = delayEl ? parseInt(delayEl.value) : 4;
+            if (!Number.isFinite(delay) || delay < 0) delay = 4;
+            if (delay > 30) delay = 30;
 
-            if (!confirm(`Approve ${tasks.length} task(s)?\n\nDelay between transactions: ${delay} seconds\nEstimated time: ~${Math.round(tasks.length * delay / 60 * 10) / 10} min`)) return;
+            const estMin = Math.round(tasks.length * (delay + 8) / 60 * 10) / 10;
+            if (!confirm(
+                `Approve ${tasks.length} task(s)?\n\n` +
+                `Delay between transactions: ${delay} seconds\n` +
+                `Estimated time: ~${estMin} min\n\n` +
+                `Important: keep this tab open — tasks are processed one ` +
+                `at a time directly from your browser.`
+            )) return;
 
             showDtProgressModal('✅ Bulk Approve Daily Tasks', tasks);
 
-            try {
-                // Step 1: Start the background job — returns immediately with job_id
-                const startResp = await fetch('/api/admin/daily-tasks/bulk-approve', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ tasks: tasks, delay_seconds: delay })
-                });
-                const startData = await startResp.json();
-
-                if (!startData.success) {
-                    alert('❌ Bulk approve failed to start: ' + (startData.error || 'Unknown error'));
-                    document.getElementById('dtProgressModal')?.remove();
-                    return;
-                }
-
-                const jobId = startData.job_id;
-                let seenResults = new Set();
-
-                // Step 2: Poll status endpoint every 3 seconds for live progress
-                const poll = async () => {
-                    try {
-                        const statusResp = await fetch(`/api/admin/daily-tasks/bulk-status/${jobId}`);
-                        const statusData = await statusResp.json();
-
-                        if (!statusData.success) return;
-
-                        // Update UI for any newly completed results
-                        (statusData.results || []).forEach(r => {
-                            const key = `${r.submission_id}|${r.platform}`;
-                            if (!seenResults.has(key)) {
-                                seenResults.add(key);
-                                if (r.success) {
-                                    updateDtProgressItem(key, `✅ Sent · ${r.tx_hash ? r.tx_hash.substring(0,10)+'...' : 'OK'}`, '✅', '#10b981');
-                                } else {
-                                    updateDtProgressItem(key, `❌ ${r.error || 'Failed'}`, '❌', '#ef4444');
-                                }
-                            }
-                        });
-
-                        if (statusData.status === 'done') {
-                            const summaryEl = document.getElementById('dtProgressSummary');
-                            const summaryText = document.getElementById('dtSummaryText');
-                            if (summaryEl) summaryEl.style.display = 'block';
-                            if (summaryText) summaryText.textContent = `Done! ${statusData.succeeded} approved, ${statusData.failed} failed out of ${statusData.total} tasks.`;
-                        } else {
-                            setTimeout(poll, 3000);
-                        }
-                    } catch (pollErr) {
-                        console.warn('Poll error (retrying):', pollErr);
-                        setTimeout(poll, 3000);
+            const summary = await _dtRunBulkSequential({
+                tasks,
+                delaySeconds: delay,
+                // Allow up to ~3 minutes per item — covers slow Celo confirmation
+                // plus the backend's wait_for_transaction_receipt timeout.
+                perItemTimeoutMs: 180000,
+                runOne: async (t, timeoutMs) => {
+                    const resp = await _dtFetchWithTimeout('/api/admin/daily-tasks/approve', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ submission_id: t.submission_id, platform: t.platform })
+                    }, timeoutMs);
+                    let data;
+                    try { data = await resp.json(); }
+                    catch (_) { data = { success: false, error: `HTTP ${resp.status}` }; }
+                    return data;
+                },
+                onItemDone: (key, r) => {
+                    if (r && r.success) {
+                        const tx = r.tx_hash ? String(r.tx_hash).substring(0, 10) + '...' : 'OK';
+                        updateDtProgressItem(key, `✅ Sent · ${tx}`, '✅', '#10b981');
+                    } else {
+                        const err = (r && (r.error || r.message)) || 'Failed';
+                        updateDtProgressItem(key, `❌ ${err}`, '❌', '#ef4444');
                     }
-                };
+                }
+            });
 
-                setTimeout(poll, 2000);
-
-            } catch (error) {
-                console.error('Bulk approve daily tasks error:', error);
-                alert('❌ Error: ' + error.message);
-                document.getElementById('dtProgressModal')?.remove();
-            }
+            const summaryEl = document.getElementById('dtProgressSummary');
+            const summaryText = document.getElementById('dtSummaryText');
+            if (summaryEl) summaryEl.style.display = 'block';
+            if (summaryText) summaryText.textContent =
+                `Done! ${summary.succeeded} approved, ${summary.failed} failed out of ${summary.total} tasks.`;
         }
 
         async function bulkRejectDailyTasks() {
@@ -4738,38 +4785,43 @@ async function loadMinigamesMaintenance() {
             if (reason === null) return;
 
             showDtProgressModal('❌ Bulk Reject Daily Tasks', tasks);
-            tasks.forEach(t => updateDtProgressItem(`${t.submission_id}|${t.platform}`, 'Processing...', '⏳', '#fbbf24'));
 
-            try {
-                const response = await fetch('/api/admin/daily-tasks/bulk-reject', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ tasks: tasks, reason: reason })
-                });
-                const data = await response.json();
-
-                if (data.success && data.results) {
-                    data.results.forEach(r => {
-                        const key = `${r.submission_id}|${r.platform}`;
-                        if (r.success) {
-                            updateDtProgressItem(key, '✅ Rejected', '✅', '#10b981');
-                        } else {
-                            updateDtProgressItem(key, `❌ ${r.error || 'Failed'}`, '❌', '#ef4444');
-                        }
-                    });
-                    const summaryEl = document.getElementById('dtProgressSummary');
-                    const summaryText = document.getElementById('dtSummaryText');
-                    if (summaryEl) summaryEl.style.display = 'block';
-                    if (summaryText) summaryText.textContent = `Done! ${data.succeeded} rejected, ${data.failed} failed out of ${data.total} tasks.`;
-                } else {
-                    alert('❌ Bulk reject failed: ' + (data.error || 'Unknown error'));
-                    document.getElementById('dtProgressModal')?.remove();
+            // Reject is a DB-only operation, so 1s between requests is plenty
+            // and 30s per item is more than enough.
+            const summary = await _dtRunBulkSequential({
+                tasks,
+                delaySeconds: 1,
+                perItemTimeoutMs: 30000,
+                runOne: async (t, timeoutMs) => {
+                    const resp = await _dtFetchWithTimeout('/api/admin/daily-tasks/reject', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            submission_id: t.submission_id,
+                            platform: t.platform,
+                            reason: reason
+                        })
+                    }, timeoutMs);
+                    let data;
+                    try { data = await resp.json(); }
+                    catch (_) { data = { success: false, error: `HTTP ${resp.status}` }; }
+                    return data;
+                },
+                onItemDone: (key, r) => {
+                    if (r && r.success) {
+                        updateDtProgressItem(key, '✅ Rejected', '✅', '#10b981');
+                    } else {
+                        const err = (r && (r.error || r.message)) || 'Failed';
+                        updateDtProgressItem(key, `❌ ${err}`, '❌', '#ef4444');
+                    }
                 }
-            } catch (error) {
-                console.error('Bulk reject daily tasks error:', error);
-                alert('❌ Error: ' + error.message);
-                document.getElementById('dtProgressModal')?.remove();
-            }
+            });
+
+            const summaryEl = document.getElementById('dtProgressSummary');
+            const summaryText = document.getElementById('dtSummaryText');
+            if (summaryEl) summaryEl.style.display = 'block';
+            if (summaryText) summaryText.textContent =
+                `Done! ${summary.succeeded} rejected, ${summary.failed} failed out of ${summary.total} tasks.`;
         }
 
         document.addEventListener('DOMContentLoaded', function() {
