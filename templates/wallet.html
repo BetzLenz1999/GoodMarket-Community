@@ -772,6 +772,98 @@
         }
         .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(var(--accent-rgb),0.38); }
         .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* ─────────────────────────────────────────────────────────────
+           Plasma Ember — "hot" state for #ubiClaimBtn only.
+           Activates via .is-hot class which a small MutationObserver
+           toggles when the button is enabled AND showing a Claim label.
+           Falls back to the original .btn-primary styling on disabled.
+           ───────────────────────────────────────────────────────────── */
+        #ubiClaimBtn.is-hot {
+            position: relative;
+            background: linear-gradient(
+                110deg,
+                #ff6a00 0%,
+                #ff2e63 32%,
+                #ffae00 64%,
+                #ff6a00 100%
+            );
+            background-size: 220% 100%;
+            border: 1px solid rgba(255, 180, 80, 0.55);
+            color: #fff;
+            text-shadow: 0 1px 2px rgba(120, 20, 0, 0.5);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 230, 180, 0.35),
+                0 0 0 1px rgba(255, 138, 0, 0.25),
+                0 6px 22px rgba(255, 46, 99, 0.38),
+                0 14px 44px rgba(255, 138, 0, 0.28);
+            animation:
+                ubiClaimHeatShift 3.2s linear infinite,
+                ubiClaimEmberPulse 2.4s ease-in-out infinite;
+            overflow: visible;
+        }
+        /* Small flame badge — kept on top-right via pseudo so we never
+           touch the existing #ubiClaimIcon JS that swaps coin/check/etc. */
+        #ubiClaimBtn.is-hot::after {
+            content: "🔥";
+            position: absolute;
+            top: -10px;
+            right: -6px;
+            font-size: 1.05rem;
+            line-height: 1;
+            filter: drop-shadow(0 2px 4px rgba(255, 100, 0, 0.75));
+            animation: ubiClaimFlameWiggle 1.4s ease-in-out infinite;
+            pointer-events: none;
+            transform-origin: 50% 100%;
+        }
+        #ubiClaimBtn.is-hot:hover {
+            transform: translateY(-1px) scale(1.01);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 230, 180, 0.45),
+                0 0 0 1px rgba(255, 200, 110, 0.5),
+                0 10px 30px rgba(255, 46, 99, 0.55),
+                0 22px 56px rgba(255, 138, 0, 0.42);
+        }
+        /* When the button is busy/disabled the .is-hot class is removed by
+           the observer, but this is a defensive safety net in case any
+           code path leaves both states applied. */
+        #ubiClaimBtn.is-hot:disabled {
+            animation: none;
+            background: linear-gradient(135deg, #6673ff, #4fdfc8);
+            border: none;
+            box-shadow: none;
+            text-shadow: none;
+        }
+        #ubiClaimBtn.is-hot:disabled::after { display: none; }
+
+        @keyframes ubiClaimHeatShift {
+            0%   { background-position:   0% 50%; }
+            100% { background-position: 220% 50%; }
+        }
+        @keyframes ubiClaimEmberPulse {
+            0%, 100% {
+                box-shadow:
+                    inset 0 1px 0 rgba(255, 230, 180, 0.35),
+                    0 0 0 1px rgba(255, 138, 0, 0.25),
+                    0 6px 22px rgba(255, 46, 99, 0.38),
+                    0 14px 44px rgba(255, 138, 0, 0.28);
+            }
+            50% {
+                box-shadow:
+                    inset 0 1px 0 rgba(255, 230, 180, 0.5),
+                    0 0 0 1px rgba(255, 200, 110, 0.45),
+                    0 8px 28px rgba(255, 46, 99, 0.55),
+                    0 18px 54px rgba(255, 138, 0, 0.42);
+            }
+        }
+        @keyframes ubiClaimFlameWiggle {
+            0%, 100% { transform: translateY(0)    rotate(-4deg) scale(1); }
+            50%      { transform: translateY(-1px) rotate(4deg)  scale(1.06); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #ubiClaimBtn.is-hot,
+            #ubiClaimBtn.is-hot::after { animation: none !important; }
+        }
         .btn-secondary {
             width: 100%;
             background: rgba(255,255,255,0.06);
@@ -2642,6 +2734,60 @@
         const label  = document.getElementById('ubiClaimLabel');
         const icon   = document.getElementById('ubiClaimIcon');
         const status = document.getElementById('ubiClaimStatus');
+
+        // ─────────────────────────────────────────────────────────────
+        // Plasma Ember "is-hot" toggle.
+        // The claim button's state is mutated from ~30 different sites
+        // (label.textContent / btn.disabled flips). Instead of editing
+        // every site, we *derive* the hot state from observable button
+        // state via a MutationObserver. This keeps the change scoped,
+        // safe to revert (delete this block + the .is-hot CSS = gone),
+        // and impossible to leave out-of-sync.
+        // ─────────────────────────────────────────────────────────────
+        (function setupUbiClaimHotState() {
+            if (!btn || !label) return;
+
+            // Match labels that mean "ready to claim now":
+            //   "Claim G$"
+            //   "Claim 99 G$ (Celo + XDC)"
+            // Reject in-progress / done / verify-needed labels.
+            const HOT_LABEL_RE  = /^\s*claim\s/i;
+            const COLD_LABEL_RE = /(verify|checking|preparing|confirming|claimed|already|loading|wait)/i;
+
+            let _evalScheduled = false;
+            function _doEvaluate() {
+                _evalScheduled = false;
+                const txt = (label.textContent || '').trim();
+                const isClaimable =
+                    !btn.disabled &&
+                    HOT_LABEL_RE.test(txt) &&
+                    !COLD_LABEL_RE.test(txt);
+                if (isClaimable) {
+                    if (!btn.classList.contains('is-hot')) btn.classList.add('is-hot');
+                } else if (btn.classList.contains('is-hot')) {
+                    btn.classList.remove('is-hot');
+                }
+            }
+            function evaluate() {
+                // Coalesce bursty mutations (label + disabled often flip
+                // together) into a single rAF-scheduled evaluation.
+                if (_evalScheduled) return;
+                _evalScheduled = true;
+                requestAnimationFrame(_doEvaluate);
+            }
+
+            const labelObs = new MutationObserver(evaluate);
+            labelObs.observe(label, { childList: true, characterData: true, subtree: true });
+
+            const btnObs = new MutationObserver(evaluate);
+            btnObs.observe(btn, { attributes: true, attributeFilter: ['disabled', 'class'] });
+
+            // Initial pass + a couple of deferred passes for late-rendered
+            // entitlement data (claimable label is set after fetch resolves).
+            evaluate();
+            setTimeout(evaluate, 300);
+            setTimeout(evaluate, 1500);
+        })();
 
         function setStatus(msg, color) {
             status.innerHTML = msg;
