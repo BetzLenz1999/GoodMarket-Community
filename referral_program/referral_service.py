@@ -432,6 +432,7 @@ class ReferralService:
         """
         Attempt to disburse all pending_disbursed referral rewards.
         Called when admin triggers it or automatically when REFERRAL_KEY is topped up.
+        Retries rewards with status 'pending' (awaiting face verification) and 'pending_disbursed' (awaiting balance).
         """
         from referral_program.blockchain import referral_blockchain_service
 
@@ -439,10 +440,11 @@ class ReferralService:
         if not supabase:
             return {"success": False, "error": "Database not available"}
 
+        # Fetch both 'pending' (awaiting face verification) and 'pending_disbursed' (awaiting balance) rewards
         pending_rewards = _safe(
             lambda: supabase.table('referral_rewards_log')
                 .select('*')
-                .eq('status', 'pending')
+                .in_('status', ['pending', 'pending_disbursed'])
                 .order('created_at', desc=False)
                 .execute(),
             op="get pending referral rewards"
@@ -517,6 +519,48 @@ class ReferralService:
             lambda: supabase.table('referrals').update(update_data).eq('referral_code', referral_code).execute(),
             op="update referral status by code"
         )
+
+    def get_pending_disbursement_summary(self) -> dict:
+        """Get summary of pending disbursements waiting for REFERRAL_KEY balance."""
+        supabase = _get_supabase()
+        if not supabase:
+            return {"success": False, "error": "Database not available"}
+
+        pending_result = _safe(
+            lambda: supabase.table('referral_rewards_log')
+                .select('*')
+                .eq('status', 'pending_disbursed')
+                .order('created_at', desc=False)
+                .execute(),
+            op="get pending_disbursed rewards"
+        )
+
+        if not pending_result or not pending_result.data:
+            return {
+                "success": True,
+                "total_pending": 0,
+                "total_amount": 0.0,
+                "rewards": []
+            }
+
+        rewards = pending_result.data
+        total_amount = sum(float(r.get('reward_amount', 0)) for r in rewards)
+
+        return {
+            "success": True,
+            "total_pending": len(rewards),
+            "total_amount": total_amount,
+            "rewards": [
+                {
+                    "wallet": r.get('wallet_address'),
+                    "amount": float(r.get('reward_amount', 0)),
+                    "type": r.get('reward_type'),
+                    "created_at": r.get('created_at'),
+                    "status": r.get('status')
+                }
+                for r in rewards
+            ]
+        }
 
 
 referral_service = ReferralService()
