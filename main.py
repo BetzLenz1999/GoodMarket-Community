@@ -1543,8 +1543,9 @@ def _process_referral_disbursement(referral_blockchain_service, referral_service
         referee_result = referral_blockchain_service.disburse_referral_reward_sync(
             referee_wallet, _REFEREE_AMOUNT, 'referee')
 
-        referrer_status = 'completed' if referrer_result.get('success') else 'pending'
-        referee_status = 'completed' if referee_result.get('success') else 'pending'
+        # Determine final status based on success and pending balance checks
+        referrer_status = 'completed' if referrer_result.get('success') else ('pending_disbursed' if referrer_result.get('pending') else 'failed')
+        referee_status = 'completed' if referee_result.get('success') else ('pending_disbursed' if referee_result.get('pending') else 'failed')
 
         referral_service.log_reward(referrer_wallet, _REFERRER_AMOUNT, 'referrer',
                                     referral_code, referrer_result.get('tx_hash'), referrer_status)
@@ -1555,9 +1556,12 @@ def _process_referral_disbursement(referral_blockchain_service, referral_service
             referral_service.update_referral_status(referee_wallet, 'completed')
             referral_service.increment_referrer_stats(referrer_wallet, _REFERRER_AMOUNT)
             logger.info(f"✅ Referral rewards disbursed: {referral_code} | referrer={referrer_wallet[:8]}...")
+        elif referrer_result.get('pending') or referee_result.get('pending'):
+            referral_service.update_referral_status(referee_wallet, 'pending_disbursed', 'Insufficient REFERRAL_KEY balance')
+            logger.warning(f"⚠️ Referral reward pending disbursement (insufficient balance) for {referral_code}")
         else:
-            referral_service.update_referral_status(referee_wallet, 'pending_disbursed', 'Insufficient balance')
-            logger.warning(f"⚠️ Referral reward pending disbursement for {referral_code}")
+            referral_service.update_referral_status(referee_wallet, 'failed', f"Referrer: {referrer_result.get('error', 'unknown')} | Referee: {referee_result.get('error', 'unknown')}")
+            logger.error(f"❌ Referral reward disbursement failed for {referral_code}")
     except Exception as e:
         logger.error(f"❌ Referral disbursement error: {e}")
 

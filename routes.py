@@ -3695,6 +3695,53 @@ def process_pending_referral_rewards():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@routes.route("/api/admin/referral/key-balance", methods=["GET"])
+@admin_required
+def get_referral_key_balance():
+    """Admin: check REFERRAL_KEY wallet balance and pending disbursement queue."""
+    try:
+        from referral_program.blockchain import referral_blockchain_service
+        from referral_program.referral_service import referral_service
+        
+        # Check REFERRAL_KEY balance
+        balance_result = referral_blockchain_service.get_referral_wallet_balance()
+        
+        # Count pending disbursements waiting for balance
+        supabase = get_supabase_client()
+        pending_count = 0
+        total_pending_amount = 0.0
+        
+        if supabase:
+            try:
+                pending_rewards = safe_supabase_operation(
+                    lambda: supabase.table('referral_rewards_log')
+                        .select('reward_amount')
+                        .eq('status', 'pending_disbursed')
+                        .execute(),
+                    fallback_result=type('obj', (object,), {'data': []})(),
+                    operation_name="get pending disbursed count"
+                )
+                if pending_rewards and pending_rewards.data:
+                    pending_count = len(pending_rewards.data)
+                    total_pending_amount = sum(float(r.get('reward_amount', 0)) for r in pending_rewards.data)
+            except Exception as e:
+                logger.warning(f"Could not fetch pending disbursements count: {e}")
+        
+        return jsonify({
+            "success": balance_result.get("success", False),
+            "balance_g": balance_result.get("balance", 0),
+            "balance_wei": balance_result.get("balance_wei", 0),
+            "wallet": balance_result.get("wallet", "N/A"),
+            "pending_disbursements_count": pending_count,
+            "total_pending_amount_g": total_pending_amount,
+            "can_process": (balance_result.get("balance", 0) >= total_pending_amount) if balance_result.get("success") else False,
+            "error": balance_result.get("error")
+        })
+    except Exception as e:
+        logger.error(f"Error checking referral key balance: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @routes.route("/api/referral/check/<referral_code>", methods=["GET"])
 def check_referral_status(referral_code):
     """Check referral code status and history (for debugging)"""
