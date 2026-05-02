@@ -201,7 +201,7 @@ def fetch_users(sb, start_iso: str, end_iso: str) -> List[Dict[str, Any]]:
         q = (
             sb.table("user_data")
             .select(
-                "id,wallet_address,first_login,verified_after_goodmarket,verified_at_goodmarket_at,profile_username"
+                "id,wallet_address,first_login,verified_after_goodmarket,verification_timestamp,profile_username"
             )
             .gte("first_login", start_iso)
             .lte("first_login", end_iso)
@@ -316,7 +316,7 @@ def main():
         wallet = (r["wallet_address"] or "").strip()
         first_login = parse_iso_to_dt(r.get("first_login"))
         verified_via_gm = r.get("verified_after_goodmarket")
-        v_at = parse_iso_to_dt(r.get("verified_at_goodmarket_at"))
+        v_at = parse_iso_to_dt(r.get("verification_timestamp"))
         username = r.get("profile_username") or ""
 
         print(
@@ -358,7 +358,7 @@ def main():
                 "first_claim_tx": first_claim_tx,
                 "first_claim_block": first_claim_block,
                 "verified_after_goodmarket": bool(verified_via_gm),
-                "verified_at_goodmarket_at_utc": v_at.isoformat() if v_at else "",
+                "verification_timestamp_utc": v_at.isoformat() if v_at else "",
                 "celoscan_url": (
                     f"https://celoscan.io/tx/{first_claim_tx}" if first_claim_tx else ""
                 ),
