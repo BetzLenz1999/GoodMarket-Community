@@ -368,6 +368,7 @@
 
     <div class="container">
         {% include "_security_banner.html" %}
+        {% include "_claim_celebration.html" %}
 
         <!-- Header -->
         <div class="page-header">
@@ -1921,6 +1922,7 @@
                         );
                         btnText.textContent = '✅ Already Claimed';
                         setTimeout(() => window.loadXDCGDInfo && window.loadXDCGDInfo(), 5000);
+                        try { window.showClaimCelebration && window.showClaimCelebration({ networks: ['xdc'] }); } catch (_) {}
                     } else {
                         setAlert('alert-error', '❌ ' + (d.error || 'Claim failed'));
                         btn.disabled = false;
@@ -2123,6 +2125,7 @@
                 startXDCCountdown();
 
                 setTimeout(() => { loadGDInfo(); loadBalances(); }, 4000);
+                try { window.showClaimCelebration && window.showClaimCelebration({ networks: ['xdc'] }); } catch (_) {}
 
             } catch (err) {
                 let msg = err.message || 'Transaction failed';

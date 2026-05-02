@@ -1127,6 +1127,7 @@
         </div>
     </div>
     {% include "_security_banner.html" %}
+    {% include "_claim_celebration.html" %}
     <div id="walletReminderBanner" class="wallet-reminder-banner hidden">
         ✅ MetaMask mobile and MetaMask desktop users can now claim both Celo G$ and XDC G$ in one unified flow. After a successful Celo claim, please wait at least 3 seconds so the Signer Network step for XDC can appear automatically.
     </div>
@@ -3136,6 +3137,7 @@
                         logGoodMarketClaim(txHash, 'celo', 'confirmed');
                         startCountdown();
                         setTimeout(() => loadBalances(), 4000);
+                        try { window.showClaimCelebration && window.showClaimCelebration({ networks: ['celo'] }); } catch (_) {}
                     } else {
                         btn.disabled = false; label.textContent = 'Claim G$'; icon.textContent = '🪙';
                         setStatus('Transaction failed. You may have already claimed today.', 'var(--red)');
@@ -4081,6 +4083,7 @@
                         `✅ XDC claim submitted: <a href="https://xdcscan.com/tx/${xdcTxHash}" target="_blank" rel="noopener" style="color:#86efac;">${xdcTxHash.slice(0, 10)}...${xdcTxHash.slice(-6)}</a>`,
                         '#86efac'
                     );
+                    try { window.showClaimCelebration && window.showClaimCelebration({ networks: ['xdc'] }); } catch (_) {}
                 } catch (xdcErr) {
                     const rawXdc = (xdcErr && (xdcErr.shortMessage || xdcErr.message)) || 'XDC claim failed';
                     let xdcMsg;
@@ -4146,6 +4149,7 @@
                                     `✅ XDC claim submitted: <a href="https://xdcscan.com/tx/${xdcTxHash}" target="_blank" rel="noopener" style="color:#86efac;">${xdcTxHash.slice(0, 10)}...${xdcTxHash.slice(-6)}</a>`,
                                     '#86efac'
                                 );
+                                try { window.showClaimCelebration && window.showClaimCelebration({ networks: ['xdc'] }); } catch (_) {}
                             }
                         }
                     } catch (xdcErr) {
