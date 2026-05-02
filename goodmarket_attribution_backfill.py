@@ -95,6 +95,25 @@ AUTO_RUN_BOOT_DELAY_SECONDS = int(
     os.getenv("GOODMARKET_ATTRIBUTION_BACKFILL_BOOT_DELAY_SECONDS", "30")
 )
 
+# Window (in hours) used by the "first login == first claim" rule. If a
+# wallet's first GoodMarket-recorded claim happens within this many hours of
+# their first_login, we treat that as proof they face-verified through
+# GoodMarket. 24h is generous enough for legit users (login -> tap claim ->
+# finish FV -> claim confirms) without being so loose it lets unrelated
+# activity leak in.
+FIRST_LOGIN_MATCH_WINDOW_HOURS = int(
+    os.getenv("GOODMARKET_ATTRIBUTION_FIRST_LOGIN_WINDOW_HOURS", "24")
+)
+
+# Tolerance (in seconds) for clock skew between the user_data row's
+# first_login (set by /verify-identity) and the claim_facts row's earliest
+# timestamp (written by /api/claims/v2/confirm). Real wallets occasionally
+# have first_claim < first_login by a handful of seconds because of how the
+# rows are upserted; we don't want to drop those.
+FIRST_LOGIN_MATCH_NEGATIVE_TOLERANCE_SECONDS = int(
+    os.getenv("GOODMARKET_ATTRIBUTION_FIRST_LOGIN_NEG_TOL_SECONDS", "3600")
+)
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -102,6 +121,89 @@ AUTO_RUN_BOOT_DELAY_SECONDS = int(
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_iso(ts: Any) -> Optional[datetime]:
+    """Parse an ISO-8601 timestamp from Supabase. Returns aware UTC datetime.
+
+    Supabase returns several flavours: '2026-05-01T09:20:00+00:00',
+    '2026-05-01T09:20:00Z', or sometimes naive '2026-05-01T09:20:00'.
+    We normalise to a timezone-aware UTC datetime so subtraction works.
+    """
+    if not ts or not isinstance(ts, str):
+        return None
+    try:
+        s = ts.strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _get_first_claim_timestamp(sb, wallet_address: str) -> Optional[datetime]:
+    """Earliest timestamp recorded in goodmarket_claim_facts for this wallet.
+
+    Each fact row has up to three time fields; we pick the smallest non-null
+    one across submitted_at / confirmed_at / created_at so we capture the
+    very first moment GoodMarket's backend saw this wallet claim.
+    Returns None if the wallet has no rows or every read fails.
+    """
+    try:
+        resp = sb.table("goodmarket_claim_facts")\
+            .select("submitted_at, confirmed_at, created_at")\
+            .ilike("wallet_address", wallet_address)\
+            .order("created_at", desc=False)\
+            .limit(1)\
+            .execute()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            f"[gm-backfill] read goodmarket_claim_facts failed for "
+            f"{(wallet_address or '')[:10]}...: {exc}"
+        )
+        return None
+
+    if not resp or not resp.data:
+        return None
+
+    row = resp.data[0] or {}
+    candidates = [
+        _parse_iso(row.get("submitted_at")),
+        _parse_iso(row.get("confirmed_at")),
+        _parse_iso(row.get("created_at")),
+    ]
+    candidates = [c for c in candidates if c is not None]
+    if not candidates:
+        return None
+    return min(candidates)
+
+
+def _login_matches_first_claim(
+    first_login: Optional[datetime],
+    first_claim: Optional[datetime],
+    window_hours: int = FIRST_LOGIN_MATCH_WINDOW_HOURS,
+    negative_tolerance_seconds: int = FIRST_LOGIN_MATCH_NEGATIVE_TOLERANCE_SECONDS,
+) -> bool:
+    """Return True if the user's first GoodMarket login lines up with their
+    first GoodMarket claim, i.e. they came to GoodMarket and claimed there.
+
+    Match rule:
+        first_login - tolerance  <=  first_claim  <=  first_login + window
+
+    A small negative tolerance handles harmless clock skew (claim_facts row
+    created milliseconds before user_data.first_login was upserted).
+    """
+    if not first_login or not first_claim:
+        return False
+    delta_seconds = (first_claim - first_login).total_seconds()
+    if delta_seconds < -abs(negative_tolerance_seconds):
+        return False
+    if delta_seconds > window_hours * 3600:
+        return False
+    return True
 
 
 def _get_sb_client():
@@ -294,20 +396,53 @@ def mark_verified_via_goodmarket(
 # Bulk backfill
 # ---------------------------------------------------------------------------
 
-def _collect_candidate_wallets(sb) -> List[str]:
-    """Pull every distinct wallet that has activity in goodmarket_claim_facts.
+def _parse_iso_ts(value: Any) -> Optional[datetime]:
+    """Parse a Supabase timestamptz string into an aware UTC datetime.
+
+    Returns None for missing / unparseable values so callers can use a simple
+    truthy check. Handles both ``...Z`` and ``...+00:00`` suffixes.
+    """
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not isinstance(value, str):
+        return None
+    s = value.strip()
+    if not s:
+        return None
+    # Python's fromisoformat accepts +00:00 but not Z (until 3.11+); normalise.
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _collect_candidate_wallets(sb) -> Dict[str, Optional[datetime]]:
+    """Pull every distinct wallet that has activity in goodmarket_claim_facts,
+    along with each wallet's *first* claim timestamp.
+
+    The first-claim timestamp is the earliest of ``confirmed_at`` /
+    ``submitted_at`` / ``created_at`` for any row belonging to that wallet —
+    whichever is present, in that order of preference. We aggregate in Python
+    instead of a SQL ``MIN()`` because (a) it lets us fall back across columns
+    cleanly, and (b) the supabase-py REST client doesn't expose group-by.
 
     Paginates through the table because Supabase's REST default limit is 1000
-    rows. Returns checksum-normalised addresses, de-duplicated.
+    rows. Returned keys are checksum-normalised when valid, otherwise the raw
+    lowercase address.
     """
-    seen: Set[str] = set()
+    first_claim_by_wallet: Dict[str, Optional[datetime]] = {}
     page_size = 1000
     offset = 0
 
     while True:
         try:
             resp = sb.table("goodmarket_claim_facts")\
-                .select("wallet_address")\
+                .select("wallet_address, confirmed_at, submitted_at, created_at")\
                 .range(offset, offset + page_size - 1)\
                 .execute()
         except Exception as exc:  # noqa: BLE001
@@ -323,26 +458,56 @@ def _collect_candidate_wallets(sb) -> List[str]:
 
         for row in rows:
             raw = (row or {}).get("wallet_address")
-            checksum = _to_checksum(raw) if raw else None
-            if checksum:
-                seen.add(checksum)
-            elif raw:
-                # Address didn't validate — keep the original lowercase form
-                # so we still try to update; ilike is case-insensitive.
-                seen.add(str(raw).strip())
+            if not raw:
+                continue
+            checksum = _to_checksum(raw)
+            key = checksum or str(raw).strip()
+            if not key:
+                continue
+
+            # Pick the earliest available timestamp on this row. Confirmed
+            # is the gold standard; submitted/created are fallbacks for rows
+            # that never made it to confirmation.
+            ts = (
+                _parse_iso_ts(row.get("confirmed_at"))
+                or _parse_iso_ts(row.get("submitted_at"))
+                or _parse_iso_ts(row.get("created_at"))
+            )
+
+            current = first_claim_by_wallet.get(key, "__missing__")
+            if current == "__missing__":
+                first_claim_by_wallet[key] = ts
+            elif ts is not None and (current is None or ts < current):
+                first_claim_by_wallet[key] = ts
 
         if len(rows) < page_size:
             break
         offset += page_size
 
-        if len(seen) >= MAX_WALLETS_PER_RUN:
+        if len(first_claim_by_wallet) >= MAX_WALLETS_PER_RUN:
             logger.info(
                 f"[gm-backfill] candidate cap reached "
                 f"({MAX_WALLETS_PER_RUN}); stopping pagination"
             )
             break
 
-    return sorted(seen)
+    return first_claim_by_wallet
+
+
+def _is_same_utc_day(a: Optional[datetime], b: Optional[datetime]) -> bool:
+    """Return True when two timestamps fall on the same UTC calendar day.
+
+    Used as the deterministic attribution rule: when a wallet's
+    ``user_data.first_login`` and their first ``goodmarket_claim_facts`` entry
+    land on the same UTC day, that's strong evidence they performed face
+    verification through GoodMarket (they walked in, signed up, and claimed
+    on day one). No on-chain RPC needed in that case.
+    """
+    if a is None or b is None:
+        return False
+    a_utc = a.astimezone(timezone.utc)
+    b_utc = b.astimezone(timezone.utc)
+    return (a_utc.year, a_utc.month, a_utc.day) == (b_utc.year, b_utc.month, b_utc.day)
 
 
 def run_full_backfill(dry_run: bool = False, limit: Optional[int] = None) -> Dict[str, Any]:
