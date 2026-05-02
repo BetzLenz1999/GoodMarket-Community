@@ -1223,6 +1223,10 @@
                     <div class="action-circle">💳</div>
                     <span class="action-label">Virtual Card</span>
                 </div>
+                <div class="action-item" id="actionMobileTopup" onclick="handleMobileTopupAction()">
+                    <div class="action-circle" style="background:linear-gradient(135deg,#f97316,#ef4444);color:#fff;">📱</div>
+                    <span class="action-label">Mobile Top-Up</span>
+                </div>
                 <div class="action-item" onclick="return navigateWithFeedback('/xdc-wallet', 'Opening X Swap…')">
                     <div class="action-circle">💠</div>
                     <span class="action-label">X Swap</span>
@@ -1958,6 +1962,21 @@
             // If the visibility check fails, keep existing behavior and allow navigation.
         }
         navigateWithFeedback('/reloadly/#virtualcard', 'Opening Virtual Card…');
+    }
+
+    async function handleMobileTopupAction() {
+        const hiddenMessage = "Mobile Top-Up is currently unavailable. Please check back soon.";
+        try {
+            const res = await fetch('/api/feature-visibility', { cache: 'no-store' });
+            const data = await res.json();
+            if (data && data.topup_visible === false) {
+                window.alert(hiddenMessage);
+                return;
+            }
+        } catch (_) {
+            // If the visibility check fails, keep existing behavior and allow navigation.
+        }
+        navigateWithFeedback('/reloadly/#topup', 'Opening Mobile Top-Up…');
     }
 
     // ── Modal ────────────────────────────────────────────────
