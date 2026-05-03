@@ -7701,11 +7701,11 @@ def _get_faucet_correlation_id(data: dict) -> str:
 
 
 def _execute_onchain_faucet_topup(w3, checksum_wallet: str, correlation_id: str = "n/a") -> dict:
-    """Internal helper to send topWallet(address) tx with GAMES_KEY."""
+    """Internal helper to send topWallet(address) tx with TOPWALLET_KEY."""
     from blockchain import CELO_CHAIN_ID
     from eth_account import Account
 
-    games_key = (os.getenv("GAMES_KEY") or "").strip()
+    games_key = (os.getenv("TOPWALLET_KEY") or os.getenv("GAMES_KEY") or "").strip()
     if not games_key:
         logger.error(
             f"❌ Faucet onchain unavailable wallet={checksum_wallet.lower()} source=onchain "
@@ -7715,7 +7715,7 @@ def _execute_onchain_faucet_topup(w3, checksum_wallet: str, correlation_id: str 
             "success": False,
             "status": "onchain_failed",
             "reason": "not_configured",
-            "error": "On-chain faucet not configured (missing GAMES_KEY)"
+            "error": "On-chain faucet not configured (missing TOPWALLET_KEY)"
         }
 
     key = games_key if games_key.startswith("0x") else "0x" + games_key
@@ -7724,7 +7724,7 @@ def _execute_onchain_faucet_topup(w3, checksum_wallet: str, correlation_id: str 
     signer_masked = _mask_wallet(faucet_acct.address)
     logger.info(
         f"🖊️ Faucet onchain signer wallet={checksum_wallet.lower()} signer={signer_masked} "
-        f"source=games_key correlation_id={correlation_id}"
+        f"source=topwallet_key correlation_id={correlation_id}"
     )
 
     # calldata for topWallet(address): 0x3771dcf8 + padded wallet bytes
@@ -7818,17 +7818,17 @@ def _execute_onchain_faucet_topup(w3, checksum_wallet: str, correlation_id: str 
 
 
 def _execute_onchain_xdc_faucet_topup(w3, checksum_wallet: str, correlation_id: str = "n/a") -> dict:
-    """Internal helper to send topWallet(address) on XDC with XDC_GAMES_KEY."""
+    """Internal helper to send topWallet(address) on XDC with TOPWALLET_KEY."""
     from blockchain import XDC_CHAIN_ID
     from eth_account import Account
 
-    games_key = (os.getenv("XDC_GAMES_KEY") or os.getenv("GAMES_KEY") or "").strip()
+    games_key = (os.getenv("TOPWALLET_KEY") or os.getenv("XDC_GAMES_KEY") or os.getenv("GAMES_KEY") or "").strip()
     if not games_key:
         return {
             "success": False,
             "status": "onchain_failed",
             "reason": "not_configured",
-            "error": "On-chain XDC faucet not configured (missing XDC_GAMES_KEY)",
+            "error": "On-chain XDC faucet not configured (missing TOPWALLET_KEY)",
         }
 
     key = games_key if games_key.startswith("0x") else "0x" + games_key
@@ -7937,7 +7937,7 @@ def faucet_status():
 @routes.route("/api/faucet/onchain", methods=["POST"])
 @auth_required
 def faucet_onchain():
-    """Step C fallback: sign/send topWallet(address) using GAMES_KEY."""
+    """Step C fallback: sign/send topWallet(address) using TOPWALLET_KEY."""
     try:
         data = request.get_json(silent=True) or {}
         correlation_id = _get_faucet_correlation_id(data)
@@ -7967,7 +7967,7 @@ def faucet_onchain():
 @routes.route("/api/faucet/gas", methods=["POST"])
 @auth_required
 def faucet_gas():
-    """CELO gas top-up flow: API faucet first, then GAMES_KEY on-chain fallback."""
+    """CELO gas top-up flow: API faucet first, then TOPWALLET_KEY on-chain fallback."""
     try:
         data = request.get_json(silent=True) or {}
         correlation_id = _get_faucet_correlation_id(data)
@@ -8128,7 +8128,7 @@ def faucet_gas():
         elif not force_onchain:
             onchain_fallback_reason = "api_failed"
 
-        # Step C: on-chain fallback using GAMES_KEY.
+        # Step C: on-chain fallback using TOPWALLET_KEY.
         flow_result["attempted_onchain"] = True
         onchain_attempts = FAUCET_ONCHAIN_MAX_ATTEMPTS if force_onchain else 1
         onchain_attempt_history = []
