@@ -329,7 +329,7 @@
         </div>
 
         <!-- Legacy v2 panel — only rendered for wallets that have v2 deposits. -->
-        <div class="card" id="legacyCard" style="display:none; margin-top:1.25rem;">
+        <div class="card" id="legacyCard" style="display:none; margin-top:1.25rem; border-color:rgba(251,191,36,.35); background:rgba(251,191,36,.05);">
             <button type="button"
                     id="legacyToggle"
                     onclick="toggleLegacy()"
@@ -339,9 +339,9 @@
                     <span id="legacyCount" style="display:inline-block; margin-left:.4rem; padding:.05rem .5rem; background:rgba(167,139,250,.18); color:#c4b5fd; border-radius:999px; font-size:.7rem; font-weight:600;">0</span>
                     <span style="display:inline-block; margin-left:.35rem; padding:.05rem .45rem; background:rgba(255,180,80,.16); color:#fbbf24; border-radius:6px; font-size:.62rem; font-weight:700; letter-spacing:.04em; vertical-align:middle;">v2 · READ-ONLY</span>
                 </span>
-                <span id="legacyChevron" style="color:rgba(255,255,255,.45); font-size:.9rem;">▾</span>
+                <span id="legacyChevron" style="color:rgba(255,255,255,.45); font-size:.9rem;">▴</span>
             </button>
-            <div id="legacyBody" style="display:none; margin-top:.95rem;">
+            <div id="legacyBody" style="display:block; margin-top:.95rem;">
                 <p style="font-size:.74rem; color:rgba(255,255,255,.45); margin-bottom:.7rem;">
                     Saves you opened on the previous savings contract
                     (<code style="color:#a78bfa; font-size:.7rem;">{{ legacy_v2_contract }}</code>).
@@ -1370,6 +1370,8 @@
 
     async function loadLegacyDeposits() {
         const card      = document.getElementById('legacyCard');
+        const body      = document.getElementById('legacyBody');
+        const chev      = document.getElementById('legacyChevron');
         const list      = document.getElementById('legacyList');
         const countEl   = document.getElementById('legacyCount');
         try {
@@ -1391,6 +1393,16 @@
                 list.appendChild(buildLegacyCard(d));
             }
             card.style.display = 'block';
+            // Auto-expand the body when there is at least one pending deposit
+            // so users with active legacy saves see them without an extra click.
+            // Collapse only when every legacy deposit has already been withdrawn.
+            if (pending.length > 0) {
+                body.style.display = 'block';
+                chev.textContent   = '\u25B4';
+            } else {
+                body.style.display = 'none';
+                chev.textContent   = '\u25BE';
+            }
         } catch (e) {
             console.warn('Legacy load failed', e);
             card.style.display = 'none';
