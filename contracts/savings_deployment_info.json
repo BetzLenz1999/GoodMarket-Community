@@ -1,24 +1,36 @@
 {
   "contract_name": "GDSavings",
-  "version": "2",
-  "contract_address": "0xF3cca43F5C108d3dEf01Ff1E138866aC1ed00e9c",
-  "tx_hash": "0xf5fd04a888f84c507f7859d53fa738702a2e1fa8cfe9bbfbbf91419b2af7855a",
-  "deployer": "0x2D9644Fd40BABD64797884e0cb56F34cc063De71",
+  "version": "3",
+  "contract_address": "0x57c1CA8897EDE56735F2010ed9d4F265023895Af",
+  "tx_hash": "0x40116bb96db3a9264671b696cd5bcebb69f759a7a0f3cce02b44b2bee92b4817",
+  "deployer": "0xC91fed8C1C73CD1a35FaD073404bC4a57F5B06bE",
   "gooddollar_token": "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A",
+  "celo_token": "0x471EcE3750Da237f93B8E339c536989b8978a438",
+  "cusd_token": "0x765DE816845861e75A25fCA122bb6898B8B1282a",
   "chain_id": 42220,
   "network": "Celo Mainnet",
-  "block_number": 63927388,
-  "gas_used": 1159789,
+  "block_number": 65909100,
+  "gas_used": 1892354,
   "compiler_version": "v0.8.21+commit.d9974bed",
   "optimization": true,
   "optimization_runs": 200,
-  "notes": "No owner, no pause. Reward pool is trustless \u2014 funds can only be used for user bonuses.",
+  "notes": "Multi-token (G$, CELO, cUSD). Per-(user, token, lockDays) slot. Top-ups inherit the slot's unlocksAt. No early withdrawal. No owner, no pause. Reward pool is G$-only and trustless.",
   "abi": [
     {
       "inputs": [
         {
           "internalType": "address",
           "name": "_gd",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "_celoToken",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "_cusd",
           "type": "address"
         }
       ],
@@ -36,14 +48,20 @@
         },
         {
           "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
           "internalType": "uint256",
-          "name": "depositId",
+          "name": "lockDays",
           "type": "uint256"
         },
         {
           "indexed": false,
           "internalType": "uint256",
-          "name": "bonus",
+          "name": "bonusGd",
           "type": "uint256"
         },
         {
@@ -92,18 +110,12 @@
         },
         {
           "indexed": true,
-          "internalType": "uint256",
-          "name": "depositId",
-          "type": "uint256"
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
         },
         {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "amount",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
+          "indexed": true,
           "internalType": "uint256",
           "name": "lockDays",
           "type": "uint256"
@@ -111,8 +123,26 @@
         {
           "indexed": false,
           "internalType": "uint256",
+          "name": "amountAdded",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "newSlotTotal",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
           "name": "unlocksAt",
           "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "isTopUp",
+          "type": "bool"
         }
       ],
       "name": "Saved",
@@ -129,14 +159,20 @@
         },
         {
           "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
           "internalType": "uint256",
-          "name": "depositId",
+          "name": "lockDays",
           "type": "uint256"
         },
         {
           "indexed": false,
           "internalType": "uint256",
-          "name": "amount",
+          "name": "principal",
           "type": "uint256"
         },
         {
@@ -203,7 +239,33 @@
     },
     {
       "inputs": [],
-      "name": "BONUS_TIER1_MIN",
+      "name": "BONUS_TIER1_MIN_CELO",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "BONUS_TIER1_MIN_CUSD",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "BONUS_TIER1_MIN_GD",
       "outputs": [
         {
           "internalType": "uint256",
@@ -229,7 +291,33 @@
     },
     {
       "inputs": [],
-      "name": "BONUS_TIER2_MIN",
+      "name": "BONUS_TIER2_MIN_CELO",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "BONUS_TIER2_MIN_CUSD",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "BONUS_TIER2_MIN_GD",
       "outputs": [
         {
           "internalType": "uint256",
@@ -255,7 +343,7 @@
     },
     {
       "inputs": [],
-      "name": "BONUS_TIER3_MIN",
+      "name": "BONUS_TIER3_MIN_CELO",
       "outputs": [
         {
           "internalType": "uint256",
@@ -268,7 +356,7 @@
     },
     {
       "inputs": [],
-      "name": "MAX_DEPOSIT",
+      "name": "BONUS_TIER3_MIN_CUSD",
       "outputs": [
         {
           "internalType": "uint256",
@@ -281,7 +369,7 @@
     },
     {
       "inputs": [],
-      "name": "MIN_DEPOSIT",
+      "name": "BONUS_TIER3_MIN_GD",
       "outputs": [
         {
           "internalType": "uint256",
@@ -294,12 +382,103 @@
     },
     {
       "inputs": [],
-      "name": "depositIdCounter",
+      "name": "MAX_DEPOSIT_CELO",
       "outputs": [
         {
           "internalType": "uint256",
           "name": "",
           "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MAX_DEPOSIT_CUSD",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MAX_DEPOSIT_GD",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MIN_DEPOSIT_CELO",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MIN_DEPOSIT_CUSD",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MIN_DEPOSIT_GD",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "celoToken",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "cusd",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
         }
       ],
       "stateMutability": "view",
@@ -307,6 +486,11 @@
     },
     {
       "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
         {
           "internalType": "uint256",
           "name": "amount",
@@ -327,55 +511,6 @@
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "name": "deposits",
-      "outputs": [
-        {
-          "internalType": "address",
-          "name": "owner",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "amount",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "lockDays",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "depositedAt",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "unlocksAt",
-          "type": "uint256"
-        },
-        {
-          "internalType": "bool",
-          "name": "withdrawn",
-          "type": "bool"
-        },
-        {
-          "internalType": "bool",
-          "name": "bonusClaimed",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
           "name": "amount",
           "type": "uint256"
         }
@@ -390,7 +525,7 @@
       "name": "gd",
       "outputs": [
         {
-          "internalType": "contract IERC20",
+          "internalType": "address",
           "name": "",
           "type": "address"
         }
@@ -400,6 +535,11 @@
     },
     {
       "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
         {
           "internalType": "uint256",
           "name": "amount",
@@ -419,7 +559,7 @@
           "type": "uint256"
         }
       ],
-      "stateMutability": "pure",
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -428,7 +568,17 @@
       "outputs": [
         {
           "internalType": "uint256",
-          "name": "totalLocked",
+          "name": "totalLockedGd",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "totalLockedCelo",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "totalLockedCusd",
           "type": "uint256"
         },
         {
@@ -438,12 +588,22 @@
         },
         {
           "internalType": "uint256",
-          "name": "contractBalance",
+          "name": "contractGdBalance",
           "type": "uint256"
         },
         {
           "internalType": "uint256",
-          "name": "totalDeposits",
+          "name": "contractCeloBalance",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "contractCusdBalance",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "slotsOpenedTotal",
           "type": "uint256"
         }
       ],
@@ -453,18 +613,47 @@
     {
       "inputs": [
         {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "getMinMax",
+      "outputs": [
+        {
           "internalType": "uint256",
-          "name": "depositId",
+          "name": "minA",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maxA",
           "type": "uint256"
         }
       ],
-      "name": "getDeposit",
-      "outputs": [
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
         {
           "internalType": "address",
-          "name": "owner_",
+          "name": "user",
           "type": "address"
         },
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "lockDays",
+          "type": "uint256"
+        }
+      ],
+      "name": "getSlot",
+      "outputs": [
         {
           "internalType": "uint256",
           "name": "amount",
@@ -472,23 +661,13 @@
         },
         {
           "internalType": "uint256",
-          "name": "lockDays",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "depositedAt",
+          "name": "firstDepositAt",
           "type": "uint256"
         },
         {
           "internalType": "uint256",
           "name": "unlocksAt",
           "type": "uint256"
-        },
-        {
-          "internalType": "bool",
-          "name": "withdrawn",
-          "type": "bool"
         },
         {
           "internalType": "bool",
@@ -501,14 +680,32 @@
           "type": "bool"
         },
         {
-          "internalType": "bool",
-          "name": "bonusEligible",
-          "type": "bool"
-        },
-        {
           "internalType": "uint256",
           "name": "pendingBonus",
           "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getTokens",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "gdAddr",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "celoAddr",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "cusdAddr",
+          "type": "address"
         }
       ],
       "stateMutability": "view",
@@ -522,12 +719,73 @@
           "type": "address"
         }
       ],
-      "name": "getUserDepositIds",
+      "name": "getUserActiveSlots",
       "outputs": [
         {
+          "internalType": "address[]",
+          "name": "tokens",
+          "type": "address[]"
+        },
+        {
           "internalType": "uint256[]",
-          "name": "",
+          "name": "lockDays_",
           "type": "uint256[]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "amounts",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "unlocksAts",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "bool[]",
+          "name": "areUnlocked",
+          "type": "bool[]"
+        },
+        {
+          "internalType": "bool[]",
+          "name": "bonusClaimed",
+          "type": "bool[]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "pendingBonuses",
+          "type": "uint256[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        }
+      ],
+      "name": "getUserSlotRefs",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "token",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "lockDays",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct GDSavings.SlotRef[]",
+          "name": "",
+          "type": "tuple[]"
         }
       ],
       "stateMutability": "view",
@@ -541,6 +799,25 @@
           "internalType": "uint16[13]",
           "name": "",
           "type": "uint16[13]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "isAllowedToken",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
         }
       ],
       "stateMutability": "view",
@@ -567,12 +844,45 @@
           "type": "address"
         },
         {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        },
+        {
           "internalType": "uint256",
           "name": "",
           "type": "uint256"
         }
       ],
-      "name": "userDepositIds",
+      "name": "slots",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "firstDepositAt",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "unlocksAt",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "bonusClaimed",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "totalSlotsOpened",
       "outputs": [
         {
           "internalType": "uint256",
@@ -586,8 +896,13 @@
     {
       "inputs": [
         {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
           "internalType": "uint256",
-          "name": "depositId",
+          "name": "lockDays",
           "type": "uint256"
         }
       ],
