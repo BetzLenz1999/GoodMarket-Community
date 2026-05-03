@@ -327,6 +327,33 @@
                 <div class="empty-state">Loading your saves…</div>
             </div>
         </div>
+
+        <!-- Legacy v2 panel — only rendered for wallets that have v2 deposits. -->
+        <div class="card" id="legacyCard" style="display:none; margin-top:1.25rem;">
+            <button type="button"
+                    id="legacyToggle"
+                    onclick="toggleLegacy()"
+                    style="width:100%; background:transparent; border:none; padding:0; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:.75rem;">
+                <span style="font-size:1.05rem; font-weight:600; color:#f5f5f7;">
+                    🗂️ Legacy Saves
+                    <span id="legacyCount" style="display:inline-block; margin-left:.4rem; padding:.05rem .5rem; background:rgba(167,139,250,.18); color:#c4b5fd; border-radius:999px; font-size:.7rem; font-weight:600;">0</span>
+                    <span style="display:inline-block; margin-left:.35rem; padding:.05rem .45rem; background:rgba(255,180,80,.16); color:#fbbf24; border-radius:6px; font-size:.62rem; font-weight:700; letter-spacing:.04em; vertical-align:middle;">v2 · READ-ONLY</span>
+                </span>
+                <span id="legacyChevron" style="color:rgba(255,255,255,.45); font-size:.9rem;">▾</span>
+            </button>
+            <div id="legacyBody" style="display:none; margin-top:.95rem;">
+                <p style="font-size:.74rem; color:rgba(255,255,255,.45); margin-bottom:.7rem;">
+                    Saves you opened on the previous savings contract
+                    (<code style="color:#a78bfa; font-size:.7rem;">{{ legacy_v2_contract }}</code>).
+                    These are <strong>withdraw-only</strong> — top-ups always go to your active slots above.
+                    Once all of these are withdrawn, this section disappears.
+                </p>
+                <div id="legacyAlert" class="alert"></div>
+                <div id="legacyList" class="dep-list">
+                    <div class="empty-state">Loading legacy saves…</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- ── TAB: SPONSOR POOL ── -->
@@ -499,6 +526,14 @@
         "function balanceOf(address owner) view returns (uint256)",
         "function allowance(address owner, address spender) view returns (uint256)",
         "function approve(address spender, uint256 amount) returns (bool)",
+    ];
+
+    // ── Legacy v2 contract (frozen, read + withdraw only) ──
+    const LEGACY_V2_CONTRACT = "{{ legacy_v2_contract }}";
+    const LEGACY_V2_ABI = [
+        "function getUserDepositIds(address user) view returns (uint256[])",
+        "function getDeposit(uint256 id) view returns (address,uint256,uint256,uint256,uint256,bool,bool,bool,bool,uint256)",
+        "function withdraw(uint256 depositId) external",
     ];
 
     // Per-token configuration (all 18-decimal on Celo).
@@ -1242,6 +1277,8 @@
         } catch (e) {
             container.innerHTML = '<div class="empty-state" style="color:#f87171;">Failed to load. Check your connection.</div>';
         }
+        // Run in parallel; failure to load legacy never breaks the main panel.
+        loadLegacyDeposits();
     }
 
     // Lightweight cache refresh used after deposit / withdraw.
@@ -1305,6 +1342,132 @@
             ${withdrawBtn ? `<div>${withdrawBtn}</div>` : ''}
         `;
         return el;
+    }
+
+    // ── Legacy v2 panel (frozen previous contract — read + withdraw only) ──
+    function toggleLegacy() {
+        const body = document.getElementById('legacyBody');
+        const chev = document.getElementById('legacyChevron');
+        const open = body.style.display === 'block';
+        body.style.display = open ? 'none' : 'block';
+        chev.textContent   = open ? '▾' : '▴';
+    }
+
+    async function loadLegacyDeposits() {
+        const card      = document.getElementById('legacyCard');
+        const list      = document.getElementById('legacyList');
+        const countEl   = document.getElementById('legacyCount');
+        try {
+            const res  = await fetch('/savings/api/legacy-deposits');
+            const data = await res.json();
+            const deps = data.deposits || [];
+            // Hide the panel entirely for the 99% of users with no v2 history.
+            if (deps.length === 0) {
+                card.style.display = 'none';
+                return;
+            }
+            const pending = deps.filter(d => !d.withdrawn);
+            countEl.textContent = pending.length > 0
+                ? `${pending.length} pending`
+                : `${deps.length} (all withdrawn)`;
+            list.innerHTML = '';
+            // Pending first, withdrawn at the bottom.
+            for (const d of [...pending, ...deps.filter(d => d.withdrawn)]) {
+                list.appendChild(buildLegacyCard(d));
+            }
+            card.style.display = 'block';
+        } catch (e) {
+            console.warn('Legacy load failed', e);
+            card.style.display = 'none';
+        }
+    }
+
+    function buildLegacyCard(d) {
+        const el = document.createElement('div');
+        const ready = d.is_unlocked && !d.withdrawn;
+        el.className = 'dep-card' + (ready ? ' unlocked' : '');
+
+        const unlock = new Date(d.unlocks_at * 1000);
+
+        let statusBadge;
+        if (d.withdrawn) {
+            statusBadge = '<span class="dep-badge" style="background:rgba(150,150,160,.18); color:rgba(220,220,230,.65);">✓ Withdrawn</span>';
+        } else if (d.is_unlocked) {
+            statusBadge = '<span class="dep-badge badge-ready">Ready to Withdraw</span>';
+        } else {
+            statusBadge = '<span class="dep-badge badge-locked">Locked</span>';
+        }
+
+        let bonusBadge = '';
+        if (!d.withdrawn && d.bonus_claimed) {
+            bonusBadge = '<span class="dep-badge badge-bonus">🎁 Bonus Claimed</span>';
+        } else if (!d.withdrawn && d.pending_bonus_gd > 0) {
+            bonusBadge = `<span class="dep-badge badge-bonus">🎁 +${fmtAmt(d.pending_bonus_gd, 'G$')} bonus on withdrawal</span>`;
+        }
+
+        const withdrawBtn = ready
+            ? `<button class="btn btn-green" onclick="doLegacyWithdraw(${d.id})" style="font-size:.8rem; padding:.5rem 1rem;">Withdraw (v2)</button>`
+            : '';
+
+        el.innerHTML = `
+            <div class="dep-amount">${fmtAmt(d.amount_gd, 'G$')}</div>
+            <div class="dep-meta">
+                <div class="row">Deposit ID: <span>#${d.id}</span></div>
+                <div class="row">Lock: <span>${d.lock_days} days</span></div>
+                <div class="row">Unlocks: <span>${unlock.toDateString()}</span></div>
+            </div>
+            <div style="display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;">
+                ${statusBadge}${bonusBadge}
+            </div>
+            ${withdrawBtn ? `<div>${withdrawBtn}</div>` : ''}
+        `;
+        return el;
+    }
+
+    async function doLegacyWithdraw(depositId) {
+        try {
+            // Server-side signing was never wired up for v2; require the user's wallet.
+            if (window.useServerSigning) {
+                throw new Error('Legacy withdrawal must be signed with your own wallet.');
+            }
+
+            const fn   = "function withdraw(uint256 depositId) external";
+            const args = [BigInt(depositId)];
+
+            if (_isMiniPay()) {
+                showAlert('legacyAlert', 'info', '<span class="spinner"></span> Confirm legacy withdrawal in MiniPay…');
+                const txHash = await _miniPayTx(LEGACY_V2_CONTRACT, fn, args);
+                showAlert('legacyAlert', 'success',
+                    `✅ Legacy save withdrawn! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
+                );
+                loadLegacyDeposits();
+                return;
+            }
+
+            const signer = await getSigner();
+            await ensureCeloNetwork();
+            const legacy = new ethers.Contract(LEGACY_V2_CONTRACT, LEGACY_V2_ABI, signer);
+
+            showAlert('legacyAlert', 'info', '<span class="spinner"></span> Confirm legacy withdrawal in your wallet…');
+            const tx = await legacy.withdraw(BigInt(depositId));
+            showAlert('legacyAlert', 'info', '<span class="spinner"></span> Waiting for Celo confirmation…');
+            const receipt = await tx.wait();
+
+            showAlert('legacyAlert', 'success',
+                `✅ Legacy save withdrawn! <a href="https://celoscan.io/tx/${receipt.hash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
+            );
+            loadLegacyDeposits();
+        } catch (err) {
+            console.error(err);
+            if (err._miniPayDiag) {
+                const d = err._miniPayDiag;
+                showAlert('legacyAlert', 'error',
+                    `❌ MiniPay legacy withdrawal failed<br>` +
+                    `<small style="opacity:.75">Step: ${d.fn} → ${d.to.slice(0,10)}…</small>`);
+            } else {
+                showAlert('legacyAlert', 'error', '❌ Legacy withdrawal failed: ' + (err.reason || err.message || 'Unknown error'));
+            }
+        }
     }
 
     // ── Utilities ──

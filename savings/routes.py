@@ -12,6 +12,7 @@ GD_TOKEN_ADDRESS = os.getenv('GOODDOLLAR_CONTRACT_ADDRESS', '0x62B8B11039FcfE5aB
 CELO_TOKEN_ADDRESS = os.getenv('CELO_TOKEN_ADDRESS', '0x471EcE3750Da237f93B8E339c536989b8978a438')
 CUSD_TOKEN_ADDRESS = os.getenv('CUSD_TOKEN_ADDRESS', '0x765DE816845861e75A25fCA122bb6898B8B1282a')
 CHAIN_ID = int(os.getenv('CHAIN_ID', 42220))
+LEGACY_V2_CONTRACT_ADDRESS = svc.LEGACY_V2_CONTRACT_ADDRESS
 
 
 def _require_auth():
@@ -33,6 +34,7 @@ def savings_home():
         gd_contract=GD_TOKEN_ADDRESS,
         celo_contract=CELO_TOKEN_ADDRESS,
         cusd_contract=CUSD_TOKEN_ADDRESS,
+        legacy_v2_contract=LEGACY_V2_CONTRACT_ADDRESS,
         chain_id=CHAIN_ID,
         walletconnect_project_id=wc_pid,
         login_method=session.get("login_method", "walletconnect"),
@@ -85,3 +87,18 @@ def api_token_allowance():
     if not token:
         return jsonify({"error": "Missing token query parameter"}), 400
     return jsonify({"allowance": str(svc.get_token_allowance(wallet, token))})
+
+
+@savings_bp.route("/api/legacy-deposits")
+def api_legacy_deposits():
+    """Read-only list of v2 deposits for the connected wallet on the
+    frozen legacy contract. Returns an empty array if the user never
+    interacted with v2 — the frontend hides the panel in that case."""
+    wallet, verified = _require_auth()
+    if not wallet or not verified:
+        return jsonify({"error": "Unauthorized"}), 401
+    deposits = svc.get_user_legacy_deposits(wallet)
+    return jsonify({
+        "contract": LEGACY_V2_CONTRACT_ADDRESS,
+        "deposits": deposits,
+    })
