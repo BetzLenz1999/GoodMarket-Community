@@ -59,7 +59,7 @@ class FaucetFlowTests(unittest.TestCase):
             "success": False,
             "status": "onchain_failed",
             "reason": "not_configured",
-            "error": "On-chain faucet not configured (missing GAMES_KEY)",
+            "error": "On-chain faucet not configured (missing TOPWALLET_KEY)",
         }
         resp = self.client.post(
             "/api/faucet/onchain",
@@ -220,7 +220,7 @@ class FaucetFlowTests(unittest.TestCase):
             "success": False,
             "status": "onchain_failed",
             "reason": "not_configured",
-            "error": "On-chain faucet not configured (missing GAMES_KEY)",
+            "error": "On-chain faucet not configured (missing TOPWALLET_KEY)",
         }
 
         resp = self.client.post("/api/faucet/gas", json={"wallet": "0x1111111111111111111111111111111111111111"})
