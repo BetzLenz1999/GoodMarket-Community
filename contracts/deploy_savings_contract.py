@@ -1,18 +1,26 @@
 """
-GDSavings Contract Deployment Script for Celo Mainnet (v2)
+GDSavings Contract Deployment Script for Celo Mainnet (v3)
 
-Deploys the GDSavings time-locked savings vault (no owner, no pause).
+Deploys the multi-token GDSavings vault (no owner, no pause, no early
+withdrawal). Tokens accepted: G$, CELO, cUSD.
 
 Features:
-  - Users lock G$ for 1 day up to 365 days
-  - Min deposit: 1,000 G$ | Max: 10,000,000 G$
-  - Tiered optional bonus (requires >= 150-day lock, funded reward pool):
-      10,000 –  99,999 G$  →  1,000 G$
-     100,000 – 499,999 G$  →  2,500 G$
-     500,000 – 10,000,000 G$ → 10,000 G$
-  - Sponsors can fund the reward pool; those funds can never be withdrawn
-  - No owner, no pause/unpause — fully trustless savings vault
-  - Only the depositor can ever withdraw their own funds
+  - One slot per (user, token, lockDays). Top-ups inherit the slot's
+    original unlocksAt (no lock extension).
+  - Lock durations (days): 1, 30, 60, 90, 120, 150, 180, 210, 240, 270,
+    300, 330, 365.
+  - Per-token min/max (18-decimal units):
+      G$:   1,000        – 10,000,000
+      CELO: 1            – 100,000
+      cUSD: 1            – 1,000,000
+  - Bonus tiers (always paid in G$, regardless of deposit token):
+      1-day lock, ≥ token MIN → 10 G$
+      ≥150-day lock, by token amount:
+        G$:   10k–100k → 1k G$ | 100k–500k → 2.5k G$ | 500k–10M → 10k G$
+        CELO: 10–100   → 1k G$ |   100–500 → 2.5k G$ |   500–100k → 10k G$
+        cUSD: 10–100   → 1k G$ |   100–500 → 2.5k G$ |   500–1M  → 10k G$
+  - Anyone can fund the G$ reward pool via fundRewardPool().
+  - No owner, no admin, no pause, no emergency, no early withdrawal.
 """
 
 import os
@@ -27,7 +35,20 @@ logger = logging.getLogger(__name__)
 
 CELO_RPC_URL = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')
 CHAIN_ID = int(os.getenv('CHAIN_ID', 42220))
-GOODDOLLAR_CONTRACT = os.getenv('GOODDOLLAR_CONTRACT_ADDRESS', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
+
+# Token addresses on Celo Mainnet (override via env if deploying to a fork/testnet).
+GOODDOLLAR_CONTRACT = os.getenv(
+    'GOODDOLLAR_CONTRACT_ADDRESS',
+    '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A',
+)
+CELO_TOKEN_ADDRESS = os.getenv(
+    'CELO_TOKEN_ADDRESS',
+    '0x471EcE3750Da237f93B8E339c536989b8978a438',
+)
+CUSD_TOKEN_ADDRESS = os.getenv(
+    'CUSD_TOKEN_ADDRESS',
+    '0x765DE816845861e75A25fCA122bb6898B8B1282a',
+)
 
 FLATTENED_SOURCE = open(os.path.join(os.path.dirname(__file__), 'GDSavings.sol')).read()
 
@@ -69,6 +90,12 @@ def deploy_contract():
     if not GOODDOLLAR_CONTRACT:
         logger.error("GOODDOLLAR_CONTRACT_ADDRESS not set!")
         return None
+    if not CELO_TOKEN_ADDRESS:
+        logger.error("CELO_TOKEN_ADDRESS not set!")
+        return None
+    if not CUSD_TOKEN_ADDRESS:
+        logger.error("CUSD_TOKEN_ADDRESS not set!")
+        return None
 
     w3 = Web3(Web3.HTTPProvider(CELO_RPC_URL))
     if not w3.is_connected():
@@ -80,6 +107,9 @@ def deploy_contract():
     key = saving_key if saving_key.startswith('0x') else '0x' + saving_key
     account = Account.from_key(key)
     logger.info(f"Deploying from SAVING_KEY address: {account.address}")
+    logger.info(f"  G$   token: {GOODDOLLAR_CONTRACT}")
+    logger.info(f"  CELO token: {CELO_TOKEN_ADDRESS}")
+    logger.info(f"  cUSD token: {CUSD_TOKEN_ADDRESS}")
 
     celo_balance = w3.eth.get_balance(account.address)
     celo_human = w3.from_wei(celo_balance, 'ether')
@@ -99,13 +129,29 @@ def deploy_contract():
     nonce = w3.eth.get_transaction_count(account.address)
     gas_price = int(w3.eth.gas_price * 1.2)
 
-    constructor_txn = contract.constructor(
-        Web3.to_checksum_address(GOODDOLLAR_CONTRACT)
-    ).build_transaction({
-        'chainId': CHAIN_ID,
-        'gas': 3_000_000,
+    # Estimate gas dynamically rather than hardcoding (Celo gas spikes
+    # could otherwise turn a 3.5M*price ceiling into "insufficient funds"
+    # even when the actual gas usage is only ~2M).
+    ctor_call = contract.constructor(
+        Web3.to_checksum_address(GOODDOLLAR_CONTRACT),
+        Web3.to_checksum_address(CELO_TOKEN_ADDRESS),
+        Web3.to_checksum_address(CUSD_TOKEN_ADDRESS),
+    )
+    try:
+        gas_estimate = ctor_call.estimate_gas({'from': account.address})
+    except Exception as e:
+        logger.warning(f"estimate_gas failed ({e}); falling back to 2_500_000")
+        gas_estimate = 2_500_000
+    gas_limit = int(gas_estimate * 1.15)
+    logger.info(f"Gas estimate: {gas_estimate} (using limit: {gas_limit})")
+    logger.info(f"Gas price:    {gas_price} wei (~{gas_price / 1e9:.2f} gwei)")
+    logger.info(f"Max tx cost:  {gas_limit * gas_price} wei (~{gas_limit * gas_price / 1e18:.4f} CELO)")
+
+    constructor_txn = ctor_call.build_transaction({
+        'chainId':  CHAIN_ID,
+        'gas':      gas_limit,
         'gasPrice': gas_price,
-        'nonce': nonce,
+        'nonce':    nonce,
     })
 
     signed_txn = w3.eth.account.sign_transaction(constructor_txn, key)
@@ -128,11 +174,13 @@ def deploy_contract():
 
         deployment_info = {
             "contract_name": "GDSavings",
-            "version": "2",
+            "version": "3",
             "contract_address": contract_address,
             "tx_hash": tx_hash_hex,
             "deployer": account.address,
             "gooddollar_token": GOODDOLLAR_CONTRACT,
+            "celo_token": CELO_TOKEN_ADDRESS,
+            "cusd_token": CUSD_TOKEN_ADDRESS,
             "chain_id": CHAIN_ID,
             "network": "Celo Mainnet",
             "block_number": receipt.blockNumber,
@@ -140,7 +188,11 @@ def deploy_contract():
             "compiler_version": "v0.8.21+commit.d9974bed",
             "optimization": True,
             "optimization_runs": 200,
-            "notes": "No owner, no pause. Reward pool is trustless — funds can only be used for user bonuses.",
+            "notes": (
+                "Multi-token (G$, CELO, cUSD). Per-(user, token, lockDays) slot. "
+                "Top-ups inherit the slot's unlocksAt. No early withdrawal. "
+                "No owner, no pause. Reward pool is G$-only and trustless."
+            ),
             "abi": compiled["abi"]
         }
 
