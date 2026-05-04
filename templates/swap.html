@@ -3126,8 +3126,27 @@
         // the displayed default already includes a small margin for LayerZero
         // fee fluctuations between estimate and submit.
         const CELO_TO_XDC_FALLBACK_FEE_CELO = 0.1156;
-        // Reserve a little CELO so users never end up with zero gas after bridging.
-        const CELO_TO_XDC_GAS_RESERVE_CELO = 0.0010;
+        // Worst-case gas units the bridgeTo() call has needed in practice
+        // (≈ 470k seen on Celo mainnet). Used together with the live
+        // `eth_gasPrice` to size a *dynamic* gas reserve so the preflight
+        // balance check matches what MetaMask will actually require — Celo
+        // gas prices regularly spike to 100–200 gwei, which a tiny static
+        // reserve like 0.001 CELO completely misses, leaving the user with
+        // a confusing red "Network fee" warning at signing time instead of
+        // a clear "top up CELO" alert from the app.
+        const CELO_TO_XDC_BRIDGE_TO_GAS_LIMIT = 600000n;
+        // Multiplier applied on top of (gasLimit × gasPrice) when computing
+        // the gas reserve; gives a small head-room for gas-price ticks
+        // between preflight and submit.
+        const CELO_TO_XDC_GAS_RESERVE_BUFFER_BPS = 1500n; // +15%
+        // Static fallback reserve when we can't fetch gasPrice (RPC down).
+        // Sized for a realistic high-gas Celo environment so users still
+        // don't slip past the preflight when the dynamic path fails
+        // (200 gwei × 600k gas ≈ 0.12 CELO, padded for safety).
+        const CELO_TO_XDC_GAS_RESERVE_FALLBACK_CELO = 0.15;
+        // Tiny rounding safety so the preflight never approves a tx that
+        // ends up 1 wei short of MetaMask's gas estimate.
+        const CELO_TO_XDC_GAS_RESERVE_FLOOR_CELO    = 0.005;
 
         let _celoBridgeFeeSourceState = 'manual';
         let _celoBridgeFeeEstimateDebounce = null;
@@ -3162,6 +3181,76 @@
             if (!el) return;
             el.className = 'alert';
             el.innerHTML = '';
+        }
+
+        // Returns a wei-denominated gas reserve for the bridgeTo() call, sized
+        // against the live `eth_gasPrice` so the preflight matches what the
+        // user's wallet will actually quote at signing time. Falls back to a
+        // realistic high-gas static reserve if any RPC call here fails — we
+        // still want the preflight to be useful when the public Celo RPC is
+        // flaky, just less precise.
+        async function _estimateCeloBridgeGasReserveWei(provider, fromAddr, amountWei, feeWei) {
+            const fallbackWei = ethers.parseUnits(String(CELO_TO_XDC_GAS_RESERVE_FALLBACK_CELO), 18);
+            const floorWei    = ethers.parseUnits(String(CELO_TO_XDC_GAS_RESERVE_FLOOR_CELO), 18);
+            try {
+                let gasPriceWei = 0n;
+                try {
+                    const feeData = await provider.getFeeData();
+                    if (feeData?.maxFeePerGas && feeData.maxFeePerGas > 0n) {
+                        gasPriceWei = feeData.maxFeePerGas;
+                    } else if (feeData?.gasPrice && feeData.gasPrice > 0n) {
+                        gasPriceWei = feeData.gasPrice;
+                    }
+                } catch (_) { /* fall through */ }
+                if (gasPriceWei === 0n) {
+                    // Last-resort: explicit eth_gasPrice (older RPC nodes).
+                    try {
+                        const hex = await provider.send('eth_gasPrice', []);
+                        if (typeof hex === 'string' && hex.startsWith('0x')) {
+                            gasPriceWei = BigInt(hex);
+                        }
+                    } catch (_) { /* fall through */ }
+                }
+                if (gasPriceWei === 0n) return fallbackWei;
+
+                // Prefer a real estimate against the live bridge contract so
+                // we capture any future increase in the contract's gas
+                // footprint. eth_estimateGas reverts if the user's allowance
+                // < amount (the bridge burnFrom would fail), in which case we
+                // fall back to the worst-case static gas limit — the actual
+                // bridge tx happens *after* approve confirms, so the static
+                // limit is what MetaMask will end up using anyway.
+                let gasUnits = CELO_TO_XDC_BRIDGE_TO_GAS_LIMIT;
+                try {
+                    const bridgeIface = new ethers.Interface(CELO_TO_XDC_BRIDGE_ABI);
+                    const callData = bridgeIface.encodeFunctionData('bridgeTo', [
+                        fromAddr,
+                        CELO_TO_XDC_TARGET_CHAIN_ID,
+                        amountWei,
+                        CELO_TO_XDC_BRIDGE_SERVICE_LAYERZERO,
+                    ]);
+                    const estimated = await provider.estimateGas({
+                        from: fromAddr,
+                        to: CELO_TO_XDC_BRIDGE_CONTRACT,
+                        data: callData,
+                        value: feeWei,
+                    });
+                    if (estimated && estimated > 0n) {
+                        // Pad estimateGas slightly — wallets routinely set
+                        // gasLimit ≈ 1.1× of the simulated value to avoid
+                        // out-of-gas reverts on state changes between sim
+                        // and inclusion.
+                        const padded = (estimated * 11000n) / 10000n;
+                        gasUnits = padded > CELO_TO_XDC_BRIDGE_TO_GAS_LIMIT ? padded : CELO_TO_XDC_BRIDGE_TO_GAS_LIMIT;
+                    }
+                } catch (_) { /* keep static gas limit */ }
+
+                const rawCostWei = gasUnits * gasPriceWei;
+                const buffered   = (rawCostWei * (10000n + CELO_TO_XDC_GAS_RESERVE_BUFFER_BPS)) / 10000n;
+                return buffered > floorWei ? buffered : floorWei;
+            } catch (_) {
+                return fallbackWei;
+            }
         }
 
         async function _celoBridgeDebugLog(event, details = {}) {
@@ -3550,17 +3639,28 @@
                     throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
                 }
 
-                // Native CELO balance check: bridge fee + small gas reserve so user
-                // doesn't end up stranded without any CELO for the next tx.
-                const gasReserveWei = ethers.parseUnits(String(CELO_TO_XDC_GAS_RESERVE_CELO), 18);
+                // Native CELO balance check: LayerZero fee (msg.value) + a
+                // *dynamic* gas reserve sized to the live `eth_gasPrice`,
+                // so we don't slip past the preflight on high-gas Celo
+                // periods (200 gwei × ~470k gas ≈ 0.095 CELO, which a
+                // static 0.001 CELO reserve completely misses). When gas
+                // estimation is unavailable we fall back to a chunkier
+                // static reserve.
+                const gasReserveWei = await _estimateCeloBridgeGasReserveWei(readProvider, signerAddr, amountWei, feeWei);
                 const minimumRequiredWei = feeWei + gasReserveWei;
                 const onchainBalWei = await readProvider.getBalance(signerAddr);
                 if (onchainBalWei < minimumRequiredWei) {
-                    const needCelo = ethers.formatUnits(minimumRequiredWei, 18);
-                    const hasCelo  = ethers.formatUnits(onchainBalWei, 18);
+                    const needCelo  = parseFloat(ethers.formatUnits(minimumRequiredWei, 18));
+                    const hasCelo   = parseFloat(ethers.formatUnits(onchainBalWei, 18));
+                    const feeCelo   = parseFloat(ethers.formatUnits(feeWei, 18));
+                    const gasCelo   = parseFloat(ethers.formatUnits(gasReserveWei, 18));
+                    const shortCelo = Math.max(0, needCelo - hasCelo);
                     throw new Error(
-                        `Not enough CELO. You need at least ${parseFloat(needCelo).toFixed(6)} CELO ` +
-                        `(LayerZero bridge fee + gas reserve), but your wallet has ${parseFloat(hasCelo).toFixed(6)} CELO.`
+                        `Not enough CELO for the bridge. ` +
+                        `Need ≈ ${needCelo.toFixed(6)} CELO ` +
+                        `(LayerZero fee ${feeCelo.toFixed(6)} + gas ≈ ${gasCelo.toFixed(6)}), ` +
+                        `but wallet has ${hasCelo.toFixed(6)} CELO. ` +
+                        `Add about ${shortCelo.toFixed(4)} more CELO and retry.`
                     );
                 }
 
