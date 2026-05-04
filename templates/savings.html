@@ -712,6 +712,43 @@
     }
 
     // ── Wallet helpers ──
+    // Methods that must be served by the user's wallet (signer-bound).
+    // Everything else (eth_blockNumber, eth_call, eth_estimateGas,
+    // eth_gasPrice, eth_getTransactionCount, eth_getCode, …) is a read-only
+    // RPC call that ethers.js issues automatically while building a tx —
+    // forwarding those to the WalletConnect peer makes the wallet reply
+    // "Missing or invalid. request() method: eth_blockNumber" and the whole
+    // approve / save flow blows up with `could not coalesce error`.
+    const _WC_WALLET_SCOPED_METHODS = new Set([
+        'eth_sendTransaction',
+        'eth_sign',
+        'personal_sign',
+        'eth_signTypedData',
+        'eth_signTypedData_v3',
+        'eth_signTypedData_v4',
+    ]);
+
+    function _wcCeloJsonRpc(method, params) {
+        return fetch('https://forno.celo.org', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                id: Date.now(),
+                method: method,
+                params: params || []
+            })
+        }).then(function (resp) { return resp.json(); }).then(function (data) {
+            if (data && data.error) {
+                var err = new Error(data.error.message || 'Celo RPC error');
+                err.code = data.error.code;
+                err.data = data.error.data;
+                throw err;
+            }
+            return data ? data.result : null;
+        });
+    }
+
     class WCEthersShim {
         constructor(wcClient, wcSession, account) {
             this._sc = wcClient;
@@ -722,11 +759,21 @@
             if (method === 'eth_accounts' || method === 'eth_requestAccounts') return [this._account];
             if (method === 'eth_chainId') return '0xa4ec';
             if (method === 'net_version') return '42220';
-            return this._sc.request({
-                topic: this._session.topic,
-                chainId: 'eip155:42220',
-                request: { method, params: params || [] }
-            });
+            // Sessions are scoped to Celo — chain switch / add are no-ops.
+            if (method === 'wallet_switchEthereumChain' || method === 'wallet_addEthereumChain') {
+                return null;
+            }
+            if (_WC_WALLET_SCOPED_METHODS.has(method)) {
+                return this._sc.request({
+                    topic: this._session.topic,
+                    chainId: 'eip155:42220',
+                    request: { method, params: params || [] }
+                });
+            }
+            // Read-only RPC: answer locally via public Celo RPC so ethers.js'
+            // tx-build pre-flight (eth_blockNumber, eth_estimateGas, …) works
+            // without round-tripping to a wallet that doesn't speak those.
+            return _wcCeloJsonRpc(method, params || []);
         }
     }
 
