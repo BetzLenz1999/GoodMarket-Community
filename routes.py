@@ -471,7 +471,14 @@ def _parse_xdc_revert_message(raw_message: str, fallback_reason: str = "Transact
 
 
 def _parse_bridge_fee_candidate_xdc(candidate) -> Decimal | None:
-    """Parse bridge fee candidate into decimal XDC, auto-detecting wei-like integer payloads."""
+    """Parse bridge fee candidate into a native-token decimal amount.
+
+    GoodDollar's https://goodserver.gooddollar.org/bridge/estimatefees returns
+    values shaped like ``"0.11559585178717026 Celo"`` / ``"1.79987 XDC"`` /
+    ``"0.00038 ETH"`` / ``"3.32 Fuse"`` — i.e. a decimal followed by a space
+    and the source-chain native-token name. Strip that trailing suffix before
+    parsing so docs-aligned route values like ``LZ_CELO_TO_XDC`` are accepted.
+    """
     if candidate is None:
         return None
     try:
@@ -484,6 +491,16 @@ def _parse_bridge_fee_candidate_xdc(candidate) -> Decimal | None:
             txt = candidate.strip()
             if not txt:
                 return None
+            # Strip trailing native-token suffix used by goodserver/estimatefees
+            # (e.g. "0.11559585178717026 Celo" → "0.11559585178717026").
+            for suffix in (
+                " celo", " xdc", " eth", " ether", " fuse",
+            ):
+                if txt.lower().endswith(suffix):
+                    txt = txt[: -len(suffix)].strip()
+                    break
+            if not txt:
+                return None
             if txt.startswith(("0x", "0X")):
                 numeric = Decimal(int(txt, 16))
             else:
@@ -494,8 +511,8 @@ def _parse_bridge_fee_candidate_xdc(candidate) -> Decimal | None:
         if numeric <= 0:
             return None
 
-        # Some APIs return wei (e.g., "1617600000000000000") instead of decimal XDC.
-        # Detect very large integer-like numbers and normalize to XDC units.
+        # Some APIs return wei (e.g., "1617600000000000000") instead of decimal
+        # native units. Detect very large integer-like numbers and normalize.
         if numeric >= Decimal("1e9"):
             return numeric / Decimal("1e18")
         return numeric
@@ -6365,6 +6382,14 @@ def swap_page():
     is_minipay = "minipay" in ua
     if is_minipay:
         reserve_visible = True
+
+    # GoodDollar MessagePassingBridge — same address on every supported chain
+    # per https://docs.gooddollar.org/user-guides/bridge-gooddollars
+    bridge_contract = os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5")
+    celo_gd_token_contract = os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A")
+    xdc_chain_id = int(os.getenv("XDC_MAINNET_CHAIN_ID", "50"))
+    celo_chain_id = int(os.getenv("CELO_MAINNET_CHAIN_ID", "42220"))
+
     return render_template(
         "swap.html",
         wallet=wallet,
@@ -6373,6 +6398,10 @@ def swap_page():
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         reserve_swap_visible=reserve_visible,
         is_minipay=is_minipay,
+        bridge_contract=bridge_contract,
+        celo_gd_token_contract=celo_gd_token_contract,
+        xdc_chain_id=xdc_chain_id,
+        celo_chain_id=celo_chain_id,
     )
 
 
@@ -6925,11 +6954,64 @@ def xdc_bridge_estimate_fee():
             ),
         ]
 
+        chain_aliases = {
+            1: "ETH",
+            50: "XDC",
+            122: "FUSE",
+            42220: "CELO",
+        }
+        source_alias = chain_aliases.get(source_chain_id_val)
+        target_alias = chain_aliases.get(target_chain_id_val)
+
+        # Per https://docs.gooddollar.org/user-guides/bridge-gooddollars: the
+        # canonical route keys are ``LZ_<SRC>_TO_<DST>`` (LayerZero) and
+        # ``AXL_<SRC>_TO_<DST>`` (Axelar) where <SRC>/<DST> are the chain
+        # aliases above. "Bridging from/to Fuse and XDC is only supported by
+        # LayerZero", so for any pair involving XDC or Fuse the parser
+        # restricts itself to LZ_* keys to mirror what the docs prescribe.
+        if source_alias and target_alias:
+            xdc_or_fuse = {"XDC", "FUSE"}
+            if source_alias in xdc_or_fuse or target_alias in xdc_or_fuse:
+                preferred_route_keys = (f"LZ_{source_alias}_TO_{target_alias}",)
+            else:
+                preferred_route_keys = (
+                    f"LZ_{source_alias}_TO_{target_alias}",
+                    f"AXL_{source_alias}_TO_{target_alias}",
+                )
+        else:
+            preferred_route_keys = ()
+
+        # Older / generic shapes some intermediate proxies might use.
+        legacy_route_keys = (
+            f"LZ_{source_chain_id_val}_TO_{target_chain_id_val}",
+            f"{source_chain_id_val}_TO_{target_chain_id_val}",
+        )
+        if source_alias and target_alias:
+            legacy_route_keys += (
+                f"{source_alias}_TO_{target_alias}",
+            )
+        all_route_keys = preferred_route_keys + legacy_route_keys
+
+        def _scan_dict_for_route_keys(scope):
+            if not isinstance(scope, dict):
+                return None
+            for route_key in all_route_keys:
+                if route_key not in scope:
+                    continue
+                route_val = scope.get(route_key)
+                if isinstance(route_val, dict):
+                    for key in ("fee", "bridgeFee", "nativeFee", "estimatedFee", "value"):
+                        if key in route_val:
+                            return route_val.get(key)
+                elif route_val is not None:
+                    return route_val
+            return None
+
         def _extract_candidate(payload_obj):
-            candidate_val = None
             if not isinstance(payload_obj, dict):
                 return None
 
+            # Direct top-level fee / bridgeFee / nativeFee / estimatedFee shape.
             for key in ("fee", "bridgeFee", "nativeFee", "estimatedFee"):
                 if key in payload_obj:
                     return payload_obj.get(key)
@@ -6939,37 +7021,21 @@ def xdc_bridge_estimate_fee():
                     if key in payload_obj["data"]:
                         return payload_obj["data"].get(key)
 
-            route_keys = (
-                f"LZ_{source_chain_id_val}_TO_{target_chain_id_val}",
-                f"{source_chain_id_val}_TO_{target_chain_id_val}",
-            )
-            chain_aliases = {
-                1: "ETH",
-                50: "XDC",
-                122: "FUSE",
-                42220: "CELO",
-            }
-            source_alias = chain_aliases.get(source_chain_id_val)
-            target_alias = chain_aliases.get(target_chain_id_val)
-            if source_alias and target_alias:
-                route_keys += (
-                    f"LZ_{source_alias}_TO_{target_alias}",
-                    f"{source_alias}_TO_{target_alias}",
-                )
-            for route_key in route_keys:
-                if route_key not in payload_obj:
-                    continue
-                route_val = payload_obj.get(route_key)
-                if isinstance(route_val, dict):
-                    for key in ("fee", "bridgeFee", "nativeFee", "estimatedFee", "value"):
-                        if key in route_val:
-                            candidate_val = route_val.get(key)
-                            break
-                else:
-                    candidate_val = route_val
-                if candidate_val is not None:
-                    break
-            return candidate_val
+            # Canonical goodserver shape (per GoodDocs):
+            # { "LAYERZERO": { "LZ_CELO_TO_XDC": "0.115... Celo", ... },
+            #   "AXELAR":    { "AXL_ETH_TO_CELO": "0.000... ETH", ... } }
+            for nested_key in ("LAYERZERO", "AXELAR", "layerzero", "axelar"):
+                nested = payload_obj.get(nested_key)
+                hit = _scan_dict_for_route_keys(nested)
+                if hit is not None:
+                    return hit
+
+            # Some proxies flatten everything to the top level.
+            top_level_hit = _scan_dict_for_route_keys(payload_obj)
+            if top_level_hit is not None:
+                return top_level_hit
+
+            return None
 
         for url in urls:
             try:

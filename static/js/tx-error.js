@@ -29,6 +29,18 @@
 
     if (global.GMTxError && typeof global.GMTxError.format === "function") return;
 
+    // Wrap a thrown Error so format() will pass `.message` through verbatim
+    // (instead of running it through the wallet/RPC pattern detector and
+    // replacing it with a generic "Insufficient funds for gas" string).
+    // Use this for preflight errors where the caller already produced a
+    // user-facing message.
+    function asFriendly(err) {
+        if (err && typeof err === "object") {
+            try { err._gmFriendly = true; } catch (_) {}
+        }
+        return err;
+    }
+
     function _stringify(value) {
         if (value == null) return "";
         if (typeof value === "string") return value;
@@ -140,6 +152,14 @@
         if (err == null) return "Unknown error";
         if (typeof err === "string") return _truncate(_stripEthersBoilerplate(err)) || "Unknown error";
 
+        // Preflight errors raised by app code with `_gmFriendly = true`
+        // already contain a user-facing, fully-itemized message — pass them
+        // through verbatim instead of crushing them into a generic
+        // "Insufficient CELO for gas fees" string.
+        if (err && err._gmFriendly === true && typeof err.message === "string" && err.message) {
+            return _truncate(err.message, 280);
+        }
+
         var info = _spelunk(err);
         var msg = info.msg || "";
         var joined = info.joined || "";
@@ -186,5 +206,5 @@
         return _isUserRejection(info.code, info.joined || "");
     }
 
-    global.GMTxError = { format: format, isUserRejection: isUserRejection };
+    global.GMTxError = { format: format, isUserRejection: isUserRejection, asFriendly: asFriendly };
 })(typeof window !== "undefined" ? window : globalThis);
