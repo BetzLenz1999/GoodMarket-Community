@@ -947,8 +947,8 @@
                             type="number"
                             class="amount-input"
                             id="bridgeAmountCeloToXdc"
-                            placeholder="0.0"
-                            min="0"
+                            placeholder="2000"
+                            min="2000"
                             step="any"
                             oninput="updateCeloBridgeSummary(); scheduleCeloBridgeFeeEstimate();"
                         >
@@ -3121,6 +3121,11 @@
             "function balanceOf(address owner) view returns (uint256)"
         ];
         const CELO_TO_XDC_BRIDGE_SERVICE_LAYERZERO = 1;
+        // GoodMarket-side minimum bridge amount. Sits *above* the on-chain
+        // contract minimum (10 G$) so the bridge tab is only used for
+        // amounts that are actually worth the LayerZero CELO fee. Edit
+        // this single constant to change the gate everywhere.
+        const CELO_TO_XDC_UI_MIN_AMOUNT_GD = 2000;
         // Fallback fee mirrors goodserver/estimatefees current LZ_CELO_TO_XDC.
         // Padded by the safety multiplier in /api/xdc/bridge/estimate-fee, so
         // the displayed default already includes a small margin for LayerZero
@@ -3365,7 +3370,10 @@
                 el.textContent = '';
                 return;
             }
-            const minG = Number(ethers.formatUnits(_celoBridgeLimitsCache.minAmount, 18));
+            const onChainMinG = Number(ethers.formatUnits(_celoBridgeLimitsCache.minAmount, 18));
+            // GoodMarket gates the tab at a higher minimum than the bridge
+            // contract's 10 G$ floor — display whichever is stricter.
+            const minG = Math.max(onChainMinG, CELO_TO_XDC_UI_MIN_AMOUNT_GD);
             const txG  = Number(ethers.formatUnits(_celoBridgeLimitsCache.txLimit,   18));
             const minFeeG = Number(ethers.formatUnits(_celoBridgeFeesCache.minFee, 18));
             const maxFeeG = Number(ethers.formatUnits(_celoBridgeFeesCache.maxFee, 18));
@@ -3537,6 +3545,18 @@
 
             if (!amountStr || parseFloat(amountStr) <= 0) {
                 return showCeloBridgeAlert('alert-error', '❌ Enter a valid bridge amount.');
+            }
+            // GoodMarket-side minimum gate. Sits above the bridge contract's
+            // own 10 G$ minAmount so the tab is reserved for amounts that
+            // are actually worth the LayerZero CELO fee. Reject *before*
+            // hitting the wallet so the user sees a clean app-side alert.
+            const _enteredAmountGd = parseFloat(amountStr);
+            if (isFinite(_enteredAmountGd) && _enteredAmountGd < CELO_TO_XDC_UI_MIN_AMOUNT_GD) {
+                return showCeloBridgeAlert(
+                    'alert-error',
+                    `❌ Minimum bridge amount is ${CELO_TO_XDC_UI_MIN_AMOUNT_GD.toLocaleString()} G$. ` +
+                    `You entered ${_enteredAmountGd.toLocaleString(undefined,{maximumFractionDigits:2})} G$.`
+                );
             }
             if (!feeStr || parseFloat(feeStr) <= 0) {
                 return showCeloBridgeAlert('alert-error', '❌ Enter a valid bridge fee in CELO.');
