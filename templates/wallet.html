@@ -3579,12 +3579,16 @@
         }
 
         // CELO gas threshold — must stay in sync with backend _get_gas_status().
-        // Required = max(estimated_gas * gas_price * FAUCET_BUFFER, FAUCET_MIN_CELO_WEI).
-        // The min floor (0.005 CELO) keeps top-ups predictable during low-gas
-        // periods; the dynamic component covers congestion spikes (observed
-        // 0.07+ CELO needed) so wallets that look "fine" against a flat floor
-        // still trigger the faucet when the network actually demands more gas.
-        const CELO_GAS_MIN_FLOOR_WEI = 5000000000000000n; // 0.005 CELO floor
+        // Required = max(estimated_gas * gas_price * FAUCET_BUFFER, CELO_GAS_MIN_FLOOR_WEI).
+        // Floor raised from 0.005 to 0.1 CELO so wallets that report a low
+        // eth_gasPrice (Trust Wallet over WalletConnect, forno via the WC
+        // bridge, etc.) don't false-pass when the actual claim transaction
+        // costs ~0.07–0.1 CELO during congestion. Stays in sync with the
+        // backend FAUCET_MIN_CELO default in routes.py — operators can still
+        // raise/lower the backend floor via the FAUCET_MIN_CELO env var; this
+        // frontend value is the fallback fast-path threshold for injected
+        // wallets and is fine to keep at 0.1 CELO permanently.
+        const CELO_GAS_MIN_FLOOR_WEI = 100000000000000000n; // 0.1 CELO floor
         const CELO_GAS_BUFFER_NUMERATOR = 135n;   // 1.35x buffer (matches FAUCET_BUFFER_MULTIPLIER)
         const CELO_GAS_BUFFER_DENOMINATOR = 100n;
         const CELO_FALLBACK_CLAIM_GAS = 220000n;
