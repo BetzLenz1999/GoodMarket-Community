@@ -6387,6 +6387,10 @@ def swap_page():
     # per https://docs.gooddollar.org/user-guides/bridge-gooddollars
     bridge_contract = os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5")
     celo_gd_token_contract = os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A")
+    # XDC G$ contract is needed by the unified Bridge pane so the XDC → Celo
+    # sub-tab can read the user's G$-on-XDC balance + allowance directly,
+    # without bouncing the user to /xdc-wallet first.
+    xdc_gd_token_contract = os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c")
     xdc_chain_id = int(os.getenv("XDC_MAINNET_CHAIN_ID", "50"))
     celo_chain_id = int(os.getenv("CELO_MAINNET_CHAIN_ID", "42220"))
 
@@ -6400,6 +6404,7 @@ def swap_page():
         is_minipay=is_minipay,
         bridge_contract=bridge_contract,
         celo_gd_token_contract=celo_gd_token_contract,
+        xdc_gd_token_contract=xdc_gd_token_contract,
         xdc_chain_id=xdc_chain_id,
         celo_chain_id=celo_chain_id,
     )
