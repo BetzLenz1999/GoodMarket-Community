@@ -2022,14 +2022,18 @@
         }
 
         // ─── Load Balances ────────────────────────────────────────────────────────
-        // For server-side (server-side) mode the swap is signed from the
-        // backend wallet – always load balances from the backend API in that case
-        // so that gas-buffer checks use the correct wallet's balance.
-        // For MetaMask-only mode, read directly from the connected wallet.
+        // Always read balances on-chain for `WALLET_ADDRESS` — i.e. the address
+        // tied to the GoodMarket session. This matches what every signing path
+        // already enforces (`getConnectedSwapSigner()` rejects unless
+        // `signerAddr === WALLET_ADDRESS`), so the displayed balance and the
+        // pre-flight checks always agree even if the user has a different
+        // account selected in their MetaMask UI.
+        //
+        // Server-signing mode still asks the backend for balances, since the
+        // signing wallet there is the backend wallet, not WALLET_ADDRESS.
         async function loadBalances() {
             try {
                 if (window.useServerSigning) {
-                    // Server-side signing: use backend wallet balance
                     const res = await fetch('/api/wallet/balances');
                     if (res.ok) {
                         const data = await res.json();
@@ -2044,13 +2048,18 @@
                     return;
                 }
 
-                // MetaMask-only mode
                 const provider = new ethers.JsonRpcProvider(CELO_RPC);
-                let userAddr = null;
-                const _ep = _getEthProvider();
-                if (_ep) {
-                    const accounts = await _ep.request({ method: "eth_accounts" });
-                    if (accounts && accounts.length > 0) userAddr = accounts[0];
+
+                // Canonical address = the GoodMarket-session wallet. Falls back
+                // to whatever the injected provider says, then to the backend
+                // /api/wallet/balances if no address is available at all.
+                let userAddr = (typeof WALLET_ADDRESS === "string" && WALLET_ADDRESS) ? WALLET_ADDRESS : null;
+                if (!userAddr) {
+                    const _ep = _getEthProvider();
+                    if (_ep) {
+                        const accounts = await _ep.request({ method: "eth_accounts" });
+                        if (accounts && accounts.length > 0) userAddr = accounts[0];
+                    }
                 }
                 if (!userAddr) {
                     const res = await fetch('/api/wallet/balances');
