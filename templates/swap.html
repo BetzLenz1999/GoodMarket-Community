@@ -613,6 +613,38 @@
             color: #fff;
         }
         .bridge-sub-pane.hidden-tab { display: none !important; }
+        /* GoodSwap sub-tabs (Uniswap V3 | GoodReserve). Same visual rhythm
+           as the Bridge sub-tabs so users learn one pattern across the
+           page. Each sub-pane keeps its existing design 1:1 — this is
+           strictly a wrapper + toggle, no cosmetic changes. */
+        .goodswap-sub-tabs {
+            display: flex;
+            gap: 0.4rem;
+            margin-bottom: 1rem;
+            background: rgba(15,23,42,0.4);
+            border: 1px solid rgba(167,139,250,0.25);
+            border-radius: 12px;
+            padding: 0.25rem;
+        }
+        .goodswap-sub-tab-btn {
+            flex: 1;
+            background: transparent;
+            border: 0;
+            color: rgba(255,255,255,0.55);
+            font-weight: 600;
+            font-size: 0.86rem;
+            padding: 0.55rem 0.45rem;
+            border-radius: 9px;
+            cursor: pointer;
+            transition: background 0.18s, color 0.18s;
+            font-family: inherit;
+        }
+        .goodswap-sub-tab-btn:hover { color: #cbd5e1; }
+        .goodswap-sub-tab-btn.active {
+            background: rgba(124,58,237,0.22);
+            color: #fff;
+        }
+        .goodswap-sub-pane.hidden-tab { display: none !important; }
         .reserve-direction {
             display: flex;
             gap: 0.4rem;
@@ -682,21 +714,32 @@
             <p class="page-subtitle">Swap G$, CELO, cUSD and USDT via Uniswap V3 on Celo, or buy &amp; sell G$ at the GoodReserve protocol price</p>
         </div>
 
-        <!-- Tab Switcher (DEX / GoodReserve / Bridge). Shown for all users,
-             including MiniPay. The Uniswap V3 path uses CIP-64 fee abstraction
-             with a MiniPay-aware tx helper, so all three modes are accessible.
-             The "Bridge to XDC" tab is always available so users can also
-             move G$ from Celo to the XDC network. -->
+        <!-- Top-level tabs: [ GoodSwap ] [ Bridge ]. GoodSwap groups
+             Uniswap V3 + GoodReserve under one button (sub-tabs inside);
+             Bridge groups Celo→XDC + XDC→Celo under one button (sub-tabs
+             inside). Same pattern at both levels so users learn one
+             interaction model across the page. Available to MiniPay
+             users too — Uniswap V3 here uses CIP-64 fee abstraction. -->
         <div id="swapTabSwitcher" class="swap-tabs" role="tablist" aria-label="Swap mode">
-            <button type="button" id="tabBtnDex" class="swap-tab-btn active" role="tab" aria-selected="true" onclick="setSwapTab('dex')">Uniswap V3</button>
-            {% if reserve_swap_visible %}
-            <button type="button" id="tabBtnReserve" class="swap-tab-btn" role="tab" aria-selected="false" onclick="setSwapTab('reserve')">GoodReserve</button>
-            {% endif %}
+            <button type="button" id="tabBtnGoodSwap" class="swap-tab-btn active" role="tab" aria-selected="true" onclick="setSwapTab('goodswap')">GoodSwap</button>
             <button type="button" id="tabBtnBridge" class="swap-tab-btn" role="tab" aria-selected="false" onclick="setSwapTab('bridge')">Bridge</button>
         </div>
 
-        <!-- DEX Pane -->
-        <div id="swapPaneDex" class="pane pane-dex">
+        <!-- GoodSwap top pane: wraps the Uniswap V3 and GoodReserve
+             sub-panes. Designs of each sub-pane are preserved 1:1 from
+             before consolidation; this wrapper just adds the sub-tab
+             switcher and groups them under a single top tab. -->
+        <div id="swapPaneGoodSwap" class="pane pane-goodswap">
+
+            <div id="goodswapSubTabSwitcher" class="goodswap-sub-tabs" role="tablist" aria-label="GoodSwap mode">
+                <button type="button" id="goodswapSubBtnDex" class="goodswap-sub-tab-btn active" role="tab" aria-selected="true" onclick="setGoodSwapSubTab('dex')">Uniswap V3</button>
+                {% if reserve_swap_visible %}
+                <button type="button" id="goodswapSubBtnReserve" class="goodswap-sub-tab-btn" role="tab" aria-selected="false" onclick="setGoodSwapSubTab('reserve')">GoodReserve</button>
+                {% endif %}
+            </div>
+
+        <!-- Uniswap V3 sub-pane (existing, unchanged content) -->
+        <div id="swapPaneDex" class="goodswap-sub-pane goodswap-sub-pane-dex">
 
         <!-- Swap Card -->
         <div class="swap-card">
@@ -823,11 +866,11 @@
             </a>
         </div>
 
-        </div><!-- /.pane-dex -->
+        </div><!-- /.goodswap-sub-pane-dex -->
 
         {% if reserve_swap_visible %}
-        <!-- GoodReserve Pane -->
-        <div id="swapPaneReserve" class="pane pane-reserve hidden-tab">
+        <!-- GoodReserve sub-pane (existing, unchanged content) -->
+        <div id="swapPaneReserve" class="goodswap-sub-pane goodswap-sub-pane-reserve hidden-tab">
             <div class="swap-card">
 
                 <div class="network-badge">
@@ -938,8 +981,10 @@
                     Learn more in the GoodDollar docs ↗
                 </a>
             </div>
-        </div><!-- /.pane-reserve -->
+        </div><!-- /.goodswap-sub-pane-reserve -->
         {% endif %}
+
+        </div><!-- /.pane-goodswap -->
 
         <!-- Bridge Pane (Celo G$ ↔ XDC G$) -->
         <div id="swapPaneBridge" class="pane pane-bridge hidden-tab">
@@ -2903,28 +2948,53 @@
         let reserveQuoteTimer = null;
         const RESERVE_SLIPPAGE_BPS = 50n; // 0.5% safety margin between quote and tx
 
-        // Auto-switch to a specific tab if requested via ?tab=reserve or #reserve.
-        // Runs once on load; ignored if the GoodReserve pane wasn't rendered (flag off).
-        // MiniPay users get both tabs — Uniswap V3 (CIP-64 fee abstraction) and
-        // GoodReserve. The default landing tab is the same for everyone (DEX),
-        // and users can switch freely.
+        // Auto-switch to a specific tab if requested via the URL (e.g.
+        // ?tab=goodswap, ?tab=bridge, #reserve, etc). Runs once on load.
+        // MiniPay users get the same set of sub-tabs (Uniswap V3 here uses
+        // CIP-64 fee abstraction). The default landing top tab is the same
+        // for everyone (GoodSwap → Uniswap V3); users can switch freely.
+        //
+        // Back-compat aliases so old ?tab=dex / ?tab=reserve / ?tab=uniswap
+        // links keep landing on the right sub-pane after the GoodSwap
+        // consolidation.
         (function autoSelectSwapTab() {
             try {
                 const params = new URLSearchParams(window.location.search);
                 const fromQuery = (params.get("tab") || "").toLowerCase();
                 const fromHash  = (window.location.hash || "").replace("#", "").toLowerCase();
                 const want = fromQuery || fromHash;
+
+                // Top-level tab target.
                 let target = null;
-                if (want === "reserve" || want === "goodreserve") {
-                    target = "reserve";
-                } else if (want === "bridge" || want === "xdc" || want === "bridge-xdc") {
+                // Optional GoodSwap sub-tab (only set when caller specifies).
+                let goodswapPane = null;
+
+                if (want === "bridge" || want === "xdc" || want === "bridge-xdc") {
                     target = "bridge";
+                } else if (want === "goodswap" || want === "swap") {
+                    target = "goodswap";
+                } else if (want === "reserve" || want === "goodreserve") {
+                    target = "goodswap";
+                    goodswapPane = "reserve";
+                } else if (want === "dex" || want === "uniswap" || want === "uniswapv3" || want === "uniswap-v3" || want === "uniswap_v3") {
+                    target = "goodswap";
+                    goodswapPane = "dex";
                 }
+
+                // Explicit GoodSwap sub-tab via ?pane=uniswap|reserve.
+                const paneRaw = (params.get("pane") || "").toLowerCase();
+                if (paneRaw === "reserve" || paneRaw === "goodreserve") {
+                    if (!target) target = "goodswap";
+                    goodswapPane = "reserve";
+                } else if (paneRaw === "uniswap" || paneRaw === "uniswapv3" || paneRaw === "uniswap-v3" || paneRaw === "uniswap_v3" || paneRaw === "dex") {
+                    if (!target) target = "goodswap";
+                    goodswapPane = "dex";
+                }
+
                 // Bridge sub-tab direction (?dir=xdc_to_celo | celo_to_xdc).
-                // Defaults to celo_to_xdc when ?tab=bridge is requested without
-                // a dir, matching today's primary entry point. Used by the
-                // /xdc-wallet "Bridge moved to GoodSwap → Bridge" banner so a
-                // returning user lands directly on the XDC → Celo sub-pane.
+                // Used by the /xdc-wallet "Bridge moved to GoodSwap → Bridge"
+                // banner so a returning user lands directly on the XDC →
+                // Celo sub-pane.
                 const dirRaw = (params.get("dir") || "").toLowerCase();
                 let bridgeDir = null;
                 if (dirRaw === "xdc_to_celo" || dirRaw === "xdc-to-celo" || dirRaw === "xdctocelo") {
@@ -2932,13 +3002,46 @@
                 } else if (dirRaw === "celo_to_xdc" || dirRaw === "celo-to-xdc" || dirRaw === "celotoxdc") {
                     bridgeDir = "celo_to_xdc";
                 }
-                if (!target && !bridgeDir) return;
+
+                if (!target && !goodswapPane && !bridgeDir) return;
+
+                // "Focused mode": when the user arrived via an explicit
+                // ?tab= / ?pane= / ?dir= URL (e.g. clicked a wallet
+                // sidebar shortcut), hide the top-level [GoodSwap |
+                // Bridge] switcher so they only see the sub-tabs of the
+                // section they asked for. This avoids a confusing
+                // double-row-of-tabs when the entry point already
+                // committed to a section. Switching between sections
+                // happens via the wallet sidebar.
+                //
+                // Bare /swap (no params) still shows both top tabs so
+                // existing bookmarks / power-user navigation stay
+                // intact.
+                const focusBridge   = (target === "bridge") || !!bridgeDir;
+                const focusGoodSwap = !focusBridge && ((target === "goodswap") || !!goodswapPane);
+
                 const apply = () => {
                     if (typeof setSwapTab !== "function") return;
-                    if (target === "reserve" && !document.querySelector(".pane-reserve")) return;
-                    if ((target === "bridge" || bridgeDir) && !document.querySelector(".pane-bridge")) return;
+                    if (target === "bridge" && !document.querySelector(".pane-bridge")) return;
+                    if (bridgeDir && !document.querySelector(".pane-bridge")) return;
                     if (target) setSwapTab(target);
+                    if (goodswapPane && typeof setGoodSwapSubTab === "function") {
+                        setGoodSwapSubTab(goodswapPane);
+                    }
                     if (bridgeDir && typeof setBridgeSubTab === "function") setBridgeSubTab(bridgeDir);
+
+                    if (focusBridge || focusGoodSwap) {
+                        const switcher = document.getElementById("swapTabSwitcher");
+                        if (switcher) switcher.style.display = "none";
+                        // Hide the inactive top pane outright so it
+                        // can't be reached even by toggling a stale
+                        // top-tab button (defensive: setSwapTab already
+                        // adds .hidden-tab to it).
+                        const otherPane = focusBridge
+                            ? document.getElementById("swapPaneGoodSwap")
+                            : document.getElementById("swapPaneBridge");
+                        if (otherPane) otherPane.style.display = "none";
+                    }
                 };
                 if (document.readyState === "loading") {
                     document.addEventListener("DOMContentLoaded", apply, { once: true });
@@ -2949,40 +3052,76 @@
         })();
 
         function setSwapTab(name) {
-            const dexPane    = document.querySelector(".pane-dex");
-            const resPane    = document.querySelector(".pane-reserve");
-            const bridgePane = document.querySelector(".pane-bridge");
-            const dexBtn     = document.getElementById("tabBtnDex");
-            const resBtn     = document.getElementById("tabBtnReserve");
-            const bridgeBtn  = document.getElementById("tabBtnBridge");
-            if (!dexPane) return;
+            const goodswapPane = document.querySelector(".pane-goodswap");
+            const bridgePane   = document.querySelector(".pane-bridge");
+            const goodswapBtn  = document.getElementById("tabBtnGoodSwap");
+            const bridgeBtn    = document.getElementById("tabBtnBridge");
+            if (!goodswapPane) return;
 
-            const isReserve = name === "reserve";
-            const isBridge  = name === "bridge";
-            const isDex     = !isReserve && !isBridge;
+            const isBridge   = name === "bridge";
+            // Back-compat: 'dex' / 'reserve' aliases route to GoodSwap top
+            // tab and leave the sub-tab choice up to the caller (or
+            // setGoodSwapSubTab() invoked by autoSelectSwapTab).
+            const isGoodSwap = !isBridge;
 
-            dexPane.classList.toggle("hidden-tab", !isDex);
-            if (resPane)    resPane.classList.toggle("hidden-tab",    !isReserve);
+            goodswapPane.classList.toggle("hidden-tab", !isGoodSwap);
             if (bridgePane) bridgePane.classList.toggle("hidden-tab", !isBridge);
 
-            if (dexBtn) {
-                dexBtn.classList.toggle("active", isDex);
-                dexBtn.setAttribute("aria-selected", String(isDex));
-            }
-            if (resBtn) {
-                resBtn.classList.toggle("active", isReserve);
-                resBtn.setAttribute("aria-selected", String(isReserve));
+            if (goodswapBtn) {
+                goodswapBtn.classList.toggle("active", isGoodSwap);
+                goodswapBtn.setAttribute("aria-selected", String(isGoodSwap));
             }
             if (bridgeBtn) {
                 bridgeBtn.classList.toggle("active", isBridge);
                 bridgeBtn.setAttribute("aria-selected", String(isBridge));
             }
 
-            if (isReserve) updateReserveBalanceDisplay();
+            // Honour 'dex' / 'reserve' shorthand by also flipping the
+            // GoodSwap sub-tab so e.g. setSwapTab('reserve') from a button
+            // elsewhere in the page still does the obvious thing.
+            if (name === "dex" || name === "reserve") {
+                if (typeof setGoodSwapSubTab === "function") {
+                    setGoodSwapSubTab(name);
+                }
+            }
+
             if (isBridge)  updateCeloBridgeBalanceDisplay();
             if (isBridge && typeof updateBridgeFromBalanceXdcToCelo === "function") {
                 updateBridgeFromBalanceXdcToCelo();
             }
+        }
+
+        // Toggle the active sub-pane inside the GoodSwap tab. Each
+        // sub-pane keeps its existing design 1:1 (Uniswap V3 was already
+        // the default; GoodReserve was already gated by reserve_swap_visible).
+        // No network switching here — both sub-tabs run on Celo Mainnet.
+        function setGoodSwapSubTab(name) {
+            const isReserve = name === "reserve";
+            const dexPane   = document.getElementById("swapPaneDex");
+            const resPane   = document.getElementById("swapPaneReserve");
+            const dexBtn    = document.getElementById("goodswapSubBtnDex");
+            const resBtn    = document.getElementById("goodswapSubBtnReserve");
+            // GoodReserve sub-tab is gated by reserve_swap_visible on the
+            // server side; if it isn't rendered, silently fall back to dex.
+            if (isReserve && !resPane) {
+                if (dexPane) dexPane.classList.remove("hidden-tab");
+                if (dexBtn) {
+                    dexBtn.classList.add("active");
+                    dexBtn.setAttribute("aria-selected", "true");
+                }
+                return;
+            }
+            if (dexPane) dexPane.classList.toggle("hidden-tab",  isReserve);
+            if (resPane) resPane.classList.toggle("hidden-tab", !isReserve);
+            if (dexBtn) {
+                dexBtn.classList.toggle("active", !isReserve);
+                dexBtn.setAttribute("aria-selected", String(!isReserve));
+            }
+            if (resBtn) {
+                resBtn.classList.toggle("active", isReserve);
+                resBtn.setAttribute("aria-selected", String(isReserve));
+            }
+            if (isReserve) updateReserveBalanceDisplay();
         }
 
         // Toggle the active sub-pane inside the Bridge tab. Each direction
