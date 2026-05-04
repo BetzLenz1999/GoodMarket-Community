@@ -624,9 +624,10 @@
 
             <div class="warn-box" style="margin-bottom:0.9rem; border-color: rgba(251,191,36,0.45); background: rgba(251,191,36,0.08);">
                 💡 <strong>Bridge/Convert Suggestion:</strong><br>
-                For a smoother <strong>XDC G$ → Celo G$</strong> bridge, recommended amount is around
+                Minimum bridge amount is <strong>2,000 G$</strong> per transaction. For a smoother
+                <strong>XDC G$ → Celo G$</strong> bridge, recommended amount is around
                 <strong>10,000 G$</strong> with at least <strong>2.1 XDC</strong> wallet balance for fees and gas.<br>
-                If your G$o n XDC is not enough, GoodMarket suggest to collect more <strong>G$ on XDC Network</strong> before making a bridge.
+                If your G$ on XDC is not enough, GoodMarket suggests collecting more <strong>G$ on XDC Network</strong> before making a bridge.
             </div>
 
             <div class="info-box" style="margin-bottom:0.9rem;">
@@ -640,7 +641,7 @@
                 <div class="form-group" style="margin-bottom:0;">
                     <label class="form-label">Amount (G$ on XDC)</label>
                     <div class="amount-row">
-                        <input class="form-input" id="bridgeAmountXdcToCelo" type="number" min="0.000000000000000001" step="any" placeholder="0.00" oninput="updateBridgeSummary(); scheduleBridgeFeeEstimate();">
+                        <input class="form-input" id="bridgeAmountXdcToCelo" type="number" min="2000" step="any" placeholder="2000" oninput="updateBridgeSummary(); scheduleBridgeFeeEstimate();">
                         <button class="max-btn" onclick="setBridgeMax()">MAX</button>
                     </div>
                 </div>
@@ -737,6 +738,10 @@
         ];
         const BRIDGE_SERVICE_LAYERZERO = 1;
         const BRIDGE_FALLBACK_FEE_XDC_TO_CELO = 1.6176;
+        // GoodMarket-side minimum bridge amount, mirrors the Celo → XDC tab.
+        // Sits above the contract's own minAmount so the tab is reserved
+        // for transfers that are actually worth the LayerZero fee.
+        const XDC_TO_CELO_UI_MIN_AMOUNT_GD = 2000;
 
         function _providerLabel(provider) {
             if (!provider) return 'wallet';
@@ -1287,6 +1292,18 @@
             if (!amountStr || parseFloat(amountStr) <= 0) {
                 return showBridgeAlert('alert-error', '❌ Enter a valid bridge amount.');
             }
+            // GoodMarket-side minimum gate, mirrors the Celo → XDC tab so the
+            // two bridge directions stay UX-aligned. Reject *before* any
+            // wallet interaction so the user sees a clean app-side alert
+            // instead of an approve they can't redeem.
+            const _enteredAmountGd = parseFloat(amountStr);
+            if (Number.isFinite(_enteredAmountGd) && _enteredAmountGd < XDC_TO_CELO_UI_MIN_AMOUNT_GD) {
+                return showBridgeAlert(
+                    'alert-error',
+                    `❌ Minimum bridge amount is ${XDC_TO_CELO_UI_MIN_AMOUNT_GD.toLocaleString()} G$. ` +
+                    `You entered ${_enteredAmountGd.toLocaleString(undefined,{maximumFractionDigits:2})} G$.`
+                );
+            }
             if (!feeStr || parseFloat(feeStr) <= 0) {
                 return showBridgeAlert('alert-error', '❌ Enter a valid bridge fee in XDC.');
             }
@@ -1377,9 +1394,18 @@
 
                     const onchainBalWei = await readProvider.getBalance(from);
                     if (onchainBalWei < minimumRequiredWei) {
-                        const needXdc = ethers.formatUnits(minimumRequiredWei, 18);
-                        const hasXdc = ethers.formatUnits(onchainBalWei, 18);
-                        throw new Error(`Not enough XDC balance. You need at least ${parseFloat(needXdc).toFixed(6)} XDC (bridge fee + gas reserve), but wallet has ${parseFloat(hasXdc).toFixed(6)} XDC.`);
+                        const needXdc  = parseFloat(ethers.formatUnits(minimumRequiredWei, 18));
+                        const hasXdc   = parseFloat(ethers.formatUnits(onchainBalWei, 18));
+                        const feeXdcF  = parseFloat(ethers.formatUnits(feeWei, 18));
+                        const gasXdcF  = parseFloat(ethers.formatUnits(recommendedGasReserveWei, 18));
+                        const shortXdc = Math.max(0, needXdc - hasXdc);
+                        throw new Error(
+                            `Not enough XDC for the bridge. ` +
+                            `Need ≈ ${needXdc.toFixed(6)} XDC ` +
+                            `(LayerZero fee ${feeXdcF.toFixed(6)} + gas reserve ${gasXdcF.toFixed(6)}), ` +
+                            `but wallet has ${hasXdc.toFixed(6)} XDC. ` +
+                            `Add about ${shortXdc.toFixed(4)} more XDC and retry.`
+                        );
                     }
                     const preflightData = bridgeIface.encodeFunctionData('bridgeTo', [
                         toAddr,
