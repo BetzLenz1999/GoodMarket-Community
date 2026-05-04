@@ -1800,50 +1800,18 @@ def verify_identity():
 @app.route('/manual-wallet-login', methods=['POST'])
 def manual_wallet_login():
     """
-    Fallback login using only a pasted wallet address (no signature).
-    This mode is convenient but weaker than signature-based login because
-    the server cannot cryptographically prove wallet ownership.
+    Manual paste-an-address login is no longer supported.
+
+    The endpoint used to start a session from any pasted EVM address with
+    no signature, which let anyone log in as anyone. Now that
+    WalletConnect QR-login is the supported sign-in path for users
+    without an injected wallet, the route is hard-disabled to prevent
+    direct API abuse — even though the UI affordance has been removed.
     """
-    try:
-        data = request.get_json() or {}
-        wallet_address = (data.get('wallet_address') or '').strip()
-
-        if not wallet_address:
-            return jsonify({'success': False, 'error': 'Wallet address is required'}), 400
-
-        if not Web3.is_address(wallet_address):
-            return jsonify({'success': False, 'error': 'Invalid wallet address format'}), 400
-
-        try:
-            wallet_address = Web3.to_checksum_address(wallet_address)
-        except Exception:
-            return jsonify({'success': False, 'error': 'Could not normalize wallet address'}), 400
-
-        session.permanent = True
-        session['wallet'] = wallet_address
-        session['wallet_address'] = wallet_address
-        session['verified'] = True
-        session['ubi_verified'] = False
-        session['login_method'] = 'manual'
-        session['verification_time'] = datetime.now().isoformat()
-
-        logger.info(f"📝 Manual wallet login started for {wallet_address[:10]}... (signature skipped)")
-
-        return jsonify({
-            'success': True,
-            'message': 'Manual wallet login successful',
-            'wallet': wallet_address,
-            'login_method': 'manual',
-            'signature_required': False,
-            'security_note': (
-                'Signature login is more private and secure because it proves wallet ownership. '
-                'Manual mode is supported as a convenience fallback.'
-            ),
-            'redirect_to': '/wallet'
-        })
-    except Exception as e:
-        logger.error(f"❌ Manual wallet login error: {e}")
-        return jsonify({'success': False, 'error': 'Manual wallet login failed'}), 500
+    return jsonify({
+        'success': False,
+        'error': 'Manual wallet login is no longer supported. Please sign in with WalletConnect or an injected wallet.',
+    }), 410
 
 
 @app.route('/fv-callback')
