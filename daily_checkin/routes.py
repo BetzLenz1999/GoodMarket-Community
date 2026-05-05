@@ -33,12 +33,7 @@ def status():
 def checkin():
     m = maintenance_service.get_maintenance_status('daily_checkin')
     if m.get('is_maintenance'):
-        wallet = _auth_wallet()
-        if not wallet:
-            return jsonify({'success': False, 'maintenance': True, 'message': m.get('message'), 'error': 'Verification required'}), 401
-        result = daily_checkin_manager.maintenance_exempt_checkin(wallet)
-        result.update({'maintenance': True, 'message': m.get('message')})
-        return jsonify(result), (200 if result.get('success') else 400)
+        return jsonify({'success': False, 'maintenance': True, 'message': m.get('message') or 'Daily check-in is under maintenance'}), 503
     wallet = _auth_wallet()
     if not wallet:
         return jsonify({'success': False, 'error': 'Verification required'}), 401

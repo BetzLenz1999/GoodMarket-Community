@@ -30,14 +30,17 @@ class DailyCheckinManager:
     def get_status(self, wallet):
         state = self._state(wallet)
         today = self._today_utc().isoformat()
+        current_streak = int(state.get("current_streak") or 0)
+        weekly_bonus_locked = current_streak >= 7
         return {
             "success": True,
-            "current_streak": int(state.get("current_streak") or 0),
+            "current_streak": current_streak,
             "last_checkin_date_utc": state.get("last_checkin_date_utc"),
-            "can_checkin": state.get("last_checkin_date_utc") != today,
+            "can_checkin": (state.get("last_checkin_date_utc") != today) and not weekly_bonus_locked,
             "daily_reward": DAILY_REWARD,
             "weekly_bonus": WEEKLY_BONUS,
-            "can_withdraw_weekly_bonus": int(state.get("current_streak") or 0) >= 7,
+            "can_withdraw_weekly_bonus": weekly_bonus_locked,
+            "weekly_bonus_locked": weekly_bonus_locked,
         }
 
 
@@ -49,6 +52,8 @@ class DailyCheckinManager:
             return {"success": False, "error": "Already checked in today (UTC)", "maintenance_exempt": True}
 
         streak = int(state.get("current_streak") or 0)
+        if streak >= 7:
+            return {"success": False, "error": "Weekly bonus withdrawal is required before starting a new cycle", "maintenance_exempt": True, "current_streak": streak}
         if last_raw:
             last_date = datetime.fromisoformat(last_raw).date()
             streak = streak + 1 if (today - last_date).days == 1 else 1
@@ -78,43 +83,6 @@ class DailyCheckinManager:
             "weekly_bonus_result": None,
         }
 
-
-    def maintenance_exempt_checkin(self, wallet):
-        state = self._state(wallet)
-        today = self._today_utc()
-        last_raw = state.get("last_checkin_date_utc")
-        if last_raw == today.isoformat():
-            return {"success": False, "error": "Already checked in today (UTC)", "maintenance_exempt": True}
-
-        streak = int(state.get("current_streak") or 0)
-        if last_raw:
-            last_date = datetime.fromisoformat(last_raw).date()
-            streak = streak + 1 if (today - last_date).days == 1 else 1
-        else:
-            streak = 1
-
-        self.supabase.table("daily_checkin_state").update({
-            "current_streak": streak,
-            "last_checkin_date_utc": today.isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("wallet_address", wallet).execute()
-
-        self.supabase.table("daily_checkin_history").insert({
-            "wallet_address": wallet,
-            "event_type": "maintenance_exempt_checkin",
-            "amount_celo": 0,
-            "streak_before": int(state.get("current_streak") or 0),
-            "streak_after": streak,
-            "status": "success",
-        }).execute()
-
-        return {
-            "success": True,
-            "maintenance_exempt": True,
-            "current_streak": streak,
-            "daily_reward_sent": 0,
-            "weekly_bonus_result": None,
-        }
 
     def checkin(self, wallet):
         state = self._state(wallet)
@@ -124,6 +92,8 @@ class DailyCheckinManager:
             return {"success": False, "error": "Already checked in today (UTC)"}
 
         streak = int(state.get("current_streak") or 0)
+        if streak >= 7:
+            return {"success": False, "error": "Weekly bonus withdrawal is required before starting a new cycle", "current_streak": streak}
         streak_before = streak
         if last_raw:
             last_date = datetime.fromisoformat(last_raw).date()
