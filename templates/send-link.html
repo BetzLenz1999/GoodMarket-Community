@@ -482,11 +482,34 @@
             }
             if (!_wcBrowserSession) throw new Error('WalletConnect browser session is not active.');
             const client = await _wcGetClient();
-            const txHash = await client.request({
+            const reqPromise = client.request({
                 topic: _wcBrowserSession.topic,
                 chainId: 'eip155:42220',
                 request: { method: 'eth_sendTransaction', params: [txParams] }
             });
+            // Wake the wallet app to the foreground so the user actually
+            // sees the tx prompt; MetaMask Mobile / Trust Wallet otherwise
+            // queue the request silently while the user stares at the
+            // dApp tab and assumes nothing happened.
+            try {
+                const _ua = (navigator.userAgent || '').toLowerCase();
+                if (/android|iphone|ipad|ipod|mobile/i.test(_ua)) {
+                    const _meta = _wcBrowserSession.peer && _wcBrowserSession.peer.metadata;
+                    const _redirect = _meta && _meta.redirect;
+                    const _href = _redirect && (_redirect.native || _redirect.universal);
+                    if (_href) {
+                        const _link = document.createElement('a');
+                        _link.href = _href;
+                        _link.style.display = 'none';
+                        _link.target = '_self';
+                        _link.rel = 'noopener noreferrer';
+                        document.body.appendChild(_link);
+                        _link.click();
+                        setTimeout(() => { try { _link.remove(); } catch (_) {} }, 100);
+                    }
+                }
+            } catch (_) { /* no-op */ }
+            const txHash = await reqPromise;
             if (!txHash) throw new Error('WalletConnect transaction failed');
             return txHash;
         }

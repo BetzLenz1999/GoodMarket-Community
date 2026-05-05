@@ -1665,18 +1665,106 @@
 
         async function _wcGetClient() {
             if (_wcSignClient) return _wcSignClient;
-            if (!WC_PROJECT_ID) throw new Error('WALLETCONNECT_PROJECT_ID is not configured');
-            const SignClient = await _wcLoadSdk();
-            _wcSignClient = await SignClient.init({
-                projectId: WC_PROJECT_ID,
-                metadata: {
-                    name: 'GoodMarket',
-                    description: 'Swap tokens with GoodDollar on Celo',
-                    url: window.location.origin,
-                    icons: [window.location.origin + '/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}']
+            // Reuse a SignClient that another page on the same origin (e.g.
+            // homepage login, savings) already initialised — WalletConnect v2
+            // persists pairing metadata in shared `localStorage` keys so we
+            // can restore a live session from it instead of opening a brand
+            // new pairing (which is what Trust Wallet sees as a "Parse error"
+            // on /swap when it already holds the homepage session).
+            if (window._wcSignClient) {
+                _wcSignClient = window._wcSignClient;
+            } else {
+                if (!WC_PROJECT_ID) throw new Error('WALLETCONNECT_PROJECT_ID is not configured');
+                const SignClient = await _wcLoadSdk();
+                _wcSignClient = await SignClient.init({
+                    projectId: WC_PROJECT_ID,
+                    metadata: {
+                        name: 'GoodMarket',
+                        description: 'Swap tokens with GoodDollar on Celo',
+                        url: window.location.origin,
+                        icons: [window.location.origin + '/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}']
+                    }
+                });
+                try { window._wcSignClient = _wcSignClient; } catch (_) {}
+            }
+            // Restore an existing eip155:42220 session from localStorage so
+            // users that just logged in via WalletConnect don't get a new QR
+            // every time they open /swap. This mirrors what savings.html /
+            // wc-bridge.js already do; without it /swap creates a duplicate
+            // pairing alongside the homepage one and Trust Wallet rejects
+            // the second handshake with a "parse error".
+            try {
+                if (!_wcBrowserSession && _wcSignClient.session && _wcSignClient.session.getAll) {
+                    const sessions = _wcSignClient.session.getAll();
+                    if (sessions && sessions.length) {
+                        const restored = sessions[sessions.length - 1];
+                        _wcBrowserSession = restored;
+                        _wcMode = "browser";
+                        if (window._wcSession === undefined || window._wcSession === null) {
+                            try { window._wcSession = restored; } catch (_) {}
+                        }
+                        const ns = restored.namespaces || {};
+                        Object.keys(ns).some(function (key) {
+                            const accts = (ns[key] && ns[key].accounts) || [];
+                            if (accts.length) {
+                                _wcAddress = String(accts[0]).split(':').pop();
+                                return true;
+                            }
+                            return false;
+                        });
+                    }
                 }
-            });
+            } catch (_) { /* no-op */ }
             return _wcSignClient;
+        }
+
+        // Warm up the WalletConnect SignClient on page load so any
+        // existing eip155:42220 session left behind by homepage login /
+        // savings is restored before the user clicks Bridge / Swap. This
+        // is the same pattern savings.html already uses (line ~1846 there)
+        // and is what stops /swap from generating a brand-new pairing
+        // every visit (which Trust Wallet rejects with "Parse error" when
+        // it already holds the homepage session).
+        if (PREFER_WC_SIGNING) {
+            setTimeout(function () {
+                _wcGetClient().catch(function () { /* no-op */ });
+            }, 1500);
+        }
+
+        // Detect mobile-browser context for WalletConnect deep-link wake-ups.
+        function _isWcMobileBrowserContext() {
+            try {
+                const ua = (navigator.userAgent || '').toLowerCase();
+                return /android|iphone|ipad|ipod|mobile/i.test(ua);
+            } catch (_) { return false; }
+        }
+
+        // After firing a wallet-scoped WalletConnect request the wallet app
+        // does not always come to the foreground on its own — MetaMask
+        // Mobile in particular is happy to silently queue the prompt while
+        // the user keeps staring at the dApp browser. We mirror what
+        // @walletconnect/modal does and synthetically click an `<a>` whose
+        // href is the wallet's `session.peer.metadata.redirect.native`
+        // (custom scheme) or `redirect.universal` (https universal link)
+        // to bring the wallet app to the foreground so the user actually
+        // sees the sign / tx prompt that's now sitting in their wallet.
+        function _wcWakeWalletApp(session) {
+            try {
+                if (!session || !_isWcMobileBrowserContext()) return;
+                const meta = session.peer && session.peer.metadata;
+                const redirect = meta && meta.redirect;
+                if (!redirect) return;
+                const href = redirect.native || redirect.universal;
+                if (!href) return;
+                const link = document.createElement('a');
+                link.href = href;
+                link.style.display = 'none';
+                link.target = '_self';
+                link.rel = 'noopener noreferrer';
+                document.body.appendChild(link);
+                link.click();
+                setTimeout(function () { try { link.remove(); } catch (_) {} }, 100);
+            } catch (_) { /* no-op */ }
         }
 
         async function _celoJsonRpc(method, params) {
@@ -1745,6 +1833,18 @@
 
         async function _wcBrowserConnect() {
             const client = await _wcGetClient();
+            // _wcGetClient now restores any pre-existing eip155:42220 session
+            // from localStorage. If the homepage / savings already paired
+            // the wallet, just reuse that session — opening a *second*
+            // pairing while the first one is still alive is exactly what
+            // makes Trust Wallet bail out with "parse error" on /swap.
+            if (_wcBrowserSession && _wcAddress) {
+                _wcMode = "browser";
+                if (_wcAddress.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+                    throw _wcRpcError('Wrong WalletConnect wallet connected. Please connect your GoodMarket wallet.', 4001);
+                }
+                return _wcAddress;
+            }
             const result = await client.connect({
                 requiredNamespaces: {},
                 optionalNamespaces: {
@@ -1763,6 +1863,7 @@
                 );
             }
             _wcBrowserSession = await result.approval();
+            try { window._wcSession = _wcBrowserSession; } catch (_) {}
             const ns = _wcBrowserSession.namespaces || {};
             Object.keys(ns).some((key) => {
                 const accts = ns[key]?.accounts || [];
@@ -1781,6 +1882,26 @@
 
         async function _wcConnectSwap() {
             if (_wcAddress) return _wcAddress;
+            // Prefer an already-active in-browser SignClient session (left
+            // behind by homepage login or savings). Falling straight back to
+            // the sidecar would otherwise generate a brand-new pairing that
+            // collides with the user's existing one and triggers "parse
+            // error" on Trust Wallet / a no-op on MetaMask.
+            try {
+                await _wcGetClient();
+                if (_wcBrowserSession && _wcAddress) {
+                    if (_wcAddress.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+                        throw _wcRpcError('Wrong WalletConnect wallet connected. Please connect your GoodMarket wallet.', 4001);
+                    }
+                    _wcMode = "browser";
+                    return _wcAddress;
+                }
+            } catch (err) {
+                if (err && err.code === 4001) throw err;
+                // SDK init / session-restore failures are non-fatal; fall
+                // through to the sidecar / fresh-pairing fallback.
+                console.warn('WalletConnect session restore failed; falling back:', err);
+            }
             try {
                 return await _wcSidecarConnect();
             } catch (err) {
@@ -1824,11 +1945,17 @@
                 const client = await _wcGetClient();
                 let txHash;
                 try {
-                    txHash = await client.request({
+                    const reqPromise = client.request({
                         topic: _wcBrowserSession.topic,
                         chainId: 'eip155:42220',
                         request: { method: 'eth_sendTransaction', params: [txParams] }
                     });
+                    // Bring MetaMask Mobile / Trust Wallet to the foreground
+                    // so the user actually sees the tx prompt instead of
+                    // staring at the dApp tab while the request quietly
+                    // sits in the wallet's relay queue.
+                    _wcWakeWalletApp(_wcBrowserSession);
+                    txHash = await reqPromise;
                 } catch (wcErr) {
                     // WalletConnect SignClient throws a JsonRpcError-shaped
                     // object; preserve its code/message so the wallet's

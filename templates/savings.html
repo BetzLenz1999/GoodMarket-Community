@@ -765,6 +765,32 @@
         });
     }
 
+    function _wcIsMobileBrowser() {
+        try {
+            var ua = (navigator.userAgent || '').toLowerCase();
+            return /android|iphone|ipad|ipod|mobile/i.test(ua);
+        } catch (_) { return false; }
+    }
+
+    function _wcWakeWalletApp(session) {
+        try {
+            if (!session || !_wcIsMobileBrowser()) return;
+            var meta = session.peer && session.peer.metadata;
+            var redirect = meta && meta.redirect;
+            if (!redirect) return;
+            var href = redirect.native || redirect.universal;
+            if (!href) return;
+            var link = document.createElement('a');
+            link.href = href;
+            link.style.display = 'none';
+            link.target = '_self';
+            link.rel = 'noopener noreferrer';
+            document.body.appendChild(link);
+            link.click();
+            setTimeout(function () { try { link.remove(); } catch (_) {} }, 100);
+        } catch (_) { /* no-op */ }
+    }
+
     class WCEthersShim {
         constructor(wcClient, wcSession, account) {
             this._sc = wcClient;
@@ -781,11 +807,17 @@
             }
             if (_WC_WALLET_SCOPED_METHODS.has(method)) {
                 try {
-                    return await this._sc.request({
+                    var reqPromise = this._sc.request({
                         topic: this._session.topic,
                         chainId: 'eip155:42220',
                         request: { method, params: params || [] }
                     });
+                    // Wake the user's wallet app to the foreground so the
+                    // sign / tx prompt is actually visible — without this
+                    // MetaMask Mobile / Trust Wallet just queue the request
+                    // silently while the user keeps staring at the dApp.
+                    _wcWakeWalletApp(this._session);
+                    return await reqPromise;
                 } catch (wcErr) {
                     // WalletConnect SignClient throws JsonRpcError-shaped
                     // objects ({ code, message }). Re-throw as a real Error
