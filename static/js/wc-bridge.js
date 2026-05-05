@@ -136,6 +136,55 @@
         ]);
     }
 
+    // ── Mobile-wallet-wake helpers ─────────────────────────────────────────
+    // After firing a wallet-scoped WalletConnect request (eth_sendTransaction
+    // / personal_sign / etc.) the wallet receives the message via the relay
+    // *but* it does not always auto-foreground on mobile. The user is left
+    // staring at the dApp browser with no sign request in sight.
+    //
+    // The remedy that the official @walletconnect/web3modal does is: after
+    // initiating each `client.request(...)`, deep-link to the wallet's
+    // `session.peer.metadata.redirect.native` (custom URL scheme) — or
+    // `redirect.universal` (https universal link) as a fallback — to bring
+    // the wallet to the foreground so the user actually sees the prompt.
+    // This is what makes WalletConnect feel "click → approve" on Trust
+    // Wallet / MetaMask / Valora etc. instead of "click → nothing happens".
+    function _isMobileBrowserContext() {
+        try {
+            var ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+            if (!ua) return false;
+            return /android|iphone|ipad|ipod|mobile/i.test(ua);
+        } catch (_) { return false; }
+    }
+
+    function _wakeWalletAppFor(session) {
+        try {
+            if (!session || !_isMobileBrowserContext()) return;
+            var meta = session.peer && session.peer.metadata;
+            var redirect = meta && meta.redirect;
+            if (!redirect) return;
+            var href = redirect.native || redirect.universal;
+            if (!href) return;
+            // Use a synthetic `<a>` click so the OS treats this as a user
+            // gesture and opens the wallet app via the custom scheme
+            // (metamask://, trust://, etc.) without trying to navigate the
+            // dApp tab away. This is the same trick @walletconnect/modal
+            // uses internally; `window.location.href = …` is less reliable
+            // because some browsers block custom-scheme navigation when no
+            // user-gesture is in scope by the time the deep-link fires.
+            try {
+                var link = document.createElement("a");
+                link.href = href;
+                link.style.display = "none";
+                link.target = "_self";
+                link.rel = "noopener noreferrer";
+                document.body.appendChild(link);
+                link.click();
+                setTimeout(function () { try { link.remove(); } catch (_) {} }, 100);
+            } catch (_) { /* no-op */ }
+        } catch (_) { /* no-op */ }
+    }
+
     function _appendScript(src) {
         return new Promise(function (resolve, reject) {
             var s = document.createElement("script");
@@ -467,32 +516,20 @@
                         _state.mode = "sidecar";
                         _defaultShowQr(data.uri, "Approve in your wallet");
 
-                        var deadline = Date.now() + 120000;
+                        var pollStart = Date.now();
+                        var deadline = pollStart + 120000;
                         function poll() {
-                            if (dt > 60000) {
+                            var dt = Date.now() - pollStart;
+                            if (Date.now() >= deadline) {
                                 throw new Error("WalletConnect approval timed out.");
                             }
-                            // Adaptive polling: start fast (200ms), then back off exponentially
-                            // This significantly speeds up approvals on fast wallets like Trust Wallet
-                            // while still handling slow network conditions gracefully
-                            var pollAttempts = Math.floor(dt / 200); // rough attempt count
-                            var delayMs = Math.min(200 + (pollAttempts * 50), 2000); // cap at 2s
+                            // Adaptive polling: start fast (200ms), then back off
+                            // exponentially. Speeds up approvals on fast wallets
+                            // like Trust Wallet while still handling slow network
+                            // conditions gracefully.
+                            var pollAttempts = Math.floor(dt / 200);
+                            var delayMs = Math.min(200 + (pollAttempts * 50), 2000);
                             return _delay(delayMs)
-                                .then(function () { return fetch("/api/wc-session/" + encodeURIComponent(_state.sessionId)); })
-                                .then(function (r) { return r.json(); })
-                                .then(function (st) {
-                                    if (!st || !st.success) return poll();
-                                    if (st.status === "approved" && st.address) {
-                                        _state.address = st.address;
-                                        return _state.address;
-                                    }
-                                    if (st.status === "rejected") {
-                                        throw new Error("WalletConnect request was rejected.");
-                                    }
-                                    return poll();
-                                });
-                        }
-                            return _delay(2000)
                                 .then(function () { return fetch("/api/wc-session/" + encodeURIComponent(_state.sessionId)); })
                                 .then(function (r) { return r.json(); })
                                 .then(function (st) {
@@ -714,16 +751,26 @@
                     throw _wcRpcError("WalletConnect browser session is not active.", null, -32603);
                 }
                 return _wcGetClient().then(function (client) {
-                    // Wrap the request with a timeout to prevent MetaMask from hanging indefinitely.
-                    // MetaMask sometimes doesn't respond to WalletConnect requests, so we force a fail
-                    // after 45 seconds and suggest fallback to direct injection or retry.
+                    // Wrap the request with a timeout to prevent the wallet
+                    // (MetaMask Mobile in particular) from hanging
+                    // indefinitely. The wallet sometimes silently drops
+                    // requests so we surface a clear failure after 45s.
                     var requestPromise = client.request({
                         topic: _state.browserSession.topic,
                         chainId: "eip155:" + CELO_CHAIN_ID,
                         request: { method: method, params: p }
                     });
-                    
-                    return _withTimeout(requestPromise, 45000, 
+                    // Fire-and-forget: bring the wallet app to the foreground
+                    // on mobile so the user actually sees the sign / tx
+                    // prompt that's now sitting in the wallet's queue.
+                    // Without this MetaMask Mobile / Trust Wallet etc. are
+                    // happy to receive the request silently and the user
+                    // is left staring at the dApp tab thinking nothing
+                    // happened. This is what @walletconnect/modal does
+                    // internally — we do it manually because we use the
+                    // raw SignClient SDK.
+                    _wakeWalletAppFor(_state.browserSession);
+                    return _withTimeout(requestPromise, 45000,
                         "WalletConnect request timeout (45s). Wallet may not respond to requests - try refreshing or switching wallets.");
                 }).catch(function (wcErr) {
                     // Re-throw with .code preserved so ethers.js sees a

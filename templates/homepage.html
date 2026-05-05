@@ -2989,6 +2989,40 @@
 
         const _wcSidecarEnabled = {{ 'true' if walletconnect_sidecar_enabled else 'false' }};
 
+        // Wake the user's wallet app to the foreground after a WalletConnect
+        // request has been initiated. WalletConnect v2 expects the dApp to
+        // do this manually (the @walletconnect/modal SDK does the same trick
+        // internally) — without it, MetaMask Mobile / Trust Wallet silently
+        // queue the sign request and the user is left thinking nothing
+        // happened. We synthesize an `<a>`-click on the wallet's
+        // `session.peer.metadata.redirect.native` (custom scheme) or
+        // `redirect.universal` (https universal link) so the OS opens the
+        // wallet app without trying to navigate the dApp tab away.
+        function _wcIsMobileBrowser() {
+            try {
+                var ua = (navigator.userAgent || '').toLowerCase();
+                return /android|iphone|ipad|ipod|mobile/i.test(ua);
+            } catch (_) { return false; }
+        }
+        function _wcWakeWalletApp(session) {
+            try {
+                if (!session || !_wcIsMobileBrowser()) return;
+                var meta = session.peer && session.peer.metadata;
+                var redirect = meta && meta.redirect;
+                if (!redirect) return;
+                var href = redirect.native || redirect.universal;
+                if (!href) return;
+                var link = document.createElement('a');
+                link.href = href;
+                link.style.display = 'none';
+                link.target = '_self';
+                link.rel = 'noopener noreferrer';
+                document.body.appendChild(link);
+                link.click();
+                setTimeout(function () { try { link.remove(); } catch (_) {} }, 100);
+            } catch (_) { /* no-op */ }
+        }
+
         function _wcGetClient() {
             if (window._wcSignClient) return Promise.resolve(window._wcSignClient);
             const projectId = '{{ walletconnect_project_id or "" }}';
@@ -3294,11 +3328,18 @@
                 const message = makeLoginMessage(address);
                 showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve login signature in your wallet.', 'info');
                 const messageHex = '0x' + Array.from(new TextEncoder().encode(message)).map(b => b.toString(16).padStart(2, '0')).join('');
-                const signature = await client.request({
+                const sigReqPromise = client.request({
                     topic: session.topic,
                     chainId: 'eip155:42220',
                     request: { method: 'personal_sign', params: [messageHex, address] }
                 });
+                // Wake the wallet app to the foreground so the user
+                // actually sees the `personal_sign` prompt instead of
+                // waiting on a browser tab while MetaMask Mobile / Trust
+                // silently queues the signature request behind the WC
+                // session approval that just completed.
+                _wcWakeWalletApp(session);
+                const signature = await sigReqPromise;
                 const wcFbVerifyData = await postVerifyIdentity(address, signature, message, getPendingReferralCode());
                 const wcFbOkMsg = (wcFbVerifyData && wcFbVerifyData.referral_warning)
                     ? ('✅ Wallet connected via browser WalletConnect fallback. ⚠️ ' + wcFbVerifyData.referral_warning + ' Redirecting...')

@@ -5052,11 +5052,36 @@ document.addEventListener('DOMContentLoaded', async function() {
                 // Build WC session provider wrapper
                 const wcProvider = {
                     request: function(args) {
-                        return window._wcSignClient.request({
+                        const reqPromise = window._wcSignClient.request({
                             topic: window._wcSession.topic,
                             chainId: 'eip155:42220',
                             request: args
                         });
+                        // Wake the user's wallet app to the foreground so
+                        // they actually see the sign / tx prompt; without
+                        // this MetaMask Mobile / Trust Wallet silently
+                        // queue the request behind the WC session.
+                        try {
+                            const _method = (args && args.method) ? String(args.method) : '';
+                            const _ua = (navigator.userAgent || '').toLowerCase();
+                            const _walletScoped = /^(eth_sendTransaction|personal_sign|eth_sign|eth_signTypedData(?:_v[34])?)$/.test(_method);
+                            if (_walletScoped && /android|iphone|ipad|ipod|mobile/i.test(_ua) && window._wcSession) {
+                                const _meta = window._wcSession.peer && window._wcSession.peer.metadata;
+                                const _redirect = _meta && _meta.redirect;
+                                const _href = _redirect && (_redirect.native || _redirect.universal);
+                                if (_href) {
+                                    const _link = document.createElement('a');
+                                    _link.href = _href;
+                                    _link.style.display = 'none';
+                                    _link.target = '_self';
+                                    _link.rel = 'noopener noreferrer';
+                                    document.body.appendChild(_link);
+                                    _link.click();
+                                    setTimeout(() => { try { _link.remove(); } catch (_) {} }, 100);
+                                }
+                            }
+                        } catch (_) { /* no-op */ }
+                        return reqPromise;
                     }
                 };
 
