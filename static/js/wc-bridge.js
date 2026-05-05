@@ -46,9 +46,9 @@
 
     if (global.GMWalletConnect) return;
 
-    var DEFAULT_RPC_URL = "https://forno.celo.org";
-    var DEFAULT_CHAIN_HEX = "0xa4ec";
-    var DEFAULT_CHAIN_ID = 42220;
+    var CELO_RPC_URL = "https://forno.celo.org";
+    var CELO_CHAIN_HEX = "0xa4ec";
+    var CELO_CHAIN_ID = 42220;
     var WC_CDN_URL = "https://cdn.jsdelivr.net/npm/@walletconnect/sign-client@2.17.0/dist/index.umd.js";
 
     // Supported networks for WalletConnect chain switching
@@ -94,9 +94,6 @@
         showQr: null,
         hideQr: null,
         log: function () {},
-        chainHex: DEFAULT_CHAIN_HEX,
-        chainId: DEFAULT_CHAIN_ID,
-        rpcUrl: DEFAULT_RPC_URL,
     };
 
     var _state = {
@@ -275,7 +272,7 @@
     }
 
     function _celoJsonRpc(method, params) {
-        return fetch((_config.rpcUrl || DEFAULT_RPC_URL), {
+        return fetch(CELO_RPC_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -583,7 +580,7 @@
                                 "eth_signTypedData",
                                 "eth_signTypedData_v4"
                             ],
-                            chains: ["eip155:" + Number(_config.chainId || DEFAULT_CHAIN_ID)],
+                            chains: ["eip155:" + CELO_CHAIN_ID],
                             events: ["chainChanged", "accountsChanged"]
                         }
                     }
@@ -662,10 +659,10 @@
             return connect().then(function (addr) { return [addr]; });
         }
         if (method === "eth_chainId") {
-            return Promise.resolve(String(_config.chainHex || DEFAULT_CHAIN_HEX));
+            return Promise.resolve(CELO_CHAIN_HEX);
         }
         if (method === "net_version") {
-            return Promise.resolve(String(Number(_config.chainId || DEFAULT_CHAIN_ID)));
+            return Promise.resolve(String(CELO_CHAIN_ID));
         }
         if (method === "wallet_switchEthereumChain") {
             // Handle network switching for supported chains
@@ -760,7 +757,7 @@
                     // requests so we surface a clear failure after 45s.
                     var requestPromise = client.request({
                         topic: _state.browserSession.topic,
-                        chainId: "eip155:" + Number(_config.chainId || DEFAULT_CHAIN_ID),
+                        chainId: "eip155:" + CELO_CHAIN_ID,
                         request: { method: method, params: p }
                     });
                     // Fire-and-forget: bring the wallet app to the foreground
