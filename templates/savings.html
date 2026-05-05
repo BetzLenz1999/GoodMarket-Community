@@ -345,6 +345,13 @@
                 <div class="empty-state">Loading your saves…</div>
             </div>
         </div>
+        <div class="card" style="margin-top:1rem;">
+            <div class="card-title">My Withdrawn History</div>
+            <div id="withdrawnList" class="dep-list">
+                <div class="empty-state">No withdrawn saves yet.</div>
+            </div>
+        </div>
+
         <!-- Legacy v2 panel — only rendered for wallets that have v2 deposits. -->
         <div class="card" id="legacyCard" style="display:none; margin-top:1.25rem; border-color:rgba(251,191,36,.35); background:rgba(251,191,36,.05);">
             <button type="button"
@@ -1434,16 +1441,14 @@
             renderWithdrawnHistory(history);
             renderTotalSaved(deps, history);
 
-            const withdrawnRows = Object.values(history || {}).filter(x => x.status === 'withdrawn');
-            if (deps.length === 0 && withdrawnRows.length === 0) {
-                container.innerHTML = '<div class="empty-state">No saves yet. Go to "Save" to start.</div>';
+            if (deps.length === 0) {
+                container.innerHTML = '<div class="empty-state">No active saves yet. Go to "Save" to start.</div>';
                 return;
             }
             container.innerHTML = '';
-            for (const d of deps) container.appendChild(buildDepCard(d));
-            withdrawnRows
-                .sort((a, b) => (b.withdrawn_at || 0) - (a.withdrawn_at || 0))
-                .forEach((d) => container.appendChild(buildWithdrawnDepCard(d)));
+            for (const d of deps) {
+                container.appendChild(buildDepCard(d));
+            }
         } catch (e) {
             container.innerHTML = '<div class="empty-state" style="color:#f87171;">Failed to load. Check your connection.</div>';
         }
@@ -1457,8 +1462,28 @@
         totalEl.textContent = `${fmtAmt(total, 'combined')} (active + withdrawn)`;
     }
 
-    function renderWithdrawnHistory(_historyMap) {
-        // Withdrawn slots are now shown directly in "My Active Slots" list.
+    function renderWithdrawnHistory(historyMap) {
+        const list = document.getElementById('withdrawnList');
+        const rows = Object.values(historyMap || {}).filter(x => x.status === 'withdrawn');
+        if (rows.length === 0) {
+            list.innerHTML = '<div class="empty-state">No withdrawn saves yet.</div>';
+            return;
+        }
+        rows.sort((a, b) => (b.withdrawn_at || 0) - (a.withdrawn_at || 0));
+        list.innerHTML = '';
+        for (const d of rows) {
+            const el = document.createElement('div');
+            el.className = 'dep-card';
+            const wd = d.withdrawn_at ? new Date(d.withdrawn_at * 1000).toDateString() : '—';
+            el.innerHTML = `<div class="dep-amount">${fmtAmt(d.amount_h || 0, d.token_symbol || '')}</div>
+                <div class="dep-meta">
+                    <div class="row">Token: <span>${d.token_symbol || '-'}</span></div>
+                    <div class="row">Lock: <span>${d.lock_days} days</span></div>
+                    <div class="row">Status: <span>Withdrawn</span></div>
+                    <div class="row">Withdrawn: <span>${wd}</span></div>
+                </div>`;
+            list.appendChild(el);
+        }
     }
 
     // Lightweight cache refresh used after deposit / withdraw.
@@ -1481,24 +1506,6 @@
         if (sym === 'CELO') return 'celo';
         if (sym === 'cUSD') return 'cusd';
         return null;
-    }
-
-    function buildWithdrawnDepCard(d) {
-        const el = document.createElement('div');
-        el.className = 'dep-card';
-        const wd = d.withdrawn_at ? new Date(d.withdrawn_at * 1000).toDateString() : '—';
-        el.innerHTML = `
-            <div class="dep-amount">${fmtAmt(d.amount_h || 0, d.token_symbol || '')}</div>
-            <div class="dep-meta">
-                <div class="row">Token: <span>${d.token_symbol || '-'}</span></div>
-                <div class="row">Lock: <span>${d.lock_days || '-'} days</span></div>
-                <div class="row">Status: <span>Withdrawn</span></div>
-                <div class="row">Withdrawn: <span>${wd}</span></div>
-            </div>
-            <div style="display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;">
-                <span class="dep-badge" style="background:rgba(150,150,160,.18); color:rgba(220,220,230,.65);">✓ Withdrawn</span>
-            </div>`;
-        return el;
     }
 
     function buildDepCard(d) {
