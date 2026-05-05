@@ -7541,6 +7541,8 @@ def admin_treasury_distribute():
 # successful refill request (API or on-chain).
 _faucet_recent_refill: dict = {}
 _faucet_api_pending: dict = {}
+# Track force_onchain attempts: wallet_address -> list of timestamps
+_force_onchain_attempts: dict = {}
 _faucet_lock = threading.Lock()
 
 # Gas threshold for the unified claim flow. This value is the *minimum floor*
@@ -7570,6 +7572,8 @@ FAUCET_DUPLICATE_WINDOW_MIN = int(os.getenv("FAUCET_DUPLICATE_WINDOW_MIN", "30")
 FAUCET_API_GRACE_SECONDS = int(os.getenv("FAUCET_API_GRACE_SECONDS", "30"))
 FAUCET_PENDING_TTL_SECONDS = int(os.getenv("FAUCET_PENDING_TTL_SECONDS", "180"))
 FAUCET_ONCHAIN_MAX_ATTEMPTS = max(1, int(os.getenv("FAUCET_ONCHAIN_MAX_ATTEMPTS", "3")))
+FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR = int(os.getenv("FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR", "2"))
+FAUCET_FORCE_ONCHAIN_HOUR_WINDOW = 3600  # 1 hour in seconds
 GOODDOLLAR_FAUCET_CONTRACT = os.getenv(
     "GOODDOLLAR_FAUCET_CONTRACT",
     "0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84"
@@ -7732,6 +7736,38 @@ def _record_recent_refill(checksum_wallet: str, reason: str = "unknown", source:
     logger.info(
         f"🧾 Faucet cooldown recorded wallet={checksum_wallet.lower()} source={source} "
         f"reason={reason} tx={tx_hash or 'n/a'}"
+    )
+
+
+def _check_force_onchain_rate_limit(checksum_wallet: str) -> tuple:
+    """Check if wallet has exceeded force_onchain attempts per hour. Returns (is_limited, attempts_remaining, retry_after_seconds)."""
+    now = time.time()
+    wallet_key = checksum_wallet.lower()
+    
+    with _faucet_lock:
+        # Clean old attempts outside the window
+        attempts = _force_onchain_attempts.get(wallet_key, [])
+        attempts = [ts for ts in attempts if now - ts < FAUCET_FORCE_ONCHAIN_HOUR_WINDOW]
+        _force_onchain_attempts[wallet_key] = attempts
+        
+        # Check if limit exceeded
+        if len(attempts) >= FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR:
+            oldest_attempt = min(attempts)
+            retry_after = int((oldest_attempt + FAUCET_FORCE_ONCHAIN_HOUR_WINDOW) - now)
+            return True, 0, max(1, retry_after)
+        
+        return False, FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR - len(attempts), 0
+
+
+def _record_force_onchain_attempt(checksum_wallet: str):
+    """Record a force_onchain attempt for rate limiting."""
+    wallet_key = checksum_wallet.lower()
+    with _faucet_lock:
+        if wallet_key not in _force_onchain_attempts:
+            _force_onchain_attempts[wallet_key] = []
+        _force_onchain_attempts[wallet_key].append(time.time())
+    logger.warning(
+        f"⚠️ Force_onchain attempt recorded wallet={wallet_key}"
     )
 
 
@@ -8112,9 +8148,14 @@ def faucet_gas():
             "recent_refill": bool(recent_refill),
             "recent_refill_cooldown_seconds": int(seconds_remaining),
         })
-        if recent_refill and not force_onchain:
+        if recent_refill:
             flow_result["terminal_status"] = "recent_refill"
             diagnostics["stage"] = "blocked_recent_refill"
+            if force_onchain:
+                logger.error(
+                    f"❌ Faucet cooldown breach attempt wallet={checksum_wallet.lower()} source=force_onchain "
+                    f"cooldown_remaining={seconds_remaining}s correlation_id={correlation_id}"
+                )
             return jsonify({
                 "success": True,
                 "topped_up": False,
@@ -8129,14 +8170,34 @@ def faucet_gas():
                     "required_gas_wei": status_before["required_gas_wei"],
                     "required_gas_celo": status_before["required_gas_celo"],
                     "cooldown_reason": "recent_refill",
+                    "force_onchain_blocked": force_onchain,
                 },
                 **status_before,
             })
-        if recent_refill and force_onchain:
-            logger.warning(
-                f"⚠️ Faucet cooldown bypass wallet={checksum_wallet.lower()} source=force_onchain "
-                f"cooldown_remaining={seconds_remaining}s correlation_id={correlation_id}"
-            )
+        
+        # Check force_onchain rate limiting
+        if force_onchain:
+            is_limited, attempts_remaining, retry_after = _check_force_onchain_rate_limit(checksum_wallet)
+            if is_limited:
+                logger.error(
+                    f"❌ Faucet force_onchain rate limit exceeded wallet={checksum_wallet.lower()} "
+                    f"retry_after={retry_after}s max_per_hour={FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR} "
+                    f"correlation_id={correlation_id}"
+                )
+                return jsonify({
+                    "success": False,
+                    "status": "force_onchain_rate_limited",
+                    "reason": f"force_onchain rate limit exceeded. Retry after ~{retry_after}s.",
+                    "force_onchain_rate_limit_retry_after_seconds": retry_after,
+                    "force_onchain_max_per_hour": FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR,
+                    "correlation_id": correlation_id,
+                    "diagnostics": {**diagnostics, "stage": "force_onchain_rate_limited"},
+                }), 429
+            _record_force_onchain_attempt(checksum_wallet)
+            diagnostics.update({
+                "force_onchain_attempts_remaining": attempts_remaining,
+                "force_onchain_rate_limit_max": FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR,
+            })
 
         # Step B: GoodDollar API faucet (skipped if force_onchain).
         api_ok = False
