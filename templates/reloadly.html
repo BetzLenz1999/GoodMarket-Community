@@ -311,6 +311,21 @@
 
         .btn:disabled { opacity: 0.45; cursor: not-allowed; }
     </style>
+    <!-- WalletConnect bridge for users without injected wallet -->
+    <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+    <script>
+        if (typeof GMWalletConnect !== "undefined") {
+            GMWalletConnect.configure({
+                walletAddress: "{{ wallet }}",
+                loginMethod: "{{ login_method }}",
+                projectId: "{{ walletconnect_project_id|default('', true) }}",
+                sidecarEnabled: {{ 'true' if walletconnect_sidecar_enabled|default(true) else 'false' }},
+                dappName: "GoodMarket — Store",
+                dappDescription: "Buy mobile airtime on Celo",
+                assetVersion: "{{ ASSET_VERSION }}",
+            });
+        }
+    </script>
 </head>
 <body>
 
@@ -992,6 +1007,26 @@ function _getEthProvider() {
 
 function isDAppBrowser() {
     return !!(_getEthProvider());
+}
+
+async function _awaitEthProvider(timeoutMs) {
+    // First try injected provider
+    const budget = typeof timeoutMs === 'number' ? timeoutMs : 800;
+    const start = Date.now();
+    let ep = _getEthProvider();
+    if (ep) return ep;
+    while (Date.now() - start < budget) {
+        await new Promise(r => setTimeout(r, 100));
+        ep = _getEthProvider();
+        if (ep) return ep;
+    }
+    // No injected provider found - try WalletConnect bridge as fallback
+    if (typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred()) {
+        try {
+            return await GMWalletConnect.getProvider();
+        } catch (_) { /* fall through to null */ }
+    }
+    return null;
 }
 
 function _delay(ms) { return new Promise(r => setTimeout(r, ms)); }

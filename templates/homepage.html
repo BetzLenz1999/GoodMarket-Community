@@ -1559,6 +1559,21 @@
         }
 
     </style>
+    <!-- WalletConnect bridge for users without injected wallet -->
+    <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+    <script>
+        if (typeof GMWalletConnect !== "undefined") {
+            GMWalletConnect.configure({
+                walletAddress: "{{ wallet|default('', true) }}",
+                loginMethod: "{{ login_method|default('', true) }}",
+                projectId: "{{ walletconnect_project_id|default('', true) }}",
+                sidecarEnabled: {{ 'true' if walletconnect_sidecar_enabled|default(true) else 'false' }},
+                dappName: "GoodMarket",
+                dappDescription: "Claim and manage GoodDollar on Celo",
+                assetVersion: "{{ ASSET_VERSION }}",
+            });
+        }
+    </script>
 </head>
 <body>
     <!-- Header -->
