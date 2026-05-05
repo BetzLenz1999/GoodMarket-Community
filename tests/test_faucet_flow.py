@@ -394,6 +394,72 @@ class FaucetFlowTests(unittest.TestCase):
         self.assertTrue(body["topped_up"])
         self.assertEqual(body["topup_source"], "api")
 
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._has_recent_refill")
+    @patch("routes._get_gas_status")
+    def test_cooldown_enforced_even_with_force_onchain(self, mock_get_gas, mock_recent):
+        """Test that cooldown is strictly enforced regardless of force_onchain flag."""
+        self._auth_session()
+        mock_recent.return_value = (True, 30)  # Recent refill with 30s cooldown
+        mock_get_gas.return_value = {
+            "balance_wei": "0", "balance_celo": 0.0, "estimated_gas": 220000, "gas_price_wei": "1000000000",
+            "required_gas_wei": "1000000000000000", "required_gas_celo": 0.001, "gas_ready": False,
+        }
+
+        # Try with force_onchain=true - should STILL be blocked by cooldown
+        resp = self.client.post(
+            "/api/faucet/gas",
+            json={"wallet": "0x1111111111111111111111111111111111111111", "force_onchain": True},
+        )
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(body["terminal_status"], "recent_refill")
+        self.assertFalse(body["attempted_api"])
+        self.assertFalse(body["attempted_onchain"])
+        self.assertTrue(body["debug"]["force_onchain_blocked"])
+
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._has_recent_refill")
+    @patch("routes._get_gas_status")
+    def test_force_onchain_rate_limit_exceeded(self, mock_get_gas, mock_recent):
+        """Test that force_onchain calls are rate-limited to prevent spam."""
+        self._auth_session()
+        wallet = "0x1111111111111111111111111111111111111111"
+        
+        # Setup: no recent refill, gas needs top-up
+        mock_recent.return_value = (False, 0)
+        mock_get_gas.return_value = {
+            "balance_wei": "0", "balance_celo": 0.0, "estimated_gas": 220000, "gas_price_wei": "1000000000",
+            "required_gas_wei": "1000000000000000", "required_gas_celo": 0.001, "gas_ready": False,
+        }
+
+        # Make force_onchain requests up to the limit
+        # Default limit is 2 per hour (FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR=2)
+        for i in range(2):
+            with patch("routes._execute_onchain_faucet_topup") as mock_onchain:
+                mock_onchain.return_value = {
+                    "success": True,
+                    "status": "onchain_sent",
+                    "tx_hash": f"0xfaucet{i}",
+                }
+                resp = self.client.post(
+                    "/api/faucet/gas",
+                    json={"wallet": wallet, "force_onchain": True},
+                )
+                body = resp.get_json()
+                self.assertEqual(resp.status_code, 200)
+                self.assertTrue(body.get("attempted_onchain"))
+
+        # Third force_onchain attempt should be rate-limited
+        resp = self.client.post(
+            "/api/faucet/gas",
+            json={"wallet": wallet, "force_onchain": True},
+        )
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(body["status"], "force_onchain_rate_limited")
+        self.assertIn("retry_after", body["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

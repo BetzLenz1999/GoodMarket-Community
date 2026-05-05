@@ -3754,22 +3754,28 @@
             setClaimGasUiState('requesting_faucet');
             let { gasData, terminal } = await requestFaucetGas(forceOnchain);
 
-            // Match XDC policy: if blocked by recent-refill cooldown on the first
-            // API-first attempt, retry once with force_onchain=true as an explicit
-            // fallback path.
-            if (!forceOnchain && terminal === 'recent_refill' && !gasData.gas_ready) {
-                ({ gasData, terminal } = await requestFaucetGas(true));
-            }
-
-            if (!gasData.success && !gasData.gas_ready) {
-                throw new Error(gasData.error || gasData.reason || 'Faucet unavailable.');
-            }
-
+            // Cooldown blocked: show error with countdown timer and let user retry manually
             if (terminal === 'recent_refill' && !gasData.gas_ready) {
-                const cooldown = Number(gasData.recent_refill_cooldown_seconds || 0);
-                throw new Error(
-                    `Gas refill cooldown active (${cooldown}s remaining). Please wait and retry. If this keeps happening, contact support.`
-                );
+                const cooldownSeconds = Number(gasData.recent_refill_cooldown_seconds || 0);
+                const errorMsg = `Gas refill cooldown active. Please wait ${cooldownSeconds}s before retrying. If this keeps happening, contact support.`;
+                
+                // Show countdown in UI if error panel exists
+                if (window.appendStatusLine) {
+                    appendStatusLine(`Cooldown: ${cooldownSeconds}s remaining`);
+                    // Start countdown timer
+                    let remaining = cooldownSeconds;
+                    const countdownInterval = setInterval(() => {
+                        remaining--;
+                        if (remaining > 0) {
+                            appendStatusLine(`Cooldown: ${remaining}s remaining`, true);
+                        } else {
+                            clearInterval(countdownInterval);
+                            appendStatusLine('Cooldown expired. You can retry now.', true);
+                        }
+                    }, 1000);
+                }
+                
+                throw new Error(errorMsg);
             }
 
             if (
@@ -3883,22 +3889,28 @@
                 };
             }
 
-            // Match Celo policy: if blocked by recent-refill cooldown on the
-            // first API-first attempt, retry once with force_onchain=true as
-            // an explicit fallback path.
-            if (!forceOnchain && terminal === 'recent_refill' && !gasData.gas_ready) {
-                ({ gasData, terminal } = await requestXdcFaucetGas(true));
-            }
-
-            if (!gasData.success && !gasData.gas_ready) {
-                throw new Error(gasData.error || gasData.reason || 'XDC faucet unavailable.');
-            }
-
+            // Cooldown blocked: show error with countdown timer and let user retry manually
             if (terminal === 'recent_refill' && !gasData.gas_ready) {
-                const cooldown = Number(gasData.recent_refill_cooldown_seconds || 0);
-                throw new Error(
-                    `XDC gas refill cooldown active (${cooldown}s remaining). Please wait and retry.`
-                );
+                const cooldownSeconds = Number(gasData.recent_refill_cooldown_seconds || 0);
+                const errorMsg = `XDC gas refill cooldown active. Please wait ${cooldownSeconds}s before retrying.`;
+                
+                // Show countdown in UI if error panel exists
+                if (window.appendStatusLine) {
+                    appendStatusLine(`Cooldown: ${cooldownSeconds}s remaining`);
+                    // Start countdown timer
+                    let remaining = cooldownSeconds;
+                    const countdownInterval = setInterval(() => {
+                        remaining--;
+                        if (remaining > 0) {
+                            appendStatusLine(`Cooldown: ${remaining}s remaining`, true);
+                        } else {
+                            clearInterval(countdownInterval);
+                            appendStatusLine('Cooldown expired. You can retry now.', true);
+                        }
+                    }, 1000);
+                }
+                
+                throw new Error(errorMsg);
             }
 
             if (
