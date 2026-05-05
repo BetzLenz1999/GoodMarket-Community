@@ -7550,17 +7550,9 @@ _faucet_lock = threading.Lock()
 #   - If wallet has >= max(dynamic_required, FAUCET_MIN_CELO) -> gas_ready=True.
 #   - Otherwise -> call GoodDollar API faucet (Step B), then TOPWALLET_KEY on-chain
 #     fallback (Step C).
-# The default floor is 0.1 CELO. The previous 0.005 default was too low: when
-# Celo's RPC reports a typical gas price (5–15 gwei), the dynamic component
-# evaluates to ~0.003 CELO and the max() picks the floor — so a wallet with
-# e.g. 0.06 CELO was marked gas_ready=True even though the actual claim
-# transaction (especially over WalletConnect / Trust Wallet, where the wallet
-# adds its own priority fee on top of forno's base price) consumes ~0.07–0.1
-# CELO during real congestion. Raising the floor to 0.1 CELO ensures the
-# faucet is requested for any wallet below typical end-to-end claim cost,
-# matching what MetaMask injected used to catch via the wallet's own higher
-# eth_gasPrice. Operators can still override via the FAUCET_MIN_CELO env var.
-FAUCET_MIN_CELO = float(os.getenv("FAUCET_MIN_CELO", "0.1"))
+# Default 0.005 CELO floor keeps top-ups predictable during low-gas periods;
+# the dynamic component covers congestion spikes (observed 0.07+ CELO needed).
+FAUCET_MIN_CELO = float(os.getenv("FAUCET_MIN_CELO", "0.005"))
 FAUCET_MIN_XDC = float(os.getenv("FAUCET_MIN_XDC", "0.003"))
 FAUCET_BUFFER_MULTIPLIER = float(os.getenv("FAUCET_BUFFER_MULTIPLIER", "1.35"))
 FAUCET_DUPLICATE_WINDOW_MIN = int(os.getenv("FAUCET_DUPLICATE_WINDOW_MIN", "30"))
@@ -7616,20 +7608,15 @@ def _get_gas_status(w3, checksum_wallet: str) -> dict:
       - balance <  required  -> caller should request faucet (GoodDollar API first,
                                 TOPWALLET_KEY on-chain fallback only if API is down/failed).
 
-    Why dynamic instead of a fixed flat floor: Celo gas can spike well above
-    a low flat floor during peak congestion (observed 0.07+ CELO needed). A
-    too-low flat floor caused wallets with sufficient absolute balance
-    (e.g. 0.05–0.06 CELO) to be marked gas_ready=True and proceed to a claim
-    that then reverted on insufficient funds, because the faucet was never
-    requested. Using dynamic estimate + buffer is meant to match what the
-    on-chain tx actually charges.
+    Why dynamic instead of a fixed flat floor: Celo gas can spike well above the
+    0.005 CELO floor during peak congestion (observed 0.07+ CELO needed). A flat
+    floor caused wallets with sufficient absolute balance (e.g. 0.05 CELO) to be
+    marked gas_ready=True and proceed to a claim that then reverted on
+    insufficient funds, because the faucet was never requested. Using dynamic
+    estimate + buffer matches what the on-chain tx actually charges.
 
-    Why we still preserve a floor: forno's eth_gasPrice often reports the
-    chain's base fee only (~5–15 gwei) rather than the higher effective price
-    wallets actually use, so the dynamic component can underestimate by an
-    order of magnitude. The FAUCET_MIN_CELO floor (default 0.1 CELO) acts as
-    a safety net for that under-reporting and matches typical end-to-end
-    claim cost during congestion.
+    The FAUCET_MIN_CELO floor is preserved so during low-gas periods we still
+    request a predictable minimum top-up and avoid drip-faucet churn.
     """
     from blockchain import GOODDOLLAR_CONTRACTS
 
