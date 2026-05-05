@@ -3579,12 +3579,18 @@
         }
 
         // CELO gas threshold — must stay in sync with backend _get_gas_status().
-        // Required = max(estimated_gas * gas_price * FAUCET_BUFFER, FAUCET_MIN_CELO_WEI).
-        // The min floor (0.005 CELO) keeps top-ups predictable during low-gas
-        // periods; the dynamic component covers congestion spikes (observed
-        // 0.07+ CELO needed) so wallets that look "fine" against a flat floor
-        // still trigger the faucet when the network actually demands more gas.
-        const CELO_GAS_MIN_FLOOR_WEI = 5000000000000000n; // 0.005 CELO floor
+        // Required = max(estimated_gas * gas_price * FAUCET_BUFFER, CELO_GAS_MIN_FLOOR_WEI).
+        // Floor set to 0.1 CELO so wallets that report a low eth_gasPrice
+        // (Trust Wallet over forno, WalletConnect bridges, etc.) don't false-pass
+        // when the actual claim transaction costs ~0.07–0.1 CELO during
+        // congestion. Stays in sync with the backend FAUCET_MIN_CELO default
+        // in routes.py — operators can still raise/lower the backend floor via
+        // the FAUCET_MIN_CELO env var; this frontend value is the fallback
+        // fast-path threshold for injected wallets and is fine to keep at 0.1
+        // CELO permanently. The dynamic component still overrides it during
+        // gas spikes (e.g. 200+ gwei) so high-congestion claims trigger faucet
+        // requests even at higher balances.
+        const CELO_GAS_MIN_FLOOR_WEI = 100000000000000000n; // 0.1 CELO floor
         const CELO_GAS_BUFFER_NUMERATOR = 135n;   // 1.35x buffer (matches FAUCET_BUFFER_MULTIPLIER)
         const CELO_GAS_BUFFER_DENOMINATOR = 100n;
         const CELO_FALLBACK_CLAIM_GAS = 220000n;
@@ -3986,15 +3992,30 @@
             setClaimGasUiState('checking_balance');
 
             try {
-                // The WalletConnect bridge can't introspect the user's local
-                // gas balance the way an injected MetaMask/Trust provider can,
-                // so we treat the WC path as MiniPay-like (skip gas preflight)
-                // — the wallet itself will reject the tx if gas is missing
-                // and the user can use the standard top-up button.
-                const isMiniPayClaim = _isMiniPay() || usingWcBridge;
+                // MiniPay pays gas in stablecoins via CIP-64 fee currencies,
+                // so it doesn't need a CELO gas preflight. The WalletConnect
+                // bridge does — its users were previously getting a misleading
+                // "Gas ready" UI even when their CELO balance was below the
+                // claim threshold (e.g. 0.06 CELO when 0.1 CELO was required),
+                // because we were short-circuiting the preflight here. Now WC
+                // runs the same server-side faucet preflight as injected
+                // wallets — /api/faucet/status + /api/faucet/gas use the
+                // backend's own Celo RPC, so they work regardless of which
+                // provider the user signed in with.
+                const isMiniPayClaim = _isMiniPay();
 
-                // MiniPay / WalletConnect bridge: no preflight gas top-up.
-                if (!isMiniPayClaim) {
+                if (isMiniPayClaim) {
+                    // MiniPay: no CELO gas preflight (paid in stablecoin).
+                    setClaimGasUiState('gas_ready');
+                } else if (usingWcBridge) {
+                    // WalletConnect bridge: skip the wallet-side balance
+                    // snapshot (the bridge uses the dApp's RPC anyway, not
+                    // the user's wallet RPC) and rely on the server faucet
+                    // flow to check + top up gas. Mirrors what the injected
+                    // path falls back to when its local snapshot is short.
+                    setStatus('Checking wallet gas…', 'var(--text-dim)');
+                    await ensureGasReadyBeforeClaim();
+                } else {
                     const gasSnap = await getProviderGasSnapshot(provider);
                     if (!gasSnap.gasReady) {
                         setStatus('Checking wallet gas…', 'var(--text-dim)');
@@ -4002,8 +4023,6 @@
                     } else {
                         setClaimGasUiState('gas_ready');
                     }
-                } else {
-                    setClaimGasUiState('gas_ready');
                 }
 
                 setStatus('Gas ready. Connecting to wallet…', 'var(--text-dim)');
