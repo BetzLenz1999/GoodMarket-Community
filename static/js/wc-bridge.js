@@ -286,12 +286,17 @@
 
         var subtitle = document.createElement("div");
         subtitle.textContent = "Scan this code with your phone";
-        subtitle.style.cssText = "font-size:0.75rem;line-height:1.4;color:rgba(248,250,252,0.6);margin-bottom:1.4rem;";
+        subtitle.style.cssText = "font-size:0.75rem;line-height:1.4;color:rgba(248,250,252,0.6);margin-bottom:1.2rem;";
+
+        // QR and Button Container
+        var qrButtonContainer = document.createElement("div");
+        qrButtonContainer.style.cssText =
+            "display:flex;flex-direction:column;align-items:center;gap:0.8rem;margin-bottom:0.6rem;";
 
         // QR Container with WalletConnect logo overlay
         var qrContainer = document.createElement("div");
         qrContainer.style.cssText =
-            "position:relative;width:240px;height:240px;margin:0 auto 1.4rem;" +
+            "position:relative;width:240px;height:240px;" +
             "background:#fff;border-radius:16px;padding:12px;box-shadow:0 8px 32px rgba(0,0,0,0.3);";
 
         var img = document.createElement("img");
@@ -317,17 +322,22 @@
         copyBtn.type = "button";
         copyBtn.innerHTML = "📋 Copy link";
         copyBtn.style.cssText =
-            "display:flex;align-items:center;justify-content:center;gap:0.6rem;" +
-            "width:100%;padding:0.75rem 1rem;border-radius:12px;border:1px solid rgba(124,58,237,0.4);" +
-            "background:rgba(124,58,237,0.15);color:#e0e7ff;font-weight:600;font-size:0.9rem;cursor:pointer;" +
-            "transition:all 0.2s;margin-bottom:0.6rem;";
+            "display:flex;align-items:center;justify-content:center;gap:0.5rem;" +
+            "padding:0.65rem 1.2rem;border-radius:10px;border:1.5px solid rgba(124,58,237,0.5);" +
+            "background:linear-gradient(135deg,rgba(124,58,237,0.2),rgba(99,102,241,0.1));" +
+            "color:#e0e7ff;font-weight:600;font-size:0.85rem;cursor:pointer;" +
+            "transition:all 0.2s;white-space:nowrap;backdrop-filter:blur(8px);";
         copyBtn.addEventListener("mouseover", function() {
-            this.style.background = "rgba(124,58,237,0.25)";
-            this.style.borderColor = "rgba(124,58,237,0.6)";
+            this.style.background = "linear-gradient(135deg,rgba(124,58,237,0.3),rgba(99,102,241,0.15))";
+            this.style.borderColor = "rgba(124,58,237,0.7)";
+            this.style.transform = "translateY(-2px)";
+            this.style.boxShadow = "0 4px 12px rgba(124,58,237,0.3)";
         });
         copyBtn.addEventListener("mouseout", function() {
-            this.style.background = "rgba(124,58,237,0.15)";
-            this.style.borderColor = "rgba(124,58,237,0.4)";
+            this.style.background = "linear-gradient(135deg,rgba(124,58,237,0.2),rgba(99,102,241,0.1))";
+            this.style.borderColor = "rgba(124,58,237,0.5)";
+            this.style.transform = "translateY(0)";
+            this.style.boxShadow = "none";
         });
         copyBtn.addEventListener("click", function () {
             try {
@@ -345,22 +355,25 @@
                 }
                 var origText = copyBtn.innerHTML;
                 copyBtn.innerHTML = "✓ Copied!";
-                copyBtn.style.background = "rgba(16,185,129,0.2)";
-                copyBtn.style.borderColor = "rgba(16,185,129,0.5)";
+                copyBtn.style.background = "linear-gradient(135deg,rgba(16,185,129,0.25),rgba(16,185,129,0.1))";
+                copyBtn.style.borderColor = "rgba(16,185,129,0.6)";
                 copyBtn.style.color = "#86efac";
+                copyBtn.style.transform = "translateY(0)";
                 setTimeout(function () {
                     copyBtn.innerHTML = origText;
-                    copyBtn.style.background = "rgba(124,58,237,0.15)";
-                    copyBtn.style.borderColor = "rgba(124,58,237,0.4)";
+                    copyBtn.style.background = "linear-gradient(135deg,rgba(124,58,237,0.2),rgba(99,102,241,0.1))";
+                    copyBtn.style.borderColor = "rgba(124,58,237,0.5)";
                     copyBtn.style.color = "#e0e7ff";
                 }, 1800);
             } catch (_) { /* no-op */ }
         });
 
+        qrButtonContainer.appendChild(qrContainer);
+        qrButtonContainer.appendChild(copyBtn);
+
         card.appendChild(header);
         card.appendChild(subtitle);
-        card.appendChild(qrContainer);
-        card.appendChild(copyBtn);
+        card.appendChild(qrButtonContainer);
         modal.appendChild(card);
         document.body.appendChild(modal);
     }
