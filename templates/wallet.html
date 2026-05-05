@@ -4586,8 +4586,11 @@
             const st = await fetch('/daily-checkin/api/status');
             const data = await st.json();
             if(!st.ok){document.getElementById('dc-status').innerText = data.message || data.error || 'Unavailable'; return;}
-            document.getElementById('dc-status').innerText = `Streak: ${data.current_streak}/7 | ${data.can_checkin ? 'Available now (UTC)' : 'Already checked in today (UTC)'}`;
-            document.getElementById('dc-checkin-btn').disabled = !data.can_checkin;
+            const statusText = data.maintenance
+                ? (data.message || 'Daily check-in is under maintenance')
+                : `Streak: ${data.current_streak}/7 | ${data.can_checkin ? 'Available now (UTC)' : 'Already checked in today (UTC)'}`;
+            document.getElementById('dc-status').innerText = statusText;
+            document.getElementById('dc-checkin-btn').disabled = !data.can_checkin || !!data.maintenance;
             const wb = document.getElementById('dc-withdraw-btn');
             if (wb) wb.style.display = data.can_withdraw_weekly_bonus ? '' : 'none';
             const h = await fetch('/daily-checkin/api/history');
@@ -4596,7 +4599,16 @@
             ul.innerHTML = '';
             (hd.history || []).forEach(row => {
                 const li = document.createElement('li');
-                li.innerText = `${row.event_type}: ${row.amount_celo} CELO`;
+                li.textContent = `${row.event_type}: ${row.amount_celo} CELO`;
+                if (row.tx_hash) {
+                    const txLink = document.createElement('a');
+                    txLink.href = `https://celoscan.io/tx/${row.tx_hash}`;
+                    txLink.target = '_blank';
+                    txLink.rel = 'noopener noreferrer';
+                    txLink.textContent = ' TX';
+                    txLink.style.marginLeft = '0.35rem';
+                    li.appendChild(txLink);
+                }
                 ul.appendChild(li);
             });
         }catch(_){
