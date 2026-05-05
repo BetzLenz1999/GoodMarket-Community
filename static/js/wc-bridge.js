@@ -126,6 +126,16 @@
         return new Promise(function (resolve) { setTimeout(resolve, ms); });
     }
 
+    // Wrap a promise with a timeout to prevent hanging requests
+    function _withTimeout(promise, timeoutMs, timeoutMessage) {
+        return Promise.race([
+            promise,
+            _delay(timeoutMs).then(function () {
+                throw new Error(timeoutMessage || "Request timeout");
+            })
+        ]);
+    }
+
     function _appendScript(src) {
         return new Promise(function (resolve, reject) {
             var s = document.createElement("script");
@@ -416,9 +426,29 @@
 
                         var deadline = Date.now() + 120000;
                         function poll() {
-                            if (Date.now() >= deadline) {
+                            if (dt > 60000) {
                                 throw new Error("WalletConnect approval timed out.");
                             }
+                            // Adaptive polling: start fast (200ms), then back off exponentially
+                            // This significantly speeds up approvals on fast wallets like Trust Wallet
+                            // while still handling slow network conditions gracefully
+                            var pollAttempts = Math.floor(dt / 200); // rough attempt count
+                            var delayMs = Math.min(200 + (pollAttempts * 50), 2000); // cap at 2s
+                            return _delay(delayMs)
+                                .then(function () { return fetch("/api/wc-session/" + encodeURIComponent(_state.sessionId)); })
+                                .then(function (r) { return r.json(); })
+                                .then(function (st) {
+                                    if (!st || !st.success) return poll();
+                                    if (st.status === "approved" && st.address) {
+                                        _state.address = st.address;
+                                        return _state.address;
+                                    }
+                                    if (st.status === "rejected") {
+                                        throw new Error("WalletConnect request was rejected.");
+                                    }
+                                    return poll();
+                                });
+                        }
                             return _delay(2000)
                                 .then(function () { return fetch("/api/wc-session/" + encodeURIComponent(_state.sessionId)); })
                                 .then(function (r) { return r.json(); })
@@ -631,6 +661,9 @@
                         }
                         var sig = d.signature;
                         return sig.indexOf("0x") === 0 ? sig : ("0x" + sig);
+                    }).catch(function (err) {
+                        // If sidecar fails (timeout or network), provide clearer error
+                        throw _wcRpcError("Signature request failed: " + (err && err.message), err && err.message);
                     });
                 }
                 // Fall through to the in-browser SignClient session.
@@ -638,18 +671,24 @@
                     throw _wcRpcError("WalletConnect browser session is not active.", null, -32603);
                 }
                 return _wcGetClient().then(function (client) {
-                    return client.request({
+                    // Wrap the request with a timeout to prevent MetaMask from hanging indefinitely.
+                    // MetaMask sometimes doesn't respond to WalletConnect requests, so we force a fail
+                    // after 45 seconds and suggest fallback to direct injection or retry.
+                    var requestPromise = client.request({
                         topic: _state.browserSession.topic,
                         chainId: "eip155:" + CELO_CHAIN_ID,
                         request: { method: method, params: p }
-                    }).catch(function (wcErr) {
-                        // Re-throw with .code preserved so ethers.js sees a
-                        // proper EIP-1193 error (4001 → user rejected, etc.)
-                        // instead of wrapping it as "could not coalesce error".
-                        var code = (wcErr && typeof wcErr.code === "number") ? wcErr.code : -32603;
-                        var msg = (wcErr && wcErr.message) ? String(wcErr.message) : "WalletConnect request failed";
-                        throw _wcRpcError(msg, msg, code);
                     });
+                    
+                    return _withTimeout(requestPromise, 45000, 
+                        "WalletConnect request timeout (45s). Wallet may not respond to requests - try refreshing or switching wallets.");
+                }).catch(function (wcErr) {
+                    // Re-throw with .code preserved so ethers.js sees a
+                    // proper EIP-1193 error (4001 → user rejected, etc.)
+                    // instead of wrapping it as "could not coalesce error".
+                    var code = (wcErr && typeof wcErr.code === "number") ? wcErr.code : -32603;
+                    var msg = (wcErr && wcErr.message) ? String(wcErr.message) : "WalletConnect request failed";
+                    throw _wcRpcError(msg, msg, code);
                 });
             });
         }
