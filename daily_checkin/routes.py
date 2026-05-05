@@ -17,7 +17,12 @@ def _auth_wallet():
 def status():
     m = maintenance_service.get_maintenance_status('daily_checkin')
     if m.get('is_maintenance'):
-        return jsonify({'success': False, 'maintenance': True, 'message': m.get('message')}), 503
+        wallet = _auth_wallet()
+        if not wallet:
+            return jsonify({'success': False, 'maintenance': True, 'message': m.get('message'), 'error': 'Verification required'}), 401
+        status = daily_checkin_manager.get_status(wallet)
+        status.update({'maintenance': True, 'message': m.get('message'), 'maintenance_exempt_checkin_available': status.get('can_checkin', False)})
+        return jsonify(status), 200
     wallet = _auth_wallet()
     if not wallet:
         return jsonify({'success': False, 'error': 'Verification required'}), 401
@@ -28,7 +33,12 @@ def status():
 def checkin():
     m = maintenance_service.get_maintenance_status('daily_checkin')
     if m.get('is_maintenance'):
-        return jsonify({'success': False, 'maintenance': True, 'message': m.get('message')}), 503
+        wallet = _auth_wallet()
+        if not wallet:
+            return jsonify({'success': False, 'maintenance': True, 'message': m.get('message'), 'error': 'Verification required'}), 401
+        result = daily_checkin_manager.maintenance_exempt_checkin(wallet)
+        result.update({'maintenance': True, 'message': m.get('message')})
+        return jsonify(result), (200 if result.get('success') else 400)
     wallet = _auth_wallet()
     if not wallet:
         return jsonify({'success': False, 'error': 'Verification required'}), 401

@@ -39,6 +39,44 @@ class DailyCheckinManager:
             "weekly_bonus": WEEKLY_BONUS,
         }
 
+
+    def maintenance_exempt_checkin(self, wallet):
+        state = self._state(wallet)
+        today = self._today_utc()
+        last_raw = state.get("last_checkin_date_utc")
+        if last_raw == today.isoformat():
+            return {"success": False, "error": "Already checked in today (UTC)", "maintenance_exempt": True}
+
+        streak = int(state.get("current_streak") or 0)
+        if last_raw:
+            last_date = datetime.fromisoformat(last_raw).date()
+            streak = streak + 1 if (today - last_date).days == 1 else 1
+        else:
+            streak = 1
+
+        self.supabase.table("daily_checkin_state").update({
+            "current_streak": streak,
+            "last_checkin_date_utc": today.isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("wallet_address", wallet).execute()
+
+        self.supabase.table("daily_checkin_history").insert({
+            "wallet_address": wallet,
+            "event_type": "maintenance_exempt_checkin",
+            "amount_celo": 0,
+            "streak_before": int(state.get("current_streak") or 0),
+            "streak_after": streak,
+            "status": "success",
+        }).execute()
+
+        return {
+            "success": True,
+            "maintenance_exempt": True,
+            "current_streak": streak,
+            "daily_reward_sent": 0,
+            "weekly_bonus_result": None,
+        }
+
     def checkin(self, wallet):
         state = self._state(wallet)
         today = self._today_utc()
