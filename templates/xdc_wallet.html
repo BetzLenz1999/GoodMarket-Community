@@ -367,6 +367,9 @@
                 sidecarEnabled: {{ 'true' if walletconnect_sidecar_enabled|default(true) else 'false' }},
                 dappName: "GoodMarket — XDC Wallet",
                 dappDescription: "Manage XDC and G$ tokens",
+                chainHex: "0x32",
+                chainId: 50,
+                rpcUrl: "https://erpc.xinfin.network",
                 assetVersion: "{{ ASSET_VERSION }}",
             });
         }
