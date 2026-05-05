@@ -102,6 +102,21 @@
         .step-item { display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.35rem 0; }
         .step-num { width: 20px; height: 20px; border-radius: 50%; background: rgba(124,58,237,0.3); border: 1px solid rgba(124,58,237,0.5); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 800; color: #a78bfa; flex-shrink: 0; margin-top: 1px; }
     </style>
+    <!-- WalletConnect bridge for users without injected wallet -->
+    <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+    <script>
+        if (typeof GMWalletConnect !== "undefined") {
+            GMWalletConnect.configure({
+                walletAddress: "{{ wallet }}",
+                loginMethod: "{{ login_method }}",
+                projectId: "{{ walletconnect_project_id|default('', true) }}",
+                sidecarEnabled: {{ 'true' if walletconnect_sidecar_enabled|default(true) else 'false' }},
+                dappName: "GoodMarket — Send",
+                dappDescription: "Send GoodDollar to others on Celo",
+                assetVersion: "{{ ASSET_VERSION }}",
+            });
+        }
+    </script>
 </head>
 <body>
     <nav class="navbar">
@@ -209,6 +224,27 @@
                 return window.ethereum.providers[0];
             }
             return window.ethereum;
+        }
+
+        async function _awaitEthProvider(timeoutMs) {
+            // First try injected provider with a brief wait
+            const budget = typeof timeoutMs === 'number' ? timeoutMs : 800;
+            const start = Date.now();
+            let ep = _getEthProvider();
+            if (ep) return ep;
+            while (Date.now() - start < budget) {
+                try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+                await new Promise(r => setTimeout(r, 100));
+                ep = _getEthProvider();
+                if (ep) return ep;
+            }
+            // No injected provider found - try WalletConnect bridge as fallback
+            if (typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred()) {
+                try {
+                    return await GMWalletConnect.getProvider();
+                } catch (_) { /* fall through to null */ }
+            }
+            return null;
         }
 
         const GD_ABI  = ["function balanceOf(address) view returns (uint256)", "function transferAndCall(address,uint256,bytes) returns (bool)"];

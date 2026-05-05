@@ -140,6 +140,21 @@
 
         .empty-state { text-align:center; padding:2.5rem 1rem; color:rgba(255,255,255,.3); font-size:.9rem; }
     </style>
+    <!-- WalletConnect bridge for users without injected wallet -->
+    <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+    <script>
+        if (typeof GMWalletConnect !== "undefined") {
+            GMWalletConnect.configure({
+                walletAddress: "{{ wallet }}",
+                loginMethod: "{{ login_method }}",
+                projectId: "{{ walletconnect_project_id|default('', true) }}",
+                sidecarEnabled: {{ 'true' if walletconnect_sidecar_enabled|default(true) else 'false' }},
+                dappName: "GoodMarket — Savings",
+                dappDescription: "Lock and earn G$ rewards on Celo",
+                assetVersion: "{{ ASSET_VERSION }}",
+            });
+        }
+    </script>
 </head>
 <body>
 
@@ -885,6 +900,12 @@
             await new Promise(r => setTimeout(r, 120));
             ep = _getEthProvider();
             if (ep) return ep;
+        }
+        // No injected provider found - try WalletConnect bridge as fallback
+        if (typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred()) {
+            try {
+                return await GMWalletConnect.getProvider();
+            } catch (_) { /* fall through to null */ }
         }
         return null;
     }

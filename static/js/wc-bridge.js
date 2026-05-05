@@ -217,35 +217,92 @@
         modal.setAttribute("role", "dialog");
         modal.style.cssText =
             "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;" +
-            "justify-content:center;background:rgba(2,6,23,0.78);padding:1rem;";
+            "justify-content:center;background:rgba(2,6,23,0.85);padding:1rem;font-family:inherit;";
 
         var card = document.createElement("div");
         card.style.cssText =
-            "background:#0f172a;border:1px solid rgba(124,58,237,0.45);border-radius:18px;" +
-            "padding:1.4rem 1.4rem 1.2rem;max-width:340px;width:100%;text-align:center;color:#f8fafc;" +
-            "font-family:inherit;box-shadow:0 24px 60px rgba(15,23,42,0.6);";
+            "background:#0f1a2e;border:1px solid rgba(124,58,237,0.35);border-radius:24px;" +
+            "padding:2rem 2rem 1.8rem;max-width:380px;width:100%;text-align:center;color:#f8fafc;" +
+            "box-shadow:0 24px 60px rgba(15,23,42,0.7),0 0 40px rgba(124,58,237,0.15);";
 
+        var header = document.createElement("div");
+        header.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;";
+
+        var titleContainer = document.createElement("div");
         var title = document.createElement("div");
-        title.textContent = label || "Approve in your wallet";
-        title.style.cssText = "font-weight:700;font-size:1rem;margin-bottom:0.3rem;color:#fbbf24;";
+        title.textContent = "WalletConnect";
+        title.style.cssText = "font-weight:700;font-size:1.1rem;color:#fff;";
 
-        var sub = document.createElement("div");
-        sub.textContent = "Scan this QR with your WalletConnect-enabled wallet (MetaMask, Trust, Valora, etc.).";
-        sub.style.cssText = "font-size:0.78rem;line-height:1.4;color:rgba(248,250,252,0.7);margin-bottom:0.9rem;";
+        var backBtn = document.createElement("button");
+        backBtn.innerHTML = "←";
+        backBtn.type = "button";
+        backBtn.style.cssText =
+            "background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);" +
+            "color:#f8fafc;width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:1rem;" +
+            "display:flex;align-items:center;justify-content:center;transition:all 0.2s;";
+        backBtn.addEventListener("mouseover", function() { this.style.background = "rgba(255,255,255,0.1)"; });
+        backBtn.addEventListener("mouseout", function() { this.style.background = "rgba(255,255,255,0.05)"; });
+
+        var closeBtn = document.createElement("button");
+        closeBtn.innerHTML = "✕";
+        closeBtn.type = "button";
+        closeBtn.style.cssText =
+            "background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);" +
+            "color:#f8fafc;width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:1.2rem;" +
+            "display:flex;align-items:center;justify-content:center;transition:all 0.2s;";
+        closeBtn.addEventListener("mouseover", function() { this.style.background = "rgba(255,255,255,0.1)"; });
+        closeBtn.addEventListener("mouseout", function() { this.style.background = "rgba(255,255,255,0.05)"; });
+        closeBtn.addEventListener("click", _defaultHideQr);
+
+        header.appendChild(backBtn);
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+
+        var subtitle = document.createElement("div");
+        subtitle.textContent = "Scan this code with your phone";
+        subtitle.style.cssText = "font-size:0.75rem;line-height:1.4;color:rgba(248,250,252,0.6);margin-bottom:1.4rem;";
+
+        // QR Container with WalletConnect logo overlay
+        var qrContainer = document.createElement("div");
+        qrContainer.style.cssText =
+            "position:relative;width:240px;height:240px;margin:0 auto 1.4rem;" +
+            "background:#fff;border-radius:16px;padding:12px;box-shadow:0 8px 32px rgba(0,0,0,0.3);";
 
         var img = document.createElement("img");
         img.alt = "WalletConnect QR";
-        img.width = 200;
-        img.height = 200;
-        img.src = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(uri);
-        img.style.cssText = "background:#fff;padding:8px;border-radius:12px;display:block;margin:0 auto 0.9rem;";
+        img.width = 216;
+        img.height = 216;
+        img.src = "https://api.qrserver.com/v1/create-qr-code/?size=216x216&data=" + encodeURIComponent(uri);
+        img.style.cssText = "display:block;width:100%;height:100%;border-radius:8px;";
+
+        // WalletConnect logo overlay (centered)
+        var logoOverlay = document.createElement("div");
+        logoOverlay.style.cssText =
+            "position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);" +
+            "width:56px;height:56px;background:#0f1a2e;border-radius:12px;" +
+            "display:flex;align-items:center;justify-content:center;" +
+            "font-size:2rem;box-shadow:0 4px 12px rgba(0,0,0,0.3);";
+        logoOverlay.innerHTML = "🔗";
+
+        qrContainer.appendChild(img);
+        qrContainer.appendChild(logoOverlay);
 
         var copyBtn = document.createElement("button");
         copyBtn.type = "button";
-        copyBtn.textContent = "📋 Copy URI";
+        copyBtn.innerHTML = "📋 Copy link";
         copyBtn.style.cssText =
-            "padding:0.55rem 0.9rem;border-radius:10px;border:none;background:#6366f1;color:#fff;" +
-            "font-weight:600;font-size:0.85rem;cursor:pointer;margin-right:0.4rem;";
+            "display:flex;align-items:center;justify-content:center;gap:0.6rem;" +
+            "width:100%;padding:0.75rem 1rem;border-radius:12px;border:1px solid rgba(124,58,237,0.4);" +
+            "background:rgba(124,58,237,0.15);color:#e0e7ff;font-weight:600;font-size:0.9rem;cursor:pointer;" +
+            "transition:all 0.2s;margin-bottom:0.6rem;";
+        copyBtn.addEventListener("mouseover", function() {
+            this.style.background = "rgba(124,58,237,0.25)";
+            this.style.borderColor = "rgba(124,58,237,0.6)";
+        });
+        copyBtn.addEventListener("mouseout", function() {
+            this.style.background = "rgba(124,58,237,0.15)";
+            this.style.borderColor = "rgba(124,58,237,0.4)";
+        });
         copyBtn.addEventListener("click", function () {
             try {
                 if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -253,28 +310,31 @@
                 } else {
                     var ta = document.createElement("textarea");
                     ta.value = uri;
-                    ta.style.position = "fixed"; ta.style.left = "-9999px";
-                    document.body.appendChild(ta); ta.select();
-                    document.execCommand("copy"); document.body.removeChild(ta);
+                    ta.style.position = "fixed";
+                    ta.style.left = "-9999px";
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand("copy");
+                    document.body.removeChild(ta);
                 }
-                copyBtn.textContent = "✅ Copied!";
-                setTimeout(function () { copyBtn.textContent = "📋 Copy URI"; }, 1600);
+                var origText = copyBtn.innerHTML;
+                copyBtn.innerHTML = "✓ Copied!";
+                copyBtn.style.background = "rgba(16,185,129,0.2)";
+                copyBtn.style.borderColor = "rgba(16,185,129,0.5)";
+                copyBtn.style.color = "#86efac";
+                setTimeout(function () {
+                    copyBtn.innerHTML = origText;
+                    copyBtn.style.background = "rgba(124,58,237,0.15)";
+                    copyBtn.style.borderColor = "rgba(124,58,237,0.4)";
+                    copyBtn.style.color = "#e0e7ff";
+                }, 1800);
             } catch (_) { /* no-op */ }
         });
 
-        var cancelBtn = document.createElement("button");
-        cancelBtn.type = "button";
-        cancelBtn.textContent = "Close";
-        cancelBtn.style.cssText =
-            "padding:0.55rem 0.9rem;border-radius:10px;border:1px solid rgba(255,255,255,0.18);" +
-            "background:rgba(255,255,255,0.06);color:#f8fafc;font-weight:600;font-size:0.85rem;cursor:pointer;";
-        cancelBtn.addEventListener("click", _defaultHideQr);
-
-        card.appendChild(title);
-        card.appendChild(sub);
-        card.appendChild(img);
+        card.appendChild(header);
+        card.appendChild(subtitle);
+        card.appendChild(qrContainer);
         card.appendChild(copyBtn);
-        card.appendChild(cancelBtn);
         modal.appendChild(card);
         document.body.appendChild(modal);
     }
