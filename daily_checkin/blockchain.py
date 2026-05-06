@@ -7,22 +7,22 @@ class DailyCheckinBlockchainService:
     def __init__(self):
         self.celo_rpc_url = os.getenv("CELO_RPC_URL", "https://forno.celo.org")
         self.chain_id = int(os.getenv("CHAIN_ID", 42220))
-        task_key = os.getenv("TASK_KEY")
+        checkin_key = os.getenv("CHECKIN_KEY")
         self.w3 = Web3(Web3.HTTPProvider(self.celo_rpc_url))
-        self.task_account = None
-        if task_key:
-            if not task_key.startswith("0x"):
-                task_key = "0x" + task_key
-            self.task_account = Account.from_key(task_key)
+        self.checkin_account = None
+        if checkin_key:
+            if not checkin_key.startswith("0x"):
+                checkin_key = "0x" + checkin_key
+            self.checkin_account = Account.from_key(checkin_key)
 
     def send_celo(self, recipient: str, amount_celo: float) -> dict:
-        if not self.task_account:
-            return {"success": False, "error": "TASK_KEY not configured"}
+        if not self.checkin_account:
+            return {"success": False, "error": "CHECKIN_KEY not configured"}
         if not self.w3.is_connected():
             return {"success": False, "error": "Blockchain connection failed"}
 
         to_addr = Web3.to_checksum_address(recipient)
-        from_addr = self.task_account.address
+        from_addr = self.checkin_account.address
         value_wei = self.w3.to_wei(amount_celo, "ether")
 
         gas_price = self.w3.eth.gas_price
@@ -36,7 +36,7 @@ class DailyCheckinBlockchainService:
             "gasPrice": gas_price,
         }
 
-        signed = self.w3.eth.account.sign_transaction(tx, self.task_account.key)
+        signed = self.w3.eth.account.sign_transaction(tx, self.checkin_account.key)
         tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
         receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
         return {
