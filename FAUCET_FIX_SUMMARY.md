@@ -132,6 +132,17 @@ This fix aligns perfectly with GoodDollar's design:
 3. `/vercel/share/v0-project/tests/test_faucet_flow.py` (Tests)
    - Added test_cooldown_enforced_even_with_force_onchain
    - Added test_force_onchain_rate_limit_exceeded
+   - Added test_xdc_cooldown_enforced_even_with_force_onchain (XDC parity)
+   - Added test_xdc_force_onchain_rate_limit_exceeded (XDC parity)
+
+## XDC Parity (added later)
+
+The original May 5 fix only covered the Celo route (`/api/faucet/gas`). The XDC route (`/api/xdc/faucet/gas`) still allowed `force_onchain=true` to bypass cooldown and was not subject to the per-hour rate limit, so the same drain pattern was reachable by hitting the XDC endpoint instead of the Celo one. The XDC route now applies the same two protections:
+
+1. Strict cooldown — `if recent_refill:` (no `and not force_onchain`); when `force_onchain=true` is sent during cooldown the breach is logged with `network=xdc`.
+2. `_check_force_onchain_rate_limit` / `_record_force_onchain_attempt` are called before the on-chain fallback. The same in-memory state is shared across Celo and XDC, so a single wallet's per-hour limit applies to both networks combined.
+
+The `topWallet(address)` selector and the `GOODDOLLAR_XDC_FAUCET_CONTRACT` (`0x7344Da1Be296f03fbb8082aDaC5696058B5a9bd9`, deployed by the GoodDollar Deployer on XDC) are unchanged.
 
 ## Verification Steps
 
