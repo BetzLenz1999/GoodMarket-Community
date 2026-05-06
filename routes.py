@@ -8429,7 +8429,12 @@ def xdc_faucet_gas():
             })
 
         recent_refill, seconds_remaining = _has_recent_refill(checksum_wallet)
-        if recent_refill and not force_onchain:
+        if recent_refill:
+            if force_onchain:
+                logger.error(
+                    f"❌ Faucet cooldown breach attempt wallet={checksum_wallet.lower()} source=force_onchain "
+                    f"network=xdc cooldown_remaining={seconds_remaining}s correlation_id={correlation_id}"
+                )
             return jsonify({
                 "success": True,
                 "status": "recent_refill",
@@ -8439,8 +8444,37 @@ def xdc_faucet_gas():
                 "recent_refill_cooldown_seconds": seconds_remaining,
                 "correlation_id": correlation_id,
                 "wallet": checksum_wallet.lower(),
+                "debug": {
+                    "pre_balance_wei": str(pre_balance_wei),
+                    "post_balance_wei": str(pre_balance_wei),
+                    "required_gas_wei": status_before["required_gas_wei"],
+                    "required_gas_xdc": status_before["required_gas_xdc"],
+                    "cooldown_reason": "recent_refill",
+                    "force_onchain_blocked": force_onchain,
+                },
                 **status_before,
             })
+
+        # Check force_onchain rate limiting (mirrors Celo path /api/faucet/gas).
+        # Without this, repeated force_onchain=true requests after cooldown
+        # expiry could still drain the TOPWALLET_KEY XDC balance.
+        if force_onchain:
+            is_limited, attempts_remaining, retry_after = _check_force_onchain_rate_limit(checksum_wallet)
+            if is_limited:
+                logger.error(
+                    f"❌ Faucet force_onchain rate limit exceeded wallet={checksum_wallet.lower()} "
+                    f"network=xdc retry_after={retry_after}s "
+                    f"max_per_hour={FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR} correlation_id={correlation_id}"
+                )
+                return jsonify({
+                    "success": False,
+                    "status": "force_onchain_rate_limited",
+                    "reason": f"force_onchain rate limit exceeded. Retry after ~{retry_after}s.",
+                    "force_onchain_rate_limit_retry_after_seconds": retry_after,
+                    "force_onchain_max_per_hour": FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR,
+                    "correlation_id": correlation_id,
+                }), 429
+            _record_force_onchain_attempt(checksum_wallet)
 
         api_ok = False
         api_tx_hash = None

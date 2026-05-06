@@ -25,6 +25,14 @@ class FaucetFlowTests(unittest.TestCase):
         self.app.secret_key = "test-secret"
         self.app.register_blueprint(routes)
         self.client = self.app.test_client()
+        # Reset module-level faucet rate-limit / cooldown state so tests
+        # don't leak counters into each other (force_onchain attempts and
+        # recent-refill timestamps are wallet-keyed in-memory dicts).
+        import routes as _routes_mod
+        with _routes_mod._faucet_lock:
+            _routes_mod._force_onchain_attempts.clear()
+            _routes_mod._faucet_recent_refill.clear()
+            _routes_mod._faucet_api_pending.clear()
 
     def _auth_session(self, wallet="0x1111111111111111111111111111111111111111"):
         with self.client.session_transaction() as sess:
@@ -458,7 +466,75 @@ class FaucetFlowTests(unittest.TestCase):
         body = resp.get_json()
         self.assertEqual(resp.status_code, 429)
         self.assertEqual(body["status"], "force_onchain_rate_limited")
-        self.assertIn("retry_after", body["reason"])
+        self.assertIn("Retry after", body["reason"])
+        self.assertIn("force_onchain_rate_limit_retry_after_seconds", body)
+
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._has_recent_refill")
+    @patch("routes._get_xdc_gas_status")
+    def test_xdc_cooldown_enforced_even_with_force_onchain(self, mock_get_xdc_gas, mock_recent):
+        """XDC parity: cooldown is strictly enforced regardless of force_onchain flag."""
+        wallet = "0x2222222222222222222222222222222222222222"
+        self._auth_session(wallet)
+        mock_recent.return_value = (True, 30)  # Recent refill with 30s cooldown
+        mock_get_xdc_gas.return_value = {
+            "balance_wei": "0", "balance_xdc": 0.0, "estimated_gas": 220000, "gas_price_wei": "1000000000",
+            "required_gas_wei": "3000000000000000", "required_gas_xdc": 0.003,
+            "required_gas_celo": 0.003, "gas_ready": False,
+        }
+
+        # Try with force_onchain=true - should STILL be blocked by cooldown
+        resp = self.client.post(
+            "/api/xdc/faucet/gas",
+            json={"wallet": wallet, "force_onchain": True},
+        )
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(body["terminal_status"], "recent_refill")
+        self.assertFalse(body["topped_up"])
+        self.assertFalse(body["gas_ready"])
+        self.assertTrue(body["debug"]["force_onchain_blocked"])
+        self.assertEqual(body["debug"]["cooldown_reason"], "recent_refill")
+
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._has_recent_refill")
+    @patch("routes._get_xdc_gas_status")
+    def test_xdc_force_onchain_rate_limit_exceeded(self, mock_get_xdc_gas, mock_recent):
+        """XDC parity: force_onchain calls are rate-limited to prevent TOPWALLET_KEY drain."""
+        wallet = "0x3333333333333333333333333333333333333333"
+        self._auth_session(wallet)
+        mock_recent.return_value = (False, 0)
+        mock_get_xdc_gas.return_value = {
+            "balance_wei": "0", "balance_xdc": 0.0, "estimated_gas": 220000, "gas_price_wei": "1000000000",
+            "required_gas_wei": "3000000000000000", "required_gas_xdc": 0.003,
+            "required_gas_celo": 0.003, "gas_ready": False,
+        }
+
+        # Make force_onchain requests up to the limit (default 2/hour).
+        for i in range(2):
+            with patch("routes._execute_onchain_xdc_faucet_topup") as mock_onchain:
+                mock_onchain.return_value = {
+                    "success": True,
+                    "status": "onchain_sent",
+                    "tx_hash": f"0xxdcfaucet{i}",
+                }
+                resp = self.client.post(
+                    "/api/xdc/faucet/gas",
+                    json={"wallet": wallet, "force_onchain": True},
+                )
+                self.assertEqual(resp.status_code, 200)
+
+        # Third force_onchain attempt should be rate-limited
+        resp = self.client.post(
+            "/api/xdc/faucet/gas",
+            json={"wallet": wallet, "force_onchain": True},
+        )
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(body["status"], "force_onchain_rate_limited")
+        self.assertIn("Retry after", body["reason"])
+        self.assertIn("force_onchain_rate_limit_retry_after_seconds", body)
+        self.assertEqual(body["force_onchain_max_per_hour"], 2)
 
 
 if __name__ == "__main__":

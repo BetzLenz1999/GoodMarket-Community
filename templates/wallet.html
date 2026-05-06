@@ -4157,10 +4157,21 @@
             'WARNING: do not sign this message unless you trust the website/application requesting this signature.';
 
         function buildFVLink(address, fvSig) {
+            // The FV link's `account` URL param must use the SAME casing that
+            // was substituted into the signed FV_IDENTIFIER_MSG2 message. The
+            // GoodID server reconstructs the signed message using whatever
+            // it sees in this param, then ecrecovers the signer and compares
+            // against `account` — if the casing differs, the recovered signer
+            // is a random address and verification can fail. signWithWallet /
+            // signWithWalletConnect / signServerSide all sign with `address`
+            // verbatim, so we keep the same casing here. (The callbackUrl's
+            // `wallet` param below is unrelated to FV signing — it's just the
+            // GoodMarket-side redirect param for /wallet?fv_pending=1, which
+            // we keep lowercased so the redirect URL is canonical.)
             const callbackUrl = window.location.origin +
                 '/wallet?fv_pending=1&wallet=' + encodeURIComponent(address.toLowerCase()) + '&src=goodmarket';
             const params = {
-                account:   address.toLowerCase(),
+                account:   address,
                 fvsig:     fvSig,
                 firstname: 'GoodMarket',
                 chain:     42220,
