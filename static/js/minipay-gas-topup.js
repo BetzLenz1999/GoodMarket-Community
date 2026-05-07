@@ -52,6 +52,7 @@
     const CELO_GAS_FAUCET_MIN_CELO = 0.1;
     const CUSD_FAUCET_ENDPOINT = '/api/minipay/stablecoin-faucet';
     const CELO_FAUCET_ENDPOINT = '/api/faucet/gas';
+    const CUSD_FAUCET_PROGRAM_LABEL = 'Program by Betz Team';
 
     // Stablecoin "dust" threshold below which we treat the user as having
     // effectively zero stablecoin gas budget. Approx $0.005.
@@ -193,6 +194,8 @@
             + '.mp-gtu-status{margin-top:.85rem;padding:.55rem .75rem;'
             + 'background:rgba(255,255,255,.04);border-radius:8px;font-size:.8rem;'
             + 'color:#94a3b8;line-height:1.45;}'
+            + '.mp-gtu-program{margin-top:.75rem;font-size:.72rem;font-weight:700;'
+            + 'letter-spacing:.04em;text-transform:uppercase;color:#fbbf24;}'
             + '.mp-gtu-banner{margin:0 auto 1rem;max-width:600px;'
             + 'background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.4);'
             + 'border-radius:12px;padding:.8rem 1rem;color:#fbbf24;'
@@ -253,6 +256,7 @@
             + '<div class="mp-gtu-title">' + (title || '⛽ Converting CELO → cUSD') + '</div>'
             + '<div class="mp-gtu-status" id="mp-gtu-progress-text">'
             + (initialText || 'Preparing swap…') + '</div>'
+            + (title && /stablecoin gas/i.test(title) ? '<div class="mp-gtu-program">' + CUSD_FAUCET_PROGRAM_LABEL + '</div>' : '')
             + '<div class="mp-gtu-actions">'
             + '<button class="mp-gtu-btn mp-gtu-btn-secondary" data-action="hide">Hide</button>'
             + '</div></div>';
@@ -332,7 +336,7 @@
     }
 
     async function _ensureCusdFaucet(walletAddr, progress) {
-        if (progress) progress.update('Step 2/3 — sending ~$0.05 cUSD gas budget to your MiniPay wallet…');
+        if (progress) progress.update('Step 2/3 — sending ~$0.05 cUSD gas budget to your MiniPay wallet… ' + CUSD_FAUCET_PROGRAM_LABEL + '.');
         try {
             return await _postJson(CUSD_FAUCET_ENDPOINT, { wallet: walletAddr });
         } catch (err) {
@@ -502,7 +506,7 @@
         const confirmed = await _showConfirmModal({
             body: opts.body
                 || (startedWithoutStableGas
-                    ? 'We sent a small cUSD gas budget to your MiniPay wallet. Now convert the available CELO above the 0.09 CELO reserve to cUSD so future MiniPay transactions can keep paying gas in stablecoin.'
+                    ? 'We sent a small cUSD gas budget to your MiniPay wallet — Program by Betz Team. Now convert the available CELO above the 0.09 CELO reserve to cUSD so future MiniPay transactions can keep paying gas in stablecoin.'
                     : 'You\'re doing an action that needs gas. MiniPay pays gas in stablecoin (cUSD/USDT/USDC), but you only have CELO right now. Convert the available CELO above the 0.09 CELO reserve to cUSD first?'),
             amountCelo: _formatCelo(amountWei),
             reserveCelo: CELO_RESERVE_AFTER_TOPUP_STR,
@@ -613,6 +617,7 @@
             UNISWAP_ROUTER: UNISWAP_ROUTER,
             CELO_RESERVE_AFTER_TOPUP_STR: CELO_RESERVE_AFTER_TOPUP_STR,
             STABLECOIN_GAS_MIN_USD: STABLECOIN_GAS_MIN_USD,
+            CUSD_FAUCET_PROGRAM_LABEL: CUSD_FAUCET_PROGRAM_LABEL,
         },
     };
 })(typeof window !== 'undefined' ? window : globalThis);

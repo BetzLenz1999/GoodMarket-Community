@@ -7592,6 +7592,7 @@ FAUCET_ONCHAIN_MAX_ATTEMPTS = max(1, int(os.getenv("FAUCET_ONCHAIN_MAX_ATTEMPTS"
 FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR = int(os.getenv("FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR", "2"))
 FAUCET_FORCE_ONCHAIN_HOUR_WINDOW = 3600  # 1 hour in seconds
 MINIPAY_CUSD_FAUCET_AMOUNT = Decimal(os.getenv("MINIPAY_CUSD_FAUCET_AMOUNT", "0.05"))
+MINIPAY_CUSD_FAUCET_PROGRAM_LABEL = "Program by Betz Team"
 MINIPAY_STABLECOIN_MIN_USD = Decimal(os.getenv("MINIPAY_STABLECOIN_MIN_USD", "0.05"))
 MINIPAY_CUSD_FAUCET_COOLDOWN_SECONDS = int(os.getenv("MINIPAY_CUSD_FAUCET_COOLDOWN_SECONDS", "86400"))
 MINIPAY_CUSD_FAUCET_RECEIPT_TIMEOUT = int(os.getenv("MINIPAY_CUSD_FAUCET_RECEIPT_TIMEOUT", "120"))
@@ -8628,6 +8629,7 @@ def minipay_stablecoin_faucet():
                 "topped_up": False,
                 "stable_ready": True,
                 "faucet_amount_cusd": float(MINIPAY_CUSD_FAUCET_AMOUNT),
+                "program_by": MINIPAY_CUSD_FAUCET_PROGRAM_LABEL,
                 "correlation_id": correlation_id,
                 "stablecoin_status": stable_before,
             })
@@ -8644,6 +8646,7 @@ def minipay_stablecoin_faucet():
                 "recent_refill_cooldown_seconds": seconds_remaining,
                 "recent_refill": recent_entry,
                 "faucet_amount_cusd": float(MINIPAY_CUSD_FAUCET_AMOUNT),
+                "program_by": MINIPAY_CUSD_FAUCET_PROGRAM_LABEL,
                 "correlation_id": correlation_id,
                 "stablecoin_status": stable_before,
             })
@@ -8668,6 +8671,7 @@ def minipay_stablecoin_faucet():
             "stable_ready": bool(stable_after.get("stable_ready")),
             "topup_source": "topwallet_key_cusd" if transfer_result.get("success") else None,
             "faucet_amount_cusd": float(MINIPAY_CUSD_FAUCET_AMOUNT),
+            "program_by": MINIPAY_CUSD_FAUCET_PROGRAM_LABEL,
             "correlation_id": correlation_id,
             "transfer_result": transfer_result,
             "tx_hash": transfer_result.get("tx_hash"),
