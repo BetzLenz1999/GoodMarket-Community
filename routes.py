@@ -7888,11 +7888,95 @@ def _get_minipay_stablecoin_balances(w3, checksum_wallet: str) -> dict:
     }
 
 
+def _normalise_minipay_refill_entry(row: dict) -> dict:
+    """Convert a DB row/memory entry into the cooldown payload used by the API."""
+    if not row:
+        return {}
+
+    timestamp = row.get("timestamp")
+    if timestamp is None:
+        timestamp = _parse_iso_datetime(row.get("last_refill_at"))
+        timestamp = timestamp.timestamp() if timestamp else 0
+
+    return {
+        "timestamp": float(timestamp or 0),
+        "last_refill_at": row.get("last_refill_at"),
+        "tx_hash": row.get("tx_hash"),
+        "amount_cusd": str(row.get("amount_cusd")) if row.get("amount_cusd") is not None else None,
+        "source": row.get("source") or "memory",
+    }
+
+
+def _get_minipay_cusd_refill_from_db(checksum_wallet: str) -> dict:
+    """Fetch the latest MiniPay cUSD faucet cooldown from Supabase, if available."""
+    sb = get_supabase_admin_client() or get_supabase_client()
+    if not sb:
+        return {}
+
+    try:
+        result = safe_supabase_operation(
+            lambda: sb.table("minipay_cusd_faucet_refills")
+            .select("wallet_address,last_refill_at,tx_hash,amount_cusd,updated_at")
+            .eq("wallet_address", checksum_wallet.lower())
+            .limit(1)
+            .execute(),
+            fallback_result=None,
+            operation_name="get_minipay_cusd_faucet_refill",
+        )
+        rows = getattr(result, "data", None) or []
+        if not rows:
+            return {}
+        return _normalise_minipay_refill_entry({**rows[0], "source": "database"})
+    except Exception as exc:
+        logger.warning(
+            f"⚠️ MiniPay cUSD faucet DB cooldown read failed wallet={checksum_wallet.lower()}: {exc}"
+        )
+        return {}
+
+
+def _upsert_minipay_cusd_refill_to_db(checksum_wallet: str, tx_hash: str, amount_cusd: Decimal, refill_at: datetime):
+    """Persist cooldown state so restarts/multiple workers cannot bypass the 48h limit."""
+    sb = get_supabase_admin_client() or get_supabase_client()
+    if not sb:
+        return None
+
+    payload = {
+        "wallet_address": checksum_wallet.lower(),
+        "last_refill_at": refill_at.isoformat(),
+        "tx_hash": tx_hash,
+        "amount_cusd": str(amount_cusd),
+        "updated_at": refill_at.isoformat(),
+    }
+    try:
+        return safe_supabase_operation(
+            lambda: sb.table("minipay_cusd_faucet_refills")
+            .upsert(payload, on_conflict="wallet_address")
+            .execute(),
+            fallback_result=None,
+            operation_name="upsert_minipay_cusd_faucet_refill",
+        )
+    except Exception as exc:
+        logger.warning(
+            f"⚠️ MiniPay cUSD faucet DB cooldown write failed wallet={checksum_wallet.lower()}: {exc}"
+        )
+        return None
+
+
 def _has_recent_minipay_cusd_refill(checksum_wallet: str) -> tuple:
     now = time.time()
+    wallet_key = checksum_wallet.lower()
     with _faucet_lock:
-        entry = _minipay_cusd_recent_refill.get(checksum_wallet.lower()) or {}
-    last = float(entry.get("timestamp", 0) or 0)
+        memory_entry = _normalise_minipay_refill_entry(
+            _minipay_cusd_recent_refill.get(wallet_key) or {}
+        )
+
+    db_entry = _get_minipay_cusd_refill_from_db(checksum_wallet)
+    entry = max(
+        [memory_entry, db_entry],
+        key=lambda item: float((item or {}).get("timestamp", 0) or 0),
+        default={},
+    )
+    last = float((entry or {}).get("timestamp", 0) or 0)
     if now - last < MINIPAY_CUSD_FAUCET_COOLDOWN_SECONDS:
         remaining = int(MINIPAY_CUSD_FAUCET_COOLDOWN_SECONDS - (now - last))
         return True, max(1, remaining), entry
@@ -7900,12 +7984,18 @@ def _has_recent_minipay_cusd_refill(checksum_wallet: str) -> tuple:
 
 
 def _record_minipay_cusd_refill(checksum_wallet: str, tx_hash: str, amount_cusd: Decimal):
+    refill_at = datetime.now(timezone.utc)
+    entry = {
+        "timestamp": refill_at.timestamp(),
+        "last_refill_at": refill_at.isoformat(),
+        "tx_hash": tx_hash,
+        "amount_cusd": str(amount_cusd),
+        "source": "memory",
+    }
     with _faucet_lock:
-        _minipay_cusd_recent_refill[checksum_wallet.lower()] = {
-            "timestamp": time.time(),
-            "tx_hash": tx_hash,
-            "amount_cusd": str(amount_cusd),
-        }
+        _minipay_cusd_recent_refill[checksum_wallet.lower()] = entry
+
+    _upsert_minipay_cusd_refill_to_db(checksum_wallet, tx_hash, amount_cusd, refill_at)
     logger.info(
         f"🧾 MiniPay cUSD faucet cooldown recorded wallet={checksum_wallet.lower()} "
         f"amount={amount_cusd} tx={tx_hash or 'n/a'}"
