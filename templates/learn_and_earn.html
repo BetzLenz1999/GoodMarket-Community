@@ -1931,10 +1931,27 @@
     <!-- Achievement Modal -->
     <div id="achievement-modal" style="display: none;"></div>
 
-    <!-- Load html2canvas globally -->
-    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"
-            integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H"
-            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <!-- html2canvas is lazy-loaded on first cert/screenshot download via _ensureHtml2Canvas() -->
+    <script>
+        window._ensureHtml2Canvas = function _ensureHtml2Canvas() {
+            if (typeof window.html2canvas === 'function') return Promise.resolve(window.html2canvas);
+            if (window.__html2canvasLoading) return window.__html2canvasLoading;
+            window.__html2canvasLoading = new Promise(function(resolve, reject) {
+                var s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+                s.integrity = 'sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H';
+                s.crossOrigin = 'anonymous';
+                s.referrerPolicy = 'no-referrer';
+                s.onload = function() { resolve(window.html2canvas); };
+                s.onerror = function() {
+                    window.__html2canvasLoading = null;
+                    reject(new Error('Failed to load html2canvas'));
+                };
+                document.head.appendChild(s);
+            });
+            return window.__html2canvasLoading;
+        };
+    </script>
 
     <!-- Shared WalletConnect bridge so quiz / NFT / send flows still work for
          users that logged in via WalletConnect (no `window.ethereum`). -->
@@ -2959,7 +2976,7 @@
                 console.log('✅ Achievement card element found');
                 showNotification('⏳ Generating image...', 'info');
 
-                // Use html2canvas to convert the card to an image
+                await window._ensureHtml2Canvas();
                 const canvas = await html2canvas(card, {
                     backgroundColor: '#667eea',
                     scale: 2,
@@ -3346,16 +3363,20 @@
         // Backward compatibility
         function openSponsorWizard() { openCollaborationWizard(); }
         function closeSponsorWizard() { closeCollaborationWizard(); }
-document.addEventListener('DOMContentLoaded', async function() {
+document.addEventListener('DOMContentLoaded', function() {
             console.log('🎓 Learn & Earn page loaded - initializing...');
 
             // Auto-recover any interrupted purchase first
             _recoverPendingBuy();
 
-            await loadQuizSettings();
-            checkEligibility();
-            loadQuizHistory();
-            loadCardSaleHistory();
+            // Run all four initial fetches in parallel; loadQuizSettings only updates
+            // stat cards / time per question and is not consumed by the others.
+            Promise.allSettled([
+                loadQuizSettings(),
+                checkEligibility(),
+                loadQuizHistory(),
+                loadCardSaleHistory()
+            ]).catch(function(err) { console.warn('Initial fetches error:', err); });
 
             // Check eligibility every 30 seconds to update timer if needed
             setInterval(() => {
@@ -4062,6 +4083,18 @@ document.addEventListener('DOMContentLoaded', async function() {
             swGoTo(4);
         }
 
+        // Idempotent NFT-section data loader. The marketplace section is
+        // `display:none` by default, so we defer the fetches until the
+        // section actually becomes visible (IntersectionObserver) or the
+        // user clicks an NFT tab. Saves ~3 fetches on cold load.
+        window._ensureNftSectionLoaded = function _ensureNftSectionLoaded() {
+            if (window.__nftSectionLoaded) return;
+            window.__nftSectionLoaded = true;
+            try { if (typeof window.loadNFTMarketplace === 'function') window.loadNFTMarketplace(); } catch (_) {}
+            try { if (typeof window.loadMyNFTs === 'function') window.loadMyNFTs(); } catch (_) {}
+            try { if (typeof window.loadNFTBalance === 'function') window.loadNFTBalance(); } catch (_) {}
+        };
+
         document.addEventListener('DOMContentLoaded', function() {
             var overlay = document.getElementById('sponsor-modal-overlay');
             if (overlay) {
@@ -4076,9 +4109,18 @@ document.addEventListener('DOMContentLoaded', async function() {
                     if (label) label.textContent = this.checked ? 'test mode: any amount > 0' : 'min. 100,000';
                 });
             }
-            window.loadNFTMarketplace();
-            window.loadMyNFTs();
-            window.loadNFTBalance();
+            var nftSection = document.getElementById('nft-marketplace-section');
+            if (nftSection && 'IntersectionObserver' in window) {
+                var io = new IntersectionObserver(function(entries) {
+                    if (entries.some(function(e) { return e.isIntersecting; })) {
+                        window._ensureNftSectionLoaded();
+                        io.disconnect();
+                    }
+                }, { rootMargin: '200px' });
+                io.observe(nftSection);
+            } else if (nftSection) {
+                window._ensureNftSectionLoaded();
+            }
         });
 
         let _pendingListTokenId = null;
@@ -4086,6 +4128,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         let _nftDataMap = {};
 
         window.switchNFTTab = function(tab) {
+            try { window._ensureNftSectionLoaded(); } catch (_) {}
             const tabs = ['market', 'mynfts', 'history'];
             const activeStyle = 'linear-gradient(135deg,#7c3aed,#4f46e5)';
             const inactiveStyle = 'rgba(255,255,255,0.08)';
