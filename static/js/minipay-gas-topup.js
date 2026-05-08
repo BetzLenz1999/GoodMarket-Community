@@ -48,7 +48,10 @@
     const CELO_RESERVE_AFTER_TOPUP_STR = '0.09';
 
     // MiniPay needs a small stablecoin balance to pay fee-currency gas.
-    const STABLECOIN_GAS_MIN_USD = 0.05;
+    // Tuned to match the server-side MINIPAY_STABLECOIN_MIN_USD threshold.
+    // A typical claim() costs ~$0.006 cUSD at current Celo peak congestion
+    // and ~$0.001-$0.002 at normal gas, so $0.01 is sufficient.
+    const STABLECOIN_GAS_MIN_USD = 0.01;
     const CELO_GAS_FAUCET_MIN_CELO = 0.1;
     const CUSD_FAUCET_ENDPOINT = '/api/minipay/stablecoin-faucet';
     const CELO_FAUCET_ENDPOINT = '/api/faucet/gas';
@@ -336,7 +339,7 @@
     }
 
     async function _ensureCusdFaucet(walletAddr, progress) {
-        if (progress) progress.update('Step 2/3 — sending ~$0.05 cUSD gas budget to your MiniPay wallet… ' + CUSD_FAUCET_PROGRAM_LABEL + '.');
+        if (progress) progress.update('Step 2/3 — sending ~$0.01 cUSD gas budget to your MiniPay wallet… ' + CUSD_FAUCET_PROGRAM_LABEL + '.');
         try {
             return await _postJson(CUSD_FAUCET_ENDPOINT, { wallet: walletAddr });
         } catch (err) {
@@ -406,9 +409,10 @@
                 fee: fee,
                 recipient: walletAddr,
                 amountIn: amountCeloWei,
-                // Slippage guard not strictly necessary for $0.05 of cUSD, but
-                // setting amountOutMinimum=0 with sqrtPriceLimitX96=0 is the
-                // standard "best-effort" pattern for tiny amounts.
+                // Slippage guard not strictly necessary for the dust amount
+                // of cUSD involved here, but setting amountOutMinimum=0 with
+                // sqrtPriceLimitX96=0 is the standard "best-effort" pattern
+                // for tiny amounts.
                 amountOutMinimum: 0n,
                 sqrtPriceLimitX96: 0n,
             };
