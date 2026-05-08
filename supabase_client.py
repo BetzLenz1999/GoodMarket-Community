@@ -278,6 +278,20 @@ CREATE TABLE IF NOT EXISTS daily_checkin_history (
 CREATE INDEX IF NOT EXISTS idx_daily_checkin_history_wallet ON daily_checkin_history(wallet_address);
 CREATE INDEX IF NOT EXISTS idx_daily_checkin_history_created_at ON daily_checkin_history(created_at DESC);
 
+-- MiniPay cUSD faucet cooldown persistence. Keeps the 48h faucet limit intact
+-- across app restarts and across multiple web workers/instances.
+CREATE TABLE IF NOT EXISTS minipay_cusd_faucet_refills (
+    id SERIAL PRIMARY KEY,
+    wallet_address VARCHAR(42) UNIQUE NOT NULL,
+    last_refill_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    tx_hash VARCHAR(66),
+    amount_cusd NUMERIC(18,8) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_minipay_cusd_faucet_refills_wallet ON minipay_cusd_faucet_refills(wallet_address);
+CREATE INDEX IF NOT EXISTS idx_minipay_cusd_faucet_refills_last_refill ON minipay_cusd_faucet_refills(last_refill_at DESC);
+
 -- 2. Create user_sessions table for all activities and session tracking
 CREATE TABLE IF NOT EXISTS user_sessions (
     id SERIAL PRIMARY KEY,
@@ -703,12 +717,14 @@ ALTER TABLE user_data ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE news_articles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reloadly_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE minipay_cusd_faucet_refills ENABLE ROW LEVEL SECURITY;
 
 -- 5. Create policies to allow read/write access (adjust as needed)
 CREATE POLICY "Allow all operations on user_data" ON user_data FOR ALL USING (true);
 CREATE POLICY "Allow all operations on user_sessions" ON user_sessions FOR ALL USING (true);
 CREATE POLICY "Allow all operations on news_articles" ON news_articles FOR ALL USING (true);
 CREATE POLICY "Allow all operations on reloadly_orders" ON reloadly_orders FOR ALL USING (true);
+CREATE POLICY "Allow all operations on minipay_cusd_faucet_refills" ON minipay_cusd_faucet_refills FOR ALL USING (true);
 
 -- 6. Create function to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -733,6 +749,11 @@ CREATE TRIGGER update_news_articles_updated_at
 CREATE TRIGGER update_reloadly_orders_updated_at 
     BEFORE UPDATE ON reloadly_orders 
     FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_minipay_cusd_faucet_refills_updated_at
+    BEFORE UPDATE ON minipay_cusd_faucet_refills
+    FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Payment links table for Send via Link feature

@@ -637,6 +637,44 @@ class FaucetFlowTests(unittest.TestCase):
 
     @patch("routes.Web3", new=FakeWeb3)
     @patch("routes._execute_minipay_cusd_faucet_transfer")
+    @patch("routes._get_minipay_cusd_refill_from_db")
+    @patch("routes._get_minipay_stablecoin_balances")
+    def test_minipay_stablecoin_faucet_respects_persisted_cooldown_after_balance_spent(
+        self, mock_balances, mock_db_refill, mock_transfer
+    ):
+        self._auth_session()
+        wallet = "0x1111111111111111111111111111111111111111"
+        mock_balances.return_value = {
+            "balances": {"cusd": {"balance": 0.0}, "usdt": {"balance": 0.0}, "usdc": {"balance": 0.0}},
+            "total_usd": 0.0,
+            "total_usd_exact": "0",
+            "stable_ready": False,
+            "required_usd": 0.05,
+        }
+        import routes as _routes_mod
+        refill_at = _routes_mod.datetime.now(_routes_mod.timezone.utc)
+        mock_db_refill.return_value = {
+            "timestamp": refill_at.timestamp(),
+            "last_refill_at": refill_at.isoformat(),
+            "tx_hash": "0xdbold",
+            "amount_cusd": str(_routes_mod.MINIPAY_CUSD_FAUCET_AMOUNT),
+            "source": "database",
+        }
+
+        resp = self.client.post(
+            "/api/minipay/stablecoin-faucet",
+            json={"wallet": wallet},
+        )
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(body["success"])
+        self.assertEqual(body["status"], "recent_refill")
+        self.assertFalse(body["topped_up"])
+        self.assertEqual(body["recent_refill"]["source"], "database")
+        mock_transfer.assert_not_called()
+
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._execute_minipay_cusd_faucet_transfer")
     @patch("routes._get_minipay_stablecoin_balances")
     def test_minipay_stablecoin_faucet_surfaces_signer_insufficient_cusd(
         self, mock_balances, mock_transfer
