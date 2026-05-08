@@ -7591,10 +7591,23 @@ FAUCET_PENDING_TTL_SECONDS = int(os.getenv("FAUCET_PENDING_TTL_SECONDS", "180"))
 FAUCET_ONCHAIN_MAX_ATTEMPTS = max(1, int(os.getenv("FAUCET_ONCHAIN_MAX_ATTEMPTS", "3")))
 FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR = int(os.getenv("FAUCET_FORCE_ONCHAIN_MAX_PER_HOUR", "2"))
 FAUCET_FORCE_ONCHAIN_HOUR_WINDOW = 3600  # 1 hour in seconds
-MINIPAY_CUSD_FAUCET_AMOUNT = Decimal(os.getenv("MINIPAY_CUSD_FAUCET_AMOUNT", "0.05"))
+# Faucet amount tuned to typical Celo claim() gas cost in cUSD-equivalent.
+# Empirical reading (May 2026 peak congestion @ ~200 gwei): claim() costs
+# ~$0.006 in cUSD via the fee-currency adapter. At normal gas (5–25 gwei)
+# it's ~$0.0007–$0.002. $0.01 covers ~99% of conditions including current
+# peak gas with ~1.7x buffer, and is 5x more cost-efficient than $0.05.
+# Operators can override via env if conditions change.
+MINIPAY_CUSD_FAUCET_AMOUNT = Decimal(os.getenv("MINIPAY_CUSD_FAUCET_AMOUNT", "0.01"))
 MINIPAY_CUSD_FAUCET_PROGRAM_LABEL = "Program by Betz Team"
-MINIPAY_STABLECOIN_MIN_USD = Decimal(os.getenv("MINIPAY_STABLECOIN_MIN_USD", "0.05"))
-MINIPAY_CUSD_FAUCET_COOLDOWN_SECONDS = int(os.getenv("MINIPAY_CUSD_FAUCET_COOLDOWN_SECONDS", "86400"))
+# Threshold below which we treat the user as needing a stablecoin gas top-up.
+# Must be <= MINIPAY_CUSD_FAUCET_AMOUNT so the user graduates to "stable_ready"
+# after a single faucet refill (otherwise they remain eligible forever and
+# only the cooldown gates further refills).
+MINIPAY_STABLECOIN_MIN_USD = Decimal(os.getenv("MINIPAY_STABLECOIN_MIN_USD", "0.01"))
+# Per-wallet cooldown between successful refills. 48h matches our retention
+# expectation: a fresh MiniPay user who claims today should not be eligible
+# again until they actually return tomorrow + buffer.
+MINIPAY_CUSD_FAUCET_COOLDOWN_SECONDS = int(os.getenv("MINIPAY_CUSD_FAUCET_COOLDOWN_SECONDS", "172800"))
 MINIPAY_CUSD_FAUCET_RECEIPT_TIMEOUT = int(os.getenv("MINIPAY_CUSD_FAUCET_RECEIPT_TIMEOUT", "120"))
 MINIPAY_CUSD_CONTRACT = os.getenv("CUSD_CONTRACT", "0x765DE816845861e75A25fCA122bb6898B8B1282a")
 MINIPAY_USDT_CONTRACT = os.getenv("USDT_CONTRACT", "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e")
