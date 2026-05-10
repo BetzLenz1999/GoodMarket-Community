@@ -2121,7 +2121,7 @@
                         <div id="wcQrCode" style="display:flex;justify-content:center;"></div>
                         <div id="wcCopyBtnContainer" style="width:100%;"></div>
                     </div>
-                    <p style="font-size:0.78rem;color:#6b7280;margin-top:0.8rem;">Scan using GoodWallet, MetaMask, Trust Wallet, Valora, Rainbow, etc.</p>
+                    <p style="font-size:0.78rem;color:#6b7280;margin-top:0.8rem;">Scan using New GoodWallet, MetaMask, Trust Wallet, Valora, Rainbow, etc.</p>
                     <div id="wcInstructions" style="display:none;margin-top:1rem;text-align:left;font-size:0.7rem;line-height:1.6;color:rgba(0,0,0,0.75);">
                         <div style="margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid #e5e7eb;">
                             <strong style="color:#1f2937;font-size:0.75rem;">1. Trust Wallet</strong><br>
@@ -2129,11 +2129,18 @@
                             • Tap "Discover" button (bottom right)<br>
                             • Search for or tap "goodmarket.live"
                         </div>
-                        <div>
+                        <div style="margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid #e5e7eb;">
                             <strong style="color:#1f2937;font-size:0.75rem;">2. MetaMask Mobile</strong><br>
                             • Open MetaMask wallet app<br>
                             • Tap "Explore" icon<br>
                             • Paste https://goodmarket.live
+                        </div>
+                        <div>
+                            <strong style="color:#1f2937;font-size:0.75rem;">3. New GoodWallet</strong><br>
+                            • Tap "Open in New GoodWallet" above<br>
+                            • Sign in with Google / Facebook / SMS<br>
+                            • Paste the link inside the WalletConnect input<br>
+                            • Approve the session in New GoodWallet
                         </div>
                     </div>
                 </div>
@@ -3399,12 +3406,52 @@
             box.id = 'wcDeepLinks';
             box.style.cssText = 'margin-top:10px;display:flex;flex-direction:column;gap:8px;max-width:260px;';
             const btnStyle = 'display:block;text-align:center;padding:10px 14px;border-radius:10px;text-decoration:none;font-weight:600;font-size:0.9rem;color:#fff;';
+            // The featured New GoodWallet button is rendered first so users
+            // who already have a GoodDollar account can approve the
+            // WalletConnect session in their existing web wallet (social
+            // login via Google / Facebook / SMS) without scanning a QR
+            // from a different device. New GoodWallet is registered in the
+            // Reown / WalletConnect Cloud Explorer
+            // (id 132fe7fba900c4772d39c15f02ec134461fa5d680be76b1767c2d0a15055b7a1)
+            // but the wallet is web-only (no mobile native deeplink), so
+            // we open the homepage in a new tab and copy the URI into the
+            // clipboard so the user can paste it into the wallet's
+            // WalletConnect input.
             box.innerHTML =
+                '<a id="wcGoodWalletBtn" href="https://goodwallet.xyz" target="_blank" rel="noopener noreferrer" style="' + btnStyle + 'background:linear-gradient(135deg,#22c55e,#10b981);">💚 Open in New GoodWallet</a>' +
                 '<a href="' + safeHref + '" style="' + btnStyle + 'background:#6366f1;">🔗 Open in installed wallet</a>' +
                 '<a href="https://link.trustwallet.com/wc?uri=' + enc + '" target="_blank" rel="noopener noreferrer" style="' + btnStyle + 'background:#3375bb;">🛡 Open in Trust Wallet</a>' +
                 '<a href="https://metamask.app.link/wc?uri=' + enc + '" target="_blank" rel="noopener noreferrer" style="' + btnStyle + 'background:#f6851b;">🦊 Open in MetaMask</a>' +
                 '<div style="text-align:center;font-size:0.78rem;color:#9ca3af;margin-top:2px;">On desktop? Scan the QR above with your wallet app instead.</div>';
             qrWrap.appendChild(box);
+
+            // Attach a click handler to the featured GoodWallet button so we
+            // copy the WalletConnect URI to the clipboard before opening
+            // goodwallet.xyz. The user can then paste into the GoodWallet
+            // "WalletConnect" input. The default <a target="_blank"> behaviour
+            // still opens the new tab even if the clipboard write fails.
+            const goodWalletBtn = document.getElementById('wcGoodWalletBtn');
+            if (goodWalletBtn) {
+                goodWalletBtn.addEventListener('click', function () {
+                    try {
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(uri);
+                        } else {
+                            const ta = document.createElement('textarea');
+                            ta.value = uri;
+                            ta.style.position = 'fixed';
+                            ta.style.left = '-9999px';
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(ta);
+                        }
+                    } catch (_) { /* clipboard unavailable — user can still copy via the QR section */ }
+                    const origText = goodWalletBtn.innerHTML;
+                    goodWalletBtn.innerHTML = '✓ Link copied — paste in New GoodWallet';
+                    setTimeout(function () { goodWalletBtn.innerHTML = origText; }, 2200);
+                });
+            }
         }
 
         async function _logWalletConnectFrontend(event, details = {}) {
