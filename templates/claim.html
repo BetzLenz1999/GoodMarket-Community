@@ -102,6 +102,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
             integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
             crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <!--
+        Shared "gas coverage" banner shown after a successful GoodDollar Celo
+        gas top-up. Surfaces the 3-day coverage / 48h cooldown reminder so
+        users on this claim-link page know not to drain the refilled CELO.
+    -->
+    <script src="/static/js/gas-coverage-banner.js?v={{ ASSET_VERSION }}"></script>
     <script>
         const LOGIN_METHOD = "{{ login_method | default('walletconnect') }}";
         const SESSION_WALLET = "{{ wallet | default('') }}";
@@ -366,11 +372,27 @@
                 body: JSON.stringify({ wallet: walletAddress, correlation_id: correlationId, force_onchain: false })
             });
 
+            if (window.GMGasCoverageBanner && gasData && gasData.show_gas_coverage_message) {
+                try { window.GMGasCoverageBanner.maybeShow(gasData, { wallet: walletAddress }); } catch (_) {}
+            }
+
             if (gasData.gas_ready) {
                 return { gasReady: true, source: gasData.topup_source || "faucet" };
             }
 
             const terminal = gasData.terminal_status || gasData.status;
+            if (terminal === "gooddollar_cooldown") {
+                if (window.GMGasCoverageBanner) {
+                    try {
+                        window.GMGasCoverageBanner.maybeShow(
+                            { ...gasData, show_gas_coverage_message: true },
+                            { wallet: walletAddress }
+                        );
+                    } catch (_) {}
+                }
+                throw new Error(gasData.reason || gasData.error ||
+                    "GoodDollar already provided gas to this wallet — please wait ~48h before requesting again.");
+            }
             if (terminal === "recent_refill") {
                 const cooldown = Number(gasData.recent_refill_cooldown_seconds || 0);
                 throw new Error(`Gas refill cooldown active (${cooldown}s remaining).`);

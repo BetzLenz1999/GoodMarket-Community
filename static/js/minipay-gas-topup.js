@@ -387,7 +387,19 @@
         }
         if (progress) progress.update('Step 1/3 — requesting CELO faucet because balance is below 0.1 CELO…');
         try {
-            return await _postJson(CELO_FAUCET_ENDPOINT, { wallet: walletAddr });
+            const result = await _postJson(CELO_FAUCET_ENDPOINT, { wallet: walletAddr });
+            try {
+                if (global.GMGasCoverageBanner && result && result.show_gas_coverage_message) {
+                    global.GMGasCoverageBanner.maybeShow(result, { wallet: walletAddr });
+                } else if (global.GMGasCoverageBanner && result &&
+                           (result.terminal_status === 'gooddollar_cooldown' || result.status === 'gooddollar_cooldown')) {
+                    global.GMGasCoverageBanner.maybeShow(
+                        Object.assign({}, result, { show_gas_coverage_message: true }),
+                        { wallet: walletAddr }
+                    );
+                }
+            } catch (_) { /* banner is best-effort */ }
+            return result;
         } catch (err) {
             console.warn('[MPGasTopUp] CELO gas faucet request failed:', err);
             return { success: false, error: (err && err.message) || 'CELO faucet request failed' };

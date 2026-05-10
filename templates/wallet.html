@@ -1568,6 +1568,13 @@
         deduct gas from. No-op outside MiniPay.
     -->
     <script src="{{ url_for('static', filename='js/minipay-gas-topup.js', v=ASSET_VERSION) }}"></script>
+    <!--
+        Shared "gas coverage" banner shown after a successful GoodDollar Celo
+        gas top-up. Explains the 3-day coverage / 48h cooldown rules so users
+        who get gas via the goodserver API or our TOPWALLET_KEY fallback know
+        not to drain it on unrelated transfers.
+    -->
+    <script src="{{ url_for('static', filename='js/gas-coverage-banner.js', v=ASSET_VERSION) }}"></script>
 
     <script>
     const WALLET = "{{ wallet }}";
@@ -3622,6 +3629,31 @@
 
             setClaimGasUiState('requesting_faucet');
             let { gasData, terminal } = await requestFaucetGas(forceOnchain);
+
+            if (window.GMGasCoverageBanner && gasData && gasData.show_gas_coverage_message) {
+                try { window.GMGasCoverageBanner.maybeShow(gasData, { wallet: WALLET }); } catch (_) {}
+            }
+
+            // 48h GoodDollar cooldown: explain the 3-day coverage rule and
+            // surface the remaining lockout. Same banner copy as the success
+            // path so users understand WHY the request was refused.
+            if (terminal === 'gooddollar_cooldown') {
+                const remainingHours = Math.max(
+                    1,
+                    Math.round(Number(gasData.gooddollar_cooldown_remaining_seconds || 0) / 3600)
+                );
+                const errorMsg = (gasData.reason || gasData.error ||
+                    `GoodDollar already provided gas to this wallet. Please wait ~${remainingHours}h before requesting more gas.`);
+                if (window.GMGasCoverageBanner) {
+                    try {
+                        window.GMGasCoverageBanner.maybeShow(
+                            { ...gasData, show_gas_coverage_message: true },
+                            { wallet: WALLET }
+                        );
+                    } catch (_) {}
+                }
+                throw new Error(errorMsg);
+            }
 
             // Cooldown blocked: show error with countdown timer and let user retry manually
             if (terminal === 'recent_refill' && !gasData.gas_ready) {
