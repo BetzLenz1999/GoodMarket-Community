@@ -7636,6 +7636,26 @@ MINIPAY_STABLECOIN_MIN_USD = Decimal(os.getenv("MINIPAY_STABLECOIN_MIN_USD", "0.
 # again until they actually return tomorrow + buffer.
 MINIPAY_CUSD_FAUCET_COOLDOWN_SECONDS = int(os.getenv("MINIPAY_CUSD_FAUCET_COOLDOWN_SECONDS", "172800"))
 MINIPAY_CUSD_FAUCET_RECEIPT_TIMEOUT = int(os.getenv("MINIPAY_CUSD_FAUCET_RECEIPT_TIMEOUT", "120"))
+# Per-wallet GoodDollar Celo gas faucet cooldown. The GoodDollar topWallet
+# API (and the TOPWALLET_KEY on-chain fallback that calls the same faucet
+# contract) hand out ~0.3 CELO per refill, which covers ~3 days of normal
+# claims at typical Celo gas prices. We persist the timestamp of every
+# successful refill in the celo_gas_faucet_refills table so the cooldown
+# survives restarts and works across multiple workers, and we block both
+# the API path and force_onchain fallback for the duration. Operators can
+# tune via env; the default is 48h, slightly under the 3-day coverage so
+# users who actually claim daily aren't bricked but spending the gas on
+# unrelated transfers will still cost them 48h before another refill.
+CELO_GAS_FAUCET_GOODDOLLAR_COOLDOWN_SECONDS = int(
+    os.getenv("CELO_GAS_FAUCET_GOODDOLLAR_COOLDOWN_SECONDS", "172800")
+)
+CELO_GAS_FAUCET_COVERAGE_MESSAGE = (
+    "You just received ~0.3 CELO of gas from the GoodDollar faucet. This is "
+    "intended to cover roughly 3 days of claims. Please don't transfer this "
+    "CELO out — if it's spent or moved, your next claim will fail and "
+    "GoodMarket can't request more gas for you for 48 hours. You can always "
+    "top up CELO yourself if you need to send transactions sooner."
+)
 MINIPAY_CUSD_CONTRACT = os.getenv("CUSD_CONTRACT", "0x765DE816845861e75A25fCA122bb6898B8B1282a")
 MINIPAY_USDT_CONTRACT = os.getenv("USDT_CONTRACT", "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e")
 MINIPAY_USDC_CONTRACT = os.getenv("USDC_CONTRACT", "0xcebA9300f2b948710d2653dD7B07f33A8B32118C")
@@ -8029,6 +8049,120 @@ def _record_minipay_cusd_refill(checksum_wallet: str, tx_hash: str, amount_cusd:
     )
 
 
+# ── GoodDollar Celo gas faucet 48h cooldown (persistent) ─────────────────
+# Mirrors the MiniPay cUSD pattern. The in-memory `_faucet_recent_refill`
+# above stays in place as a short-window dedup (~30 min). The DB-backed
+# table `celo_gas_faucet_refills` enforces the longer GoodDollar coverage
+# window across restarts and workers, blocking both the API path and the
+# TOPWALLET_KEY on-chain fallback.
+def _normalise_celo_gas_refill_entry(row: dict) -> dict:
+    if not row:
+        return {}
+
+    timestamp = row.get("timestamp")
+    if timestamp is None:
+        parsed = _parse_iso_datetime(row.get("last_refill_at"))
+        timestamp = parsed.timestamp() if parsed else 0
+
+    return {
+        "timestamp": float(timestamp or 0),
+        "last_refill_at": row.get("last_refill_at"),
+        "tx_hash": row.get("tx_hash"),
+        "source": row.get("source") or "unknown",
+    }
+
+
+def _get_celo_gas_refill_from_db(checksum_wallet: str) -> dict:
+    """Fetch the latest GoodDollar Celo gas refill cooldown row from Supabase, if available."""
+    sb = get_supabase_admin_client() or get_supabase_client()
+    if not sb:
+        return {}
+
+    try:
+        result = safe_supabase_operation(
+            lambda: sb.table("celo_gas_faucet_refills")
+            .select("wallet_address,last_refill_at,tx_hash,source,updated_at")
+            .eq("wallet_address", checksum_wallet.lower())
+            .limit(1)
+            .execute(),
+            fallback_result=None,
+            operation_name="get_celo_gas_faucet_refill",
+        )
+        rows = getattr(result, "data", None) or []
+        if not rows:
+            return {}
+        return _normalise_celo_gas_refill_entry({**rows[0]})
+    except Exception as exc:
+        logger.warning(
+            f"⚠️ GoodDollar Celo faucet DB cooldown read failed wallet={checksum_wallet.lower()}: {exc}"
+        )
+        return {}
+
+
+def _upsert_celo_gas_refill_to_db(checksum_wallet: str, tx_hash: str, source: str, refill_at: datetime):
+    """Persist the GoodDollar Celo refill timestamp so the 48h cooldown survives restarts."""
+    sb = get_supabase_admin_client() or get_supabase_client()
+    if not sb:
+        return None
+
+    payload = {
+        "wallet_address": checksum_wallet.lower(),
+        "last_refill_at": refill_at.isoformat(),
+        "tx_hash": tx_hash,
+        "source": source or "unknown",
+        "updated_at": refill_at.isoformat(),
+    }
+    try:
+        return safe_supabase_operation(
+            lambda: sb.table("celo_gas_faucet_refills")
+            .upsert(payload, on_conflict="wallet_address")
+            .execute(),
+            fallback_result=None,
+            operation_name="upsert_celo_gas_faucet_refill",
+        )
+    except Exception as exc:
+        logger.warning(
+            f"⚠️ GoodDollar Celo faucet DB cooldown write failed wallet={checksum_wallet.lower()}: {exc}"
+        )
+        return None
+
+
+def _has_recent_gooddollar_celo_refill(checksum_wallet: str) -> tuple:
+    """Return (is_blocked, seconds_remaining, entry) using the persistent 48h cooldown."""
+    db_entry = _get_celo_gas_refill_from_db(checksum_wallet)
+    last = float((db_entry or {}).get("timestamp", 0) or 0)
+    if not last:
+        return False, 0, None
+    now = time.time()
+    if now - last < CELO_GAS_FAUCET_GOODDOLLAR_COOLDOWN_SECONDS:
+        remaining = int(CELO_GAS_FAUCET_GOODDOLLAR_COOLDOWN_SECONDS - (now - last))
+        return True, max(1, remaining), db_entry
+    return False, 0, db_entry
+
+
+def _record_gooddollar_celo_refill(checksum_wallet: str, tx_hash: str, source: str):
+    """Persist a successful GoodDollar Celo refill (api or onchain) for the 48h cooldown."""
+    refill_at = datetime.now(timezone.utc)
+    _upsert_celo_gas_refill_to_db(checksum_wallet, tx_hash, source, refill_at)
+    logger.info(
+        f"🧾 GoodDollar Celo faucet 48h cooldown recorded wallet={checksum_wallet.lower()} "
+        f"source={source} tx={tx_hash or 'n/a'} cooldown_seconds={CELO_GAS_FAUCET_GOODDOLLAR_COOLDOWN_SECONDS}"
+    )
+
+
+def _build_gooddollar_cooldown_payload(entry: dict, seconds_remaining: int) -> dict:
+    """Common cooldown fields surfaced to the frontend banner."""
+    safe_entry = entry or {}
+    return {
+        "gooddollar_last_refill_at": safe_entry.get("last_refill_at"),
+        "gooddollar_last_refill_source": safe_entry.get("source"),
+        "gooddollar_last_refill_tx_hash": safe_entry.get("tx_hash"),
+        "gooddollar_cooldown_remaining_seconds": int(seconds_remaining or 0),
+        "gooddollar_cooldown_total_seconds": int(CELO_GAS_FAUCET_GOODDOLLAR_COOLDOWN_SECONDS),
+        "gas_coverage_message": CELO_GAS_FAUCET_COVERAGE_MESSAGE,
+    }
+
+
 def _execute_minipay_cusd_faucet_transfer(w3, checksum_wallet: str, amount_cusd: Decimal, correlation_id: str = "n/a") -> dict:
     """Send cUSD directly from TOPWALLET_KEY to a MiniPay wallet."""
     from blockchain import CELO_CHAIN_ID
@@ -8285,6 +8419,7 @@ def _execute_onchain_faucet_topup(w3, checksum_wallet: str, correlation_id: str 
             source="onchain",
             tx_hash=tx_hash_hex
         )
+        _record_gooddollar_celo_refill(checksum_wallet, tx_hash_hex, source="onchain")
         return {"success": True, "status": "onchain_sent", "tx_hash": tx_hash_hex}
 
     logger.error(
@@ -8385,16 +8520,25 @@ def faucet_status():
         w3 = Web3(Web3.HTTPProvider(CELO_RPC, request_kwargs={"timeout": 15}))
         gas_status = _get_gas_status(w3, checksum_wallet)
         recent_refill, seconds_remaining = _has_recent_refill(checksum_wallet)
+        gd_blocked, gd_remaining_seconds, gd_entry = _has_recent_gooddollar_celo_refill(checksum_wallet)
         pending_api = _get_api_pending(checksum_wallet)
-        status = "gas_ready" if gas_status.get("gas_ready") else (
-            "recent_refill" if recent_refill else ("api_accepted_pending" if pending_api else "api_failed")
-        )
+        if gas_status.get("gas_ready"):
+            status = "gas_ready"
+        elif gd_blocked:
+            status = "gooddollar_cooldown"
+        elif recent_refill:
+            status = "recent_refill"
+        elif pending_api:
+            status = "api_accepted_pending"
+        else:
+            status = "api_failed"
         logger.info(
             f"⛽ Faucet status wallet={checksum_wallet.lower()} status={status} "
             f"balance_wei={gas_status.get('balance_wei')} required_wei={gas_status.get('required_gas_wei')} "
             f"correlation_id={correlation_id}"
         )
 
+        gooddollar_payload = _build_gooddollar_cooldown_payload(gd_entry, gd_remaining_seconds) if gd_entry else {}
         return jsonify({
             "success": True,
             "status": status,
@@ -8402,6 +8546,7 @@ def faucet_status():
             "wallet": checksum_wallet.lower(),
             "is_recent_refill": recent_refill,
             "recent_refill_cooldown_seconds": seconds_remaining,
+            "is_gooddollar_cooldown": gd_blocked,
             "pending_api": pending_api,
             "debug": {
                 "required_gas_wei": gas_status.get("required_gas_wei"),
@@ -8409,6 +8554,7 @@ def faucet_status():
                 "current_balance_wei": gas_status.get("balance_wei"),
                 "current_balance_celo": gas_status.get("balance_celo"),
             },
+            **gooddollar_payload,
             **gas_status,
         })
     except Exception as e:
@@ -8429,16 +8575,46 @@ def faucet_onchain():
 
         from blockchain import CELO_RPC
         w3 = Web3(Web3.HTTPProvider(CELO_RPC, request_kwargs={"timeout": 15}))
+
+        gd_blocked, gd_remaining_seconds, gd_entry = _has_recent_gooddollar_celo_refill(checksum_wallet)
+        if gd_blocked:
+            cooldown_hours = max(1, int(round(gd_remaining_seconds / 3600)))
+            reason_msg = (
+                f"GoodDollar already provided gas to this wallet. Please wait "
+                f"~{cooldown_hours}h before requesting more gas."
+            )
+            logger.warning(
+                f"🛡️ GoodDollar 48h cooldown blocking /api/faucet/onchain wallet={checksum_wallet.lower()} "
+                f"remaining_seconds={gd_remaining_seconds} correlation_id={correlation_id}"
+            )
+            return jsonify({
+                "success": False,
+                "status": "gooddollar_cooldown",
+                "reason": reason_msg,
+                "error": reason_msg,
+                "attempted_onchain": False,
+                "correlation_id": correlation_id,
+                **_build_gooddollar_cooldown_payload(gd_entry, gd_remaining_seconds),
+            }), 429
+
         onchain_result = _execute_onchain_faucet_topup(
             w3, checksum_wallet, correlation_id=correlation_id
         )
         status_code = 200 if onchain_result.get("success") else 502
         if onchain_result.get("reason") == "not_configured":
             status_code = 503
+        gooddollar_payload = {}
+        show_msg = False
+        if onchain_result.get("success"):
+            _, gd_remaining_seconds_post, gd_entry_post = _has_recent_gooddollar_celo_refill(checksum_wallet)
+            gooddollar_payload = _build_gooddollar_cooldown_payload(gd_entry_post, gd_remaining_seconds_post)
+            show_msg = True
         return jsonify({
             **onchain_result,
             "attempted_onchain": True,
             "correlation_id": correlation_id,
+            "show_gas_coverage_message": show_msg,
+            **gooddollar_payload,
         }), status_code
     except Exception as e:
         err = str(e)
@@ -8489,6 +8665,48 @@ def faucet_gas():
                 },
                 **status_before,
             })
+
+        # GoodDollar 48h cooldown: blocks both API and force_onchain after a
+        # successful refill. Persisted to celo_gas_faucet_refills so the
+        # window survives restarts and works across multiple workers.
+        gd_blocked, gd_remaining_seconds, gd_entry = _has_recent_gooddollar_celo_refill(checksum_wallet)
+        if gd_blocked:
+            flow_result["terminal_status"] = "gooddollar_cooldown"
+            diagnostics.update({
+                "stage": "blocked_gooddollar_cooldown",
+                "gooddollar_cooldown_remaining_seconds": int(gd_remaining_seconds),
+                "gooddollar_cooldown_total_seconds": int(CELO_GAS_FAUCET_GOODDOLLAR_COOLDOWN_SECONDS),
+            })
+            cooldown_hours = max(1, int(round(gd_remaining_seconds / 3600)))
+            reason_msg = (
+                f"GoodDollar already provided gas to this wallet. Please wait "
+                f"~{cooldown_hours}h before requesting more gas — the previous 0.3 CELO "
+                f"refill is intended to cover roughly 3 days of claims."
+            )
+            logger.warning(
+                f"🛡️ GoodDollar 48h cooldown active wallet={checksum_wallet.lower()} "
+                f"force_onchain={force_onchain} remaining_seconds={gd_remaining_seconds} "
+                f"correlation_id={correlation_id}"
+            )
+            return jsonify({
+                "success": False,
+                "topped_up": False,
+                "status": "gooddollar_cooldown",
+                "reason": reason_msg,
+                "error": reason_msg,
+                "diagnostics": diagnostics,
+                **flow_result,
+                **_build_gooddollar_cooldown_payload(gd_entry, gd_remaining_seconds),
+                "debug": {
+                    "pre_balance_wei": str(pre_balance_wei),
+                    "post_balance_wei": str(pre_balance_wei),
+                    "required_gas_wei": status_before["required_gas_wei"],
+                    "required_gas_celo": status_before["required_gas_celo"],
+                    "cooldown_reason": "gooddollar_cooldown",
+                    "force_onchain_blocked": force_onchain,
+                },
+                **status_before,
+            }), 429
 
         recent_refill, seconds_remaining = _has_recent_refill(checksum_wallet)
         diagnostics.update({
@@ -8597,6 +8815,9 @@ def faucet_gas():
                     source="api",
                     tx_hash=api_tx_hash
                 )
+                _record_gooddollar_celo_refill(checksum_wallet, api_tx_hash, source="api")
+                _, gd_remaining_seconds, gd_entry = _has_recent_gooddollar_celo_refill(checksum_wallet)
+                gooddollar_payload = _build_gooddollar_cooldown_payload(gd_entry, gd_remaining_seconds)
                 return jsonify({
                     "success": True,
                     "gas_ready": status_after_api["gas_ready"],
@@ -8614,6 +8835,8 @@ def faucet_gas():
                     "terminal_status": "gas_ready" if status_after_api["gas_ready"] else "api_accepted_pending",
                     "correlation_id": correlation_id,
                     "wallet": checksum_wallet.lower(),
+                    "show_gas_coverage_message": True,
+                    **gooddollar_payload,
                     "diagnostics": {**diagnostics, "stage": "api_success"},
                     "debug": {
                         "pre_balance_wei": str(pre_balance_wei),
@@ -8692,6 +8915,11 @@ def faucet_gas():
             else ((onchain_result or {}).get("error") or api_error or "Gas top-up failed")
         )
 
+        gooddollar_payload = {}
+        if topped_up:
+            _, gd_remaining_seconds, gd_entry = _has_recent_gooddollar_celo_refill(checksum_wallet)
+            gooddollar_payload = _build_gooddollar_cooldown_payload(gd_entry, gd_remaining_seconds)
+
         return jsonify({
             "success": bool(status_after["gas_ready"] or topped_up),
             "wallet": checksum_wallet.lower(),
@@ -8704,6 +8932,8 @@ def faucet_gas():
             "status": terminal_status,
             "reason": failure_message,
             "error": failure_message,
+            "show_gas_coverage_message": bool(topped_up),
+            **gooddollar_payload,
             "diagnostics": {
                 **diagnostics,
                 "fallback_reason": onchain_fallback_reason,

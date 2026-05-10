@@ -1245,6 +1245,11 @@
         already CELO -> cUSD (would be redundant).
     -->
     <script src="/static/js/minipay-gas-topup.js?v={{ ASSET_VERSION }}"></script>
+    <!--
+        Shared "gas coverage" banner shown after a successful GoodDollar Celo
+        gas top-up (3-day coverage / 48h cooldown reminder).
+    -->
+    <script src="/static/js/gas-coverage-banner.js?v={{ ASSET_VERSION }}"></script>
     <script>
         // ─── Constants ────────────────────────────────────────────────────────────
         const WALLET_ADDRESS = "{{ wallet }}";

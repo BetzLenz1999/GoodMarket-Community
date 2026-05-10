@@ -707,6 +707,109 @@ class FaucetFlowTests(unittest.TestCase):
         self.assertEqual(body["status"], "cusd_faucet_failed")
         self.assertEqual(body["reason"], "signer_insufficient_cusd")
 
+    # ── GoodDollar 48h cooldown (drainage protection) ──────────────────
+    # The cooldown is checked BEFORE the in-memory `_has_recent_refill`
+    # cooldown, blocks both API and force_onchain paths, and surfaces a
+    # 429 response so the frontend banner can explain the situation.
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._has_recent_gooddollar_celo_refill")
+    @patch("routes._has_recent_refill")
+    @patch("routes._get_gas_status")
+    def test_gooddollar_48h_cooldown_blocks_api_path(
+        self, mock_get_gas, mock_recent, mock_gd_recent
+    ):
+        self._auth_session()
+        mock_recent.return_value = (False, 0)
+        mock_gd_recent.return_value = (
+            True,
+            3600,
+            {
+                "timestamp": 1700000000.0,
+                "last_refill_at": "2024-01-01T00:00:00+00:00",
+                "tx_hash": "0xprev",
+                "source": "api",
+            },
+        )
+        mock_get_gas.return_value = {
+            "balance_wei": "0", "balance_celo": 0.0, "estimated_gas": 220000, "gas_price_wei": "1000000000",
+            "required_gas_wei": "1000000000000000", "required_gas_celo": 0.001, "gas_ready": False,
+        }
+
+        resp = self.client.post(
+            "/api/faucet/gas",
+            json={"wallet": "0x1111111111111111111111111111111111111111"},
+        )
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(body["terminal_status"], "gooddollar_cooldown")
+        self.assertEqual(body["status"], "gooddollar_cooldown")
+        self.assertFalse(body["attempted_api"])
+        self.assertFalse(body["attempted_onchain"])
+        self.assertEqual(body["gooddollar_cooldown_remaining_seconds"], 3600)
+        self.assertIn("gas_coverage_message", body)
+        self.assertIn("3 days", body["gas_coverage_message"])
+
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._has_recent_gooddollar_celo_refill")
+    @patch("routes._has_recent_refill")
+    @patch("routes._get_gas_status")
+    def test_gooddollar_48h_cooldown_blocks_force_onchain_path(
+        self, mock_get_gas, mock_recent, mock_gd_recent
+    ):
+        self._auth_session()
+        mock_recent.return_value = (False, 0)
+        mock_gd_recent.return_value = (
+            True,
+            7200,
+            {
+                "timestamp": 1700000000.0,
+                "last_refill_at": "2024-01-01T00:00:00+00:00",
+                "tx_hash": "0xprev",
+                "source": "onchain",
+            },
+        )
+        mock_get_gas.return_value = {
+            "balance_wei": "0", "balance_celo": 0.0, "estimated_gas": 220000, "gas_price_wei": "1000000000",
+            "required_gas_wei": "1000000000000000", "required_gas_celo": 0.001, "gas_ready": False,
+        }
+
+        resp = self.client.post(
+            "/api/faucet/gas",
+            json={"wallet": "0x1111111111111111111111111111111111111111", "force_onchain": True},
+        )
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(body["terminal_status"], "gooddollar_cooldown")
+        self.assertFalse(body["attempted_api"])
+        self.assertFalse(body["attempted_onchain"])
+        self.assertTrue(body["debug"]["force_onchain_blocked"])
+
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._has_recent_gooddollar_celo_refill")
+    def test_gooddollar_48h_cooldown_blocks_direct_onchain_endpoint(
+        self, mock_gd_recent
+    ):
+        self._auth_session()
+        mock_gd_recent.return_value = (
+            True,
+            5400,
+            {
+                "timestamp": 1700000000.0,
+                "last_refill_at": "2024-01-01T00:00:00+00:00",
+                "tx_hash": "0xprev",
+                "source": "api",
+            },
+        )
+
+        resp = self.client.post(
+            "/api/faucet/onchain",
+            json={"wallet": "0x1111111111111111111111111111111111111111"},
+        )
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(body["status"], "gooddollar_cooldown")
+        self.assertFalse(body["attempted_onchain"])
+        self.assertIn("gas_coverage_message", body)
 
 
 if __name__ == "__main__":

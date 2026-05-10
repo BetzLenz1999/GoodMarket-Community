@@ -292,6 +292,24 @@ CREATE TABLE IF NOT EXISTS minipay_cusd_faucet_refills (
 CREATE INDEX IF NOT EXISTS idx_minipay_cusd_faucet_refills_wallet ON minipay_cusd_faucet_refills(wallet_address);
 CREATE INDEX IF NOT EXISTS idx_minipay_cusd_faucet_refills_last_refill ON minipay_cusd_faucet_refills(last_refill_at DESC);
 
+-- Celo native gas faucet (GoodDollar) cooldown persistence. The GoodDollar
+-- topWallet API hands out ~0.3 CELO per wallet, which covers ~3 days of
+-- claims. This table enforces a 48-hour cooldown that survives app restarts
+-- and works across multiple workers, blocking both the API path and the
+-- TOPWALLET_KEY on-chain fallback so the GoodMarket treasury cannot be
+-- drained by users who have already received their GoodDollar refill.
+CREATE TABLE IF NOT EXISTS celo_gas_faucet_refills (
+    id SERIAL PRIMARY KEY,
+    wallet_address VARCHAR(42) UNIQUE NOT NULL,
+    last_refill_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    tx_hash VARCHAR(66),
+    source VARCHAR(32) NOT NULL DEFAULT 'api',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_celo_gas_faucet_refills_wallet ON celo_gas_faucet_refills(wallet_address);
+CREATE INDEX IF NOT EXISTS idx_celo_gas_faucet_refills_last_refill ON celo_gas_faucet_refills(last_refill_at DESC);
+
 -- 2. Create user_sessions table for all activities and session tracking
 CREATE TABLE IF NOT EXISTS user_sessions (
     id SERIAL PRIMARY KEY,
@@ -718,6 +736,7 @@ ALTER TABLE user_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE news_articles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reloadly_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE minipay_cusd_faucet_refills ENABLE ROW LEVEL SECURITY;
+ALTER TABLE celo_gas_faucet_refills ENABLE ROW LEVEL SECURITY;
 
 -- 5. Create policies to allow read/write access (adjust as needed)
 CREATE POLICY "Allow all operations on user_data" ON user_data FOR ALL USING (true);
@@ -725,6 +744,7 @@ CREATE POLICY "Allow all operations on user_sessions" ON user_sessions FOR ALL U
 CREATE POLICY "Allow all operations on news_articles" ON news_articles FOR ALL USING (true);
 CREATE POLICY "Allow all operations on reloadly_orders" ON reloadly_orders FOR ALL USING (true);
 CREATE POLICY "Allow all operations on minipay_cusd_faucet_refills" ON minipay_cusd_faucet_refills FOR ALL USING (true);
+CREATE POLICY "Allow all operations on celo_gas_faucet_refills" ON celo_gas_faucet_refills FOR ALL USING (true);
 
 -- 6. Create function to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -753,6 +773,11 @@ CREATE TRIGGER update_reloadly_orders_updated_at
 
 CREATE TRIGGER update_minipay_cusd_faucet_refills_updated_at
     BEFORE UPDATE ON minipay_cusd_faucet_refills
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_celo_gas_faucet_refills_updated_at
+    BEFORE UPDATE ON celo_gas_faucet_refills
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
