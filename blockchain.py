@@ -77,7 +77,12 @@ _gd_price_cache: dict = {"price": None, "expires_at": 0}
 _gd_price_lock = threading.Lock()
 
 def _get_gd_usd_price() -> float:
-    """Return the current G$ price in USD. Uses env var if set, else fetches from CoinGecko."""
+    """Return the current G$ price in USD. Uses env var if set, else fetches from CoinGecko.
+
+    Timeout is intentionally short (2s) so this never dominates the wallet balance
+    critical path. On timeout/error we fall back to the last cached value (or 0)
+    and shorten the cache to retry on the next request.
+    """
     import time
     env_price = float(os.getenv("GD_USD_PRICE", "0"))
     if env_price > 0:
@@ -89,7 +94,7 @@ def _get_gd_usd_price() -> float:
             resp = requests.get(
                 "https://api.coingecko.com/api/v3/simple/price",
                 params={"ids": "gooddollar", "vs_currencies": "usd"},
-                timeout=5
+                timeout=2
             )
             if resp.status_code == 200:
                 price = resp.json().get("gooddollar", {}).get("usd", 0) or 0
@@ -98,10 +103,12 @@ def _get_gd_usd_price() -> float:
                 return float(price)
         except Exception:
             pass
-        # Fallback: use a hardcoded conservative price so balance isn't $0
-        _gd_price_cache["price"] = 0.0
+        # Fallback: keep any previously cached price so we don't show $0 on a
+        # transient CoinGecko hiccup. Shorten TTL so we retry sooner.
+        last_price = _gd_price_cache["price"] if _gd_price_cache["price"] is not None else 0.0
+        _gd_price_cache["price"] = last_price
         _gd_price_cache["expires_at"] = time.time() + 300
-        return 0.0
+        return last_price
 
 # Shared Web3 instance — reuse TCP connection instead of creating one per request
 _w3_singleton = None
@@ -606,14 +613,27 @@ _GD_ERC20_ABI = [
 ]
 
 
-def get_gooddollar_balance(wallet_address: str) -> dict:
+def get_gooddollar_balance(wallet_address: str, include_price: bool = True) -> dict:
+    """Fetch on-chain G$ balance for a wallet, with optional USD price enrichment.
+
+    Set ``include_price=False`` to skip the (potentially slow) CoinGecko price
+    fetch on the critical path. Callers can fetch the price separately in
+    parallel via ``_get_gd_usd_price()`` and merge the result with
+    ``enrich_gd_balance_with_price()``.
+    """
     import time
     key = wallet_address.lower()
     with _balance_cache_lock:
         entry = _balance_cache.get(key)
         if entry and entry.get("gd") and entry["expires_at"] > time.time():
             logger.debug(f"💰 GD balance cache HIT for {wallet_address[:8]}...")
-            return entry["gd"]
+            cached = entry["gd"]
+            cached_has_price = cached.get("gd_usd_price") is not None
+            # Serve cached entry unless the caller needs the embedded price
+            # but the cached entry was populated without one (e.g. by
+            # ``wallet_balances`` which fetches the price separately).
+            if (not include_price) or cached_has_price:
+                return cached
     try:
         from web3 import Web3
         w3 = _get_w3()
@@ -625,19 +645,20 @@ def get_gooddollar_balance(wallet_address: str) -> dict:
         wallet_checksum = Web3.to_checksum_address(wallet_address)
         balance_wei = contract.functions.balanceOf(wallet_checksum).call()
         balance_g = balance_wei / (10 ** 18)
-        gd_usd_price = _get_gd_usd_price()
-        usd_value = balance_g * gd_usd_price if gd_usd_price > 0 else None
         result = {
             "success": True,
             "balance": float(balance_g),
             "balance_formatted": f"{balance_g:,.6f} G$",
             "wallet": wallet_address,
             "contract": gooddollar_token,
-            "usd_value": usd_value if usd_value is not None else 0,
-            "gd_usd_price": gd_usd_price,
         }
-        if usd_value is not None:
-            result["usd_formatted"] = f"≈ ${usd_value:.4f} USD"
+        if include_price:
+            gd_usd_price = _get_gd_usd_price()
+            usd_value = balance_g * gd_usd_price if gd_usd_price > 0 else None
+            result["gd_usd_price"] = gd_usd_price
+            result["usd_value"] = usd_value if usd_value is not None else 0
+            if usd_value is not None:
+                result["usd_formatted"] = f"≈ ${usd_value:.4f} USD"
         with _balance_cache_lock:
             existing = _balance_cache.get(key, {})
             _balance_cache[key] = {**existing, "gd": result, "expires_at": time.time() + BALANCE_CACHE_TTL}
@@ -645,6 +666,25 @@ def get_gooddollar_balance(wallet_address: str) -> dict:
     except Exception as e:
         logger.error(f"GD balance check error: {e}")
         return {"success": False, "error": str(e), "balance": 0, "balance_formatted": "Error loading balance"}
+
+
+def enrich_gd_balance_with_price(gd_result: dict, gd_usd_price: float) -> dict:
+    """Return a copy of a GD balance dict with USD price/value fields populated.
+
+    Designed to be paired with ``get_gooddollar_balance(include_price=False)``
+    so the price fetch can run in parallel with the balance fetch instead of
+    serialised after it.
+    """
+    if not gd_result or not gd_result.get("success"):
+        return gd_result
+    enriched = dict(gd_result)
+    balance_g = float(enriched.get("balance") or 0)
+    usd_value = balance_g * gd_usd_price if gd_usd_price > 0 else None
+    enriched["gd_usd_price"] = gd_usd_price
+    enriched["usd_value"] = usd_value if usd_value is not None else 0
+    if usd_value is not None:
+        enriched["usd_formatted"] = f"≈ ${usd_value:.4f} USD"
+    return enriched
 
 
 def is_identity_verified(wallet_address: str) -> dict:

@@ -2198,49 +2198,89 @@
     }
 
     // ── Load Balances ────────────────────────────────────────
+    // Cache the last successful /api/wallet/balances response in localStorage
+    // so the next page load can render numbers instantly while the fresh fetch
+    // is still in flight (stale-while-revalidate). The server still has its
+    // own 2-minute cache; this is purely a perceived-latency optimization.
+    const WALLET_BALANCE_CACHE_KEY = 'walletBalances:' + WALLET.toLowerCase();
+    const WALLET_BALANCE_CACHE_TTL_MS = 10 * 60 * 1000;
+
+    function _applyBalancesData(data) {
+        if (data.gd && data.gd.success) {
+            gdBal = data.gd.balance || 0;
+            gdUsdPrice = Number(data.gd.gd_usd_price) || 0;
+            document.getElementById('gdBal').textContent = fmt(gdBal, 4) + ' G$';
+            document.getElementById('gdBalUSD').textContent = data.gd.usd_formatted || 'GoodDollar';
+        } else {
+            document.getElementById('gdBal').textContent = '0 G$';
+            document.getElementById('gdBalUSD').textContent = 'GoodDollar';
+            gdUsdPrice = 0;
+        }
+
+        if (data.celo && data.celo.success) {
+            celoBal = data.celo.balance || 0;
+            document.getElementById('celoBal').textContent = fmt(celoBal, 4) + ' CELO';
+        } else {
+            document.getElementById('celoBal').textContent = '0 CELO';
+        }
+
+        if (data.cusd && data.cusd.success) {
+            cusdBal = data.cusd.balance || 0;
+            document.getElementById('cusdBal').textContent = fmt(cusdBal, 4) + ' cUSD';
+            document.getElementById('cusdBalUSD').textContent = '$' + fmt(cusdBal, 2);
+        } else {
+            document.getElementById('cusdBal').textContent = '0 cUSD';
+        }
+
+        if (data.usdt && data.usdt.success) {
+            usdtBal = data.usdt.balance || 0;
+            document.getElementById('usdtBal').textContent = fmt(usdtBal, 4) + ' USDT';
+            document.getElementById('usdtBalUSD').textContent = '$' + fmt(usdtBal, 2);
+        } else {
+            document.getElementById('usdtBal').textContent = '0 USDT';
+        }
+
+        updateTotalBalanceInGd();
+    }
+
+    function _renderBalancesFromCache() {
+        try {
+            const raw = localStorage.getItem(WALLET_BALANCE_CACHE_KEY);
+            if (!raw) return false;
+            const cached = JSON.parse(raw);
+            if (!cached || !cached.expires_at || cached.expires_at < Date.now()) {
+                try { localStorage.removeItem(WALLET_BALANCE_CACHE_KEY); } catch (_) {}
+                return false;
+            }
+            if (cached.data) {
+                _applyBalancesData(cached.data);
+                return true;
+            }
+        } catch (_) { /* corrupted cache or localStorage unavailable */ }
+        return false;
+    }
+
+    function _saveBalancesToCache(data) {
+        try {
+            localStorage.setItem(WALLET_BALANCE_CACHE_KEY, JSON.stringify({
+                expires_at: Date.now() + WALLET_BALANCE_CACHE_TTL_MS,
+                data: data,
+            }));
+        } catch (_) { /* quota exceeded or localStorage disabled */ }
+    }
+
     async function loadBalances() {
+        // Stale-while-revalidate: render last-known balances immediately so the
+        // user sees numbers without waiting for the network round-trip.
+        _renderBalancesFromCache();
+
         try {
             const res = await fetch('/api/wallet/balances');
             if (!res.ok) return;
             const data = await res.json();
             if (!data.success) return;
-
-            if (data.gd && data.gd.success) {
-                gdBal = data.gd.balance || 0;
-                gdUsdPrice = Number(data.gd.gd_usd_price) || 0;
-                document.getElementById('gdBal').textContent = fmt(gdBal, 4) + ' G$';
-                document.getElementById('gdBalUSD').textContent = data.gd.usd_formatted || 'GoodDollar';
-            } else {
-                document.getElementById('gdBal').textContent = '0 G$';
-                document.getElementById('gdBalUSD').textContent = 'GoodDollar';
-                gdUsdPrice = 0;
-            }
-
-            if (data.celo && data.celo.success) {
-                celoBal = data.celo.balance || 0;
-                document.getElementById('celoBal').textContent = fmt(celoBal, 4) + ' CELO';
-            } else {
-                document.getElementById('celoBal').textContent = '0 CELO';
-            }
-
-            if (data.cusd && data.cusd.success) {
-                cusdBal = data.cusd.balance || 0;
-                document.getElementById('cusdBal').textContent = fmt(cusdBal, 4) + ' cUSD';
-                document.getElementById('cusdBalUSD').textContent = '$' + fmt(cusdBal, 2);
-            } else {
-                document.getElementById('cusdBal').textContent = '0 cUSD';
-            }
-
-            if (data.usdt && data.usdt.success) {
-                usdtBal = data.usdt.balance || 0;
-                document.getElementById('usdtBal').textContent = fmt(usdtBal, 4) + ' USDT';
-                document.getElementById('usdtBalUSD').textContent = '$' + fmt(usdtBal, 2);
-            } else {
-                document.getElementById('usdtBal').textContent = '0 USDT';
-            }
-
-            updateTotalBalanceInGd();
-
+            _applyBalancesData(data);
+            _saveBalancesToCache(data);
         } catch (e) {
             document.getElementById('gdBal').textContent = 'Error';
         }
