@@ -6716,14 +6716,41 @@ def ubi_pool_balance():
 @routes.route("/api/wallet/balances", methods=["GET"])
 @auth_required
 def wallet_balances():
-    """Get G$ and CELO balances for the current user"""
+    """Get G$, CELO, cUSD, and USDT balances for the current user.
+
+    Fetches all four balances and the GD/USD price in parallel via a
+    ThreadPoolExecutor to keep the critical path bounded by the slowest
+    single fetch instead of the sum of all four. Web3.py is sync but
+    releases the GIL during HTTP I/O, so threading gives a real speedup
+    on Celo-RPC roundtrips.
+    """
     try:
         wallet = session.get("wallet")
-        from blockchain import get_gooddollar_balance, get_celo_balance, get_cusd_balance, get_usdt_balance
-        gd = get_gooddollar_balance(wallet)
-        celo = get_celo_balance(wallet)
-        cusd = get_cusd_balance(wallet)
-        usdt = get_usdt_balance(wallet)
+        if not wallet:
+            return jsonify({"success": False, "error": "no_wallet"}), 401
+        from blockchain import (
+            get_gooddollar_balance,
+            get_celo_balance,
+            get_cusd_balance,
+            get_usdt_balance,
+            _get_gd_usd_price,
+            enrich_gd_balance_with_price,
+        )
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            gd_future = executor.submit(get_gooddollar_balance, wallet, False)
+            celo_future = executor.submit(get_celo_balance, wallet)
+            cusd_future = executor.submit(get_cusd_balance, wallet)
+            usdt_future = executor.submit(get_usdt_balance, wallet)
+            price_future = executor.submit(_get_gd_usd_price)
+            gd = gd_future.result()
+            celo = celo_future.result()
+            cusd = cusd_future.result()
+            usdt = usdt_future.result()
+            gd_price = price_future.result()
+
+        gd = enrich_gd_balance_with_price(gd, gd_price)
         return jsonify({"success": True, "gd": gd, "celo": celo, "cusd": cusd, "usdt": usdt})
     except Exception as e:
         logger.error(f"wallet_balances error: {e}")
