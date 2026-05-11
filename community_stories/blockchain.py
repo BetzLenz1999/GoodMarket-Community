@@ -147,13 +147,33 @@ class CommunityStoriesBlockchain:
                     'error_type': 'insufficient_balance'
                 }
             
+            # Estimate gas dynamically instead of hardcoding a fixed limit.
+            # G$ ERC-777 hooks add overhead vs plain ERC-20, so apply a 1.3x
+            # safety buffer on top of the estimate, and fall back to a
+            # conservative ceiling only if estimation fails.
+            try:
+                estimated_gas = contract.functions.transfer(
+                    Web3.to_checksum_address(recipient_wallet),
+                    amount_wei
+                ).estimate_gas({'from': self.community_account.address})
+                gas_limit = int(estimated_gas * 1.3)
+                logger.info(
+                    f"⛽ Community Stories gas estimate: {estimated_gas} "
+                    f"(using limit: {gas_limit})"
+                )
+            except Exception as estimate_error:
+                logger.warning(
+                    f"⚠️ Gas estimation failed, falling back to 250000: {estimate_error}"
+                )
+                gas_limit = 250000
+
             # Build transaction
             tx = contract.functions.transfer(
                 Web3.to_checksum_address(recipient_wallet),
                 amount_wei
             ).build_transaction({
                 'from': self.community_account.address,
-                'gas': 250000,  # 250k gas limit for Community Stories rewards
+                'gas': gas_limit,
                 'gasPrice': self.w3.eth.gas_price,
                 'nonce': self.w3.eth.get_transaction_count(self.community_account.address),
                 'chainId': self.chain_id
