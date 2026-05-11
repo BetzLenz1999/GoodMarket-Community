@@ -261,13 +261,33 @@ class MinigamesBlockchainService:
             nonce = self.w3.eth.get_transaction_count(self.games_account.address)
             gas_price = int(self.w3.eth.gas_price * 1.2)  # Add 20% buffer
 
+            # Estimate gas dynamically instead of hardcoding a fixed limit.
+            # G$ ERC-777 hooks add overhead vs plain ERC-20, so apply a 1.3x
+            # safety buffer on top of the estimate, and fall back to a
+            # conservative ceiling only if estimation fails.
+            try:
+                estimated_gas = self.token_contract.functions.transfer(
+                    recipient_checksum,
+                    amount_wei
+                ).estimate_gas({'from': self.games_account.address})
+                gas_limit = int(estimated_gas * 1.3)
+                logger.info(
+                    f"⛽ Withdrawal gas estimate: {estimated_gas} "
+                    f"(using limit: {gas_limit})"
+                )
+            except Exception as estimate_error:
+                logger.warning(
+                    f"⚠️ Gas estimation failed, falling back to 250000: {estimate_error}"
+                )
+                gas_limit = 250000
+
             transaction = self.token_contract.functions.transfer(
                 recipient_checksum,
                 amount_wei
             ).build_transaction({
                 'from': self.games_account.address,
                 'nonce': nonce,
-                'gas': 250000, # Increased gas limit for reliable withdrawals
+                'gas': gas_limit,
                 'gasPrice': gas_price,
                 'chainId': self.chain_id
             })
@@ -352,13 +372,33 @@ class MinigamesBlockchainService:
             nonce = self.w3.eth.get_transaction_count(self.games_account.address)
             gas_price = int(self.w3.eth.gas_price * 1.2)  # Add 20% buffer for gas price
 
+            # Estimate gas dynamically instead of hardcoding a fixed limit.
+            # G$ ERC-777 hooks add overhead vs plain ERC-20, so apply a 1.3x
+            # safety buffer on top of the estimate, and fall back to a
+            # conservative ceiling only if estimation fails.
+            try:
+                estimated_gas = self.token_contract.functions.transfer(
+                    Web3.to_checksum_address(wallet_address),
+                    amount_wei
+                ).estimate_gas({'from': self.games_account.address})
+                gas_limit = int(estimated_gas * 1.3)
+                logger.info(
+                    f"⛽ Minigame reward gas estimate: {estimated_gas} "
+                    f"(using limit: {gas_limit})"
+                )
+            except Exception as estimate_error:
+                logger.warning(
+                    f"⚠️ Gas estimation failed, falling back to 250000: {estimate_error}"
+                )
+                gas_limit = 250000
+
             # Build the transaction using the token contract's transfer function
             transaction = self.token_contract.functions.transfer(
                 Web3.to_checksum_address(wallet_address),
                 amount_wei
             ).build_transaction({
                 'from': self.games_account.address,
-                'gas': 250000,  # Sufficient gas limit for ERC20 transfer
+                'gas': gas_limit,
                 'gasPrice': gas_price,
                 'nonce': nonce,
                 'chainId': self.chain_id

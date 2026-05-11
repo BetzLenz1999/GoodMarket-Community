@@ -151,12 +151,31 @@ class TwitterTaskBlockchain:
             try:
                 nonce = self.w3.eth.get_transaction_count(dailytask_account.address)
                 gas_price = int(self.w3.eth.gas_price * 1.2)
+                # Estimate gas dynamically instead of hardcoding a fixed limit.
+                # G$ ERC-777 hooks add overhead vs plain ERC-20, so apply a 1.3x
+                # safety buffer on top of the estimate, and fall back to a
+                # conservative ceiling only if estimation fails.
+                try:
+                    estimated_gas = gd_contract.functions.transfer(
+                        Web3.to_checksum_address(wallet_address),
+                        int(reward_amount_wei),
+                    ).estimate_gas({'from': dailytask_account.address})
+                    gas_limit = int(estimated_gas * 1.3)
+                    logger.info(
+                        f"⛽ Twitter reward gas estimate: {estimated_gas} "
+                        f"(using limit: {gas_limit})"
+                    )
+                except Exception as estimate_error:
+                    logger.warning(
+                        f"⚠️ Gas estimation failed, falling back to 250000: {estimate_error}"
+                    )
+                    gas_limit = 250000
                 tx = gd_contract.functions.transfer(
                     Web3.to_checksum_address(wallet_address),
                     int(reward_amount_wei),
                 ).build_transaction({
                     'chainId': self.chain_id,
-                    'gas': 250000,  # G$ ERC-777 hooks add overhead vs plain ERC-20
+                    'gas': gas_limit,
                     'gasPrice': gas_price,
                     'nonce': nonce,
                     'from': dailytask_account.address,
