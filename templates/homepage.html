@@ -1175,6 +1175,20 @@
             transform: translateY(-2px);
         }
 
+        /* Purple card — Login Manually */
+        .wallet-option-card.manual-option {
+            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            border-color: transparent;
+            color: white;
+        }
+
+        .wallet-option-card.manual-option:hover {
+            background: linear-gradient(135deg, #6d28d9, #5b21b6);
+            box-shadow: 0 8px 24px rgba(124, 58, 237, 0.45);
+            border-color: transparent;
+            transform: translateY(-2px);
+        }
+
         .option-icon {
             font-size: 1.5rem;
             flex-shrink: 0;
@@ -1187,7 +1201,7 @@
             background: rgba(255,255,255,0.18);
         }
 
-        .wallet-option-card:not(.primary):not(.wc-option) .option-icon {
+        .wallet-option-card:not(.primary):not(.wc-option):not(.manual-option) .option-icon {
             background: #f3f0ff;
         }
 
@@ -1199,7 +1213,7 @@
             letter-spacing: -0.01em;
         }
 
-        .wallet-option-card:not(.primary):not(.wc-option) .option-text .option-title {
+        .wallet-option-card:not(.primary):not(.wc-option):not(.manual-option) .option-text .option-title {
             color: #1f2937;
         }
 
@@ -2100,21 +2114,21 @@
                     <div class="option-icon">🔗</div>
                     <div class="option-text">
                         <div class="option-title">Wallet Connect</div>
-                        <p class="option-desc">MetaMask / Trust / MiniPay / WalletConnect</p>
+                        <p class="option-desc">MetaMask / Trust / MiniPay / WalletConnect / manual address fallback</p>
                     </div>
                     <span class="option-arrow">→</span>
                 </button>
 
             </div>
 
-            <!-- Step 2A: WalletConnect / injected -->
+            <!-- Step 2A: WalletConnect / injected / manual -->
             <div class="wallet-form" id="walletConnectOptions">
                 <button class="back-btn" onclick="showWalletOptions()">← Back to login options</button>
 
                 <div id="wcReferralWrap" class="wallet-input-group" style="margin-bottom:0.85rem;">
                     <label class="wallet-label" for="wcReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
                     <input type="text" id="wcReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" autocomplete="off" oninput="syncReferralInputs(this)" />
-                    <p style="font-size:0.72rem;color:#6b7280;margin-top:0.35rem;line-height:1.45;">Paste the 8-character code from the friend who invited you. Applies to Injected Wallet and WalletConnect login below.</p>
+                    <p style="font-size:0.72rem;color:#6b7280;margin-top:0.35rem;line-height:1.45;">Paste the 8-character code from the friend who invited you. Applies to Injected Wallet, WalletConnect, and Manual Address login below.</p>
                 </div>
 
                 <div id="wcOptionCards" class="wallet-options">
@@ -2136,6 +2150,14 @@
                         <span class="option-arrow">→</span>
                     </button>
 
+                    <button class="wallet-option-card manual-option" onclick="showManualAddressForm()">
+                        <div class="option-icon">✍️</div>
+                        <div class="option-text">
+                            <div class="option-title">Manual Address</div>
+                            <p class="option-desc">Manual copy/paste guidance when signer flow fails</p>
+                        </div>
+                        <span class="option-arrow">→</span>
+                    </button>
                 </div>
                 <div id="wcQrWrap" style="display:none;margin-top:1rem;text-align:center;">
                     <div id="wcInstructionsBanner" style="display:none;background:linear-gradient(135deg,#4f46e5,#6366f1);color:white;padding:0.75rem 1rem;border-radius:10px;margin-bottom:1rem;font-size:0.73rem;line-height:1.6;position:relative;text-align:left;">
@@ -2167,6 +2189,24 @@
                 </div>
 
                 <div id="walletConnectStatus" class="status-message"></div>
+            </div>
+
+            <!-- Manual fallback form -->
+            <div class="wallet-form" id="manualAddressForm">
+                <button class="back-btn" onclick="showWalletConnectOptions()">← Back to Wallet Connect options</button>
+                <div class="wallet-input-group">
+                    <label class="wallet-label" for="manualWalletAddress">Wallet Address</label>
+                    <input type="text" id="manualWalletAddress" class="wallet-input" placeholder="0x..." />
+                </div>
+                <div class="wallet-input-group">
+                    <label class="wallet-label" for="manualReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
+                    <input type="text" id="manualReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" autocomplete="off" oninput="syncReferralInputs(this)" />
+                </div>
+                <button class="connect-btn" onclick="verifyManualAddress()">Continue to Wallet (Manual Mode)</button>
+                <div id="manualAddressStatus" class="status-message"></div>
+                <div style="margin-top:0.7rem;font-size:0.8rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:0.7rem 0.8rem;line-height:1.6;">
+                    ⚠️ Please use MetaMask / TrustWallet dapp wallet browser to access goodmarket.live full features.
+                </div>
             </div>
 
         </div>
@@ -2228,7 +2268,7 @@
 
         function showWalletOptions() {
             document.getElementById('walletOptions').style.display = 'flex';
-            ['walletConnectOptions'].forEach(id => {
+            ['walletConnectOptions', 'manualAddressForm'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('visible');
             });
@@ -2237,6 +2277,10 @@
 
         function showWalletConnectOptions() {
             document.getElementById('walletOptions').style.display = 'none';
+            ['manualAddressForm'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('visible');
+            });
             const f = document.getElementById('walletConnectOptions');
             if (f) f.classList.add('visible');
             // Restore the picker rows when returning to this view so a
@@ -2246,6 +2290,16 @@
             const qrWrap = document.getElementById('wcQrWrap');
             if (qrWrap) qrWrap.style.display = 'none';
             detectInjectedWallet();
+        }
+
+        function showManualAddressForm() {
+            document.getElementById('walletOptions').style.display = 'none';
+            ['walletConnectOptions'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('visible');
+            });
+            const f = document.getElementById('manualAddressForm');
+            if (f) f.classList.add('visible');
         }
 
 
@@ -2642,7 +2696,7 @@
                         ? 'Still looking for your wallet… use WalletConnect below if it stays stuck.'
                         : 'Detecting wallet… open in MiniPay/MetaMask/Trust Wallet dapp browser, or use WalletConnect.';
                 } else {
-                    desc.textContent = 'Not detected — install MetaMask extension or use WalletConnect QR.';
+                    desc.textContent = 'Not detected — install MetaMask extension or use WalletConnect QR / manual fallback guidance.';
                 }
                 btn.style.opacity = '0.78';
                 // Show the "wallet not detected?" helper after the first couple
@@ -2802,16 +2856,19 @@
 
         function getPendingReferralCode() {
             const fromWc = ((document.getElementById('wcReferralCode') || {}).value || '').trim();
+            const fromManual = ((document.getElementById('manualReferralCode') || {}).value || '').trim();
             const saved = (sessionStorage.getItem('pending_referral_code') || '').trim();
-            return (fromWc || saved || '').toUpperCase();
+            return (fromWc || fromManual || saved || '').toUpperCase();
         }
 
         function syncReferralInputs(sourceEl) {
             const value = (sourceEl && sourceEl.value ? sourceEl.value : '').trim().toUpperCase();
-            const wcEl = document.getElementById('wcReferralCode');
-            if (wcEl && wcEl !== sourceEl && wcEl.value !== value) {
-                wcEl.value = value;
-            }
+            ['wcReferralCode', 'manualReferralCode'].forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el && el !== sourceEl && el.value !== value) {
+                    el.value = value;
+                }
+            });
             if (value) {
                 try { sessionStorage.setItem('pending_referral_code', value); } catch (e) {}
             }
@@ -2852,8 +2909,10 @@
                     try { sessionStorage.setItem('pending_referral_code', ref); } catch (e) {}
                 }
 
-                const wcEl = document.getElementById('wcReferralCode');
-                if (wcEl && !wcEl.value.trim()) wcEl.value = ref;
+                ['wcReferralCode', 'manualReferralCode'].forEach(function (id) {
+                    const el = document.getElementById(id);
+                    if (el && !el.value.trim()) el.value = ref;
+                });
 
                 // Show the referral banner only once per page load — after it
                 // auto-dismisses we don't want subsequent openWalletModal() calls
@@ -2957,7 +3016,7 @@
                     await connectWalletConnect();
                     return;
                 }
-                showWalletStatus('walletConnectStatus', 'No injected wallet found. Use WalletConnect QR to connect.', 'error');
+                showWalletStatus('walletConnectStatus', 'No injected wallet found. Use WalletConnect QR or manual wallet guidance.', 'error');
                 return;
             }
             showWalletStatus('walletConnectStatus', '⏳ Connecting wallet… approve account access in your wallet.', 'info');
@@ -2985,6 +3044,46 @@
                 const msg = (err && err.message) ? err.message : 'Failed to connect injected wallet';
                 const rejected = /reject|denied|cancel/i.test(msg);
                 showWalletStatus('walletConnectStatus', (rejected ? '❌ Signature or connection was rejected. ' : '❌ ') + msg, rejected ? 'warning' : 'error');
+            }
+        }
+
+        async function verifyManualAddress() {
+            const raw = ((document.getElementById('manualWalletAddress') || {}).value || '').trim();
+            const referral = ((document.getElementById('manualReferralCode') || {}).value || '').trim();
+            if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) {
+                showWalletStatus('manualAddressStatus', 'Please enter a valid EVM address (0x...)', 'error');
+                return;
+            }
+            showWalletStatus('manualAddressStatus', '⏳ Logging in using manual wallet mode…', 'info');
+            try {
+                const resp = await fetch('/manual-wallet-login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        wallet_address: raw,
+                        referral_code: referral || ''
+                    })
+                });
+                const data = await resp.json();
+                if (!(resp.ok && data.success)) {
+                    throw new Error(data.error || data.message || 'Manual login failed');
+                }
+                sessionStorage.setItem('manual_wallet_address', raw);
+                if (referral) {
+                    sessionStorage.setItem('pending_referral_code', referral);
+                }
+                showWalletStatus('manualAddressStatus', '✅ Manual login successful. Redirecting to wallet page…', 'success');
+                showWalletStatus(
+                    'walletConnectStatus',
+                    'ℹ️ You are in manual mode (no signature proof). For best security/privacy and ownership proof, use signature login via injected wallet or WalletConnect.',
+                    'warning'
+                );
+                setTimeout(() => {
+                    window.location.href = data.redirect_to || '/wallet';
+                }, 700);
+            } catch (err) {
+                const msg = (err && err.message) ? err.message : 'Manual wallet login failed';
+                showWalletStatus('manualAddressStatus', `❌ ${msg}`, 'error');
             }
         }
 
@@ -3283,7 +3382,7 @@
                     }
                     if (stData.status === 'rejected') throw new Error('WalletConnect request rejected by wallet.');
                 }
-                    throw new Error('WalletConnect session timed out. Please try again.');
+                    throw new Error('WalletConnect session timed out. Please try again or use manual wallet guidance.');
                 } catch (serverErr) {
                     console.warn('Sidecar WalletConnect unavailable, using browser fallback:', serverErr);
                     _logWalletConnectFrontend('sidecar_unavailable', {
@@ -3387,13 +3486,13 @@
                 });
                 let friendly;
                 if (err && err._wcStage === 'sdk_init') {
-                    friendly = '❌ WalletConnect relay did not respond within 20s. Your network may be blocking relay.walletconnect.com (WebSocket / wss:// traffic). Try a different network (mobile data vs. Wi-Fi).';
+                    friendly = '❌ WalletConnect relay did not respond within 20s. Your network may be blocking relay.walletconnect.com (WebSocket / wss:// traffic). Try a different network (mobile data vs. Wi-Fi), or use Manual Address login for copy/paste guidance.';
                 } else if (err && err._wcStage === 'connect') {
-                    friendly = '❌ WalletConnect session could not be generated within 15s. Please try again.';
+                    friendly = '❌ WalletConnect session could not be generated within 15s. Please try again, or use Manual Address login for copy/paste guidance.';
                 } else if (rejected) {
-                    friendly = '❌ Request rejected by wallet. ' + emsg;
+                    friendly = '❌ Request rejected by wallet. ' + emsg + ' You can use manual wallet input for copy/paste guidance.';
                 } else {
-                    friendly = '❌ ' + emsg + '.';
+                    friendly = '❌ ' + emsg + '. You can use Manual Address login for copy/paste guidance.';
                 }
                 showWalletStatus('walletConnectStatus', friendly, rejected ? 'warning' : 'error');
             }
