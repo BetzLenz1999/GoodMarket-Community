@@ -57,7 +57,7 @@
     const CELO_GAS_FAUCET_MIN_CELO = 0.1;
     const CUSD_FAUCET_ENDPOINT = '/api/minipay/stablecoin-faucet';
     const CELO_FAUCET_ENDPOINT = '/api/faucet/gas';
-    const CUSD_FAUCET_PROGRAM_LABEL = 'Program by Betz Team';
+    const CUSD_FAUCET_PROGRAM_LABEL = 'Program by Betz & Omar Team';
 
     // Stablecoin "dust" threshold below which we treat the user as having
     // effectively zero stablecoin gas budget. Approx $0.005.
@@ -632,7 +632,7 @@
                 + 'it\'s needed as gas for your next claims.';
         } else if (startedWithoutStableGas) {
             _modalBody = '✅ We sent a small cUSD gas budget to your MiniPay wallet — '
-                + '<em>Program by Betz Team.</em>'
+                + '<em>Program by Betz & Omar Team.</em>'
                 + '<br><br>'
                 + 'Next, convert your CELO to cUSD. <strong>MiniPay does not use CELO for gas</strong> — '
                 + 'stablecoin (cUSD/USDT/USDC) is needed for your next claims. '
