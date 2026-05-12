@@ -53,11 +53,11 @@
     // and ~$0.001-$0.002 at normal gas. Keep this threshold below the
     // server faucet amount (currently 0.1 cUSD) so one refill can clear it.
     const STABLECOIN_GAS_MIN_USD = 0.01;
-    const CUSD_FAUCET_DISPLAY_AMOUNT = '0.1';
+    const CUSD_FAUCET_DISPLAY_AMOUNT = '0.05';
     const CELO_GAS_FAUCET_MIN_CELO = 0.1;
     const CUSD_FAUCET_ENDPOINT = '/api/minipay/stablecoin-faucet';
     const CELO_FAUCET_ENDPOINT = '/api/faucet/gas';
-    const CUSD_FAUCET_PROGRAM_LABEL = 'Program by Betz Team';
+    const CUSD_FAUCET_PROGRAM_LABEL = 'Program by Betz & Omar Team';
 
     // Stablecoin "dust" threshold below which we treat the user as having
     // effectively zero stablecoin gas budget. Approx $0.005.
