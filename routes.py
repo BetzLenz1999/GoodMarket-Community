@@ -6387,6 +6387,12 @@ def swap_page():
     xdc_gd_token_contract = os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c")
     xdc_chain_id = int(os.getenv("XDC_MAINNET_CHAIN_ID", "50"))
     celo_chain_id = int(os.getenv("CELO_MAINNET_CHAIN_ID", "42220"))
+    fuse_chain_id = int(os.getenv("FUSE_CHAIN_ID", "122"))
+    fuse_rpc_url = os.getenv("FUSE_RPC_URL", "https://rpc.fuse.io")
+    fuse_gd_token_contract = os.getenv("FUSE_GD_TOKEN", "0x495d133B938596C9984d462F007B676bDc57eCEC")
+    fuse_gd_decimals = int(os.getenv("FUSE_GD_DECIMALS", "2"))
+    fuse_wfuse_contract = os.getenv("FUSE_WFUSE_TOKEN", "0x0BE9e53fd7EDaC9F859882AfdDa116645287C629")
+    voltage_router_contract = os.getenv("VOLTAGE_ROUTER", "0xE3F85aAd0c8DD7337427B9dF5d0fB741d65EEEB5")
 
     return render_template(
         "swap.html",
@@ -6401,6 +6407,12 @@ def swap_page():
         xdc_gd_token_contract=xdc_gd_token_contract,
         xdc_chain_id=xdc_chain_id,
         celo_chain_id=celo_chain_id,
+        fuse_chain_id=fuse_chain_id,
+        fuse_rpc_url=fuse_rpc_url,
+        fuse_gd_token_contract=fuse_gd_token_contract,
+        fuse_gd_decimals=fuse_gd_decimals,
+        fuse_wfuse_contract=fuse_wfuse_contract,
+        voltage_router_contract=voltage_router_contract,
     )
 
 
