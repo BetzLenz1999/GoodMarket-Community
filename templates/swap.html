@@ -194,6 +194,7 @@
         .token-icon.celo { background: linear-gradient(135deg,#35a869,#1e7f52); }
         .token-icon.cusd { background: linear-gradient(135deg,#f59e0b,#b45309); }
         .token-icon.usdt { background: linear-gradient(135deg,#26a17b,#1a7a5e); }
+        .token-icon.fuse { background: linear-gradient(135deg,#0ea5e9,#2563eb); }
 
         .token-selector {
             cursor: pointer;
@@ -693,7 +694,7 @@
                 projectId: "{{ walletconnect_project_id|default('', true) }}",
                 sidecarEnabled: {{ 'true' if walletconnect_sidecar_enabled|default(true) else 'false' }},
                 dappName: "GoodMarket — Swap",
-                dappDescription: "Swap tokens on Celo",
+                dappDescription: "Swap tokens on Celo and Fuse",
                 assetVersion: "{{ ASSET_VERSION }}",
             });
         }
@@ -726,7 +727,7 @@
         <!-- Header -->
         <div class="page-header">
             <h1 class="page-title">🔄 Swap</h1>
-            <p class="page-subtitle">Swap G$, CELO, cUSD and USDT via Uniswap V3 on Celo, or buy &amp; sell G$ at the GoodReserve protocol price</p>
+            <p class="page-subtitle">Swap G$ on Celo via Uniswap/GoodReserve, bridge G$, or swap Fuse G$ to FUSE via Voltage on Fuse Network</p>
         </div>
 
         <!-- Top-level tabs: [ GoodSwap ] [ Bridge ]. GoodSwap groups
@@ -748,6 +749,7 @@
 
             <div id="goodswapSubTabSwitcher" class="goodswap-sub-tabs" role="tablist" aria-label="GoodSwap mode">
                 <button type="button" id="goodswapSubBtnDex" class="goodswap-sub-tab-btn active" role="tab" aria-selected="true" onclick="setGoodSwapSubTab('dex')">Uniswap V3</button>
+                <button type="button" id="goodswapSubBtnFuse" class="goodswap-sub-tab-btn" role="tab" aria-selected="false" onclick="setGoodSwapSubTab('fuse')">Fuse Swap</button>
                 {% if reserve_swap_visible %}
                 <button type="button" id="goodswapSubBtnReserve" class="goodswap-sub-tab-btn" role="tab" aria-selected="false" onclick="setGoodSwapSubTab('reserve')">GoodReserve</button>
                 {% endif %}
@@ -998,6 +1000,84 @@
             </div>
         </div><!-- /.goodswap-sub-pane-reserve -->
         {% endif %}
+
+        <!-- Fuse Voltage sub-pane: Fuse G$ -> native FUSE via Voltage Finance. -->
+        <div id="swapPaneFuse" class="goodswap-sub-pane goodswap-sub-pane-fuse hidden-tab">
+            <div class="swap-card" style="border:1px solid rgba(14,165,233,0.35); background: linear-gradient(135deg, rgba(14,165,233,0.12), rgba(37,99,235,0.05));">
+                <div class="network-badge">
+                    <span class="network-dot"></span>
+                    Fuse Mainnet · Voltage Finance
+                </div>
+
+                <div class="info-box-bridge" style="margin-bottom:0.9rem; padding:0.75rem 0.85rem; border-radius:10px; background:rgba(14,165,233,0.08); border:1px solid rgba(14,165,233,0.25); color:rgba(255,255,255,0.78); font-size:0.84rem; line-height:1.55;">
+                    Swap <strong>G$ on Fuse</strong> into native <strong>FUSE</strong> using the Voltage G$/WFUSE pool. You still need a small FUSE balance for the approve/swap gas fee.
+                </div>
+
+                <div class="token-box">
+                    <div class="token-box-label">You pay</div>
+                    <div class="token-row">
+                        <div class="token-selector" style="cursor:default;opacity:0.95;">
+                            <div class="token-icon gd">G$</div>
+                            <span>Fuse G$</span>
+                        </div>
+                        <input type="number" class="amount-input" id="fuseSwapAmountIn" placeholder="0.0" min="0" step="any" oninput="onFuseSwapAmountChange()">
+                    </div>
+                    <div class="token-balance">
+                        <span>Balance: <span id="fuseSwapGdBalance">—</span></span>
+                        <button type="button" class="max-btn" onclick="setFuseSwapMax()">MAX</button>
+                    </div>
+                </div>
+
+                <div class="swap-direction-wrap">
+                    <button class="swap-direction-btn" type="button" title="G$ to FUSE" style="cursor:default;">↓</button>
+                </div>
+
+                <div class="token-box">
+                    <div class="token-box-label">You receive (estimated)</div>
+                    <div class="token-row">
+                        <div class="token-selector" style="cursor:default;opacity:0.95;">
+                            <div class="token-icon fuse">FU</div>
+                            <span>FUSE</span>
+                        </div>
+                        <input type="text" class="amount-input" id="fuseSwapAmountOut" placeholder="—" readonly style="cursor:default;">
+                    </div>
+                    <div class="token-balance">
+                        <span>Balance: <span id="fuseSwapFuseBalance">—</span></span>
+                    </div>
+                </div>
+
+                <div class="slippage-box" style="margin-top:0.85rem;">
+                    <span>Max slippage</span>
+                    <div class="slippage-options">
+                        <button class="slippage-btn active" type="button" onclick="setFuseSwapSlippage(0.5, this)">0.5%</button>
+                        <button class="slippage-btn" type="button" onclick="setFuseSwapSlippage(1, this)">1%</button>
+                        <button class="slippage-btn" type="button" onclick="setFuseSwapSlippage(2, this)">2%</button>
+                    </div>
+                </div>
+
+                <div class="quote-box hidden" id="fuseSwapQuoteBox" style="margin-top:1rem;">
+                    <div class="quote-row"><span>Rate</span><strong id="fuseSwapRate">—</strong></div>
+                    <div class="quote-row"><span>Minimum received</span><strong id="fuseSwapMinOut">—</strong></div>
+                    <div class="quote-row"><span>Route</span><strong>G$ → WFUSE → FUSE</strong></div>
+                </div>
+
+                <div class="step-indicators" id="fuseSwapStepIndicators" style="margin-top:1rem;">
+                    <div class="step" id="fuseSwapStep1">1. Approve</div>
+                    <div class="step" id="fuseSwapStep2">2. Swap</div>
+                </div>
+
+                <button class="swap-btn" id="fuseSwapBtn" onclick="startFuseSwap()" disabled style="margin-top:1rem;">Enter an amount</button>
+                <div class="alert" id="fuseSwapAlert"></div>
+            </div>
+
+            <div class="info-card" style="margin-top:1rem;">
+                <div class="info-card-title">About Fuse Swap</div>
+                This swap is non-custodial and routes through <strong style="color:#e2e8f0;">Voltage Finance</strong> on Fuse Network.
+                The pool uses wrapped FUSE internally; the router unwraps it so your wallet receives native FUSE.
+                <br><br>
+                <a class="info-link" href="https://app.voltage.finance/#/swap" target="_blank" rel="noopener">Also available on Voltage ↗</a>
+            </div>
+        </div><!-- /.goodswap-sub-pane-fuse -->
 
         </div><!-- /.pane-goodswap -->
 
@@ -2084,6 +2164,15 @@
         const UNISWAP_QUOTER   = "0x82825d0554fA07f7FC52Ab63c961F330fdEFa8E8";
         const FEE_TIERS        = [10000, 3000, 500]; // G$/CELO pool is 1% (10000), try it first
 
+        // Voltage Finance on Fuse Mainnet (Uniswap V2-compatible router).
+        const FUSE_CHAIN_ID       = {{ fuse_chain_id|default(122) }};
+        const FUSE_CHAIN_HEX      = "0x" + FUSE_CHAIN_ID.toString(16);
+        const FUSE_RPC            = "{{ fuse_rpc_url|default('https://rpc.fuse.io', true) }}";
+        const FUSE_GD_TOKEN       = "{{ fuse_gd_token_contract|default('0x495d133B938596C9984d462F007B676bDc57eCEC', true) }}";
+        let fuseGdDecimals        = {{ fuse_gd_decimals|default(2) }};
+        const WFUSE_TOKEN         = "{{ fuse_wfuse_contract|default('0x0BE9e53fd7EDaC9F859882AfdDa116645287C629', true) }}";
+        const VOLTAGE_ROUTER      = "{{ voltage_router_contract|default('0xE3F85aAd0c8DD7337427B9dF5d0fB741d65EEEB5', true) }}";
+
         // Minimal ABIs
         const ERC20_ABI = [
             "function balanceOf(address owner) view returns (uint256)",
@@ -2100,6 +2189,11 @@
         const ROUTER_ABI = [
             "function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)",
             "function exactInput((bytes path, address recipient, uint256 amountIn, uint256 amountOutMinimum) params) payable returns (uint256 amountOut)"
+        ];
+
+        const VOLTAGE_ROUTER_ABI = [
+            "function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)",
+            "function swapExactTokensForETH(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) returns (uint256[] amounts)"
         ];
 
         // Encode a Uniswap V3 multi-hop path: [addr0, addr1, addr2, ...] with [fee01, fee12, ...]
@@ -2128,11 +2222,18 @@
         let celoBalanceNum  = 0;    // human-readable float  e.g. 0.0290
         let cusdBalanceNum  = 0;    // human-readable float  e.g. 1.23
         let usdtBalanceNum  = 0;    // human-readable float  e.g. 1.23
+        let fuseGdBalanceNum = 0;   // Fuse-network G$ balance
+        let fuseBalanceNum   = 0;   // native FUSE balance
+        let fuseSwapQuote    = null;
+        let fuseSwapQuoteTimer = null;
+        let fuseSwapSlippage = 0.5;
+        let _fuseSwapQuoteRequestId = 0;
         let tokenPickerTarget = null; // "from" or "to"
 
         // ─── Init ─────────────────────────────────────────────────────────────────
         window.addEventListener("load", async () => {
             await loadBalances();
+            await loadFuseSwapBalances();
             updateUI();
         });
 
@@ -3112,6 +3213,279 @@
         }
 
         // ═══════════════════════════════════════════════════════════════════════
+        // Fuse Swap tab: Fuse G$ -> native FUSE through Voltage Finance.
+        // ═══════════════════════════════════════════════════════════════════════
+        function showFuseSwapAlert(type, html) {
+            const el = document.getElementById("fuseSwapAlert");
+            if (!el) return;
+            el.className = `alert ${type} show`;
+            el.innerHTML = html;
+        }
+
+        function clearFuseSwapAlert() {
+            const el = document.getElementById("fuseSwapAlert");
+            if (!el) return;
+            el.className = "alert";
+            el.innerHTML = "";
+        }
+
+        function setFuseSwapBtnState(state, label) {
+            const btn = document.getElementById("fuseSwapBtn");
+            if (!btn) return;
+            if (state === "enter") {
+                btn.disabled = true;
+                btn.innerHTML = "Enter an amount";
+            } else if (state === "ready") {
+                btn.disabled = false;
+                btn.innerHTML = "Swap Fuse G$ → FUSE";
+            } else if (state === "loading") {
+                btn.disabled = true;
+                btn.innerHTML = `<span class="spinner-inline"></span> ${label || "Processing..."}`;
+            } else if (state === "no-pool") {
+                btn.disabled = true;
+                btn.innerHTML = "No Voltage liquidity found";
+            }
+        }
+
+        function updateFuseSwapBalanceDisplay() {
+            const gdEl = document.getElementById("fuseSwapGdBalance");
+            const fuseEl = document.getElementById("fuseSwapFuseBalance");
+            if (gdEl) gdEl.textContent = `${floorToFixed(fuseGdBalanceNum || 0, 2)} G$`;
+            if (fuseEl) fuseEl.textContent = `${floorToFixed(fuseBalanceNum || 0, 4)} FUSE`;
+        }
+
+        async function loadFuseSwapBalances() {
+            try {
+                const res = await fetch('/api/fuse/balances');
+                const data = await res.json();
+                if (data.success && data.gd_balance && data.gd_balance.success) {
+                    fuseGdBalanceNum = parseFloat(data.gd_balance.balance) || 0;
+                    if (data.gd_balance.decimals !== undefined) {
+                        fuseGdDecimals = parseInt(data.gd_balance.decimals, 10) || fuseGdDecimals;
+                    }
+                }
+                if (data.success && data.fuse && data.fuse.success) {
+                    fuseBalanceNum = parseFloat(data.fuse.balance) || 0;
+                }
+            } catch (err) {
+                console.warn('[fuse-swap] balance load failed:', err);
+            }
+            updateFuseSwapBalanceDisplay();
+        }
+
+        function setFuseSwapMax() {
+            const input = document.getElementById("fuseSwapAmountIn");
+            if (!input) return;
+            const factor = Math.pow(10, 2);
+            const maxTruncated = Math.floor((fuseGdBalanceNum || 0) * factor) / factor;
+            input.value = maxTruncated > 0 ? maxTruncated.toFixed(2) : "";
+            onFuseSwapAmountChange();
+        }
+
+        function setFuseSwapSlippage(value, btn) {
+            fuseSwapSlippage = value;
+            document.querySelectorAll('#swapPaneFuse .slippage-btn').forEach(b => b.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+            onFuseSwapAmountChange();
+        }
+
+        function onFuseSwapAmountChange() {
+            clearTimeout(fuseSwapQuoteTimer);
+            fuseSwapQuote = null;
+            const quoteBox = document.getElementById("fuseSwapQuoteBox");
+            const amountOut = document.getElementById("fuseSwapAmountOut");
+            if (quoteBox) quoteBox.classList.add("hidden");
+            if (amountOut) amountOut.value = "";
+            clearFuseSwapAlert();
+
+            const raw = (document.getElementById("fuseSwapAmountIn")?.value || "").trim();
+            if (!raw || parseFloat(raw) <= 0) {
+                setFuseSwapBtnState("enter");
+                return;
+            }
+            setFuseSwapBtnState("loading", "Getting Voltage quote...");
+            fuseSwapQuoteTimer = setTimeout(fetchFuseSwapQuote, 600);
+        }
+
+        async function fetchFuseSwapQuote() {
+            const raw = (document.getElementById("fuseSwapAmountIn")?.value || "").trim();
+            if (!raw || parseFloat(raw) <= 0) { setFuseSwapBtnState("enter"); return; }
+            const myReqId = ++_fuseSwapQuoteRequestId;
+            try {
+                const amountIn = ethers.parseUnits(raw, fuseGdDecimals);
+                const provider = new ethers.JsonRpcProvider(FUSE_RPC);
+                const router = new ethers.Contract(VOLTAGE_ROUTER, VOLTAGE_ROUTER_ABI, provider);
+                const path = [FUSE_GD_TOKEN, WFUSE_TOKEN];
+                const amounts = await router.getAmountsOut(amountIn, path);
+                if (myReqId !== _fuseSwapQuoteRequestId) return;
+                const amountOut = amounts[amounts.length - 1];
+                if (!amountOut || amountOut <= 0n) throw new Error('No output from Voltage router.');
+                const slippageBps = BigInt(Math.round(fuseSwapSlippage * 100));
+                const minOut = amountOut * (10000n - slippageBps) / 10000n;
+                fuseSwapQuote = { amountIn, amountOut, minOut, path };
+
+                const inHuman = parseFloat(ethers.formatUnits(amountIn, fuseGdDecimals));
+                const outHuman = parseFloat(ethers.formatUnits(amountOut, 18));
+                document.getElementById("fuseSwapAmountOut").value = outHuman.toFixed(6);
+                document.getElementById("fuseSwapRate").textContent = `1 G$ ≈ ${(outHuman / inHuman).toFixed(8)} FUSE`;
+                document.getElementById("fuseSwapMinOut").textContent = `${parseFloat(ethers.formatUnits(minOut, 18)).toFixed(6)} FUSE`;
+                document.getElementById("fuseSwapQuoteBox").classList.remove("hidden");
+                if (inHuman > fuseGdBalanceNum) {
+                    setFuseSwapBtnState("enter");
+                    showFuseSwapAlert("alert-error", `❌ You only have ${floorToFixed(fuseGdBalanceNum, 2)} Fuse G$.`);
+                    return;
+                }
+                if ((fuseBalanceNum || 0) <= 0) {
+                    showFuseSwapAlert("alert-info", "ℹ️ You need a small FUSE balance to pay gas for the approve/swap transactions.");
+                }
+                setFuseSwapBtnState("ready");
+            } catch (err) {
+                console.error('[fuse-swap] quote failed:', err);
+                fuseSwapQuote = null;
+                setFuseSwapBtnState("no-pool");
+                showFuseSwapAlert("alert-error", "❌ Could not quote G$ → FUSE on Voltage. Liquidity may be unavailable or the Fuse RPC may be busy.");
+            }
+        }
+
+        async function ensureFuseNetwork(ep) {
+            const current = await ep.request({ method: 'eth_chainId' });
+            if (_normalizeChainIdHex(current) === FUSE_CHAIN_HEX) return;
+            try {
+                await ep.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: FUSE_CHAIN_HEX }] });
+            } catch (switchErr) {
+                await ep.request({
+                    method: 'wallet_addEthereumChain',
+                    params: [{
+                        chainId: FUSE_CHAIN_HEX,
+                        chainName: 'Fuse Mainnet',
+                        nativeCurrency: { name: 'FUSE', symbol: 'FUSE', decimals: 18 },
+                        rpcUrls: [FUSE_RPC],
+                        blockExplorerUrls: ['https://explorer.fuse.io']
+                    }]
+                });
+            }
+        }
+
+        async function getConnectedFuseSigner() {
+            const ethProvider = await _awaitEthProvider();
+            if (!ethProvider) {
+                throw new Error('No injected wallet detected for Fuse swap. Open GoodMarket in MetaMask or another Fuse-compatible wallet.');
+            }
+            const accounts = await ethProvider.request({ method: 'eth_requestAccounts' });
+            if (!accounts || !accounts.length) throw new Error('No wallet account available.');
+            if (accounts[0].toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+                throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+            }
+            await ensureFuseNetwork(ethProvider);
+            const browserProvider = new ethers.BrowserProvider(ethProvider);
+            const signer = await browserProvider.getSigner();
+            const signerAddr = await signer.getAddress();
+            if (signerAddr.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+                throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+            }
+            return signer;
+        }
+
+        async function startFuseSwap() {
+            if (!fuseSwapQuote) return;
+            const btn = document.getElementById("fuseSwapBtn");
+            const stepIndicators = document.getElementById("fuseSwapStepIndicators");
+            const step1 = document.getElementById("fuseSwapStep1");
+            const step2 = document.getElementById("fuseSwapStep2");
+            try {
+                stepIndicators.className = "step-indicators show";
+                step1.className = "step active";
+                step2.className = "step";
+                setFuseSwapBtnState("loading", "Connecting wallet...");
+                clearFuseSwapAlert();
+
+                const signer = await getConnectedFuseSigner();
+                const token = new ethers.Contract(FUSE_GD_TOKEN, ERC20_ABI, signer);
+                const allowance = await token.allowance(WALLET_ADDRESS, VOLTAGE_ROUTER);
+                if (allowance < fuseSwapQuote.amountIn) {
+                    showFuseSwapAlert("alert-info", `<span class="spinner-inline"></span> Step 1/2 — approve Fuse G$ for Voltage…`);
+                    if (window.GMTxPreview && GMTxPreview.confirm) {
+                        try {
+                            await GMTxPreview.confirm({
+                                action: 'approve',
+                                token: 'Fuse G$',
+                                amount: ethers.formatUnits(fuseSwapQuote.amountIn, fuseGdDecimals),
+                                to: VOLTAGE_ROUTER,
+                                toLabel: 'Voltage Router (Fuse)',
+                                network: 'Fuse',
+                                note: 'Lets Voltage pull exactly your Fuse G$ input for this swap.'
+                            });
+                        } catch (err) {
+                            if (GMTxPreview.isCancelled(err)) {
+                                setFuseSwapBtnState("ready");
+                                stepIndicators.className = "step-indicators";
+                                showFuseSwapAlert("alert-info", "Swap cancelled.");
+                                return;
+                            }
+                            throw err;
+                        }
+                    }
+                    const approveTx = await token.approve(VOLTAGE_ROUTER, fuseSwapQuote.amountIn);
+                    await approveTx.wait();
+                }
+                step1.className = "step done";
+
+                let freshQuote = fuseSwapQuote;
+                try {
+                    const readProvider = new ethers.JsonRpcProvider(FUSE_RPC);
+                    const readRouter = new ethers.Contract(VOLTAGE_ROUTER, VOLTAGE_ROUTER_ABI, readProvider);
+                    const amounts = await readRouter.getAmountsOut(fuseSwapQuote.amountIn, fuseSwapQuote.path);
+                    const amountOut = amounts[amounts.length - 1];
+                    const slippageBps = BigInt(Math.round(fuseSwapSlippage * 100));
+                    freshQuote = {
+                        ...fuseSwapQuote,
+                        amountOut,
+                        minOut: amountOut * (10000n - slippageBps) / 10000n
+                    };
+                } catch (reQuoteErr) {
+                    console.warn('[fuse-swap] re-quote failed, using original quote:', reQuoteErr);
+                }
+
+                step2.className = "step active";
+                setFuseSwapBtnState("loading", "Executing swap...");
+                showFuseSwapAlert("alert-info", `<span class="spinner-inline"></span> Step 2/2 — confirm Voltage swap in your wallet…`);
+
+                const deadline = Math.floor(Date.now() / 1000) + (20 * 60);
+                const router = new ethers.Contract(VOLTAGE_ROUTER, VOLTAGE_ROUTER_ABI, signer);
+                const swapTx = await router.swapExactTokensForETH(
+                    freshQuote.amountIn,
+                    freshQuote.minOut,
+                    freshQuote.path,
+                    WALLET_ADDRESS,
+                    deadline
+                );
+                await swapTx.wait();
+                step2.className = "step done";
+
+                const inHuman = parseFloat(ethers.formatUnits(freshQuote.amountIn, fuseGdDecimals));
+                const outHuman = parseFloat(ethers.formatUnits(freshQuote.amountOut, 18));
+                showFuseSwapAlert("alert-success",
+                    `✅ Swap submitted! ${inHuman.toFixed(2)} Fuse G$ → ≈${outHuman.toFixed(6)} FUSE. ` +
+                    `<a href="https://explorer.fuse.io/tx/${swapTx.hash}" target="_blank" rel="noopener" style="color:#86efac;text-decoration:underline;">View on Fuse Explorer ↗</a>`
+                );
+                document.getElementById("fuseSwapAmountIn").value = "";
+                document.getElementById("fuseSwapAmountOut").value = "";
+                document.getElementById("fuseSwapQuoteBox").classList.add("hidden");
+                fuseSwapQuote = null;
+                setFuseSwapBtnState("enter");
+                stepIndicators.className = "step-indicators";
+                await loadFuseSwapBalances();
+            } catch (err) {
+                console.error('[fuse-swap] swap failed:', err);
+                if (stepIndicators) stepIndicators.className = "step-indicators";
+                const friendly = (window.GMTxError && GMTxError.format) ? GMTxError.format(err) : (err?.shortMessage || err?.message || "Unknown error");
+                showFuseSwapAlert("alert-error", `❌ Fuse swap failed: ${friendly}`);
+                if (fuseSwapQuote) setFuseSwapBtnState("ready");
+                else setFuseSwapBtnState("enter");
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
         // GoodReserve (Mento) tab: G$ ↔ cUSD direct buy/sell against the protocol
         // bonding curve. Uses Mento Broker.swapIn(...) on Celo. No DEX, no pool.
         // ═══════════════════════════════════════════════════════════════════════
@@ -3154,6 +3528,9 @@
                 } else if (want === "reserve" || want === "goodreserve") {
                     target = "goodswap";
                     goodswapPane = "reserve";
+                } else if (want === "fuse" || want === "fuse-swap" || want === "fuseswap" || want === "voltage") {
+                    target = "goodswap";
+                    goodswapPane = "fuse";
                 } else if (want === "dex" || want === "uniswap" || want === "uniswapv3" || want === "uniswap-v3" || want === "uniswap_v3") {
                     target = "goodswap";
                     goodswapPane = "dex";
@@ -3164,6 +3541,9 @@
                 if (paneRaw === "reserve" || paneRaw === "goodreserve") {
                     if (!target) target = "goodswap";
                     goodswapPane = "reserve";
+                } else if (paneRaw === "fuse" || paneRaw === "fuse-swap" || paneRaw === "fuseswap" || paneRaw === "voltage") {
+                    if (!target) target = "goodswap";
+                    goodswapPane = "fuse";
                 } else if (paneRaw === "uniswap" || paneRaw === "uniswapv3" || paneRaw === "uniswap-v3" || paneRaw === "uniswap_v3" || paneRaw === "dex") {
                     if (!target) target = "goodswap";
                     goodswapPane = "dex";
@@ -3257,7 +3637,7 @@
             // Honour 'dex' / 'reserve' shorthand by also flipping the
             // GoodSwap sub-tab so e.g. setSwapTab('reserve') from a button
             // elsewhere in the page still does the obvious thing.
-            if (name === "dex" || name === "reserve") {
+            if (name === "dex" || name === "reserve" || name === "fuse") {
                 if (typeof setGoodSwapSubTab === "function") {
                     setGoodSwapSubTab(name);
                 }
@@ -3270,36 +3650,49 @@
         }
 
         // Toggle the active sub-pane inside the GoodSwap tab. Each
-        // sub-pane keeps its existing design 1:1 (Uniswap V3 was already
-        // the default; GoodReserve was already gated by reserve_swap_visible).
-        // No network switching here — both sub-tabs run on Celo Mainnet.
+        // sub-pane keeps its existing design rhythm while owning its network:
+        // Uniswap V3 + GoodReserve use Celo; Fuse Swap uses Fuse Mainnet.
         function setGoodSwapSubTab(name) {
             const isReserve = name === "reserve";
+            const isFuse    = name === "fuse";
             const dexPane   = document.getElementById("swapPaneDex");
             const resPane   = document.getElementById("swapPaneReserve");
+            const fusePane  = document.getElementById("swapPaneFuse");
             const dexBtn    = document.getElementById("goodswapSubBtnDex");
             const resBtn    = document.getElementById("goodswapSubBtnReserve");
+            const fuseBtn   = document.getElementById("goodswapSubBtnFuse");
             // GoodReserve sub-tab is gated by reserve_swap_visible on the
             // server side; if it isn't rendered, silently fall back to dex.
             if (isReserve && !resPane) {
                 if (dexPane) dexPane.classList.remove("hidden-tab");
+                if (fusePane) fusePane.classList.add("hidden-tab");
                 if (dexBtn) {
                     dexBtn.classList.add("active");
                     dexBtn.setAttribute("aria-selected", "true");
                 }
+                if (fuseBtn) {
+                    fuseBtn.classList.remove("active");
+                    fuseBtn.setAttribute("aria-selected", "false");
+                }
                 return;
             }
-            if (dexPane) dexPane.classList.toggle("hidden-tab",  isReserve);
+            if (dexPane) dexPane.classList.toggle("hidden-tab",  isReserve || isFuse);
             if (resPane) resPane.classList.toggle("hidden-tab", !isReserve);
+            if (fusePane) fusePane.classList.toggle("hidden-tab", !isFuse);
             if (dexBtn) {
-                dexBtn.classList.toggle("active", !isReserve);
-                dexBtn.setAttribute("aria-selected", String(!isReserve));
+                dexBtn.classList.toggle("active", !isReserve && !isFuse);
+                dexBtn.setAttribute("aria-selected", String(!isReserve && !isFuse));
             }
             if (resBtn) {
                 resBtn.classList.toggle("active", isReserve);
                 resBtn.setAttribute("aria-selected", String(isReserve));
             }
+            if (fuseBtn) {
+                fuseBtn.classList.toggle("active", isFuse);
+                fuseBtn.setAttribute("aria-selected", String(isFuse));
+            }
             if (isReserve) updateReserveBalanceDisplay();
+            if (isFuse) loadFuseSwapBalances();
         }
 
         // Toggle the active sub-pane inside the Bridge tab. Each direction
