@@ -7026,8 +7026,12 @@ def xdc_bridge_estimate_fee():
             return jsonify({"success": False, "error": "Invalid chain ids or amount"}), 400
 
         fallback_fees = {
-            (50, 42220): Decimal("1.6176"),   # XDC -> Celo
-            (42220, 50): Decimal("0.1151"),   # Celo -> XDC
+            (50, 42220): Decimal("1.6176"),   # XDC -> Celo (XDC native)
+            (50, 122): Decimal("1.6176"),     # XDC -> Fuse (XDC native)
+            (42220, 50): Decimal("0.1151"),   # Celo -> XDC (CELO native)
+            (42220, 122): Decimal("0.1151"),  # Celo -> Fuse (CELO native)
+            (122, 42220): Decimal("0.5"),     # Fuse -> Celo (FUSE native)
+            (122, 50): Decimal("0.5"),        # Fuse -> XDC (FUSE native)
         }
         default_fee_xdc = fallback_fees.get((source_chain_id_val, target_chain_id_val), Decimal("1.6176"))
         fee_source = "fallback_default"
