@@ -121,6 +121,38 @@ def _support_desk_ticket_endpoint(support_base_url):
     return f"{cleaned}{endpoint_path}"
 
 
+def _support_log_context(endpoint=None):
+    """Return safe support-ticket diagnostics for logs and client error IDs."""
+    request_id = request.headers.get("X-Vercel-Id") or request.headers.get("X-Request-Id") or "local"
+    context = {"requestId": request_id}
+    if endpoint:
+        parsed = urllib.parse.urlparse(endpoint)
+        context["supportEndpoint"] = urllib.parse.urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            "",
+            "",
+            "",
+        ))
+    return context
+
+
+def _support_error_response(message, status_code, *, endpoint=None, log_message=None, **extra):
+    """Log support-ticket failures with a request ID and return a safe JSON error."""
+    context = _support_log_context(endpoint)
+    context.update(extra)
+    logger.error(f"{log_message or message} | support_context={context}")
+    body = {
+        "success": False,
+        "error": message,
+        "requestId": context["requestId"],
+    }
+    if "upstreamStatus" in extra:
+        body["upstreamStatus"] = extra["upstreamStatus"]
+    return jsonify(body), status_code
+
+
 def _support_session_user(payload):
     """Build the external user identity from the verified session plus safe fallbacks."""
     submitted_user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
@@ -1640,18 +1672,21 @@ def create_support_ticket():
     support_base_url = (os.environ.get("SUPPORT_DESK_BASE_URL") or "").strip().rstrip("/")
     support_secret = (os.environ.get("GOODMARKET_SUPPORT_API_SECRET") or "").strip()
     if not support_base_url or not support_secret:
-        logger.error("Support desk integration is not configured")
-        return jsonify({
-            "success": False,
-            "error": "Support desk integration is not configured. Please contact the GoodMarket team.",
-        }), 503
+        return _support_error_response(
+            "Support desk integration is not configured. Please contact the GoodMarket team.",
+            503,
+            log_message="Support desk integration is not configured",
+            hasSupportBaseUrl=bool(support_base_url),
+            hasSupportSecret=bool(support_secret),
+        )
     parsed_support_url = urllib.parse.urlparse(support_base_url)
     if parsed_support_url.scheme not in {"http", "https"} or not parsed_support_url.netloc:
-        logger.error("Support desk base URL is invalid")
-        return jsonify({
-            "success": False,
-            "error": "Support desk integration is misconfigured. Please contact the GoodMarket team.",
-        }), 503
+        return _support_error_response(
+            "Support desk integration is misconfigured. Please contact the GoodMarket team.",
+            503,
+            endpoint=support_base_url,
+            log_message="Support desk base URL is invalid",
+        )
 
     forwarded_body = {
         "source": "goodmarket",
@@ -1685,36 +1720,47 @@ def create_support_ticket():
             desk_response = json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
         raw_error = exc.read().decode("utf-8", errors="replace")[:500]
-        logger.error(f"Support desk returned HTTP {exc.code}: {raw_error}")
-        return jsonify({
-            "success": False,
-            "error": "The support desk could not create your ticket. Please try again later.",
-        }), 502
+        return _support_error_response(
+            "The support desk could not create your ticket. Please try again later.",
+            502,
+            endpoint=endpoint,
+            log_message=f"Support desk returned HTTP {exc.code}: {raw_error}",
+            upstreamStatus=exc.code,
+        )
     except urllib.error.URLError as exc:
-        logger.error(f"Support desk connection failed: {exc}")
-        return jsonify({
-            "success": False,
-            "error": "Could not reach the support desk. Please try again later.",
-        }), 502
+        return _support_error_response(
+            "Could not reach the support desk. Please try again later.",
+            502,
+            endpoint=endpoint,
+            log_message=f"Support desk connection failed: {exc}",
+            failureType="connection",
+        )
     except json.JSONDecodeError:
-        logger.error("Support desk returned a non-JSON response")
-        return jsonify({
-            "success": False,
-            "error": "The support desk returned an unexpected response.",
-        }), 502
+        return _support_error_response(
+            "The support desk returned an unexpected response.",
+            502,
+            endpoint=endpoint,
+            log_message="Support desk returned a non-JSON response",
+            failureType="invalid_json",
+        )
     except Exception as exc:
-        logger.error(f"Unexpected support desk integration error: {exc}")
-        return jsonify({
-            "success": False,
-            "error": "Could not create your support ticket. Please try again later.",
-        }), 502
+        logger.exception(f"Unexpected support desk integration error: {exc}")
+        return _support_error_response(
+            "Could not create your support ticket. Please try again later.",
+            502,
+            endpoint=endpoint,
+            log_message="Unexpected support desk integration error",
+            failureType=exc.__class__.__name__,
+        )
 
     if not desk_response.get("ok") or not desk_response.get("ticketCode"):
-        logger.error(f"Support desk rejected ticket request: {desk_response}")
-        return jsonify({
-            "success": False,
-            "error": desk_response.get("message") or "The support desk could not create your ticket.",
-        }), 502
+        return _support_error_response(
+            desk_response.get("message") or "The support desk could not create your ticket.",
+            502,
+            endpoint=endpoint,
+            log_message=f"Support desk rejected ticket request: {desk_response}",
+            failureType="rejected_response",
+        )
 
     ticket_code = str(desk_response.get("ticketCode"))
     return jsonify({
