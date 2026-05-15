@@ -133,6 +133,79 @@
         }
         .icon-btn:hover { background: rgba(255,255,255,0.12); }
 
+
+        .floating-support-chat {
+            position: fixed;
+            right: max(1rem, env(safe-area-inset-right));
+            bottom: max(1rem, env(safe-area-inset-bottom));
+            z-index: 1000;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.72rem 0.95rem;
+            border-radius: 999px;
+            border: 1px solid rgba(95,242,210,0.42);
+            background:
+                radial-gradient(120% 140% at 10% 10%, rgba(95,242,210,0.25), transparent 48%),
+                linear-gradient(135deg, rgba(127,140,255,0.96), rgba(124,58,237,0.96));
+            color: #fff;
+            text-decoration: none;
+            font-size: 0.88rem;
+            font-weight: 800;
+            letter-spacing: -0.01em;
+            box-shadow: 0 16px 36px rgba(0,0,0,0.34), 0 0 24px rgba(95,242,210,0.18);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+        }
+        .floating-support-chat:hover {
+            transform: translateY(-2px);
+            filter: brightness(1.06);
+            box-shadow: 0 20px 44px rgba(0,0,0,0.4), 0 0 28px rgba(95,242,210,0.24);
+        }
+        .floating-support-chat:focus-visible {
+            outline: 3px solid rgba(95,242,210,0.5);
+            outline-offset: 4px;
+        }
+        .floating-support-chat-icon {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.16);
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+            font-size: 1.05rem;
+            flex: 0 0 auto;
+        }
+        .floating-support-chat-text {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.05;
+        }
+        .floating-support-chat-text small {
+            margin-top: 0.12rem;
+            color: rgba(255,255,255,0.72);
+            font-size: 0.64rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        @media (max-width: 560px) {
+            .floating-support-chat {
+                right: max(0.9rem, env(safe-area-inset-right));
+                bottom: max(0.9rem, env(safe-area-inset-bottom));
+                padding: 0.62rem 0.78rem;
+                font-size: 0.8rem;
+            }
+            .floating-support-chat-icon {
+                width: 1.85rem;
+                height: 1.85rem;
+            }
+        }
+
         /* ── Portfolio Card (credit-card style) ── */
         .balance-card {
             margin: 0.5rem 1.25rem 1.25rem;
@@ -1623,6 +1696,12 @@
             <button class="btn-secondary" style="margin-top:0.5rem;" onclick="closeModal('settingsModal')">Close</button>
         </div>
     </div>
+
+
+    <a class="floating-support-chat" href="/support" aria-label="Open GoodMarket support chat">
+        <span class="floating-support-chat-icon" aria-hidden="true">💬</span>
+        <span class="floating-support-chat-text">Support<small>Need help?</small></span>
+    </a>
 
     <!-- lz-string for GoodDollar FV link generation -->
     <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"
