@@ -607,12 +607,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 {% if wallet_visible %}<a href="/wallet">Wallet</a>{% endif %}
                 {% if savings_visible %}<a href="/savings">Savings</a>{% endif %}
                 <a href="/profile">Profile</a>
+                <a href="/support">Support</a>
                 <a href="/admin" id="adminLink" style="display:none;">Admin</a>
                 <div class="nav-sep"></div>
                 <div class="wallet-tag">{{ wallet[:6] }}...{{ wallet[-4:] }}</div>
                 <a href="/logout" class="logout-btn">Logout</a>
                 {% else %}
                 <div class="nav-sep"></div>
+                <a href="/support">Support</a>
                 <a href="/" class="logout-btn" style="border-color:rgba(124,58,237,0.3)!important;color:#a78bfa!important;background:rgba(124,58,237,0.1)!important;">Login</a>
                 {% endif %}
             </div>
