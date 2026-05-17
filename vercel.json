@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "buildCommand": "pip install -r requirements.txt",
   "builds": [
     {
       "src": "main.py",
