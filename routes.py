@@ -6302,9 +6302,6 @@ SUP_DEFAULT_SUBGRAPH_URL = (
 # The GDAv1Forwarder contract address is the same on every Superfluid chain.
 # See https://docs.superfluid.org/docs/technical-reference/GDAv1Forwarder
 SUP_GDA_FORWARDER_ADDRESS = "0x6DA13Bde224A05a288748d857b9e7DDEffd1dE08"
-# Official Superfluid Reserve (FluidLocker) factory proxy on Base mainnet.
-# Public-facing docs call these contracts "Reserve"; contract source uses "Locker".
-SUP_RESERVE_FACTORY_ADDRESS = "0xA6694cAB43713287F7735dADc940b555db9d39D9"
 SUP_OFFICIAL_CLAIM_URL = "https://claim.superfluid.org/claim"
 SUP_MONTH_SECONDS = 30 * 24 * 60 * 60
 
@@ -6367,50 +6364,6 @@ _SUP_GDA_FORWARDER_ABI = [
         "name": "claimAll",
         "outputs": [{"internalType": "bool", "name": "success", "type": "bool"}],
         "stateMutability": "nonpayable",
-        "type": "function",
-    },
-]
-
-_SUP_RESERVE_FACTORY_ABI = [
-    {
-        "inputs": [{"name": "user", "type": "address"}],
-        "name": "getUserLocker",
-        "outputs": [
-            {"name": "isCreated", "type": "bool"},
-            {"name": "lockerAddress", "type": "address"},
-        ],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [{"name": "user", "type": "address"}],
-        "name": "getLockerAddress",
-        "outputs": [{"name": "lockerAddress", "type": "address"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-]
-
-_SUP_RESERVE_LOCKER_ABI = [
-    {
-        "inputs": [],
-        "name": "lockerOwner",
-        "outputs": [{"name": "", "type": "address"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [],
-        "name": "getAvailableBalance",
-        "outputs": [{"name": "aBalance", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [],
-        "name": "getStakedBalance",
-        "outputs": [{"name": "sBalance", "type": "uint256"}],
-        "stateMutability": "view",
         "type": "function",
     },
 ]
@@ -6561,78 +6514,7 @@ def _sup_runtime_config() -> dict:
         "subgraph_url": os.getenv("SUPERFLUID_SUBGRAPH_URL", SUP_DEFAULT_SUBGRAPH_URL),
         "official_claim_url": os.getenv("SUP_CLAIM_URL", SUP_OFFICIAL_CLAIM_URL),
         "gda_forwarder": os.getenv("SUP_GDA_FORWARDER", SUP_GDA_FORWARDER_ADDRESS),
-        "reserve_factory": os.getenv("SUP_RESERVE_FACTORY", SUP_RESERVE_FACTORY_ADDRESS),
     }
-
-
-def _sup_read_reserve_status(w3: Web3, wallet: str, token_addr: str, decimals: int, cfg: dict) -> dict:
-    """Read the official SUP Reserve/Locker owned by ``wallet``.
-
-    The SUP Claim App does not stream program rewards directly to the EOA in
-    most cases. It creates a per-user Reserve (contract name: FluidLocker) and
-    streams/holds SUP there. This helper resolves that reserve from the official
-    factory and reports available + staked balances so GoodMarket can display
-    the same reserve concept users see in the Superfluid claim UX.
-    """
-    zero = "0x0000000000000000000000000000000000000000"
-    status = {
-        "reserve_factory_address": cfg.get("reserve_factory"),
-        "reserve_locker_created": False,
-        "reserve_locker_address": None,
-        "reserve_available_balance": "0",
-        "reserve_available_balance_formatted": "0",
-        "reserve_staked_balance": "0",
-        "reserve_staked_balance_formatted": "0",
-        "reserve_total_balance": "0",
-        "reserve_total_balance_formatted": "0",
-    }
-    factory_addr = cfg.get("reserve_factory")
-    if not factory_addr or not Web3.is_address(factory_addr):
-        status["reserve_warning"] = "SUP_RESERVE_FACTORY is misconfigured on the server."
-        return status
-
-    member_addr = Web3.to_checksum_address(wallet)
-    factory = w3.eth.contract(
-        address=Web3.to_checksum_address(factory_addr),
-        abi=_SUP_RESERVE_FACTORY_ABI,
-    )
-    try:
-        is_created, locker_addr = factory.functions.getUserLocker(member_addr).call()
-    except Exception:
-        locker_addr = factory.functions.getLockerAddress(member_addr).call()
-        is_created = bool(locker_addr and str(locker_addr).lower() != zero)
-
-    if not is_created or not locker_addr or str(locker_addr).lower() == zero:
-        return status
-
-    locker_addr = Web3.to_checksum_address(locker_addr)
-    status["reserve_locker_created"] = True
-    status["reserve_locker_address"] = locker_addr
-
-    locker = w3.eth.contract(address=locker_addr, abi=_SUP_RESERVE_LOCKER_ABI)
-    token = w3.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_SUP_TOKEN_ABI)
-    try:
-        available = int(locker.functions.getAvailableBalance().call())
-    except Exception:
-        available = 0
-    try:
-        staked = int(locker.functions.getStakedBalance().call())
-    except Exception:
-        staked = 0
-    try:
-        total = int(token.functions.balanceOf(locker_addr).call())
-    except Exception:
-        total = available + staked
-
-    status.update({
-        "reserve_available_balance": str(max(available, 0)),
-        "reserve_available_balance_formatted": _sup_format_balance(max(available, 0), decimals),
-        "reserve_staked_balance": str(max(staked, 0)),
-        "reserve_staked_balance_formatted": _sup_format_balance(max(staked, 0), decimals),
-        "reserve_total_balance": str(max(total, 0)),
-        "reserve_total_balance_formatted": _sup_format_balance(max(total, 0), decimals),
-    })
-    return status
 
 
 @routes.route("/api/sup/claim/availability", methods=["GET"])
@@ -6669,30 +6551,20 @@ def sup_claim_availability():
         "eligibility_check_supported": True,
         "requires_wallet_signature": True,
         "message": (
-            "SUP rewards usually live in an official Superfluid Reserve "
-            "(FluidLocker) contract owned by your wallet. GoodMarket resolves "
-            "that Reserve from the official factory, reads its available/staked "
-            "SUP balances, and separately checks direct wallet GDA pool rewards "
-            "that can be claimed through a wallet-signed Base transaction."
+            "SUP rewards stream from Superfluid GDA pools. GoodMarket reads "
+            "the official Superfluid subgraph for the pools your wallet has "
+            "units in, computes your proportional flow per month, checks the "
+            "SuperToken realtime reserve balance, then calls "
+            "`getClaimableNow(member)` on each pool. Tap Claim to sign one "
+            "transaction per pool through your connected wallet."
         ),
         "sup_balance": None,
         "sup_balance_formatted": None,
-        "wallet_available_balance": None,
-        "wallet_available_balance_formatted": None,
+        "reserve_balance": None,
+        "reserve_balance_formatted": None,
+        "available_balance": None,
+        "available_balance_formatted": None,
         "realtime_balance_timestamp": None,
-        "reserve_factory_address": cfg.get("reserve_factory"),
-        "reserve_locker_created": False,
-        "reserve_locker_address": None,
-        "reserve_balance": "0",
-        "reserve_balance_formatted": "0",
-        "reserve_available_balance": "0",
-        "reserve_available_balance_formatted": "0",
-        "reserve_staked_balance": "0",
-        "reserve_staked_balance_formatted": "0",
-        "reserve_total_balance": "0",
-        "reserve_total_balance_formatted": "0",
-        "available_balance": "0",
-        "available_balance_formatted": "0",
         "total_claimable": "0",
         "total_claimable_formatted": "0",
         "total_units": "0",
@@ -6731,40 +6603,27 @@ def sup_claim_availability():
             available_balance, _deposit, _owed_deposit, rt_ts = (
                 token.functions.realtimeBalanceOfNow(member_addr).call()
             )
-            wallet_available_balance = max(int(available_balance), 0)
-            result["wallet_available_balance"] = str(wallet_available_balance)
-            result["wallet_available_balance_formatted"] = _sup_format_balance(wallet_available_balance, decimals)
+            reserve_balance = max(int(available_balance), 0)
+            result["reserve_balance"] = str(reserve_balance)
+            result["reserve_balance_formatted"] = _sup_format_balance(reserve_balance, decimals)
+            result["available_balance"] = str(reserve_balance)
+            result["available_balance_formatted"] = result["reserve_balance_formatted"]
             result["realtime_balance_timestamp"] = int(rt_ts)
         except Exception as rt_err:
             logger.info(
                 "sup realtimeBalanceOfNow unavailable for %s: %s", wallet, rt_err
             )
             # Not every ERC20-like token exposes the SuperToken realtime read.
-            # Fall back to balanceOf for the wallet-available display only.
-            result["wallet_available_balance"] = str(raw_balance)
-            result["wallet_available_balance_formatted"] = result["sup_balance_formatted"]
+            # Fall back to balanceOf so the UI still has a reserve number.
+            result["reserve_balance"] = str(raw_balance)
+            result["reserve_balance_formatted"] = result["sup_balance_formatted"]
+            result["available_balance"] = str(raw_balance)
+            result["available_balance_formatted"] = result["sup_balance_formatted"]
     except Exception as e:
         logger.warning("sup_claim_availability balanceOf failed for %s: %s", wallet, e)
         result["balance_warning"] = "Could not read SUP wallet balance from Base RPC right now."
 
-    # 2) Resolve the official per-user SUP Reserve (FluidLocker) and show its
-    #    balances. This is the value users expect from the Superfluid Reserve UI;
-    #    it is separate from their EOA wallet balance.
-    try:
-        reserve_status = _sup_read_reserve_status(w3, wallet, token_addr, decimals, cfg)
-        result.update(reserve_status)
-        result["reserve_balance"] = reserve_status.get("reserve_total_balance", "0")
-        result["reserve_balance_formatted"] = reserve_status.get("reserve_total_balance_formatted", "0")
-        result["available_balance"] = reserve_status.get("reserve_available_balance", "0")
-        result["available_balance_formatted"] = reserve_status.get("reserve_available_balance_formatted", "0")
-    except Exception as e:
-        logger.warning("sup reserve lookup failed for %s: %s", wallet, e)
-        result["reserve_warning"] = (
-            "Could not resolve your official Superfluid Reserve right now. "
-            "Open the Superfluid claim app to double-check your Reserve."
-        )
-
-    # 3) Query subgraph for the wallet's SUP pool memberships, then read the
+    # 2) Query subgraph for the wallet's SUP pool memberships, then read the
     #    claimable amount on each pool on-chain.
     try:
         memberships = _sup_fetch_pool_memberships(wallet, token_addr, cfg["subgraph_url"])
