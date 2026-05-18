@@ -1521,7 +1521,7 @@
                 <div style="font-size:0.78rem;color:#fed7aa;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.35rem;">Reserve-aware · Superfluid on Base</div>
                 <div style="color:#fff;font-weight:800;font-size:1.05rem;margin-bottom:0.45rem;">See your SUP Reserve in GoodMarket</div>
                 <div style="color:var(--text-dim);font-size:0.84rem;line-height:1.45;">
-                    GoodMarket now resolves your official Superfluid Reserve (FluidLocker), shows available/staked SUP held there, and claims only by asking your injected wallet or WalletConnect wallet to sign a Base transaction. Use the Superfluid app fallback for Reserve claim, stake, and unlock actions.
+                    GoodMarket now resolves your official Superfluid Reserve (FluidLocker), shows available/staked SUP held there, and only enables native claiming for direct wallet GDA rewards we can safely build on-chain. Use the Superfluid app fallback for Reserve claim, stake, and unlock actions.
                 </div>
             </div>
 
@@ -1734,7 +1734,7 @@
             projectId: "{{ walletconnect_project_id|default('', true) }}",
             sidecarEnabled: {{ 'true' if walletconnect_sidecar_enabled|default(true) else 'false' }},
             dappName: "GoodMarket — Wallet",
-            dappDescription: "Claim and send GoodDollar, including SUP on Base",
+            dappDescription: "Claim and send GoodDollar on Celo",
             assetVersion: "{{ ASSET_VERSION }}",
         });
     }
@@ -2317,7 +2317,7 @@
                     `Available ${data.reserve_available_balance_formatted || '0'} SUP · staked ${data.reserve_staked_balance_formatted || '0'} SUP. Use the Superfluid app for Reserve actions.`,
                     'Reserve'
                 );
-                _supSetClaimButton('Reserve actions in Superfluid', true);
+                _supSetClaimButton('No direct wallet claim', true);
                 _supSetOpenButton(true);
             } else if (poolCount > 0) {
                 _supSetState(
@@ -2390,34 +2390,6 @@
             try { return await GMWalletConnect.getProvider(); } catch (_) { /* no-op */ }
         }
         return null;
-    }
-
-    async function _supRequestAndValidateAccount(provider) {
-        if (!provider || typeof provider.request !== 'function') {
-            throw new Error('No wallet provider available for signing.');
-        }
-        let accounts = [];
-        try {
-            accounts = await provider.request({ method: 'eth_requestAccounts' });
-        } catch (err) {
-            if (err && err.code === 4001) {
-                throw new Error('Wallet connection was cancelled.');
-            }
-            try {
-                accounts = await provider.request({ method: 'eth_accounts' });
-            } catch (_) {
-                throw new Error((err && err.message) || 'Could not connect to your wallet.');
-            }
-        }
-        const selected = Array.isArray(accounts) && accounts.length ? String(accounts[0]).toLowerCase() : '';
-        const expected = String(WALLET || '').toLowerCase();
-        if (!selected) {
-            throw new Error('No account returned by the wallet. Unlock your wallet and try again.');
-        }
-        if (expected && selected !== expected) {
-            throw new Error(`Connected wallet ${_supShortAddr(selected)} does not match your GoodMarket wallet ${_supShortAddr(expected)}. Switch accounts in your wallet and try again.`);
-        }
-        return selected;
     }
 
     async function _supEnsureBaseChain(provider) {
@@ -2520,16 +2492,6 @@
                 return;
             }
 
-            _supSetProgress('Connecting your client wallet for SUP signing…');
-            try {
-                await _supRequestAndValidateAccount(provider);
-            } catch (accountErr) {
-                _supSetProgress(`⚠️ ${accountErr.message || accountErr}`);
-                _supSetClaimButton(`Claim ${prep.total_claimable_formatted || ''} SUP`.trim(), false);
-                _supSetOpenButton(true);
-                return;
-            }
-
             let succeeded = 0;
             let failed = 0;
             const txLines = [];
@@ -2548,13 +2510,6 @@
                         data: tx.data,
                         value: tx.value || '0x0'
                     };
-                    // The GoodMarket WalletConnect bridge needs the Base chainId
-                    // to route requests through the browser SignClient. Keep it
-                    // off injected-wallet params because MetaMask / Trust Mobile
-                    // can reject non-standard tx fields after chain switching.
-                    if (provider && provider.isWalletConnect) {
-                        txParams.chainId = SUP_BASE_CHAIN_ID_HEX;
-                    }
                     const txHash = await provider.request({
                         method: 'eth_sendTransaction',
                         params: [txParams]

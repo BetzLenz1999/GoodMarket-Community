@@ -95,61 +95,15 @@
     // Apply a SUPPORTED_NETWORKS entry to the bridge's runtime config so
     // subsequent JSON-RPC calls (eth_sendTransaction, eth_chainId,
     // read-only RPC) are routed against the selected chain.
-    function _normalizeHexChainId(chainId) {
-        if (chainId === null || chainId === undefined) return "";
-        if (typeof chainId === "number" && isFinite(chainId)) return "0x" + chainId.toString(16);
-        var raw = String(chainId).trim().toLowerCase();
-        if (!raw) return "";
-        if (raw.indexOf("0x") === 0) return raw;
-        if (/^\d+$/.test(raw)) return "0x" + Number(raw).toString(16);
-        return raw;
-    }
-
     function _applyChainToConfig(chainHex, network) {
         if (!network) return;
-        chainHex = _normalizeHexChainId(chainHex);
         _config.chainHex = chainHex;
-        _config.chainId = Number(network.chainId) || parseInt(chainHex, 16) || _config.chainId;
+        _config.chainId = Number(network.chainId) || _config.chainId;
         if (network.rpc) {
             _config.rpcUrl = network.rpc;
         } else if (Array.isArray(network.rpcUrls) && network.rpcUrls.length > 0) {
             _config.rpcUrl = network.rpcUrls[0];
         }
-        // The Node sidecar was built for the original Celo login/signing flow.
-        // For non-Celo chains (Base SUP, XDC, etc.) use the in-browser
-        // WalletConnect SignClient so requests carry the correct eip155 chainId
-        // to the wallet. Otherwise a Base claim can appear to do nothing because
-        // the sidecar relays it through the Celo session namespace.
-        _state.sidecarBypassed = chainHex !== DEFAULT_CHAIN_HEX;
-        if (_state.sidecarBypassed && _state.mode === "sidecar") {
-            _state.sessionId = null;
-            _state.address = null;
-            _state.mode = null;
-        }
-    }
-
-    function _supportedWcChains() {
-        var out = [];
-        Object.keys(SUPPORTED_NETWORKS).forEach(function (hex) {
-            var entry = SUPPORTED_NETWORKS[hex];
-            var id = entry && entry.chainId ? Number(entry.chainId) : parseInt(hex, 16);
-            if (id && out.indexOf("eip155:" + id) < 0) out.push("eip155:" + id);
-        });
-        var current = "eip155:" + Number(_config.chainId || DEFAULT_CHAIN_ID);
-        if (out.indexOf(current) < 0) out.unshift(current);
-        return out;
-    }
-
-    function _browserSessionSupportsChain(chainId) {
-        if (!_state.browserSession) return false;
-        var wanted = "eip155:" + Number(chainId || _config.chainId || DEFAULT_CHAIN_ID);
-        var ns = _state.browserSession.namespaces || {};
-        return Object.keys(ns).some(function (key) {
-            var chains = (ns[key] && ns[key].chains) || [];
-            var accounts = (ns[key] && ns[key].accounts) || [];
-            if (chains.indexOf(wanted) >= 0) return true;
-            return accounts.some(function (acct) { return String(acct).indexOf(wanted + ":") === 0; });
-        });
     }
 
     var _config = {
@@ -181,7 +135,6 @@
         signClient: null,
         browserSession: null,
         sdkLoading: null,
-        sidecarBypassed: false
     };
 
     function _normLogin(method) {
@@ -575,21 +528,12 @@
     }
 
     function connect() {
-        if (_state.address) {
-            if (!_state.sidecarBypassed || (_state.browserSession && _browserSessionSupportsChain(_config.chainId || DEFAULT_CHAIN_ID))) {
-                return Promise.resolve(_state.address);
-            }
-            // A cached Celo-only session/address is not enough for Base SUP.
-            // Force a browser WalletConnect reconnect with all supported chains.
-            _state.address = null;
-            _state.mode = null;
-            _state.browserSession = null;
-        }
+        if (_state.address) return Promise.resolve(_state.address);
         var wantedAddress = String(_config.walletAddress || "").toLowerCase();
 
         // Try the Node sidecar first when enabled (matches homepage login flow).
         var sidecarPromise = Promise.resolve(null);
-        if (_config.sidecarEnabled !== false && !_state.sidecarBypassed) {
+        if (_config.sidecarEnabled !== false) {
             sidecarPromise = (function () {
                 return fetch("/api/wc-uri")
                     .then(function (resp) {
@@ -660,20 +604,15 @@
                         eip155: {
                             methods: [
                                 "eth_accounts",
-                                "eth_requestAccounts",
                                 "eth_sendTransaction",
                                 "eth_getTransactionReceipt",
                                 "eth_chainId",
-                                "net_version",
-                                "wallet_switchEthereumChain",
-                                "wallet_addEthereumChain",
                                 "personal_sign",
                                 "eth_sign",
                                 "eth_signTypedData",
-                                "eth_signTypedData_v3",
                                 "eth_signTypedData_v4"
                             ],
-                            chains: _supportedWcChains(),
+                            chains: ["eip155:" + Number(_config.chainId || DEFAULT_CHAIN_ID)],
                             events: ["chainChanged", "accountsChanged"]
                         }
                     }
@@ -764,7 +703,7 @@
             // `eip155:<chainId>` topic — otherwise the WC client would keep
             // sending Base/XDC transactions on Celo's namespace and the
             // wallet would silently reject them.
-            var chainId = (p && p[0] && p[0].chainId) ? _normalizeHexChainId(p[0].chainId) : null;
+            var chainId = (p && p[0] && p[0].chainId) ? String(p[0].chainId) : null;
             if (!chainId) {
                 return Promise.reject(_wcRpcError("Missing chainId parameter", null, -32602));
             }
@@ -791,7 +730,7 @@
             if (!chainData.nativeCurrency) {
                 return Promise.reject(_wcRpcError("Missing nativeCurrency in chain parameters", null, -32602));
             }
-            var newHex = _normalizeHexChainId(chainData.chainId);
+            var newHex = String(chainData.chainId);
             var newEntry = SUPPORTED_NETWORKS[newHex] || {
                 name: chainData.chainName,
                 chainId: parseInt(newHex, 16),
@@ -807,8 +746,7 @@
         if (_walletScopedMethod(method)) {
             return connect().then(function () {
                 if (_state.mode === "sidecar" && method === "eth_sendTransaction") {
-                    var txParams = (p && p[0]) ? Object.assign({}, p[0]) : {};
-                    if (!txParams.chainId) txParams.chainId = _config.chainHex || DEFAULT_CHAIN_HEX;
+                    var txParams = (p && p[0]) ? p[0] : {};
                     return fetch("/api/wc-tx/" + encodeURIComponent(_state.sessionId), {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -856,47 +794,32 @@
                     });
                 }
                 // Fall through to the in-browser SignClient session.
-                function sendViaBrowserSession() {
-                    return _wcGetClient().then(function (client) {
-                        // Wrap the request with a timeout to prevent the wallet
-                        // (MetaMask Mobile in particular) from hanging
-                        // indefinitely. The wallet sometimes silently drops
-                        // requests so we surface a clear failure after 45s.
-                        var requestPromise = client.request({
-                            topic: _state.browserSession.topic,
-                            chainId: "eip155:" + Number(_config.chainId || DEFAULT_CHAIN_ID),
-                            request: { method: method, params: p }
-                        });
-                        // Fire-and-forget: bring the wallet app to the foreground
-                        // on mobile so the user actually sees the sign / tx
-                        // prompt that's now sitting in the wallet's queue.
-                        // Without this MetaMask Mobile / Trust Wallet etc. are
-                        // happy to receive the request silently and the user
-                        // is left staring at the dApp tab thinking nothing
-                        // happened. This is what @walletconnect/modal does
-                        // internally — we do it manually because we use the
-                        // raw SignClient SDK.
-                        _wakeWalletAppFor(_state.browserSession);
-                        return _withTimeout(requestPromise, 45000,
-                            "WalletConnect request timeout (45s). Wallet may not respond to requests - try refreshing or switching wallets.");
-                    });
+                if (!_state.browserSession) {
+                    throw _wcRpcError("WalletConnect browser session is not active.", null, -32603);
                 }
-
-                if (!_state.browserSession || !_browserSessionSupportsChain(_config.chainId || DEFAULT_CHAIN_ID)) {
-                    // Existing cached WC sessions may have been approved before
-                    // Base/XDC support was added. Clear only the browser session
-                    // and reconnect so the wallet approves all supported chains.
-                    _state.browserSession = null;
-                    _state.address = null;
-                    _state.mode = null;
-                    return connect().then(function () {
-                        if (!_state.browserSession || !_browserSessionSupportsChain(_config.chainId || DEFAULT_CHAIN_ID)) {
-                            throw _wcRpcError("WalletConnect session is not approved for this network. Reconnect WalletConnect and approve Base/XDC permissions.", null, 4902);
-                        }
-                        return sendViaBrowserSession();
+                return _wcGetClient().then(function (client) {
+                    // Wrap the request with a timeout to prevent the wallet
+                    // (MetaMask Mobile in particular) from hanging
+                    // indefinitely. The wallet sometimes silently drops
+                    // requests so we surface a clear failure after 45s.
+                    var requestPromise = client.request({
+                        topic: _state.browserSession.topic,
+                        chainId: "eip155:" + Number(_config.chainId || DEFAULT_CHAIN_ID),
+                        request: { method: method, params: p }
                     });
-                }
-                return sendViaBrowserSession().catch(function (wcErr) {
+                    // Fire-and-forget: bring the wallet app to the foreground
+                    // on mobile so the user actually sees the sign / tx
+                    // prompt that's now sitting in the wallet's queue.
+                    // Without this MetaMask Mobile / Trust Wallet etc. are
+                    // happy to receive the request silently and the user
+                    // is left staring at the dApp tab thinking nothing
+                    // happened. This is what @walletconnect/modal does
+                    // internally — we do it manually because we use the
+                    // raw SignClient SDK.
+                    _wakeWalletAppFor(_state.browserSession);
+                    return _withTimeout(requestPromise, 45000,
+                        "WalletConnect request timeout (45s). Wallet may not respond to requests - try refreshing or switching wallets.");
+                }).catch(function (wcErr) {
                     // Re-throw with .code preserved so ethers.js sees a
                     // proper EIP-1193 error (4001 → user rejected, etc.)
                     // instead of wrapping it as "could not coalesce error".
