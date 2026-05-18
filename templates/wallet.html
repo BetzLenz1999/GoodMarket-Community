@@ -1515,14 +1515,13 @@
     <div class="modal-overlay" id="supClaimModal">
         <div class="modal-sheet">
             <div class="modal-handle"></div>
-            <div class="modal-title">🌊 Check SUP Rewards</div>
+            <div class="modal-title">🌊 SUP Rewards</div>
 
             <div style="background:rgba(255,122,24,0.10);border:1px solid rgba(255,122,24,0.28);border-radius:16px;padding:1rem;margin-bottom:1rem;text-align:left;">
                 <div style="font-size:0.78rem;color:#fed7aa;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.35rem;">Superfluid on Base</div>
-                <div style="color:#fff;font-weight:800;font-size:1.05rem;margin-bottom:0.45rem;">Official claim-app handoff</div>
+                <div style="color:#fff;font-weight:800;font-size:1.05rem;margin-bottom:0.45rem;">Native on-chain claim</div>
                 <div style="color:var(--text-dim);font-size:0.84rem;line-height:1.45;">
-                    GoodMarket does not currently have a public Superfluid SUP claim API to call directly.
-                    We use your already connected wallet for context, then send you to Superfluid's official app to check eligibility and sign any claim.
+                    Reads your SUP wallet balance and every Superfluid GDA pool you have units in, then lets you claim directly with your connected wallet — no redirect needed.
                 </div>
             </div>
 
@@ -1531,21 +1530,39 @@
                     <div class="claim-network-main">
                         <div class="claim-network-icon" id="supClaimIcon">⏳</div>
                         <div>
-                            <div class="claim-network-name" id="supClaimTitle">Preparing SUP check…</div>
-                            <div class="claim-network-hint" id="supClaimHint">Reading your GoodMarket session wallet and public SUP balance on Base when available.</div>
+                            <div class="claim-network-name" id="supClaimTitle">Checking your SUP…</div>
+                            <div class="claim-network-hint" id="supClaimHint">Reading wallet balance and pool memberships on Base.</div>
                         </div>
                     </div>
                     <div class="claim-network-status" id="supClaimStatusPill">Loading</div>
                 </div>
             </div>
 
-            <div id="supClaimDetails" style="margin-top:0.85rem;color:var(--text-dim);font-size:0.8rem;line-height:1.5;text-align:left;">
-                Please wait while GoodMarket prepares the non-custodial SUP claim handoff.
+            <div id="supClaimSummary" style="display:none;margin-top:0.85rem;display:grid;grid-template-columns:1fr 1fr;gap:0.55rem;text-align:left;">
+                <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:0.7rem 0.85rem;">
+                    <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem;">In wallet</div>
+                    <div style="font-weight:800;font-size:1.05rem;color:#fff;"><span id="supWalletBalance">0</span> SUP</div>
+                </div>
+                <div style="background:rgba(255,122,24,0.10);border:1px solid rgba(255,122,24,0.28);border-radius:12px;padding:0.7rem 0.85rem;">
+                    <div style="font-size:0.7rem;color:#fed7aa;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem;">Claimable now</div>
+                    <div style="font-weight:800;font-size:1.05rem;color:#fff;"><span id="supClaimableBalance">0</span> SUP</div>
+                </div>
             </div>
 
-            <button id="supClaimOpenBtn" class="btn-primary" onclick="openOfficialSupClaim()" disabled style="margin-top:1rem;background:linear-gradient(135deg,#ff7a18,#af002d);">
+            <div id="supClaimPoolList" style="display:none;margin-top:0.7rem;text-align:left;max-height:180px;overflow-y:auto;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:0.45rem 0.55rem;"></div>
+
+            <div id="supClaimDetails" style="margin-top:0.85rem;color:var(--text-dim);font-size:0.8rem;line-height:1.5;text-align:left;">
+                Please wait while GoodMarket checks your SUP status on Base.
+            </div>
+
+            <div id="supClaimProgress" style="display:none;margin-top:0.85rem;background:rgba(124,58,237,0.10);border:1px solid rgba(124,58,237,0.28);border-radius:12px;padding:0.7rem 0.85rem;color:#e0e7ff;font-size:0.82rem;text-align:left;"></div>
+
+            <button id="supClaimNativeBtn" class="btn-primary" onclick="claimSupNative()" disabled style="margin-top:1rem;background:linear-gradient(135deg,#ff7a18,#af002d);">
                 <span>🌊</span>
-                <span>Check / Claim on Superfluid</span>
+                <span id="supClaimNativeLabel">Claim SUP</span>
+            </button>
+            <button id="supClaimOpenBtn" class="btn-secondary" onclick="openOfficialSupClaim()" style="margin-top:0.55rem;">
+                Open on Superfluid app
             </button>
             <button class="btn-secondary" onclick="closeModal('supClaimModal')">Close</button>
         </div>
@@ -2108,74 +2125,372 @@
     }
 
 
-    // ── SUP Claim handoff ───────────────────────────────────────
+    // ── SUP Claim (native Superfluid GDA on Base) ─────────────────
+    // The frontend hits two endpoints:
+    //   GET /api/sup/claim/availability → wallet balance + per-pool claimable
+    //   GET /api/sup/claim/prepare      → unsigned claimAll txs to sign
+    // and sends each tx through the user's wallet via the WalletConnect
+    // bridge (or window.ethereum). Claims target the Superfluid
+    // GDAv1Forwarder on Base mainnet (chain 8453).
+    const SUP_BASE_CHAIN_ID_HEX = '0x2105'; // 8453
     let supClaimUrl = 'https://claim.superfluid.org/claim';
+    let _supClaimInFlight = false;
+    let _supLastAvailability = null;
 
-    function setSupClaimState(icon, title, hint, pill, details, canOpen) {
+    function _supSetState(icon, title, hint, pill) {
         const iconEl = document.getElementById('supClaimIcon');
         const titleEl = document.getElementById('supClaimTitle');
         const hintEl = document.getElementById('supClaimHint');
         const pillEl = document.getElementById('supClaimStatusPill');
-        const detailsEl = document.getElementById('supClaimDetails');
-        const openBtn = document.getElementById('supClaimOpenBtn');
         if (iconEl) iconEl.textContent = icon;
         if (titleEl) titleEl.textContent = title;
         if (hintEl) hintEl.textContent = hint;
         if (pillEl) pillEl.textContent = pill;
-        if (detailsEl) detailsEl.innerHTML = details;
-        if (openBtn) openBtn.disabled = !canOpen;
+    }
+
+    function _supSetDetails(html) {
+        const el = document.getElementById('supClaimDetails');
+        if (el) el.innerHTML = html;
+    }
+
+    function _supSetProgress(html) {
+        const el = document.getElementById('supClaimProgress');
+        if (!el) return;
+        if (!html) {
+            el.style.display = 'none';
+            el.innerHTML = '';
+        } else {
+            el.style.display = 'block';
+            el.innerHTML = html;
+        }
+    }
+
+    function _supSetClaimButton(label, disabled) {
+        const btn = document.getElementById('supClaimNativeBtn');
+        const labelEl = document.getElementById('supClaimNativeLabel');
+        if (labelEl) labelEl.textContent = label;
+        if (btn) btn.disabled = !!disabled;
+    }
+
+    function _supShortAddr(addr) {
+        if (!addr) return '';
+        return addr.slice(0, 6) + '…' + addr.slice(-4);
+    }
+
+    function _supRenderPoolList(pools, decimals) {
+        const listEl = document.getElementById('supClaimPoolList');
+        const summaryEl = document.getElementById('supClaimSummary');
+        if (!listEl || !summaryEl) return;
+        if (!pools || pools.length === 0) {
+            listEl.style.display = 'none';
+            listEl.innerHTML = '';
+            return;
+        }
+        listEl.style.display = 'block';
+        const rows = pools.map((p) => {
+            const claimable = p.claimable_now_formatted || '0';
+            const pill = parseFloat(claimable) > 0 ? '#fed7aa' : 'var(--text-muted)';
+            const claimableHtml = p.error
+                ? `<span style="color:#fbbf24;font-size:0.72rem;">unavailable</span>`
+                : `<span style="color:${pill};font-weight:700;">${claimable} SUP</span>`;
+            return `
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.45rem;padding:0.4rem 0.25rem;border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <div style="min-width:0;">
+                        <div style="font-size:0.78rem;color:#fff;font-weight:600;">Pool ${_supShortAddr(p.pool_address)}</div>
+                        <div style="font-size:0.68rem;color:var(--text-muted);">${p.is_connected ? 'connected stream' : 'instant distribution'} · ${p.units} units</div>
+                    </div>
+                    <div style="text-align:right;white-space:nowrap;font-size:0.82rem;">${claimableHtml}</div>
+                </div>
+            `;
+        }).join('');
+        listEl.innerHTML = rows;
+    }
+
+    function _supShowSummary(walletFmt, claimableFmt) {
+        const summaryEl = document.getElementById('supClaimSummary');
+        const walletEl = document.getElementById('supWalletBalance');
+        const claimableEl = document.getElementById('supClaimableBalance');
+        if (summaryEl) summaryEl.style.display = 'grid';
+        if (walletEl) walletEl.textContent = walletFmt || '0';
+        if (claimableEl) claimableEl.textContent = claimableFmt || '0';
     }
 
     async function openSupClaimModal() {
         openModal('supClaimModal');
-        setSupClaimState(
+        _supSetState(
             '⏳',
             'Checking SUP status…',
-            'Using your already connected GoodMarket wallet — no reconnect needed.',
-            'Loading',
-            'GoodMarket is preparing the official Superfluid handoff. There is no direct public SUP claim API integrated yet.',
-            false
+            'Reading wallet balance and pool memberships on Base.',
+            'Loading'
         );
+        _supSetDetails('Please wait while GoodMarket checks your SUP status on Base.');
+        _supSetProgress('');
+        _supSetClaimButton('Claim SUP', true);
+        const summaryEl = document.getElementById('supClaimSummary');
+        if (summaryEl) summaryEl.style.display = 'none';
+        const listEl = document.getElementById('supClaimPoolList');
+        if (listEl) { listEl.style.display = 'none'; listEl.innerHTML = ''; }
 
         try {
             const res = await fetch('/api/sup/claim/availability', { cache: 'no-store' });
             const data = await res.json();
             if (!res.ok || !data.success) throw new Error(data.error || 'SUP check failed');
 
+            _supLastAvailability = data;
             supClaimUrl = data.official_claim_url || supClaimUrl;
-            const balance = data.sup_balance_formatted || '0';
-            const balanceLine = data.balance_warning
-                ? `<div style="color:#fbbf24;">${data.balance_warning}</div>`
-                : `<div><strong>Current SUP balance:</strong> ${balance} SUP</div>`;
-            const walletLine = data.wallet
-                ? `<div><strong>Wallet:</strong> ${data.wallet.slice(0, 6)}…${data.wallet.slice(-4)}</div>`
-                : '';
 
-            setSupClaimState(
-                '🌊',
-                'Ready to open official SUP claim check',
-                'GoodMarket has not integrated a direct public SUP claim API; Superfluid’s official app remains the eligibility source of truth.',
-                'Handoff',
-                `${walletLine}${balanceLine}` +
-                `<div><strong>Network:</strong> Base (${data.chain_id || 8453})</div>` +
-                `<div style="margin-top:0.55rem;color:#fed7aa;">This is an official-app handoff, not a native SUP claim API integration. Tap below to check eligibility and sign any claim on Superfluid.</div>`,
-                true
-            );
+            const walletFmt = data.sup_balance_formatted || '0';
+            const claimableFmt = data.total_claimable_formatted || '0';
+            _supShowSummary(walletFmt, claimableFmt);
+            _supRenderPoolList(data.pools || [], data.decimals || 18);
+
+            const totalClaimable = parseFloat(claimableFmt) || 0;
+            const poolCount = data.pool_count || 0;
+            const claimablePoolCount = data.claimable_pool_count || 0;
+
+            let detailParts = [];
+            if (data.wallet) {
+                detailParts.push(`<div><strong>Wallet:</strong> ${_supShortAddr(data.wallet)}</div>`);
+            }
+            detailParts.push(`<div><strong>Network:</strong> Base (chain ${data.chain_id || 8453})</div>`);
+            detailParts.push(`<div><strong>Pools indexed:</strong> ${poolCount} · ${claimablePoolCount} with claimable balance</div>`);
+            if (data.balance_warning) {
+                detailParts.push(`<div style="color:#fbbf24;margin-top:0.35rem;">${data.balance_warning}</div>`);
+            }
+            if (data.pools_warning) {
+                detailParts.push(`<div style="color:#fbbf24;margin-top:0.35rem;">${data.pools_warning}</div>`);
+            }
+            _supSetDetails(detailParts.join(''));
+
+            if (totalClaimable > 0) {
+                _supSetState(
+                    '🌊',
+                    `Ready to claim ${claimableFmt} SUP`,
+                    `${claimablePoolCount} Superfluid pool${claimablePoolCount === 1 ? '' : 's'} have pending rewards.`,
+                    'Ready'
+                );
+                _supSetClaimButton(`Claim ${claimableFmt} SUP`, false);
+            } else if (poolCount > 0) {
+                _supSetState(
+                    '🌊',
+                    'No pending SUP right now',
+                    'You are a member of Superfluid pools, but nothing is claimable yet. Keep earning!',
+                    'Up to date'
+                );
+                _supSetClaimButton('Nothing to claim', true);
+            } else if (parseFloat(walletFmt) > 0) {
+                _supSetState(
+                    '🌊',
+                    `You hold ${walletFmt} SUP`,
+                    'Wallet has SUP but no active pool memberships were found.',
+                    'Holding'
+                );
+                _supSetClaimButton('Nothing to claim', true);
+            } else {
+                _supSetState(
+                    '🌊',
+                    'No SUP detected for this wallet',
+                    'Earn SUP by using Superfluid-powered apps, then come back to claim.',
+                    'Empty'
+                );
+                _supSetClaimButton('Nothing to claim', true);
+            }
         } catch (e) {
             console.warn('[sup-claim] availability check failed:', e);
-            setSupClaimState(
+            _supSetState(
                 '⚠️',
                 'SUP status check unavailable',
-                'You can still open the official Superfluid claim app and check there.',
-                'Open app',
-                'GoodMarket could not reach the SUP status endpoint right now. The official Superfluid app remains the source of truth for daily eligibility and wallet-signed claiming.',
-                true
+                'You can still open the official Superfluid claim app.',
+                'Offline'
             );
+            _supSetDetails(
+                'GoodMarket could not reach the Superfluid subgraph or Base RPC right now. ' +
+                'The official Superfluid app remains a safe fallback for checking eligibility and claiming.'
+            );
+            _supSetClaimButton('Claim SUP', true);
         }
     }
 
     function openOfficialSupClaim() {
         window.open(supClaimUrl || 'https://claim.superfluid.org/claim', '_blank', 'noopener,noreferrer');
+    }
+
+    async function _supGetWalletProvider() {
+        // Mirrors the existing pattern from the claim/send flows: prefer
+        // window.ethereum if present (injected wallets like MetaMask) and
+        // fall back to the GoodMarket WalletConnect bridge for users that
+        // logged in via WC / manual address.
+        try {
+            if (typeof _vAwaitEthProvider === 'function') {
+                const injected = await _vAwaitEthProvider();
+                if (injected) return injected;
+            }
+        } catch (_) { /* keep trying the bridge */ }
+        if (typeof GMWalletConnect !== 'undefined' && GMWalletConnect.isPreferred && GMWalletConnect.isPreferred()) {
+            try {
+                return await GMWalletConnect.getProvider();
+            } catch (_) { /* fall through */ }
+        }
+        if (typeof window !== 'undefined' && window.ethereum) return window.ethereum;
+        if (typeof GMWalletConnect !== 'undefined' && GMWalletConnect.getProvider) {
+            try { return await GMWalletConnect.getProvider(); } catch (_) { /* no-op */ }
+        }
+        return null;
+    }
+
+    async function _supEnsureBaseChain(provider) {
+        let current = null;
+        try {
+            current = await provider.request({ method: 'eth_chainId' });
+        } catch (_) { /* assume mismatch */ }
+        if (current && String(current).toLowerCase() === SUP_BASE_CHAIN_ID_HEX) return;
+        try {
+            await provider.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: SUP_BASE_CHAIN_ID_HEX }]
+            });
+            return;
+        } catch (switchErr) {
+            if (switchErr && switchErr.code === 4001) {
+                throw new Error('Base network switch was cancelled.');
+            }
+            if (switchErr && switchErr.code !== 4902) {
+                // Some wallets accept the switch even though they return a
+                // non-standard error. Try addEthereumChain too before giving up.
+                try {
+                    await provider.request({
+                        method: 'wallet_addEthereumChain',
+                        params: [{
+                            chainId: SUP_BASE_CHAIN_ID_HEX,
+                            chainName: 'Base',
+                            rpcUrls: ['https://mainnet.base.org'],
+                            nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                            blockExplorerUrls: ['https://basescan.org']
+                        }]
+                    });
+                    return;
+                } catch (addErr) {
+                    if (addErr && addErr.code === 4001) {
+                        throw new Error('Adding Base network was cancelled.');
+                    }
+                    throw new Error((addErr && addErr.message) || (switchErr && switchErr.message) || 'Could not switch to Base network.');
+                }
+            }
+            // 4902 → wallet doesn't know about Base yet. Add it.
+            try {
+                await provider.request({
+                    method: 'wallet_addEthereumChain',
+                    params: [{
+                        chainId: SUP_BASE_CHAIN_ID_HEX,
+                        chainName: 'Base',
+                        rpcUrls: ['https://mainnet.base.org'],
+                        nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                        blockExplorerUrls: ['https://basescan.org']
+                    }]
+                });
+            } catch (addErr) {
+                if (addErr && addErr.code === 4001) {
+                    throw new Error('Adding Base network was cancelled.');
+                }
+                throw new Error((addErr && addErr.message) || 'Could not add Base network.');
+            }
+        }
+    }
+
+    async function claimSupNative() {
+        if (_supClaimInFlight) return;
+        _supClaimInFlight = true;
+        _supSetClaimButton('Preparing claim…', true);
+        _supSetProgress('Loading claim transactions from GoodMarket…');
+
+        try {
+            const prepRes = await fetch('/api/sup/claim/prepare', { cache: 'no-store' });
+            const prep = await prepRes.json();
+            if (!prepRes.ok || !prep.success) {
+                throw new Error(prep && prep.error ? prep.error : 'Could not prepare SUP claim transactions.');
+            }
+            const txs = prep.transactions || [];
+            if (txs.length === 0) {
+                _supSetProgress(prep.message || 'No claimable SUP right now.');
+                _supSetClaimButton('Nothing to claim', true);
+                return;
+            }
+
+            const provider = await _supGetWalletProvider();
+            if (!provider) {
+                _supSetProgress(
+                    'No wallet provider detected in the browser. Open GoodMarket from your wallet app, or use the “Open on Superfluid app” button below.'
+                );
+                _supSetClaimButton(`Claim ${prep.total_claimable_formatted || ''} SUP`.trim(), false);
+                return;
+            }
+
+            _supSetProgress('Switching your wallet to Base network…');
+            try {
+                await _supEnsureBaseChain(provider);
+            } catch (chainErr) {
+                _supSetProgress(`⚠️ ${chainErr.message || chainErr}`);
+                _supSetClaimButton(`Claim ${prep.total_claimable_formatted || ''} SUP`.trim(), false);
+                return;
+            }
+
+            let succeeded = 0;
+            let failed = 0;
+            const txLines = [];
+            for (let i = 0; i < txs.length; i++) {
+                const tx = txs[i];
+                const headline = `Signing claim ${i + 1} of ${txs.length} — ${tx.claimable_now_formatted} SUP from pool ${_supShortAddr(tx.pool_address)}…`;
+                _supSetProgress(`${headline}<br/>${txLines.join('<br/>')}`);
+                try {
+                    // Omit the non-standard `chainId` field from the params:
+                    // MetaMask Mobile / Trust Wallet reject it even after a
+                    // successful chain switch. The wallet is already pinned
+                    // to Base by _supEnsureBaseChain above.
+                    const txParams = {
+                        from: tx.from,
+                        to: tx.to,
+                        data: tx.data,
+                        value: tx.value || '0x0'
+                    };
+                    const txHash = await provider.request({
+                        method: 'eth_sendTransaction',
+                        params: [txParams]
+                    });
+                    succeeded += 1;
+                    const explorerUrl = `https://basescan.org/tx/${txHash}`;
+                    txLines.push(`✅ Pool ${_supShortAddr(tx.pool_address)} → <a href="${explorerUrl}" target="_blank" rel="noopener noreferrer" style="color:#a78bfa;">${txHash.slice(0, 10)}…</a>`);
+                } catch (sendErr) {
+                    failed += 1;
+                    if (sendErr && sendErr.code === 4001) {
+                        txLines.push(`✋ Pool ${_supShortAddr(tx.pool_address)} — cancelled in wallet`);
+                        _supSetProgress(`Claim cancelled. ${succeeded} of ${txs.length} succeeded.<br/>${txLines.join('<br/>')}`);
+                        _supSetClaimButton(`Claim remaining SUP`, false);
+                        return;
+                    }
+                    const msg = (sendErr && sendErr.message) ? String(sendErr.message) : 'Unknown error';
+                    txLines.push(`⚠️ Pool ${_supShortAddr(tx.pool_address)} — ${msg.slice(0, 80)}`);
+                }
+            }
+
+            if (succeeded === txs.length) {
+                _supSetProgress(`🎉 Claimed SUP from ${succeeded} pool${succeeded === 1 ? '' : 's'}.<br/>${txLines.join('<br/>')}`);
+                _supSetClaimButton('Refresh balance', false);
+                // Refresh availability so the modal shows the new state.
+                setTimeout(() => { openSupClaimModal(); }, 1200);
+            } else if (succeeded > 0) {
+                _supSetProgress(`Partial: ${succeeded} of ${txs.length} pool claims succeeded.<br/>${txLines.join('<br/>')}`);
+                _supSetClaimButton('Retry remaining', false);
+            } else {
+                _supSetProgress(`No claims went through. ${failed} attempt${failed === 1 ? '' : 's'} failed.<br/>${txLines.join('<br/>')}`);
+                _supSetClaimButton('Try again', false);
+            }
+        } catch (e) {
+            console.warn('[sup-claim] native claim failed:', e);
+            _supSetProgress(`⚠️ ${(e && e.message) || 'Could not start SUP claim.'}`);
+            _supSetClaimButton('Try again', false);
+        } finally {
+            _supClaimInFlight = false;
+        }
     }
 
     // ── Modal ────────────────────────────────────────────────

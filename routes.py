@@ -6280,90 +6280,412 @@ def ubi_entitlement():
         return jsonify({"success": False, "error": str(e), "entitlement": 0, "can_claim": False}), 500
 
 
+# ── Superfluid SUP (Base) integration ───────────────────────────────────
+# Superfluid does not expose a single REST API for claiming the SUP token.
+# However the protocol's General Distribution Agreement (GDA) is fully public
+# on-chain, and the official subgraph indexes every pool a wallet has units
+# in. The two endpoints below implement a native, wallet-signed claim flow:
+#
+#   GET  /api/sup/claim/availability  → read wallet balance + per-pool
+#                                       claimable amounts via subgraph + RPC
+#   GET  /api/sup/claim/prepare       → return the list of `claimAll(pool,
+#                                       member, "0x")` transactions the
+#                                       frontend should sign through the
+#                                       user's wallet (WalletConnect / EIP-1193)
+SUP_BASE_CHAIN_ID = 8453
+SUP_BASE_CHAIN_HEX = "0x2105"
+SUP_DEFAULT_TOKEN_ADDRESS = "0xa69f80524381275A7fFdb3AE01c54150644c8792"
+SUP_DEFAULT_BASE_RPC = "https://mainnet.base.org"
+SUP_DEFAULT_SUBGRAPH_URL = (
+    "https://subgraph-endpoints.superfluid.dev/base-mainnet/protocol-v1"
+)
+# The GDAv1Forwarder contract address is the same on every Superfluid chain.
+# See https://docs.superfluid.org/docs/technical-reference/GDAv1Forwarder
+SUP_GDA_FORWARDER_ADDRESS = "0x6DA13Bde224A05a288748d857b9e7DDEffd1dE08"
+SUP_OFFICIAL_CLAIM_URL = "https://claim.superfluid.org/claim"
+
+_SUP_TOKEN_ABI = [
+    {
+        "inputs": [{"name": "account", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{"name": "", "type": "uint8"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+_SUP_POOL_ABI = [
+    {
+        "inputs": [{"name": "memberAddr", "type": "address"}],
+        "name": "getClaimableNow",
+        "outputs": [
+            {"name": "claimableBalance", "type": "int256"},
+            {"name": "timestamp", "type": "uint256"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [{"name": "memberAddr", "type": "address"}],
+        "name": "getUnits",
+        "outputs": [{"name": "", "type": "uint128"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+_SUP_GDA_FORWARDER_ABI = [
+    {
+        "inputs": [
+            {"internalType": "address", "name": "pool", "type": "address"},
+            {"internalType": "address", "name": "memberAddress", "type": "address"},
+            {"internalType": "bytes", "name": "userData", "type": "bytes"},
+        ],
+        "name": "claimAll",
+        "outputs": [{"internalType": "bool", "name": "success", "type": "bool"}],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+]
+
+
+def _sup_format_balance(raw: int, decimals: int = 18) -> str:
+    """Pretty-print a SUP balance with up to 6 decimal places, no trailing 0s."""
+    if raw == 0:
+        return "0"
+    value = Decimal(raw) / (Decimal(10) ** Decimal(decimals))
+    formatted = f"{value:.6f}".rstrip("0").rstrip(".")
+    return formatted or "0"
+
+
+def _sup_fetch_pool_memberships(wallet: str, token_address: str, subgraph_url: str) -> list:
+    """Query the Superfluid subgraph for every GDA pool the wallet has units in
+    for the given SUP token. Returns a list of dicts with pool metadata so the
+    caller can resolve per-pool claimable balances on-chain.
+    """
+    query = (
+        "query ($member: String!, $token: String!) {\n"
+        "  poolMembers(\n"
+        "    first: 100\n"
+        "    where: { account: $member, units_gt: \"0\", pool_: { token: $token } }\n"
+        "  ) {\n"
+        "    id\n"
+        "    units\n"
+        "    isConnected\n"
+        "    totalAmountClaimed\n"
+        "    totalAmountReceivedUntilUpdatedAt\n"
+        "    pool {\n"
+        "      id\n"
+        "      totalUnits\n"
+        "      flowRate\n"
+        "      admin { id }\n"
+        "      token { id symbol }\n"
+        "    }\n"
+        "  }\n"
+        "}"
+    )
+    payload = json.dumps({
+        "query": query,
+        "variables": {
+            "member": wallet.lower(),
+            "token": token_address.lower(),
+        },
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        subgraph_url,
+        data=payload,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        body = resp.read().decode("utf-8")
+    data = json.loads(body)
+    if data.get("errors"):
+        raise RuntimeError(f"Superfluid subgraph errors: {data['errors']}")
+    return (data.get("data") or {}).get("poolMembers") or []
+
+
+def _sup_read_pools_claimable(
+    w3: Web3, wallet: str, memberships: list, decimals: int
+) -> list:
+    """For each pool the wallet is a member of, read the on-chain claimable
+    amount via `ISuperfluidPool.getClaimableNow(member)`. Returns a normalized
+    list ready to JSON-serialize.
+    """
+    pools: list = []
+    member_addr = Web3.to_checksum_address(wallet)
+    for membership in memberships:
+        pool_meta = membership.get("pool") or {}
+        pool_address = pool_meta.get("id")
+        if not pool_address or not Web3.is_address(pool_address):
+            continue
+        entry = {
+            "pool_address": Web3.to_checksum_address(pool_address),
+            "pool_admin": (pool_meta.get("admin") or {}).get("id"),
+            "units": str(membership.get("units") or "0"),
+            "is_connected": bool(membership.get("isConnected")),
+            "total_amount_claimed": str(membership.get("totalAmountClaimed") or "0"),
+            "total_amount_received_until_updated_at": str(
+                membership.get("totalAmountReceivedUntilUpdatedAt") or "0"
+            ),
+            "claimable_now": "0",
+            "claimable_now_formatted": "0",
+        }
+        try:
+            pool_contract = w3.eth.contract(
+                address=Web3.to_checksum_address(pool_address),
+                abi=_SUP_POOL_ABI,
+            )
+            claimable, _ts = pool_contract.functions.getClaimableNow(member_addr).call()
+            claimable_int = int(claimable)
+            if claimable_int < 0:
+                # Negative values are possible for disconnected members that
+                # already withdrew slightly more than their settled balance.
+                # Treat as zero claimable for UI purposes.
+                claimable_int = 0
+            entry["claimable_now"] = str(claimable_int)
+            entry["claimable_now_formatted"] = _sup_format_balance(claimable_int, decimals)
+        except Exception as e:
+            logger.warning(
+                "sup pool getClaimableNow failed pool=%s wallet=%s err=%s",
+                pool_address, wallet, e,
+            )
+            entry["error"] = "Could not read claimable amount for this pool right now."
+        pools.append(entry)
+    # Sort largest claimable first so the UI surfaces the meaningful pools.
+    pools.sort(key=lambda p: int(p.get("claimable_now") or 0), reverse=True)
+    return pools
+
+
+def _sup_runtime_config() -> dict:
+    """Resolve the runtime configuration used by both SUP endpoints."""
+    return {
+        "base_rpc_url": os.getenv("BASE_RPC_URL", SUP_DEFAULT_BASE_RPC),
+        "sup_token_address": os.getenv("SUP_TOKEN_ADDRESS", SUP_DEFAULT_TOKEN_ADDRESS),
+        "subgraph_url": os.getenv("SUPERFLUID_SUBGRAPH_URL", SUP_DEFAULT_SUBGRAPH_URL),
+        "official_claim_url": os.getenv("SUP_CLAIM_URL", SUP_OFFICIAL_CLAIM_URL),
+        "gda_forwarder": os.getenv("SUP_GDA_FORWARDER", SUP_GDA_FORWARDER_ADDRESS),
+    }
+
+
 @routes.route("/api/sup/claim/availability", methods=["GET"])
 @auth_required
 def sup_claim_availability():
-    """Return non-custodial SUP claim guidance for the logged-in wallet.
+    """Return the SUP claim status (wallet balance + per-pool claimable) for
+    the logged-in wallet.
 
-    Superfluid's public claim flow is wallet-signed on Base, but the native
-    eligibility/signature payload is not documented as a public API. GoodMarket
-    therefore verifies the logged-in wallet context, reads the public SUP token
-    balance when possible, and routes the user to the official Superfluid claim
-    app for the authoritative daily eligibility check and claim transaction.
+    Superfluid does not expose a public REST API for the daily eligibility
+    payload, but the same data is available on-chain through the General
+    Distribution Agreement (GDA): the Superfluid subgraph indexes every pool a
+    wallet has units in, and each pool exposes `getClaimableNow(member)` for
+    the pending amount. The frontend uses this response to decide whether to
+    enable the native "Claim SUP" button or simply offer the official
+    Superfluid app as a fallback.
     """
-    wallet = session.get("wallet")
-    base_rpc_url = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
-    sup_token_address = os.getenv("SUP_TOKEN_ADDRESS", "0xa69f80524381275A7fFdb3AE01c54150644c8792")
-    official_claim_url = os.getenv("SUP_CLAIM_URL", "https://claim.superfluid.org/claim")
+    wallet = (session.get("wallet") or "").strip()
+    cfg = _sup_runtime_config()
 
     result = {
         "success": True,
-        "wallet": (wallet or "").lower(),
+        "wallet": wallet.lower(),
         "network": "base",
-        "chain_id": 8453,
+        "chain_id": SUP_BASE_CHAIN_ID,
+        "chain_hex": SUP_BASE_CHAIN_HEX,
         "token_symbol": "SUP",
-        "token_address": sup_token_address,
-        "official_claim_url": official_claim_url,
-        "claim_cadence": "daily",
-        "can_claim": None,
-        "eligible": None,
-        "integration_type": "official_claim_handoff",
-        "public_claim_api_found": False,
-        "native_claim_supported": False,
-        "eligibility_check_supported": False,
+        "token_address": cfg["sup_token_address"],
+        "official_claim_url": cfg["official_claim_url"],
+        "gda_forwarder": cfg["gda_forwarder"],
+        "claim_cadence": "continuous",
+        "integration_type": "native_on_chain",
+        "public_claim_api_found": True,
+        "native_claim_supported": True,
+        "eligibility_check_supported": True,
         "requires_wallet_signature": True,
-        "reason": (
-            "Superfluid eligibility and claim payloads are checked by the official "
-            "Superfluid claim app. GoodMarket keeps this non-custodial by using "
-            "the already connected wallet and sending the user to the official "
-            "wallet-signed Base claim flow."
+        "message": (
+            "SUP rewards stream from Superfluid GDA pools. GoodMarket reads "
+            "the official Superfluid subgraph for the pools your wallet has "
+            "units in, then checks `getClaimableNow(member)` on each pool to "
+            "show the exact pending amount. Tap Claim to sign one transaction "
+            "per pool through your connected wallet."
         ),
-        "message": "No public Superfluid SUP claim API is integrated in GoodMarket yet. SUP rewards are checked daily in the official claim app; open it to confirm eligibility and sign any claim with your wallet.",
         "sup_balance": None,
         "sup_balance_formatted": None,
+        "total_claimable": "0",
+        "total_claimable_formatted": "0",
+        "total_units": "0",
+        "pool_count": 0,
+        "claimable_pool_count": 0,
+        "pools": [],
+        "decimals": 18,
     }
 
+    if not wallet or not Web3.is_address(wallet):
+        result["balance_warning"] = (
+            "No wallet found in the GoodMarket session. Log in again to refresh your wallet."
+        )
+        return jsonify(result)
+    if not Web3.is_address(cfg["sup_token_address"]):
+        result["balance_warning"] = "SUP_TOKEN_ADDRESS is misconfigured on the server."
+        return jsonify(result)
+
+    member_addr = Web3.to_checksum_address(wallet)
+    token_addr = Web3.to_checksum_address(cfg["sup_token_address"])
+
+    # 1) Read on-chain wallet balance + decimals via the SUP token contract.
+    w3 = Web3(Web3.HTTPProvider(cfg["base_rpc_url"], request_kwargs={"timeout": 8}))
+    decimals = 18
     try:
-        if wallet and Web3.is_address(wallet) and Web3.is_address(sup_token_address):
-            w3 = Web3(Web3.HTTPProvider(base_rpc_url, request_kwargs={"timeout": 8}))
-            token = w3.eth.contract(
-                address=Web3.to_checksum_address(sup_token_address),
-                abi=[
-                    {
-                        "constant": True,
-                        "inputs": [{"name": "account", "type": "address"}],
-                        "name": "balanceOf",
-                        "outputs": [{"name": "", "type": "uint256"}],
-                        "payable": False,
-                        "stateMutability": "view",
-                        "type": "function",
-                    },
-                    {
-                        "constant": True,
-                        "inputs": [],
-                        "name": "decimals",
-                        "outputs": [{"name": "", "type": "uint8"}],
-                        "payable": False,
-                        "stateMutability": "view",
-                        "type": "function",
-                    },
-                ],
-            )
-            raw_balance = int(token.functions.balanceOf(Web3.to_checksum_address(wallet)).call())
-            try:
-                decimals = int(token.functions.decimals().call())
-            except Exception:
-                decimals = 18
-            formatted = Decimal(raw_balance) / (Decimal(10) ** Decimal(decimals))
-            result.update({
-                "sup_balance": str(raw_balance),
-                "sup_balance_formatted": f"{formatted:.6f}".rstrip("0").rstrip(".") or "0",
-            })
+        token = w3.eth.contract(address=token_addr, abi=_SUP_TOKEN_ABI)
+        raw_balance = int(token.functions.balanceOf(member_addr).call())
+        try:
+            decimals = int(token.functions.decimals().call())
+        except Exception:
+            decimals = 18
+        result["decimals"] = decimals
+        result["sup_balance"] = str(raw_balance)
+        result["sup_balance_formatted"] = _sup_format_balance(raw_balance, decimals)
     except Exception as e:
-        logger.warning("sup_claim_availability balance check failed for %s: %s", wallet, e)
-        result["balance_warning"] = "Could not read SUP balance from Base RPC right now."
+        logger.warning("sup_claim_availability balanceOf failed for %s: %s", wallet, e)
+        result["balance_warning"] = "Could not read SUP wallet balance from Base RPC right now."
+
+    # 2) Query subgraph for the wallet's SUP pool memberships, then read the
+    #    claimable amount on each pool on-chain.
+    try:
+        memberships = _sup_fetch_pool_memberships(wallet, token_addr, cfg["subgraph_url"])
+        pools = _sup_read_pools_claimable(w3, wallet, memberships, decimals)
+        result["pools"] = pools
+        result["pool_count"] = len(pools)
+        total_units = sum(int(p.get("units") or 0) for p in pools)
+        total_claimable = sum(int(p.get("claimable_now") or 0) for p in pools)
+        result["total_units"] = str(total_units)
+        result["total_claimable"] = str(total_claimable)
+        result["total_claimable_formatted"] = _sup_format_balance(total_claimable, decimals)
+        result["claimable_pool_count"] = sum(
+            1 for p in pools if int(p.get("claimable_now") or 0) > 0
+        )
+        result["can_claim"] = total_claimable > 0
+        result["eligible"] = len(pools) > 0
+    except Exception as e:
+        logger.warning("sup_claim_availability subgraph lookup failed for %s: %s", wallet, e)
+        result["pools_warning"] = (
+            "Could not load your Superfluid pool memberships right now. "
+            "Try again in a moment or open the official Superfluid claim app."
+        )
 
     return jsonify(result)
+
+
+@routes.route("/api/sup/claim/prepare", methods=["GET"])
+@auth_required
+def sup_claim_prepare():
+    """Return the unsigned `claimAll` transactions the frontend should submit
+    through the user's wallet to claim pending SUP across every pool the
+    wallet has units in.
+
+    The server does NOT sign or relay these transactions — claiming is
+    fully non-custodial. The frontend is expected to pipe each entry into
+    `provider.request({ method: "eth_sendTransaction", params: [tx] })` on the
+    user's wallet (with Base chain selected).
+    """
+    wallet = (session.get("wallet") or "").strip()
+    cfg = _sup_runtime_config()
+
+    response = {
+        "success": True,
+        "wallet": wallet.lower(),
+        "chain_id": SUP_BASE_CHAIN_ID,
+        "chain_hex": SUP_BASE_CHAIN_HEX,
+        "gda_forwarder": cfg["gda_forwarder"],
+        "token_address": cfg["sup_token_address"],
+        "transactions": [],
+        "total_claimable": "0",
+        "total_claimable_formatted": "0",
+        "decimals": 18,
+        "official_claim_url": cfg["official_claim_url"],
+    }
+
+    if not wallet or not Web3.is_address(wallet):
+        return jsonify({**response, "success": False, "error": "missing_wallet"}), 400
+    if not Web3.is_address(cfg["sup_token_address"]):
+        return jsonify({**response, "success": False, "error": "bad_token_address"}), 500
+    if not Web3.is_address(cfg["gda_forwarder"]):
+        return jsonify({**response, "success": False, "error": "bad_forwarder_address"}), 500
+
+    member_addr = Web3.to_checksum_address(wallet)
+    token_addr = Web3.to_checksum_address(cfg["sup_token_address"])
+    forwarder_addr = Web3.to_checksum_address(cfg["gda_forwarder"])
+
+    w3 = Web3(Web3.HTTPProvider(cfg["base_rpc_url"], request_kwargs={"timeout": 8}))
+    forwarder = w3.eth.contract(address=forwarder_addr, abi=_SUP_GDA_FORWARDER_ABI)
+
+    # Pull current decimals so we can format claimable amounts consistently.
+    decimals = 18
+    try:
+        token = w3.eth.contract(address=token_addr, abi=_SUP_TOKEN_ABI)
+        decimals = int(token.functions.decimals().call())
+    except Exception:
+        decimals = 18
+    response["decimals"] = decimals
+
+    try:
+        memberships = _sup_fetch_pool_memberships(wallet, token_addr, cfg["subgraph_url"])
+    except Exception as e:
+        logger.warning("sup_claim_prepare subgraph lookup failed for %s: %s", wallet, e)
+        return jsonify({**response, "success": False, "error": "subgraph_unavailable"}), 502
+
+    pools = _sup_read_pools_claimable(w3, wallet, memberships, decimals)
+    total_claimable = 0
+    txs: list = []
+    for pool in pools:
+        claimable_int = int(pool.get("claimable_now") or 0)
+        if claimable_int <= 0:
+            continue
+        pool_address = Web3.to_checksum_address(pool["pool_address"])
+        try:
+            data_hex = forwarder.encode_abi(
+                "claimAll", args=[pool_address, member_addr, b""]
+            )
+        except Exception as e:
+            logger.warning(
+                "sup_claim_prepare encode_abi failed pool=%s err=%s", pool_address, e
+            )
+            continue
+        txs.append({
+            "pool_address": pool_address,
+            "claimable_now": str(claimable_int),
+            "claimable_now_formatted": _sup_format_balance(claimable_int, decimals),
+            "to": forwarder_addr,
+            "from": member_addr,
+            "data": data_hex,
+            "value": "0x0",
+            "chain_id": SUP_BASE_CHAIN_ID,
+            "chain_hex": SUP_BASE_CHAIN_HEX,
+        })
+        total_claimable += claimable_int
+
+    response["transactions"] = txs
+    response["total_claimable"] = str(total_claimable)
+    response["total_claimable_formatted"] = _sup_format_balance(total_claimable, decimals)
+
+    if not txs:
+        response["message"] = (
+            "Walang pending claimable SUP sa wallet mo right now. Continue using "
+            "Superfluid-powered apps to earn streaming rewards and check back later."
+        )
+    else:
+        response["message"] = (
+            f"Found {len(txs)} pool(s) with claimable SUP. Sign each transaction in "
+            "your wallet to pull the rewards into your wallet."
+        )
+    return jsonify(response)
 
 
 @routes.route("/api/claim/availability", methods=["GET"])
