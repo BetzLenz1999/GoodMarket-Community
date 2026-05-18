@@ -1518,10 +1518,10 @@
             <div class="modal-title">🌊 SUP Rewards</div>
 
             <div style="background:rgba(255,122,24,0.10);border:1px solid rgba(255,122,24,0.28);border-radius:16px;padding:1rem;margin-bottom:1rem;text-align:left;">
-                <div style="font-size:0.78rem;color:#fed7aa;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.35rem;">Native claim · Superfluid on Base</div>
-                <div style="color:#fff;font-weight:800;font-size:1.05rem;margin-bottom:0.45rem;">Claim inside GoodMarket — no redirect</div>
+                <div style="font-size:0.78rem;color:#fed7aa;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.35rem;">Reserve-aware · Superfluid on Base</div>
+                <div style="color:#fff;font-weight:800;font-size:1.05rem;margin-bottom:0.45rem;">See your SUP Reserve in GoodMarket</div>
                 <div style="color:var(--text-dim);font-size:0.84rem;line-height:1.45;">
-                    GoodMarket reads your SUP wallet/reserve balance, claimable GDA pool rewards, and estimated monthly stream rate, then signs the claim directly with your connected wallet on Base. The Superfluid app is only used as a manual fallback if your wallet can't sign here.
+                    GoodMarket now resolves your official Superfluid Reserve (FluidLocker), shows available/staked SUP held there, and only enables native claiming for direct wallet GDA rewards we can safely build on-chain. Use the Superfluid app fallback for Reserve claim, stake, and unlock actions.
                 </div>
             </div>
 
@@ -1531,7 +1531,7 @@
                         <div class="claim-network-icon" id="supClaimIcon">⏳</div>
                         <div>
                             <div class="claim-network-name" id="supClaimTitle">Checking your SUP…</div>
-                            <div class="claim-network-hint" id="supClaimHint">Reading wallet balance and pool memberships on Base.</div>
+                            <div class="claim-network-hint" id="supClaimHint">Reading wallet balance, Reserve contract, and pool memberships on Base.</div>
                         </div>
                     </div>
                     <div class="claim-network-status" id="supClaimStatusPill">Loading</div>
@@ -1544,7 +1544,7 @@
                     <div style="font-weight:800;font-size:1.05rem;color:#fff;"><span id="supWalletBalance">0</span> SUP</div>
                 </div>
                 <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:0.7rem 0.85rem;">
-                    <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem;">Reserve balance</div>
+                    <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem;">Reserve total</div>
                     <div style="font-weight:800;font-size:1.05rem;color:#fff;"><span id="supReserveBalance">0</span> SUP</div>
                 </div>
                 <div style="background:rgba(255,122,24,0.10);border:1px solid rgba(255,122,24,0.28);border-radius:12px;padding:0.7rem 0.85rem;">
@@ -2241,7 +2241,7 @@
         _supSetState(
             '⏳',
             'Checking SUP status…',
-            'Reading wallet balance and pool memberships on Base.',
+            'Reading wallet balance, Reserve contract, and pool memberships on Base.',
             'Loading'
         );
         _supSetDetails('Please wait while GoodMarket checks your SUP status on Base.');
@@ -2262,13 +2262,16 @@
             supClaimUrl = data.official_claim_url || supClaimUrl;
 
             const walletFmt = data.sup_balance_formatted || '0';
-            const reserveFmt = data.reserve_balance_formatted || data.available_balance_formatted || walletFmt;
+            const reserveFmt = data.reserve_total_balance_formatted || data.reserve_balance_formatted || data.available_balance_formatted || '0';
             const claimableFmt = data.total_claimable_formatted || '0';
             const monthlyFlowFmt = data.total_flow_monthly_formatted || '0';
             _supShowSummary(walletFmt, reserveFmt, claimableFmt, monthlyFlowFmt);
             _supRenderPoolList(data.pools || [], data.decimals || 18);
 
             const totalClaimable = parseFloat(claimableFmt) || 0;
+            const reserveTotal = parseFloat(reserveFmt) || 0;
+            const reserveAvailable = parseFloat(data.reserve_available_balance_formatted || '0') || 0;
+            const reserveStaked = parseFloat(data.reserve_staked_balance_formatted || '0') || 0;
             const poolCount = data.pool_count || 0;
             const claimablePoolCount = data.claimable_pool_count || 0;
 
@@ -2277,11 +2280,22 @@
                 detailParts.push(`<div><strong>Wallet:</strong> ${_supShortAddr(data.wallet)}</div>`);
             }
             detailParts.push(`<div><strong>Network:</strong> Base (chain ${data.chain_id || 8453})</div>`);
-            detailParts.push(`<div><strong>Reserve balance:</strong> ${reserveFmt} SUP realtime available</div>`);
-            detailParts.push(`<div><strong>Estimated flow:</strong> ~${monthlyFlowFmt} SUP/month from indexed pools</div>`);
-            detailParts.push(`<div><strong>Pools indexed:</strong> ${poolCount} · ${claimablePoolCount} with claimable balance</div>`);
+            if (data.reserve_locker_created && data.reserve_locker_address) {
+                detailParts.push(`<div><strong>Reserve:</strong> ${_supShortAddr(data.reserve_locker_address)} · ${reserveFmt} SUP total</div>`);
+                detailParts.push(`<div><strong>Reserve available:</strong> ${data.reserve_available_balance_formatted || '0'} SUP · <strong>staked:</strong> ${data.reserve_staked_balance_formatted || '0'} SUP</div>`);
+            } else {
+                detailParts.push(`<div><strong>Reserve:</strong> not created yet for this wallet</div>`);
+            }
+            if (data.wallet_available_balance_formatted) {
+                detailParts.push(`<div><strong>Wallet realtime available:</strong> ${data.wallet_available_balance_formatted} SUP</div>`);
+            }
+            detailParts.push(`<div><strong>Estimated direct-wallet flow:</strong> ~${monthlyFlowFmt} SUP/month from indexed pools</div>`);
+            detailParts.push(`<div><strong>Direct wallet pools indexed:</strong> ${poolCount} · ${claimablePoolCount} with claimable balance</div>`);
             if (data.balance_warning) {
                 detailParts.push(`<div style="color:#fbbf24;margin-top:0.35rem;">${data.balance_warning}</div>`);
+            }
+            if (data.reserve_warning) {
+                detailParts.push(`<div style="color:#fbbf24;margin-top:0.35rem;">${data.reserve_warning}</div>`);
             }
             if (data.pools_warning) {
                 detailParts.push(`<div style="color:#fbbf24;margin-top:0.35rem;">${data.pools_warning}</div>`);
@@ -2296,22 +2310,33 @@
                     'Ready'
                 );
                 _supSetClaimButton(`Claim ${claimableFmt} SUP`, false);
+            } else if (data.reserve_locker_created && (reserveTotal > 0 || reserveAvailable > 0 || reserveStaked > 0)) {
+                _supSetState(
+                    '🏦',
+                    `Reserve found: ${reserveFmt} SUP`,
+                    `Available ${data.reserve_available_balance_formatted || '0'} SUP · staked ${data.reserve_staked_balance_formatted || '0'} SUP. Use the Superfluid app for Reserve actions.`,
+                    'Reserve'
+                );
+                _supSetClaimButton('No direct wallet claim', true);
+                _supSetOpenButton(true);
             } else if (poolCount > 0) {
                 _supSetState(
                     '🌊',
                     'No pending SUP right now',
-                    `You are streaming about ${monthlyFlowFmt} SUP/month; claimable balance will appear as rewards accrue.`,
+                    `Your direct wallet pools stream about ${monthlyFlowFmt} SUP/month; claimable balance will appear as rewards accrue.`,
                     'Up to date'
                 );
                 _supSetClaimButton('Nothing to claim', true);
+                _supSetOpenButton(true);
             } else if (parseFloat(walletFmt) > 0) {
                 _supSetState(
                     '🌊',
                     `You hold ${walletFmt} SUP`,
-                    'Wallet has SUP but no active pool memberships were found.',
+                    data.reserve_locker_created ? 'Wallet has SUP, and Reserve details are shown below.' : 'Wallet has SUP but no active direct wallet pool memberships were found.',
                     'Holding'
                 );
                 _supSetClaimButton('Nothing to claim', true);
+                _supSetOpenButton(true);
             } else {
                 _supSetState(
                     '🌊',
