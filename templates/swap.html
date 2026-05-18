@@ -777,6 +777,67 @@
             font-size: 0.80rem;
         }
         .squid-wallet-hint-note { color: rgba(255,255,255,0.65); font-size: 0.80rem; }
+
+        /* Full-screen / fallback CTA — used when the embedded Squid iframe
+           cannot reach the user's wallet (mobile dApp in-app browsers, etc.)
+           and as an always-available escape hatch below the iframe. */
+        .squid-fallback-card {
+            margin-bottom: 0.9rem;
+            padding: 1rem 1.1rem;
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(56,189,248,0.16), rgba(14,165,233,0.05));
+            border: 1px solid rgba(56,189,248,0.32);
+            color: rgba(255,255,255,0.88);
+        }
+        .squid-fallback-card-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+            margin-bottom: 0.35rem;
+            color: #e0f2fe;
+        }
+        .squid-fallback-card-note {
+            color: rgba(255,255,255,0.72);
+            font-size: 0.83rem;
+            line-height: 1.55;
+            margin-bottom: 0.85rem;
+        }
+        .squid-fullscreen-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+            padding: 0.85rem 1rem;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #38bdf8, #2563eb);
+            color: #ffffff !important;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.92rem;
+            border: 0;
+            box-shadow: 0 8px 22px rgba(37,99,235,0.28);
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .squid-fullscreen-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 26px rgba(37,99,235,0.34);
+        }
+        .squid-fallback-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            margin-top: 0.75rem;
+            color: rgba(255,255,255,0.55);
+            font-size: 0.78rem;
+        }
+        .squid-fallback-row a {
+            color: #7dd3fc;
+            text-decoration: none;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .squid-fallback-row a:hover { text-decoration: underline; }
         @media(max-width: 560px) {
             .squid-token-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .squid-frame-wrap, .squid-frame { min-height: 690px; }
@@ -1223,7 +1284,17 @@
                     <div class="squid-wallet-hint-note" id="squidWalletHintNote"></div>
                 </div>
 
-                <div class="squid-frame-wrap">
+                <div id="squidDappFallback" class="squid-fallback-card" hidden>
+                    <div class="squid-fallback-card-title">⚠️ Hindi sumasagot ang wallet sa loob ng widget?</div>
+                    <div class="squid-fallback-card-note">
+                        Nag-detect kami na nasa <strong>in-app dApp browser</strong> ka (MiniPay / MetaMask Mobile / Trust / etc.). Yung Squid widget natin ay naka-embed sa cross-origin iframe, kaya hindi niya maa-access ang wallet provider ng dApp browser mo. Buksan mo na lang ang Buy ETH sa fullscreen para gumana ang MetaMask / WalletConnect / injected wallet button.
+                    </div>
+                    <a id="squidOpenFullscreenPrimary" class="squid-fullscreen-btn" href="https://app.squidrouter.com/" target="_blank" rel="noopener">
+                        Buksan ang Buy ETH sa fullscreen ↗
+                    </a>
+                </div>
+
+                <div id="squidFrameWrap" class="squid-frame-wrap">
                     <iframe
                         id="squidCeloBaseFrame"
                         class="squid-frame"
@@ -1232,6 +1303,11 @@
                         referrerpolicy="strict-origin-when-cross-origin"
                         allow="clipboard-read; clipboard-write; payment; web-share"
                     ></iframe>
+                </div>
+
+                <div class="squid-fallback-row">
+                    <span>Hindi gumagana ang connect button? Buksan ang Squid sa bagong tab.</span>
+                    <a id="squidOpenFullscreen" href="https://app.squidrouter.com/" target="_blank" rel="noopener">Open in fullscreen ↗</a>
                 </div>
             </div>
 
@@ -4016,10 +4092,54 @@
             return url.toString();
         }
 
+        function buildSquidExternalUrl(sourceToken) {
+            const token = sourceToken || squidSelectedSource;
+            const url = _safeSquidUrl(SQUID_CONFIG.appUrl, "https://app.squidrouter.com/");
+            url.searchParams.set("chains", `${SQUID_CONFIG.fromChainId},${SQUID_CONFIG.toChainId}`);
+            url.searchParams.set("tokens", `${token.address},${SQUID_CONFIG.toToken}`);
+            if (SQUID_CONFIG.integratorId) url.searchParams.set("integratorId", SQUID_CONFIG.integratorId);
+            if (WALLET_ADDRESS && WALLET_ADDRESS !== "None") {
+                url.searchParams.set("toAddress", WALLET_ADDRESS);
+            }
+            return url.toString();
+        }
+
+        // Identify in-app dApp browsers (MiniPay, Trust, MetaMask Mobile,
+        // imToken, TokenPocket, Coinbase Wallet, Valora, OPay, SafePal,
+        // etc.) where the parent window has window.ethereum but cross-origin
+        // iframes cannot reach it. The Squid widget's wallet-picker buttons
+        // are no-ops in that context, so we hide the iframe and surface a
+        // top-level link to app.squidrouter.com instead, where the dApp
+        // browser's injected provider is properly exposed.
+        function _isInDappBrowser() {
+            try {
+                const ua = (navigator.userAgent || "").toLowerCase();
+                if (!ua) return false;
+                const dappUaPatterns = /(minipay|trust\/|trustwallet|imtoken|tokenpocket|metamaskmobile|coinbasewallet|coinbase\swallet|safepalwallet|safepal|valora|opay|cryptocom|crypto\.com|rabby|okxwallet|bitkeep|onekey|huobi|gateio|exodus|argent|rainbow)/;
+                if (dappUaPatterns.test(ua)) return true;
+                // window.ethereum being present in a *mobile* browser is a
+                // strong signal that the user is inside an in-app dApp
+                // browser (regular mobile Safari/Chrome do not inject
+                // window.ethereum). Desktop browsers can have window.ethereum
+                // via MetaMask extension and still work fine with the iframe,
+                // so we limit this signal to mobile UAs.
+                const isMobile = /android|iphone|ipad|ipod|mobile/i.test(ua);
+                if (isMobile && typeof window.ethereum !== "undefined") return true;
+                return false;
+            } catch (_) {
+                return false;
+            }
+        }
+
         function refreshSquidWidget() {
             const frame = document.getElementById("squidCeloBaseFrame");
             const iframeUrl = buildSquidIframeUrl(squidSelectedSource);
             if (frame && frame.src !== iframeUrl) frame.src = iframeUrl;
+            const externalUrl = buildSquidExternalUrl(squidSelectedSource);
+            const primaryLink = document.getElementById("squidOpenFullscreenPrimary");
+            const inlineLink  = document.getElementById("squidOpenFullscreen");
+            if (primaryLink) primaryLink.href = externalUrl;
+            if (inlineLink)  inlineLink.href  = externalUrl;
         }
 
         function setSquidSourceToken(symbol, address) {
@@ -4029,6 +4149,22 @@
             });
             refreshSquidWidget();
         }
+
+        function applySquidDappBrowserMode() {
+            const frameWrap = document.getElementById("squidFrameWrap");
+            const fallback  = document.getElementById("squidDappFallback");
+            const dapp = _isInDappBrowser();
+            if (frameWrap) frameWrap.hidden = dapp;
+            if (fallback)  fallback.hidden  = !dapp;
+            // Keep the always-on small inline fallback link in sync as well.
+            const externalUrl = buildSquidExternalUrl(squidSelectedSource);
+            const primaryLink = document.getElementById("squidOpenFullscreenPrimary");
+            const inlineLink  = document.getElementById("squidOpenFullscreen");
+            if (primaryLink) primaryLink.href = externalUrl;
+            if (inlineLink)  inlineLink.href  = externalUrl;
+        }
+
+        try { applySquidDappBrowserMode(); } catch (_) {}
 
         // Detect which connection method the user used to sign in to
         // GoodMarket and surface a hint inside the Squid pane. The Squid
