@@ -3888,6 +3888,37 @@
             }
 
             container.innerHTML = discourseTaskCard(link, reward);
+            try {
+                if (localStorage.getItem('DISCOURSE_TASK_KEY_form_open') === '1') {
+                    const form = document.getElementById('discourse-username-form');
+                    if (form) form.style.display = 'block';
+                    restoreDiscourseDraft();
+                }
+            } catch (_) {}
+        }
+
+        function getDiscourseDraftKey() {
+            const baseKey = 'DISCOURSE_TASK_KEY';
+            const link = discourseTaskData && discourseTaskData.link ? discourseTaskData.link : 'default';
+            const normalizedLink = encodeURIComponent(link);
+            return `${baseKey}_username_draft_${normalizedLink}`;
+        }
+
+        function persistDiscourseDraft() {
+            const input = document.getElementById('discourse-username-input');
+            if (!input) return;
+            try {
+                localStorage.setItem(getDiscourseDraftKey(), (input.value || '').trim());
+            } catch (_) {}
+        }
+
+        function restoreDiscourseDraft() {
+            const input = document.getElementById('discourse-username-input');
+            if (!input) return;
+            try {
+                const saved = localStorage.getItem(getDiscourseDraftKey());
+                if (saved) input.value = saved;
+            } catch (_) {}
         }
 
         function discourseTaskCard(link, reward) {
@@ -3917,7 +3948,7 @@
                         <div style="font-size:0.88rem; color:rgba(241,245,249,0.75); margin-bottom:0.5rem; text-align:center;">
                             After commenting, please enter your Discourse username below and click Submit.
                         </div>
-                        <input type="text" id="discourse-username-input" placeholder="Your Discourse username"
+                        <input type="text" id="discourse-username-input" placeholder="Your Discourse username" oninput="persistDiscourseDraft();"
                             style="width:100%; padding:0.7rem 1rem; border-radius:8px; border:1px solid rgba(99,102,241,0.4); background:rgba(255,255,255,0.05); color:white; font-size:0.95rem; box-sizing:border-box; margin-bottom:0.6rem;">
                         <button onclick="submitDiscourseUsername();"
                             style="width:100%; background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; padding:0.7rem; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.95rem;">
@@ -3929,9 +3960,11 @@
         }
 
         function showDiscourseUsernameForm() {
+            try { localStorage.setItem('DISCOURSE_TASK_KEY_form_open', '1'); } catch (_) {}
             setTimeout(() => {
                 const form = document.getElementById('discourse-username-form');
                 if (form) form.style.display = 'block';
+                restoreDiscourseDraft();
             }, 500);
         }
 
@@ -3951,6 +3984,7 @@
             msgEl.textContent = 'Submitting...';
 
             try {
+                persistDiscourseDraft();
                 const resp = await fetch('/api/discourse-task/submit', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -3959,6 +3993,10 @@
                 const data = await resp.json();
 
                 if (data.success) {
+                    try {
+                        localStorage.removeItem(getDiscourseDraftKey());
+                        localStorage.removeItem('DISCOURSE_TASK_KEY_form_open');
+                    } catch (_) {}
                     discourseTaskLoaded = false;
                     const container = document.getElementById('discourse-task-content');
                     container.innerHTML = `
