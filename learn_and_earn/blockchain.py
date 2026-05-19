@@ -384,6 +384,111 @@ class LearnBlockchainService:
                 "explorer_url": f"https://celoscan.io/tx/{tx_hash_hex}"
             }
 
+
+    def _build_cfa_abi(self):
+        return [
+            {
+                "inputs": [
+                    {"internalType": "address", "name": "token", "type": "address"},
+                    {"internalType": "address", "name": "receiver", "type": "address"},
+                    {"internalType": "int96", "name": "flowRate", "type": "int96"},
+                    {"internalType": "bytes", "name": "ctx", "type": "bytes"}
+                ],
+                "name": "createFlow",
+                "outputs": [{"internalType": "bytes", "name": "newCtx", "type": "bytes"}],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {"internalType": "address", "name": "token", "type": "address"},
+                    {"internalType": "address", "name": "sender", "type": "address"},
+                    {"internalType": "address", "name": "receiver", "type": "address"},
+                    {"internalType": "bytes", "name": "ctx", "type": "bytes"}
+                ],
+                "name": "deleteFlow",
+                "outputs": [{"internalType": "bytes", "name": "newCtx", "type": "bytes"}],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            }
+        ]
+
+    async def start_reward_stream(self, receiver_wallet: str, flow_rate_wei: int) -> dict:
+        host = os.getenv('SUPERFLUID_HOST_ADDRESS')
+        cfa = os.getenv('SUPERFLUID_CFA_V1_ADDRESS')
+        token = os.getenv('LEARN_EARN_STREAM_TOKEN_ADDRESS') or os.getenv('GOODDOLLAR_SUPERTOKEN_ADDRESS') or self.gooddollar_address
+        if not all([host, cfa, token]):
+            return {"success": False, "error": "Superfluid env not configured"}
+        if not self.owner_account or not self._wallet_key:
+            return {"success": False, "error": "Wallet not configured"}
+        try:
+            cfa_contract = self.w3.eth.contract(address=Web3.to_checksum_address(cfa), abi=self._build_cfa_abi())
+            call_data = cfa_contract.encode_abi('createFlow', args=[
+                Web3.to_checksum_address(token),
+                Web3.to_checksum_address(receiver_wallet),
+                int(flow_rate_wei),
+                b''
+            ])
+            host_abi = [{"inputs":[{"internalType":"address","name":"agreementClass","type":"address"},{"internalType":"bytes","name":"callData","type":"bytes"},{"internalType":"bytes","name":"userData","type":"bytes"}],"name":"callAgreement","outputs":[{"internalType":"bytes","name":"returnedData","type":"bytes"}],"stateMutability":"nonpayable","type":"function"}]
+            host_contract = self.w3.eth.contract(address=Web3.to_checksum_address(host), abi=host_abi)
+            nonce = self.w3.eth.get_transaction_count(self.owner_account.address, 'pending')
+            tx = host_contract.functions.callAgreement(
+                Web3.to_checksum_address(cfa),
+                call_data,
+                b''
+            ).build_transaction({
+                'chainId': self.chain_id,
+                'gas': 800000,
+                'gasPrice': int(self.w3.eth.gas_price * 1.2),
+                'nonce': nonce,
+            })
+            signed = self.w3.eth.account.sign_transaction(tx, self._wallet_key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
+            receipt = self._wait_for_receipt(tx_hash)
+            txh = tx_hash.hex()
+            if receipt.status != 1:
+                return {"success": False, "error": "createFlow reverted", "tx_hash": txh}
+            return {"success": True, "tx_hash": txh, "explorer_url": f"https://celoscan.io/tx/{txh}"}
+        except Exception as e:
+            logger.error(f"start_reward_stream error: {e}")
+            return {"success": False, "error": self._sanitize_error(str(e))}
+
+    async def stop_reward_stream(self, receiver_wallet: str) -> dict:
+        host = os.getenv('SUPERFLUID_HOST_ADDRESS')
+        cfa = os.getenv('SUPERFLUID_CFA_V1_ADDRESS')
+        token = os.getenv('LEARN_EARN_STREAM_TOKEN_ADDRESS') or os.getenv('GOODDOLLAR_SUPERTOKEN_ADDRESS') or self.gooddollar_address
+        if not all([host, cfa, token]):
+            return {"success": False, "error": "Superfluid env not configured"}
+        if not self.owner_account or not self._wallet_key:
+            return {"success": False, "error": "Wallet not configured"}
+        try:
+            cfa_contract = self.w3.eth.contract(address=Web3.to_checksum_address(cfa), abi=self._build_cfa_abi())
+            call_data = cfa_contract.encode_abi('deleteFlow', args=[
+                Web3.to_checksum_address(token),
+                Web3.to_checksum_address(self.owner_account.address),
+                Web3.to_checksum_address(receiver_wallet),
+                b''
+            ])
+            host_abi = [{"inputs":[{"internalType":"address","name":"agreementClass","type":"address"},{"internalType":"bytes","name":"callData","type":"bytes"},{"internalType":"bytes","name":"userData","type":"bytes"}],"name":"callAgreement","outputs":[{"internalType":"bytes","name":"returnedData","type":"bytes"}],"stateMutability":"nonpayable","type":"function"}]
+            host_contract = self.w3.eth.contract(address=Web3.to_checksum_address(host), abi=host_abi)
+            nonce = self.w3.eth.get_transaction_count(self.owner_account.address, 'pending')
+            tx = host_contract.functions.callAgreement(Web3.to_checksum_address(cfa), call_data, b'').build_transaction({
+                'chainId': self.chain_id,
+                'gas': 800000,
+                'gasPrice': int(self.w3.eth.gas_price * 1.2),
+                'nonce': nonce,
+            })
+            signed = self.w3.eth.account.sign_transaction(tx, self._wallet_key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
+            receipt = self._wait_for_receipt(tx_hash)
+            txh = tx_hash.hex()
+            if receipt.status != 1:
+                return {"success": False, "error": "deleteFlow reverted", "tx_hash": txh}
+            return {"success": True, "tx_hash": txh, "explorer_url": f"https://celoscan.io/tx/{txh}"}
+        except Exception as e:
+            logger.error(f"stop_reward_stream error: {e}")
+            return {"success": False, "error": self._sanitize_error(str(e))}
+
     def _wait_for_receipt(self, tx_hash):
         """
         Wait for transaction receipt with configurable timeout and manual fallback polling.
