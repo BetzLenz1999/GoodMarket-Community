@@ -141,5 +141,34 @@ class MaintenanceService:
             logger.error(f"❌ Error getting all maintenance settings: {e}")
             return {'success': False, 'settings': []}
 
+    def get_due_stream_stops(self, limit: int = 200) -> dict:
+        """Fetch active streams that have reached end_at and should be stopped."""
+        try:
+            if not self.supabase:
+                self.supabase = get_supabase_client()
+            if not self.supabase:
+                return {'success': False, 'streams': [], 'error': 'Database unavailable'}
+
+            now_iso = datetime.utcnow().isoformat() + 'Z'
+            result = self.supabase.table('learn_earn_streams')                .select('*')                .eq('status', 'active')                .lte('end_at', now_iso)                .order('end_at', desc=False)                .limit(limit)                .execute()
+            return {'success': True, 'streams': result.data or []}
+        except Exception as e:
+            logger.error(f"❌ Error fetching due stream stops: {e}")
+            return {'success': False, 'streams': [], 'error': str(e)}
+
+    def mark_stream_pending_stop(self, stream_id: str) -> dict:
+        """Mark stream as pending stop before sending stop transaction."""
+        try:
+            if not self.supabase:
+                self.supabase = get_supabase_client()
+            if not self.supabase:
+                return {'success': False, 'error': 'Database unavailable'}
+
+            self.supabase.table('learn_earn_streams').update({'status': 'pending_stop'}).eq('id', stream_id).execute()
+            return {'success': True}
+        except Exception as e:
+            logger.error(f"❌ Error marking stream pending stop: {e}")
+            return {'success': False, 'error': str(e)}
+
 # Global instance
 maintenance_service = MaintenanceService()
