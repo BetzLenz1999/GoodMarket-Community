@@ -50,6 +50,11 @@ COLLABORATION_MIN_GD = int(os.getenv('COLLABORATION_MIN_GD', '100000'))
 
 STREAMING_DURATION_SECONDS = int(os.getenv('LEARN_EARN_STREAM_DURATION_SECONDS', '86400'))
 STREAMING_PAYOUT_MODE = (os.getenv('LEARN_EARN_PAYOUT_MODE', 'instant') or 'instant').strip().lower()
+STREAMING_MODE_ALIASES = {'stream_1day', 'stream', 'streaming', 'stream_payout'}
+
+
+def _is_streaming_mode(mode: str) -> bool:
+    return (mode or '').strip().lower() in STREAMING_MODE_ALIASES
 
 
 class LearnEarnStreamingService:
@@ -1605,7 +1610,7 @@ def submit_quiz(current_user):
         tx_hash = None
         stream_job = None
         payout_mode = STREAMING_PAYOUT_MODE
-        if reward_amount > 0 and payout_mode == 'stream_1day':
+        if reward_amount > 0 and _is_streaming_mode(payout_mode):
             stream_job = streaming_service.create_stream_job(
                 current_user,
                 reward_amount,
@@ -1699,7 +1704,11 @@ def submit_quiz(current_user):
             'rewards': reward_amount,
             'quiz_id': saved_quiz_id,
             'message': (
-                f'Quiz completed! You earned {reward_amount} G$ instantly.'
+                (
+                    f'Quiz completed! You earned {reward_amount} G$ via 1-day stream payout.'
+                    if _is_streaming_mode(payout_mode)
+                    else f'Quiz completed! You earned {reward_amount} G$ instantly.'
+                )
                 if reward_amount > 0
                 else f'Quiz completed! You earned {reward_amount} G$ this round.'
             ),
@@ -1712,7 +1721,11 @@ def submit_quiz(current_user):
             'show_notification': True,
             'notification_type': 'success',
             'notification_message': (
-                f'Quiz completed! {score}/{total_questions} correct. Reward sent: {reward_amount} G$.'
+                (
+                    f'Quiz completed! {score}/{total_questions} correct. Stream payout queued: {reward_amount} G$ over 1 day.'
+                    if _is_streaming_mode(payout_mode)
+                    else f'Quiz completed! {score}/{total_questions} correct. Reward sent instantly: {reward_amount} G$.'
+                )
                 if reward_amount > 0
                 else f'Quiz completed! {score}/{total_questions} correct. No reward was sent for this attempt.'
             )
