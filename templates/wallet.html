@@ -3293,6 +3293,21 @@
                 setStatus('XDC claim is available for this wallet. Approve the XDC network prompt to continue.', 'var(--green)');
             } else if (!recommendedClaimNetwork) {
                 const hasUnsupported = ['fuse', 'xdc'].some(n => claims[n] && claims[n].can_claim);
+                const celoNeedsFaceVerification =
+                    claims.celo && (claims.celo.reason === 'not_verified' || claims.celo.reason === 're_verification_needed' || claims.celo.is_verified === false);
+                if (celoNeedsFaceVerification) {
+                    label.textContent = claims.celo.reason === 're_verification_needed'
+                        ? 'Re-verify Face ID to Claim'
+                        : 'Verify Face ID to Claim';
+                    icon.textContent = '🪪';
+                    btn.disabled = false;
+                    setStatus(
+                        claims.celo.reason === 're_verification_needed'
+                            ? 'Face Verification expired. Re-verify on Celo Identity first.'
+                            : 'Face Verification on Celo Identity is required before claiming on any network.',
+                        '#a78bfa'
+                    );
+                } else
                 if (hasUnsupported) {
                     label.textContent = 'Use MetaMask / WalletConnect';
                     icon.textContent = '⚠️';
