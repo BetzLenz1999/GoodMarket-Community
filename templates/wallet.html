@@ -2749,12 +2749,11 @@
                         MINIPAY_FEE_CURRENCY.USDM,
                         MINIPAY_FEE_CURRENCY.USDT_ADAPTER,
                         MINIPAY_FEE_CURRENCY.USDC_ADAPTER,
-                        null,
                     ];
                     let lastErr;
                     for (const fc of feeCurrencies) {
                         const params = { ...txParams };
-                        if (fc) params.feeCurrency = fc;
+                        params.feeCurrency = fc;
                         try {
                             txHash = await provider.request({
                                 method: 'eth_sendTransaction',
@@ -2771,7 +2770,13 @@
                             console.warn('[MiniPay] send tx attempt failed with feeCurrency=' + fc + ':', msg || err);
                         }
                     }
-                    if (!txHash) throw lastErr || new Error('MiniPay transaction failed.');
+                    if (!txHash) {
+                        const msg = ((lastErr && (lastErr.message || lastErr.data && lastErr.data.message)) || '').toLowerCase();
+                        if (/permission denied/.test(msg)) {
+                            throw new Error('MiniPay denied the transaction. Please ensure you have enough cUSD/USDT/USDC for gas and try again.');
+                        }
+                        throw lastErr || new Error('MiniPay transaction failed.');
+                    }
                 } else {
                     txHash = await provider.request({
                         method: 'eth_sendTransaction',
@@ -4338,12 +4343,11 @@
                         MINIPAY_FEE_CURRENCY.USDM,
                         MINIPAY_FEE_CURRENCY.USDT_ADAPTER,
                         MINIPAY_FEE_CURRENCY.USDC_ADAPTER,
-                        null,
                     ];
                     let lastErr;
                     for (const fc of feeCurrencies) {
                         const txParams = { from, to: UBI_CONTRACT, data: CLAIM_DATA, value: '0x0', gas: gasHex };
-                        if (fc) txParams.feeCurrency = fc;
+                        txParams.feeCurrency = fc;
                         try {
                             const txHash = await provider.request({
                                 method: 'eth_sendTransaction',
