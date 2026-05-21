@@ -6355,6 +6355,22 @@ def claim_availability():
             },
         }
 
+        celo_reason = claims["celo"].get("reason")
+        celo_verified = claims["celo"].get("is_verified")
+        celo_needs_face_verification = (
+            celo_reason in ("not_verified", "re_verification_needed")
+            or celo_verified is False
+        )
+
+        # Face Verification is anchored on Celo Identity. If Celo says the user
+        # still needs (re)verification, do not allow fallback claim actions on
+        # other networks yet.
+        if celo_needs_face_verification:
+            for network in ("fuse", "xdc"):
+                claims[network]["can_claim"] = False
+                claims[network]["blocked_by"] = "celo_identity_verification"
+                claims[network]["blocked_reason"] = "Verify Face ID on Celo first."
+
         recommended = None
         for network in ("celo", "fuse", "xdc"):
             if claims[network]["can_claim"]:
