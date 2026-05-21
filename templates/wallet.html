@@ -2745,7 +2745,10 @@
                         }
                     }
 
+                    // MiniPay currently works best when feeCurrency is omitted
+                    // (auto-pick by wallet). Keep explicit adapters as fallback.
                     const feeCurrencies = [
+                        null,
                         MINIPAY_FEE_CURRENCY.USDM,
                         MINIPAY_FEE_CURRENCY.USDT_ADAPTER,
                         MINIPAY_FEE_CURRENCY.USDC_ADAPTER,
@@ -2753,7 +2756,8 @@
                     let lastErr;
                     for (const fc of feeCurrencies) {
                         const params = { ...txParams };
-                        params.feeCurrency = fc;
+                        if (fc) params.feeCurrency = fc;
+                        else delete params.feeCurrency;
                         try {
                             txHash = await provider.request({
                                 method: 'eth_sendTransaction',
