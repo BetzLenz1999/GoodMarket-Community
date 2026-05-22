@@ -24,6 +24,47 @@ def _safe(fn, fallback=None, op="db operation"):
 
 
 class ReferralService:
+    def is_wallet_verified_via_goodmarket(self, wallet_address: str) -> dict:
+        """Return strict GoodMarket attribution decision for one wallet.
+
+        This uses the same strict attribution helper as overview analytics so
+        referral + user_data stay consistent.
+        """
+        supabase = _get_supabase()
+        if not supabase:
+            return {"verified_via_goodmarket": False, "reason": "no_db"}
+
+        user_row = _safe(
+            lambda: supabase.table('user_data')
+                .select('first_login,first_seen_unverified,created_at,face_verified_at,verified_after_goodmarket')
+                .ilike('wallet_address', wallet_address)
+                .limit(1)
+                .execute(),
+            op="get user_data for strict GoodMarket attribution"
+        )
+        if not user_row or not user_row.data:
+            return {"verified_via_goodmarket": False, "reason": "no_user_row"}
+
+        row = user_row.data[0]
+        try:
+            from goodmarket_attribution_backfill import is_attributable_to_goodmarket
+            decision = is_attributable_to_goodmarket(wallet_address, row)
+        except Exception as e:
+            logger.warning(f"Attribution helper failed for {wallet_address[:8]}...: {e}")
+            return {"verified_via_goodmarket": False, "reason": "helper_error"}
+
+        if decision.get("attributable"):
+            _safe(
+                lambda: supabase.table('user_data')
+                    .update({'verified_after_goodmarket': True, 'face_verified': True})
+                    .ilike('wallet_address', wallet_address)
+                    .execute(),
+                op="sync verified_after_goodmarket true from strict attribution"
+            )
+            return {"verified_via_goodmarket": True, "reason": decision.get("reason", "attributable")}
+
+        return {"verified_via_goodmarket": False, "reason": decision.get("reason", "not_attributable")}
+
 
     def generate_code_for_wallet(self, wallet_address: str) -> str:
         """Generate a deterministic 8-char alphanumeric referral code from the wallet."""
@@ -272,6 +313,79 @@ class ReferralService:
         if result and result.data:
             return {"found": True, "referral": result.data[0]}
         return {"found": False}
+
+    def reconcile_pending_referral_with_onchain(self, referee_wallet: str) -> dict:
+        """Attempt automatic recovery for stuck pending referrals.
+
+        If strict GoodMarket attribution says this referee is now verified via
+        GoodMarket, claim + disburse immediately.
+        """
+        pending = self.get_pending_face_verification_referral(referee_wallet)
+        if not pending.get("found"):
+            return {"success": False, "reason": "no_pending_referral"}
+
+        attribution = self.is_wallet_verified_via_goodmarket(referee_wallet)
+        if not attribution.get("verified_via_goodmarket"):
+            return {"success": False, "reason": attribution.get("reason", "not_verified_via_goodmarket")}
+
+        claimed = self.claim_pending_referral_for_disbursement(referee_wallet)
+        if not claimed.get("claimed"):
+            return {"success": False, "reason": "claim_not_acquired"}
+
+        row = claimed.get("referral", {})
+        referrer_wallet = row.get("referrer_wallet")
+        referral_code = row.get("referral_code")
+        if not referrer_wallet or not referral_code:
+            self.update_referral_status(
+                referee_wallet,
+                'failed',
+                'Missing referrer/referral code while reconciling pending referral'
+            )
+            return {"success": False, "reason": "missing_referral_data"}
+
+        disb = self.process_referral_disbursement(
+            referrer_wallet=referrer_wallet,
+            referee_wallet=referee_wallet,
+            referral_code=referral_code
+        )
+        return {"success": bool(disb.get("success")), "reason": "disbursement_attempted", "disbursement": disb}
+
+    def process_pending_face_verification_referrals(self, limit: int = 500) -> dict:
+        """Reconcile stuck pending_face_verification referrals in batch."""
+        supabase = _get_supabase()
+        if not supabase:
+            return {"success": False, "error": "Database not available"}
+
+        pending_referrals = _safe(
+            lambda: supabase.table('referrals')
+                .select('referee_wallet,status')
+                .eq('status', 'pending_face_verification')
+                .limit(max(1, int(limit)))
+                .execute(),
+            op="get pending_face_verification referrals for reconciliation"
+        )
+
+        reconciled = 0
+        still_waiting_fv = 0
+        errors = 0
+        for row in (pending_referrals.data if pending_referrals and pending_referrals.data else []):
+            rw = row.get('referee_wallet')
+            if not rw:
+                errors += 1
+                continue
+            rec = self.reconcile_pending_referral_with_onchain(rw)
+            if rec.get('success'):
+                reconciled += 1
+            else:
+                still_waiting_fv += 1
+
+        return {
+            "success": True,
+            "scanned": len(pending_referrals.data if pending_referrals and pending_referrals.data else []),
+            "reconciled_pending_face_verification": reconciled,
+            "still_waiting_face_verification": still_waiting_fv,
+            "errors": errors,
+        }
 
     def claim_pending_referral_for_disbursement(self, referee_wallet: str) -> dict:
         """
@@ -569,7 +683,16 @@ class ReferralService:
         )
 
         if not pending_rewards or not pending_rewards.data:
-            return {"success": True, "processed": 0, "message": "No pending rewards"}
+            reconcile_summary = self.process_pending_face_verification_referrals(limit=500)
+            return {
+                "success": True,
+                "processed": 0,
+                "failed": 0,
+                "still_pending": 0,
+                "message": "No pending rewards",
+                "reconciled_pending_face_verification": reconcile_summary.get("reconciled_pending_face_verification", 0),
+                "still_waiting_face_verification": reconcile_summary.get("still_waiting_face_verification", 0),
+            }
 
         processed = 0
         failed = 0
@@ -618,11 +741,15 @@ class ReferralService:
                 )
                 failed += 1
 
+        reconcile_summary = self.process_pending_face_verification_referrals(limit=500)
+
         return {
             "success": True,
             "processed": processed,
             "failed": failed,
-            "still_pending": still_pending
+            "still_pending": still_pending,
+            "reconciled_pending_face_verification": reconcile_summary.get("reconciled_pending_face_verification", 0),
+            "still_waiting_face_verification": reconcile_summary.get("still_waiting_face_verification", 0)
         }
 
     def update_referral_status_by_code(self, referral_code: str, status: str) -> None:
