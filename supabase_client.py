@@ -1233,12 +1233,13 @@ class SupabaseLogger:
             except Exception:
                 goodmarket_verified_users = 0
 
-            # Get users who visited GoodMarket but are still unverified (potential conversions)
+            # Get users who visited GoodMarket but are still unverified (potential conversions).
+            # Use face_verified (source-of-truth) rather than legacy ubi_verified.
             try:
                 pending_verification_response = self.client.table("user_data")\
                     .select("*", count="exact")\
                     .not_.is_("first_seen_unverified", "null")\
-                    .eq("ubi_verified", False)\
+                    .eq("face_verified", False)\
                     .execute()
                 pending_verification_users = pending_verification_response.count if hasattr(pending_verification_response, 'count') else 0
             except Exception:
