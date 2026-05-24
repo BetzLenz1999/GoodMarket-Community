@@ -6,7 +6,7 @@ Usage:
   export TOPWALLET_KEY=0x...
   python contracts/deploy_minipay_cusd_faucet.py \
     --cusd 0x765DE816845861e75A25fCA122bb6898B8B1282a \
-    --operator 0xYourBackendHotWallet
+    --disburser 0xYourBackendHotWallet
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ DEFAULT_SOLC = "0.8.20"
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Deploy GoodMarketMiniPayCUSDFaucet")
     parser.add_argument("--cusd", required=True, help="cUSD token address")
-    parser.add_argument("--operator", required=True, help="Initial operator wallet")
+    parser.add_argument("--disburser", required=True, help="Fixed disburser wallet (backend signer / TOPWALLET_KEY address)")
     parser.add_argument("--chain-id", type=int, default=42220, help="Chain ID (default: 42220 Celo mainnet)")
     parser.add_argument("--confirmations", type=int, default=1, help="Receipt wait confirmations")
     parser.add_argument("--out", default=str(DEFAULT_OUT), help=f"Deployment metadata output path (default: {DEFAULT_OUT})")
@@ -76,7 +76,7 @@ def main() -> None:
 
     deployer = Account.from_key(key)
     cusd = Web3.to_checksum_address(args.cusd)
-    operator = Web3.to_checksum_address(args.operator)
+    disburser = Web3.to_checksum_address(args.disburser)
 
     solidity_file = Path(__file__).with_name("GoodMarketMiniPayCUSDFaucet.sol")
     abi, bytecode = load_contract_artifact(solidity_file)
@@ -85,7 +85,7 @@ def main() -> None:
     nonce = w3.eth.get_transaction_count(deployer.address, "pending")
     gas_price = int(w3.eth.gas_price)
 
-    tx = contract.constructor(cusd, operator).build_transaction(
+    tx = contract.constructor(cusd, disburser).build_transaction(
         {
             "from": deployer.address,
             "nonce": nonce,
@@ -108,7 +108,7 @@ def main() -> None:
         "chain_id": args.chain_id,
         "network_rpc": rpc,
         "deployer": deployer.address,
-        "operator": operator,
+        "disburser": disburser,
         "cusd": cusd,
         "tx_hash": tx_hash.hex(),
         "contract_address": receipt.contractAddress,

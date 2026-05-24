@@ -3,24 +3,24 @@ pragma solidity ^0.8.20;
 
 interface IERC20 {
     function transfer(address to, uint256 amount) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function balanceOf(address account) external view returns (uint256);
 }
 
 /**
  * @title GoodMarketMiniPayCUSDFaucet
- * @notice Controlled cUSD faucet router for MiniPay users.
+ * @notice Non-custodial-style faucet pool for MiniPay cUSD disbursements.
  *
- * Gas fee is always paid by the transaction sender (operator wallet),
- * e.g. TOPWALLET_KEY via backend relayer.
+ * Design constraints requested:
+ * - Anyone can deposit cUSD into this contract.
+ * - No withdraw/emergency withdraw function.
+ * - No admin/owner role and no mutable operator list.
  */
 contract GoodMarketMiniPayCUSDFaucet {
     IERC20 public immutable cUSD;
-    address public owner;
+    address public immutable disburser;
 
-    mapping(address => bool) public operators;
-
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event OperatorUpdated(address indexed operator, bool allowed);
+    event CUSDDeposited(address indexed depositor, uint256 amount, uint256 timestamp);
     event GoodMarketTopWallet(
         address indexed recipient,
         address indexed operator,
@@ -30,38 +30,29 @@ contract GoodMarketMiniPayCUSDFaucet {
         uint256 timestamp
     );
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "not_owner");
+    modifier onlyDisburser() {
+        require(msg.sender == disburser, "not_disburser");
         _;
     }
 
-    modifier onlyOperator() {
-        require(operators[msg.sender], "not_operator");
-        _;
-    }
-
-    constructor(address cUSDToken, address initialOperator) {
+    constructor(address cUSDToken, address fixedDisburser) {
         require(cUSDToken != address(0), "zero_cusd");
-        require(initialOperator != address(0), "zero_operator");
+        require(fixedDisburser != address(0), "zero_disburser");
 
         cUSD = IERC20(cUSDToken);
-        owner = msg.sender;
-        operators[initialOperator] = true;
-
-        emit OwnershipTransferred(address(0), msg.sender);
-        emit OperatorUpdated(initialOperator, true);
+        disburser = fixedDisburser;
     }
 
-    function setOperator(address operator, bool allowed) external onlyOwner {
-        require(operator != address(0), "zero_operator");
-        operators[operator] = allowed;
-        emit OperatorUpdated(operator, allowed);
-    }
-
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "zero_owner");
-        emit OwnershipTransferred(owner, newOwner);
-        owner = newOwner;
+    /**
+     * @notice Deposit cUSD into faucet pool using ERC20 allowance flow.
+     * Anyone can call this after approving cUSD for this contract.
+     */
+    function depositCUSD(uint256 amount) external returns (bool) {
+        require(amount > 0, "zero_amount");
+        bool ok = cUSD.transferFrom(msg.sender, address(this), amount);
+        require(ok, "cusd_transferfrom_failed");
+        emit CUSDDeposited(msg.sender, amount, block.timestamp);
+        return true;
     }
 
     function disburseCUSD(
@@ -69,7 +60,7 @@ contract GoodMarketMiniPayCUSDFaucet {
         uint256 amount,
         bytes32 correlationId,
         string calldata sourceTag
-    ) external onlyOperator returns (bool) {
+    ) external onlyDisburser returns (bool) {
         require(recipient != address(0), "zero_recipient");
         require(amount > 0, "zero_amount");
 

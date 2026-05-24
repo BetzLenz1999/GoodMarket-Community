@@ -2,7 +2,7 @@
 
 ## What this contract does
 - Holds cUSD inside the contract.
-- Allows approved operator(s) to disburse cUSD to users.
+- Allows one fixed disburser wallet (set at deploy) to disburse cUSD to users.
 - Emits custom event `GoodMarketTopWallet` on every disbursement.
 - **Gas is still paid in CELO by the caller wallet** (your backend signer / `TOPWALLET_KEY`).
 
@@ -15,7 +15,7 @@
 ## 2) Deploy constructor params
 Constructor:
 - `cUSDToken`: `0x765DE816845861e75A25fCA122bb6898B8B1282a` (Celo mainnet cUSD)
-- `initialOperator`: backend wallet address that will call `disburseCUSD` (usually `TOPWALLET_KEY` public address)
+- `fixedDisburser`: backend wallet address that will call `disburseCUSD` (usually `TOPWALLET_KEY` public address)
 
 Network:
 - Celo Mainnet (chainId `42220`)
@@ -57,3 +57,10 @@ Fallback / legacy mode:
 - `CONTRACT`: backend uses `TOPWALLET_KEY` to call `disburseCUSD(...)` on your faucet contract.
 - `PRIVATEKEY`: backend uses `TOPWALLET_KEY` to call cUSD token `transfer(...)` directly.
 - In both modes, **gas fee is paid in CELO by the TOPWALLET_KEY signer**.
+
+
+## 7) Deposit behavior (requested)
+- Anyone can deposit cUSD into the faucet pool.
+- Recommended: call `approve(faucetAddress, amount)` on cUSD, then call `depositCUSD(amount)` on faucet contract.
+- You can still send cUSD directly via `cUSD.transfer(faucetAddress, amount)` as normal ERC-20 transfer.
+- There is no withdraw/emergency-withdraw/admin function in the faucet contract.
