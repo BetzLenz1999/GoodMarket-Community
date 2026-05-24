@@ -1,0 +1,40 @@
+# Deploying `GoodMarketMiniPayCUSDFaucet` in Remix
+
+## What this contract does
+- Holds cUSD inside the contract.
+- Allows approved operator(s) to disburse cUSD to users.
+- Emits custom event `GoodMarketTopWallet` on every disbursement.
+- **Gas is still paid in CELO by the caller wallet** (your backend signer / `TOPWALLET_KEY`).
+
+## 1) Open Remix and compile
+1. Go to https://remix.ethereum.org
+2. Create/import file: `GoodMarketMiniPayCUSDFaucet.sol`
+3. Solidity compiler version: **0.8.20**
+4. Compile contract.
+
+## 2) Deploy constructor params
+Constructor:
+- `cUSDToken`: `0x765DE816845861e75A25fCA122bb6898B8B1282a` (Celo mainnet cUSD)
+- `initialOperator`: backend wallet address that will call `disburseCUSD` (usually `TOPWALLET_KEY` public address)
+
+Network:
+- Celo Mainnet (chainId `42220`)
+
+## 3) Fund the contract
+After deploy, transfer cUSD into contract address (this is the faucet pool).
+
+## 4) Disburse call format
+Function:
+- `disburseCUSD(recipient, amount, correlationId, sourceTag)`
+
+Example:
+- `recipient`: `0xabc...`
+- `amount`: `10000000000000000` for `0.01 cUSD` (18 decimals)
+- `correlationId`: bytes32 like `0x6661756365742d31323300000000000000000000000000000000000000000000`
+- `sourceTag`: `minipay_cusd_faucet`
+
+## 5) Event logging
+Every successful disbursement emits:
+- `GoodMarketTopWallet(recipient, operator, amount, correlationId, sourceTag, timestamp)`
+
+This gives you custom on-chain analytics/audit naming.
