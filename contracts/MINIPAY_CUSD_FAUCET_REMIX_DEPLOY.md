@@ -38,3 +38,22 @@ Every successful disbursement emits:
 - `GoodMarketTopWallet(recipient, operator, amount, correlationId, sourceTag, timestamp)`
 
 This gives you custom on-chain analytics/audit naming.
+
+
+## 6) Backend env vars after you deploy in Remix
+Once you have the deployed contract address, set these in your GoodMarket app env:
+
+- `GOODMARKETFAUCETMODE=CONTRACT` to use contract-based disbursement
+- `GOODMARKET_CUSD_FAUCET_CONTRACT_ADDRESS=<your deployed contract address>`
+- `TOPWALLET_KEY=<same backend private key>`
+- `CUSD_CONTRACT=0x765DE816845861e75A25fCA122bb6898B8B1282a` (Celo mainnet)
+
+Fallback / legacy mode:
+
+- `GOODMARKETFAUCETMODE=PRIVATEKEY`
+- In this mode, backend sends `cUSD.transfer(...)` directly from `TOPWALLET_KEY`.
+
+### Mode behavior summary
+- `CONTRACT`: backend uses `TOPWALLET_KEY` to call `disburseCUSD(...)` on your faucet contract.
+- `PRIVATEKEY`: backend uses `TOPWALLET_KEY` to call cUSD token `transfer(...)` directly.
+- In both modes, **gas fee is paid in CELO by the TOPWALLET_KEY signer**.
