@@ -7900,6 +7900,7 @@ def admin_treasury_distribute():
 _faucet_recent_refill: dict = {}
 _faucet_api_pending: dict = {}
 _minipay_cusd_recent_refill: dict = {}
+_minipay_cusd_pending: dict = {}
 # Track force_onchain attempts: wallet_address -> list of timestamps
 _force_onchain_attempts: dict = {}
 _faucet_lock = threading.Lock()
@@ -8417,6 +8418,27 @@ def _record_minipay_cusd_refill(checksum_wallet: str, tx_hash: str, amount_cusd:
         f"🧾 MiniPay cUSD faucet cooldown recorded wallet={checksum_wallet.lower()} "
         f"amount={amount_cusd} tx={tx_hash or 'n/a'}"
     )
+
+def _set_minipay_cusd_pending(checksum_wallet: str):
+    with _faucet_lock:
+        _minipay_cusd_pending[checksum_wallet.lower()] = time.time()
+
+def _get_minipay_cusd_pending(checksum_wallet: str) -> tuple:
+    now = time.time()
+    key = checksum_wallet.lower()
+    with _faucet_lock:
+        started = _minipay_cusd_pending.get(key)
+        if started is None:
+            return False, 0
+        age = now - float(started)
+        if age > FAUCET_PENDING_TTL_SECONDS:
+            _minipay_cusd_pending.pop(key, None)
+            return False, 0
+        return True, int(max(1, FAUCET_PENDING_TTL_SECONDS - age))
+
+def _clear_minipay_cusd_pending(checksum_wallet: str):
+    with _faucet_lock:
+        _minipay_cusd_pending.pop(checksum_wallet.lower(), None)
 
 
 # ── GoodDollar Celo gas faucet 48h cooldown (persistent) ─────────────────
@@ -9470,9 +9492,29 @@ def minipay_stablecoin_faucet():
                 "stablecoin_status": stable_before,
             })
 
-        transfer_result = _execute_minipay_cusd_faucet_transfer(
-            w3, checksum_wallet, MINIPAY_CUSD_FAUCET_AMOUNT, correlation_id=correlation_id
-        )
+        is_pending, pending_remaining = _get_minipay_cusd_pending(checksum_wallet)
+        if is_pending:
+            return jsonify({
+                "success": True,
+                "status": "pending_refill",
+                "wallet": checksum_wallet.lower(),
+                "topped_up": False,
+                "stable_ready": False,
+                "reason": f"MiniPay cUSD faucet request is already processing. Retry after ~{pending_remaining}s.",
+                "pending_refill_seconds": pending_remaining,
+                "faucet_amount_cusd": float(MINIPAY_CUSD_FAUCET_AMOUNT),
+                "program_by": MINIPAY_CUSD_FAUCET_PROGRAM_LABEL,
+                "correlation_id": correlation_id,
+                "stablecoin_status": stable_before,
+            })
+
+        _set_minipay_cusd_pending(checksum_wallet)
+        try:
+            transfer_result = _execute_minipay_cusd_faucet_transfer(
+                w3, checksum_wallet, MINIPAY_CUSD_FAUCET_AMOUNT, correlation_id=correlation_id
+            )
+        finally:
+            _clear_minipay_cusd_pending(checksum_wallet)
         status_code = 200 if transfer_result.get("success") else 502
         if transfer_result.get("reason") == "not_configured":
             status_code = 503
