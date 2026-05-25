@@ -844,5 +844,150 @@ class FaucetFlowTests(unittest.TestCase):
         self.assertIn("gas_coverage_message", body)
 
 
+    # ── Helpers below: the WalletConnect-faucet-UX patch ──────────────────
+    # When a GoodWallet user connects via WalletConnect URI/QR they often
+    # share a wallet address that the GoodDollar Faucet contract has
+    # already topped up within its 48h window. We added a `canTop(address)`
+    # preflight + revert-reason decoding so the on-chain fallback surfaces
+    # the contract cooldown cleanly instead of producing the misleading
+    # "Gas top-up did not arrive in time" error after burning gas on a tx
+    # that just reverts.
+    @patch("routes.Web3", new=FakeWeb3)
+    @patch("routes._has_recent_gooddollar_celo_refill")
+    @patch("routes._has_recent_refill")
+    @patch("routes._get_gas_status")
+    @patch("routes.urllib.request.urlopen")
+    @patch("routes._execute_onchain_faucet_topup")
+    def test_walletconnect_onchain_cooldown_returns_gooddollar_cooldown(
+        self,
+        mock_onchain,
+        mock_urlopen,
+        mock_get_gas,
+        mock_recent,
+        mock_gd_recent,
+    ):
+        """Server surfaces gooddollar_cooldown when on-chain fallback reports it."""
+        self._auth_session()
+        mock_recent.return_value = (False, 0)
+        # No prior DB-tracked GoodDollar refill yet — the preflight only
+        # discovers the cooldown inside the on-chain helper via canTop().
+        mock_gd_recent.return_value = (False, 0, None)
+        mock_get_gas.return_value = {
+            "balance_wei": "0", "balance_celo": 0.0, "estimated_gas": 220000,
+            "gas_price_wei": "1000000000",
+            "required_gas_wei": "1000000000000000", "required_gas_celo": 0.001,
+            "gas_ready": False,
+        }
+        mock_urlopen.side_effect = Exception("api down")
+        # On-chain helper detects the contract cooldown (either via canTop=False
+        # or a decoded revert reason) and returns the new gooddollar_cooldown
+        # reason instead of the generic onchain_failed.
+        mock_onchain.return_value = {
+            "success": False,
+            "status": "gooddollar_cooldown",
+            "reason": "gooddollar_cooldown",
+            "error": "GoodDollar faucet declined this wallet — 48h cooldown.",
+            "can_top": False,
+            "attempted_tx": False,
+        }
+
+        resp = self.client.post(
+            "/api/faucet/gas",
+            json={"wallet": "0x1111111111111111111111111111111111111111"},
+        )
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(body["status"], "gooddollar_cooldown")
+        self.assertFalse(body["success"])
+        self.assertFalse(body.get("topped_up", True))
+        self.assertFalse(body.get("wallet_action_required", True))
+        self.assertIn("GoodDollar", body["reason"])
+        # Only one on-chain attempt should be made — retrying does not help.
+        self.assertEqual(mock_onchain.call_count, 1)
+
+    def test_can_top_preflight_handles_false_and_unknown(self):
+        """`_check_gooddollar_faucet_can_top` returns False, True, or None."""
+        import routes as _routes_mod
+
+        class _Eth:
+            def __init__(self, result):
+                self._result = result
+
+            def call(self, _tx):
+                if isinstance(self._result, Exception):
+                    raise self._result
+                return self._result
+
+        class _W3:
+            def __init__(self, result):
+                self.eth = _Eth(result)
+
+        # False — 32 zero bytes.
+        can, err = _routes_mod._check_gooddollar_faucet_can_top(
+            _W3(b"\x00" * 32),
+            "0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84",
+            "0x1111111111111111111111111111111111111111",
+        )
+        self.assertEqual(can, False)
+        self.assertIsNone(err)
+
+        # True — non-zero byte present.
+        can, err = _routes_mod._check_gooddollar_faucet_can_top(
+            _W3(b"\x00" * 31 + b"\x01"),
+            "0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84",
+            "0x1111111111111111111111111111111111111111",
+        )
+        self.assertEqual(can, True)
+        self.assertIsNone(err)
+
+        # Unknown — exception during eth_call (e.g. RPC blip / missing fn).
+        can, err = _routes_mod._check_gooddollar_faucet_can_top(
+            _W3(RuntimeError("boom")),
+            "0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84",
+            "0x1111111111111111111111111111111111111111",
+        )
+        self.assertIsNone(can)
+        self.assertIn("boom", err)
+
+    def test_faucet_cooldown_error_heuristic(self):
+        """Revert-reason strings from the GoodDollar Faucet contract are matched."""
+        import routes as _routes_mod
+        self.assertTrue(_routes_mod._looks_like_faucet_cooldown_error(
+            "execution reverted: Cooldown"))
+        self.assertTrue(_routes_mod._looks_like_faucet_cooldown_error(
+            "Wallet already topped within the cooldown period"))
+        self.assertTrue(_routes_mod._looks_like_faucet_cooldown_error(
+            "VM Exception: too soon to top wallet"))
+        self.assertFalse(_routes_mod._looks_like_faucet_cooldown_error(
+            "execution reverted: insufficient balance"))
+        self.assertFalse(_routes_mod._looks_like_faucet_cooldown_error(""))
+        self.assertFalse(_routes_mod._looks_like_faucet_cooldown_error(None))
+
+    def test_faucet_success_response_includes_wallet_action_required_flag(self):
+        """Faucet responses tell the frontend no wallet signature is required."""
+        self._auth_session()
+        with patch("routes.Web3", new=FakeWeb3), \
+             patch("routes._has_recent_refill", return_value=(False, 0)), \
+             patch("routes._get_gas_status", return_value={
+                 "balance_wei": "2000000000000000",
+                 "balance_celo": 0.002,
+                 "estimated_gas": 220000,
+                 "gas_price_wei": "1000000000",
+                 "required_gas_wei": "1000000000000000",
+                 "required_gas_celo": 0.001,
+                 "gas_ready": True,
+             }):
+            resp = self.client.post(
+                "/api/faucet/gas",
+                json={"wallet": "0x1111111111111111111111111111111111111111"},
+            )
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 200)
+        # The frontend uses this flag to render "no wallet approval needed"
+        # copy specifically for WalletConnect users.
+        self.assertIn("wallet_action_required", body)
+        self.assertFalse(body["wallet_action_required"])
+
+
 if __name__ == "__main__":
     unittest.main()

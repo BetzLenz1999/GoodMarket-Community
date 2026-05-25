@@ -8103,6 +8103,16 @@ GOODDOLLAR_FAUCET_API_URL = os.getenv(
     "GOODDOLLAR_FAUCET_API_URL",
     "https://goodserver.gooddollar.org/verify/topWallet"
 )
+# Selector for the GoodDollar Faucet `canTop(address)` view function. Used as
+# a preflight before the on-chain `topWallet(address)` fallback so we can
+# detect the contract's own 48h cooldown (and any other refusal predicate
+# such as a wallet that already has plenty of CELO) BEFORE sending a tx
+# that would just revert. This is the main symptom users on GoodWallet via
+# WalletConnect URI/QR were hitting: the API faucet returned ok=1 but the
+# relayed tx reverted at the contract level, and the on-chain fallback
+# reverted for the same reason — wasting gas and producing the misleading
+# "Gas top-up did not arrive in time" error.
+_FAUCET_CANTOP_SELECTOR = "0xe97eefd2"  # bytes4(keccak256("canTop(address)"))
 GOODDOLLAR_XDC_FAUCET_API_URL = os.getenv(
     "GOODDOLLAR_XDC_FAUCET_API_URL",
     "https://goodserver.gooddollar.org/verify/topWallet"
@@ -9101,6 +9111,73 @@ def _get_faucet_correlation_id(data: dict) -> str:
     return supplied or f"faucet-{uuid.uuid4().hex[:12]}"
 
 
+def _check_gooddollar_faucet_can_top(w3, faucet_contract: str, checksum_wallet: str) -> tuple:
+    """Preflight `canTop(address)` against the GoodDollar Faucet contract.
+
+    Returns ``(can_top, error)`` where ``can_top`` is ``True``/``False`` when
+    the view call returns a boolean, or ``None`` when the call itself failed
+    (RPC error, unsupported method, etc.). In the latter case the caller
+    should treat the result as "unknown" and proceed with the normal flow
+    rather than blocking the user on a transient infra hiccup.
+
+    Detecting this lets us short-circuit the on-chain `topWallet(address)`
+    attempt for wallets that are inside the contract's own cooldown — the
+    main reason gas was "not arriving" for GoodWallet users who connected
+    via WalletConnect URI/QR (they already triggered the GoodDollar faucet
+    elsewhere within the 48h window, so both the relayed API tx and the
+    TOPWALLET_KEY fallback revert).
+    """
+    try:
+        # canTop(address) — 4-byte selector + 32-byte left-padded address.
+        data = _FAUCET_CANTOP_SELECTOR + "000000000000000000000000" + checksum_wallet[2:].lower()
+        result = w3.eth.call({"to": Web3.to_checksum_address(faucet_contract), "data": data})
+        # Boolean view functions return 32 bytes; non-zero means True.
+        if result is None:
+            return None, "empty_result"
+        raw = bytes(result)
+        if not raw:
+            return None, "empty_result"
+        return any(b != 0 for b in raw), None
+    except Exception as e:  # noqa: BLE001 — wide net; logged by caller.
+        return None, str(e)
+
+
+def _extract_revert_reason(w3, tx: dict) -> str:
+    """Best-effort decode of a transaction's revert reason via eth_call.
+
+    The GoodDollar Faucet contract reverts with ``"Cooldown"`` (or similar
+    string-encoded reason) when the address is inside its 48h window. We
+    re-run the call against ``latest`` to surface that string so users see
+    a meaningful error instead of the generic "transaction failed".
+    """
+    try:
+        w3.eth.call(tx, "latest")
+        return ""
+    except Exception as e:  # noqa: BLE001
+        return str(e)
+
+
+def _looks_like_faucet_cooldown_error(message: str) -> bool:
+    """Heuristic match for GoodDollar Faucet cooldown / "already topped" reverts."""
+    if not message:
+        return False
+    text = str(message).lower()
+    return any(
+        marker in text
+        for marker in (
+            "cooldown",
+            "already topped",
+            "wallet already topped",
+            "wallet was topped",
+            "too soon",
+            "you can only call this method once",
+            "you can call this method once",
+            "topped within",
+            "wait before requesting",
+        )
+    )
+
+
 def _execute_onchain_faucet_topup(w3, checksum_wallet: str, correlation_id: str = "n/a") -> dict:
     """Internal helper to send topWallet(address) tx with TOPWALLET_KEY."""
     from blockchain import CELO_CHAIN_ID
@@ -9127,6 +9204,41 @@ def _execute_onchain_faucet_topup(w3, checksum_wallet: str, correlation_id: str 
         f"🖊️ Faucet onchain signer wallet={checksum_wallet.lower()} signer={signer_masked} "
         f"source=topwallet_key correlation_id={correlation_id}"
     )
+
+    # Preflight: ask the GoodDollar Faucet contract if this address is
+    # currently eligible. If the view returns False (cooldown / already
+    # topped / signer not a disburser / etc.), short-circuit with a clear
+    # cooldown response instead of broadcasting a tx that just reverts and
+    # wastes both TOPWALLET_KEY CELO and the user's time.
+    can_top, can_top_err = _check_gooddollar_faucet_can_top(w3, faucet_contract, checksum_wallet)
+    if can_top is False:
+        logger.warning(
+            f"🛡️ Faucet onchain preflight refused wallet={checksum_wallet.lower()} "
+            f"reason=cantop_false source=onchain correlation_id={correlation_id}"
+        )
+        # Persist the cooldown so subsequent faucet calls short-circuit at
+        # the higher-level cooldown gate too, matching the API-success
+        # behaviour (we know the wallet is already "funded enough" or
+        # inside the contract's own window).
+        _record_gooddollar_celo_refill(checksum_wallet, None, source="onchain_preflight")
+        return {
+            "success": False,
+            "status": "gooddollar_cooldown",
+            "reason": "gooddollar_cooldown",
+            "error": (
+                "GoodDollar faucet declined this wallet — usually because it was "
+                "already topped up within the last 48 hours. No wallet signature is "
+                "required for the top-up; please wait for the cooldown to expire "
+                "and try again."
+            ),
+            "can_top": False,
+            "attempted_tx": False,
+        }
+    if can_top_err:
+        logger.info(
+            f"⚠️ Faucet onchain canTop preflight unavailable wallet={checksum_wallet.lower()} "
+            f"reason={can_top_err[:120]} correlation_id={correlation_id}"
+        )
 
     # calldata for topWallet(address): 0x3771dcf8 + padded wallet bytes
     call_data = "0x3771dcf8" + "000000000000000000000000" + checksum_wallet[2:].lower()
@@ -9207,15 +9319,49 @@ def _execute_onchain_faucet_topup(w3, checksum_wallet: str, correlation_id: str 
         _record_gooddollar_celo_refill(checksum_wallet, tx_hash_hex, source="onchain")
         return {"success": True, "status": "onchain_sent", "tx_hash": tx_hash_hex}
 
+    # Tx mined with status=0 (reverted). Try to recover the revert reason
+    # so we can surface a meaningful error (most commonly the 48h faucet
+    # cooldown) instead of the generic "transaction failed".
+    revert_reason = _extract_revert_reason(
+        w3,
+        {
+            "from": faucet_acct.address,
+            "to": faucet_contract,
+            "data": call_data,
+        },
+    )
+    if _looks_like_faucet_cooldown_error(revert_reason):
+        logger.warning(
+            f"🛡️ Faucet onchain reverted with cooldown wallet={checksum_wallet.lower()} "
+            f"tx={tx_hash_hex} reason={revert_reason[:160]} correlation_id={correlation_id}"
+        )
+        _record_gooddollar_celo_refill(checksum_wallet, tx_hash_hex, source="onchain_revert")
+        return {
+            "success": False,
+            "status": "gooddollar_cooldown",
+            "reason": "gooddollar_cooldown",
+            "error": (
+                "GoodDollar faucet contract reported a cooldown for this wallet. "
+                "It was already topped up recently — no wallet signature is required "
+                "for the top-up; please wait for the cooldown to expire and try again."
+            ),
+            "tx_hash": tx_hash_hex,
+            "revert_reason": revert_reason,
+        }
+
     logger.error(
         f"❌ Faucet onchain failed wallet={checksum_wallet.lower()} source=onchain tx={tx_hash_hex} "
+        f"revert_reason={revert_reason[:160] if revert_reason else 'unknown'} "
         f"correlation_id={correlation_id}"
     )
     return {
         "success": False,
         "status": "onchain_failed",
-        "error": "On-chain faucet transaction failed",
-        "tx_hash": tx_hash_hex
+        "error": "On-chain faucet transaction failed" + (
+            f" ({revert_reason[:120]})" if revert_reason else ""
+        ),
+        "tx_hash": tx_hash_hex,
+        "revert_reason": revert_reason,
     }
 
 
@@ -9468,6 +9614,7 @@ def faucet_onchain():
                 "error": reason_msg,
                 "attempted_onchain": False,
                 "correlation_id": correlation_id,
+                "wallet_action_required": False,
                 **_build_gooddollar_cooldown_payload(gd_entry, gd_remaining_seconds),
             }), 429
 
@@ -9530,6 +9677,7 @@ def faucet_gas():
                 "success": True,
                 "topped_up": False,
                 "status": "gas_ready",
+                "wallet_action_required": False,
                 **flow_result,
                 "debug": {
                     "pre_balance_wei": str(pre_balance_wei),
@@ -9568,6 +9716,7 @@ def faucet_gas():
                 "status": "gooddollar_cooldown",
                 "reason": reason_msg,
                 "error": reason_msg,
+                "wallet_action_required": False,
                 "diagnostics": diagnostics,
                 **flow_result,
                 **_build_gooddollar_cooldown_payload(gd_entry, gd_remaining_seconds),
@@ -9601,6 +9750,7 @@ def faucet_gas():
                 "status": "recent_refill",
                 "reason": f"Recent refill detected. Retry after ~{seconds_remaining}s.",
                 "recent_refill_cooldown_seconds": seconds_remaining,
+                "wallet_action_required": False,
                 "diagnostics": diagnostics,
                 **flow_result,
                 "debug": {
@@ -9703,6 +9853,7 @@ def faucet_gas():
                     "status": "gas_ready" if status_after_api["gas_ready"] else "api_accepted_pending",
                     "reason": None,
                     "error": None,
+                    "wallet_action_required": False,
                     "attempted_api": True,
                     "attempted_onchain": False,
                     "api_result": flow_result["api_result"],
@@ -9751,8 +9902,9 @@ def faucet_gas():
             })
             if onchain_result.get("success"):
                 break
-            if (onchain_result or {}).get("reason") == "signer_insufficient_funds":
-                # Retrying without replenishing signer CELO will not help.
+            if (onchain_result or {}).get("reason") in ("signer_insufficient_funds", "gooddollar_cooldown"):
+                # Retrying does not help — signer is broke or the contract
+                # is refusing the address. Stop early.
                 break
         flow_result["onchain_result"] = onchain_result
         flow_result["onchain_attempt_history"] = onchain_attempt_history
@@ -9767,6 +9919,45 @@ def faucet_gas():
                 # Keep pending marker visible for status polling/troubleshooting.
                 _set_api_pending(checksum_wallet, api_tx_hash, pre_balance_wei)
             diagnostics["stage"] = "onchain_failed"
+
+        # If the on-chain fallback surfaced a GoodDollar cooldown (either
+        # via canTop() preflight or a decoded revert reason), surface it
+        # to the frontend the same way the higher-level DB-backed cooldown
+        # gate does so the UI shows the friendly "wait Xh" copy instead of
+        # the generic "Gas top-up did not arrive in time" error. This is
+        # what was happening to GoodWallet users who already used the
+        # GoodDollar faucet elsewhere within the last 48h.
+        if (onchain_result or {}).get("reason") == "gooddollar_cooldown":
+            _, gd_remaining_seconds_cd, gd_entry_cd = _has_recent_gooddollar_celo_refill(checksum_wallet)
+            cooldown_hours = max(1, int(round((gd_remaining_seconds_cd or 0) / 3600))) if gd_remaining_seconds_cd else 48
+            reason_msg = (
+                f"GoodDollar already provided gas to this wallet. Please wait "
+                f"~{cooldown_hours}h before requesting more gas. No wallet signature "
+                f"is needed for the gas top-up — it runs on the server."
+            )
+            flow_result["terminal_status"] = "gooddollar_cooldown"
+            status_after_cd = _get_gas_status(w3, checksum_wallet)
+            return jsonify({
+                "success": False,
+                "topped_up": False,
+                "status": "gooddollar_cooldown",
+                "reason": reason_msg,
+                "error": reason_msg,
+                "wallet_action_required": False,
+                "diagnostics": {**diagnostics, "stage": "blocked_gooddollar_cooldown_onchain"},
+                **flow_result,
+                **_build_gooddollar_cooldown_payload(gd_entry_cd, gd_remaining_seconds_cd or 0),
+                "debug": {
+                    "pre_balance_wei": str(pre_balance_wei),
+                    "post_balance_wei": str(int(status_after_cd["balance_wei"])),
+                    "required_gas_wei": status_after_cd["required_gas_wei"],
+                    "required_gas_celo": status_after_cd["required_gas_celo"],
+                    "cooldown_reason": "gooddollar_cooldown_onchain",
+                    "revert_reason": (onchain_result or {}).get("revert_reason"),
+                    "can_top": (onchain_result or {}).get("can_top"),
+                },
+                **status_after_cd,
+            }), 429
 
         status_after = _get_gas_status(w3, checksum_wallet)
         post_balance_wei = int(status_after["balance_wei"])
@@ -9807,6 +9998,13 @@ def faucet_gas():
             "reason": failure_message,
             "error": failure_message,
             "show_gas_coverage_message": bool(topped_up),
+            # The gas top-up flow is server-mediated: it uses the GoodDollar
+            # API faucet first, then a server-signed TOPWALLET_KEY fallback.
+            # The user's wallet (injected OR WalletConnect) is never asked
+            # to sign anything for this. Surfacing this explicitly lets the
+            # frontend show "no wallet approval needed" copy so WC users
+            # stop waiting for a prompt that will never appear.
+            "wallet_action_required": False,
             **gooddollar_payload,
             "diagnostics": {
                 **diagnostics,

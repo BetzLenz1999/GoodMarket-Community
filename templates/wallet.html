@@ -3790,24 +3790,39 @@
             throw new Error('Server signing is disabled. Please use your injected wallet / WalletConnect.');
         }
 
+        // Tracks whether the active claim flow is using the WalletConnect
+        // bridge (vs an injected window.ethereum). When true, the gas/claim
+        // status messages emphasise that the FAUCET stage requires no wallet
+        // approval (it's a pure server-side top-up against the GoodDollar
+        // faucet API + the TOPWALLET_KEY fallback), and that the CLAIM stage
+        // does need the user to open their connected wallet (GoodWallet,
+        // Trust, MetaMask, etc.) and approve the transaction there. WC users
+        // hitting this path don't get an in-page MetaMask popup, so they
+        // need an explicit "go look at your wallet" hint.
+        let _claimGasFlowIsWalletConnect = false;
         function setClaimGasUiState(stage) {
+            const wc = !!_claimGasFlowIsWalletConnect;
             const stateMap = {
                 checking_balance: {
                     label: 'Checking wallet gas…',
                     icon: '🔎',
-                    status: 'Checking wallet gas…',
+                    status: 'Checking wallet gas… (no wallet approval needed)',
                     color: 'var(--text-dim)'
                 },
                 requesting_faucet: {
                     label: 'Requesting faucet top-up…',
                     icon: '🚰',
-                    status: 'Requesting faucet top-up…',
+                    status: wc
+                        ? '🚰 Requesting CELO gas from the GoodDollar faucet for you. No wallet approval is needed — please wait ~30–60 seconds.'
+                        : 'Requesting faucet top-up…',
                     color: '#60a5fa'
                 },
                 waiting_credit: {
                     label: 'Waiting for gas to arrive…',
                     icon: '⏳',
-                    status: 'Waiting for gas to arrive…',
+                    status: wc
+                        ? '⏳ Waiting for gas to arrive on-chain. No wallet approval needed for this step.'
+                        : 'Waiting for gas to arrive…',
                     color: '#34d399'
                 },
                 gas_ready: {
@@ -3817,9 +3832,11 @@
                     color: '#22c55e'
                 },
                 approve_wallet: {
-                    label: 'Approve in wallet',
-                    icon: '🪙',
-                    status: 'Approve claim in wallet…',
+                    label: wc ? 'Open wallet to approve' : 'Approve in wallet',
+                    icon: wc ? '📲' : '🪙',
+                    status: wc
+                        ? '📲 Open your connected wallet (GoodWallet / Trust / MetaMask via WalletConnect) and approve the claim transaction.'
+                        : 'Approve claim in wallet…',
                     color: 'var(--text-dim)'
                 }
             };
@@ -3971,6 +3988,15 @@
 
         async function ensureGasReadyBeforeClaim(options = {}) {
             const forceOnchain = !!options.forceOnchain;
+            // Caller passes usingWcBridge=true so the status copy mentions
+            // "no wallet approval needed" — WC users on GoodWallet etc.
+            // would otherwise sit and wait for a wallet prompt that the
+            // faucet flow never raises. Default to whatever the active
+            // claim context already established so re-entry from the
+            // injected-path retries keeps the same copy.
+            if (options.usingWcBridge !== undefined) {
+                _claimGasFlowIsWalletConnect = !!options.usingWcBridge;
+            }
             const correlationId = `claim-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
             window.__claimFaucetCorrelationId = correlationId;
             setClaimGasUiState('checking_balance');
@@ -4009,14 +4035,21 @@
 
             // 48h GoodDollar cooldown: explain the 3-day coverage rule and
             // surface the remaining lockout. Same banner copy as the success
-            // path so users understand WHY the request was refused.
+            // path so users understand WHY the request was refused. For
+            // WalletConnect users (especially GoodWallet via URI/QR) we also
+            // append a one-line confirmation that no wallet signature was
+            // required, so they don't keep waiting for a wallet prompt that
+            // never appears.
             if (terminal === 'gooddollar_cooldown') {
                 const remainingHours = Math.max(
                     1,
                     Math.round(Number(gasData.gooddollar_cooldown_remaining_seconds || 0) / 3600)
                 );
-                const errorMsg = (gasData.reason || gasData.error ||
+                const baseMsg = (gasData.reason || gasData.error ||
                     `GoodDollar already provided gas to this wallet. Please wait ~${remainingHours}h before requesting more gas.`);
+                const errorMsg = _claimGasFlowIsWalletConnect
+                    ? `${baseMsg} (No wallet signature was required for this top-up — it runs entirely server-side.)`
+                    : baseMsg;
                 if (window.GMGasCoverageBanner) {
                     try {
                         window.GMGasCoverageBanner.maybeShow(
@@ -4056,8 +4089,12 @@
                 (terminal === 'onchain_failed' || terminal === 'not_configured' || terminal === 'api_failed') &&
                 !gasData.gas_ready
             ) {
+                const baseErr = gasData.error || gasData.reason || 'Gas top-up failed.';
+                const wcHint = _claimGasFlowIsWalletConnect
+                    ? ' (No wallet signature was required for the gas top-up; this is a server-side failure.)'
+                    : '';
                 throw new Error(
-                    `${gasData.error || gasData.reason || 'Gas top-up failed.'} Please retry shortly or contact support with your wallet and faucet debug values.`
+                    `${baseErr}${wcHint} Please retry shortly or contact support with your wallet and faucet debug values.`
                 );
             }
 
@@ -4389,6 +4426,12 @@
                 return;
             }
 
+            // Reset the WC-aware status copy flag at the start of every claim
+            // attempt so a prior WalletConnect claim does not leak its
+            // "approval is in another window" copy into a subsequent
+            // injected-wallet claim (and vice versa).
+            _claimGasFlowIsWalletConnect = !!usingWcBridge;
+
             btn.disabled = true;
             setClaimGasUiState('checking_balance');
 
@@ -4438,8 +4481,12 @@
                     // the user's wallet RPC) and rely on the server faucet
                     // flow to check + top up gas. Mirrors what the injected
                     // path falls back to when its local snapshot is short.
-                    setStatus('Checking wallet gas…', 'var(--text-dim)');
-                    await ensureGasReadyBeforeClaim();
+                    // We pass usingWcBridge so the status banner makes it
+                    // clear no wallet approval is required for the faucet
+                    // top-up (WC users on GoodWallet etc. were sitting and
+                    // waiting for a prompt that never appeared).
+                    setStatus('Checking wallet gas… (no wallet approval needed yet)', 'var(--text-dim)');
+                    await ensureGasReadyBeforeClaim({ usingWcBridge: true });
                 } else {
                     // Secondary MiniPay check: even if _isMiniPay() returned false earlier
                     // (due to late provider injection), re-check now that we have a provider.

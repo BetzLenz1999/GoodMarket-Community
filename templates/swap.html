@@ -2301,6 +2301,20 @@
             if (method === 'eth_sendTransaction') {
                 if (!_wcAddress) await _wcConnectSwap();
                 const txParams = (params && params[0]) ? params[0] : {};
+                // UX: tell the user the prompt is now waiting in their wallet
+                // app. WalletConnect transactions do not raise an in-page
+                // popup the way injected wallets do, and GoodWallet / Trust /
+                // MetaMask Mobile users often miss the prompt sitting on the
+                // wallet side. We surface this hint right before the actual
+                // request goes out so they know where to look.
+                try {
+                    if (typeof showAlert === 'function') {
+                        showAlert(
+                            'alert-info',
+                            '📲 <strong>Open your connected wallet</strong> (GoodWallet / Trust / MetaMask) and <strong>approve the transaction</strong> to continue. The request was sent via WalletConnect.'
+                        );
+                    }
+                } catch (_) { /* no-op */ }
                 if (_wcMode === "sidecar") {
                     const txResp = await fetch('/api/wc-tx/' + encodeURIComponent(_wcSessionId), {
                         method: 'POST',

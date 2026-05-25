@@ -468,6 +468,18 @@
 
         async function _sendTxViaWalletConnect(txParams, alertType = "alert-info") {
             if (!_wcAddress) await _connectWalletConnect(alertType);
+            // UX: WalletConnect tx prompts surface in the connected wallet
+            // app, not in this tab. GoodWallet / Trust / MetaMask Mobile
+            // users often miss the prompt sitting on the wallet side, so
+            // tell them where to look right before we dispatch the request.
+            try {
+                if (typeof showAlert === 'function') {
+                    showAlert(
+                        alertType,
+                        '📲 <strong>Open your connected wallet</strong> (GoodWallet / Trust / MetaMask) and <strong>approve the transaction</strong> to continue. The request was sent via WalletConnect.'
+                    );
+                }
+            } catch (_) { /* no-op */ }
             if (_wcMode === "sidecar") {
                 const txResp = await fetch('/api/wc-tx/' + encodeURIComponent(_wcSessionId), {
                     method: 'POST',
