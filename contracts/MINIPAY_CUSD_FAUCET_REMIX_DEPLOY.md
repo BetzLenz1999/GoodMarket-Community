@@ -71,11 +71,60 @@ Fallback / legacy mode:
 - Cooldown is also enforced on-chain via `disburseCUSD` and `cooldownRemaining(recipient)`.
 
 ## 8) If Remix shows red error / Gas estimation failed
-Quick checks:
-- Make sure your opened file is **Solidity contract** (`GoodMarketMiniPayCUSDFaucet.sol`), not the Python deploy script.
-- Re-compile with Solidity compiler `0.8.20`.
-- Constructor fields must be:
-  - `cUSDToken = 0x765DE816845861e75A25fCA122bb6898B8B1282a`
-  - `fixedDisburser = <public address of TOPWALLET_KEY signer>`
-  - `fixedCooldownSeconds = 172800` (must be > 0)
-- Deploy `Value` must be `0`.
+
+> The contract itself compiles cleanly and a valid deployment estimates at
+> roughly **560k gas**. If Remix says *"gas estimation failed"*, it is almost
+> always one of the constructor `require(...)` checks reverting, **not** a bug
+> in the `.sol` source.
+
+### Step 1 — confirm you're compiling the Solidity file, not the Python one
+- The opened file must be `GoodMarketMiniPayCUSDFaucet.sol`.
+- `deploy_minipay_cusd_faucet.py` is a Python deploy script and will look like
+  pure red errors if pasted into Remix's Solidity editor.
+- Solidity compiler version: **0.8.20**.
+
+### Step 2 — check the 3 constructor `require()`s
+The constructor has exactly three guard clauses. Remix's "gas estimation failed"
+message corresponds 1:1 to whichever one trips:
+
+| Revert reason          | What it means in Remix                                   | Fix |
+|------------------------|----------------------------------------------------------|-----|
+| `zero_cusd`            | `cUSDToken` field is `0x0000...0000` or left blank       | Use `0x765DE816845861e75A25fCA122bb6898B8B1282a` (Celo mainnet cUSD) |
+| `zero_disburser`       | `fixedDisburser` field is `0x0000...0000` or left blank  | Paste the public address of the wallet your backend will use as `TOPWALLET_KEY` |
+| `zero_cooldown`        | `fixedCooldownSeconds` field is `0`                      | Use `172800` for 48h (or any positive integer in seconds) |
+
+Tip: Remix sometimes auto-fills constructor inputs from a previously deployed
+contract's ABI. Click the dropdown next to **Deploy** and re-enter the values
+to make sure nothing is silently `0x0` / `0`.
+
+### Step 3 — check the deployer wallet
+- Wallet must hold **CELO** (not just cUSD) — gas for deployment is paid in
+  CELO. Roughly **0.005 CELO** is enough at ~5 gwei.
+- MetaMask network must be **Celo Mainnet (chainId 42220)** — not Alfajores,
+  not Ethereum.
+- Deploy **Value** field must be `0` (the constructor is non-payable).
+- "Estimated gas" Remix shows is around `560000`; manually overriding to
+  something low (e.g. `21000`) will also surface as "gas estimation failed".
+
+### Step 4 — verify locally before re-trying in Remix
+If you have the repo cloned, you can sanity-check the exact constructor args
+against a real Celo RPC. `py-solc-x`, `web3`, and `eth-account` are already in
+`pyproject.toml`, so `uv run` is enough:
+
+```bash
+export CELO_RPC=https://forno.celo.org
+export TOPWALLET_KEY=0x...                # CELO-funded deployer
+uv run python contracts/deploy_minipay_cusd_faucet.py \
+    --cusd 0x765DE816845861e75A25fCA122bb6898B8B1282a \
+    --disburser 0xYOUR_BACKEND_PUBLIC_ADDRESS \
+    --cooldown-seconds 172800
+```
+
+If `estimate_gas` succeeds (~560k), Remix is also fine — the failure is on
+the Remix/MetaMask side (network selection, gas price, or a stale constructor
+input).
+
+### Step 5 — last-resort fallback
+If Remix keeps failing despite the checks above, deploy via the Python script
+(`contracts/deploy_minipay_cusd_faucet.py`). It is fully equivalent to the
+Remix flow and uses the same compiler version + bytecode.
