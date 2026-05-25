@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Deploy GoodMarketMiniPayCUSDFaucet to Celo-compatible network.
 
+IMPORTANT:
+- This is a Python script and must be run in a terminal.
+- Do NOT paste this file into Remix Solidity editor.
+- In Remix, only paste/compile `GoodMarketMiniPayCUSDFaucet.sol`.
+
 Usage:
   export CELO_RPC=...
   export TOPWALLET_KEY=0x...

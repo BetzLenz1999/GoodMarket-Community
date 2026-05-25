@@ -12,6 +12,9 @@
 3. Solidity compiler version: **0.8.20**
 4. Compile contract.
 
+> ⚠️ **Common mistake:** `deploy_minipay_cusd_faucet.py` is a Python file.  
+> Do not paste it into a `.sol` file in Remix, or it will show red syntax errors.
+
 ## 2) Deploy constructor params
 Constructor:
 - `cUSDToken`: `0x765DE816845861e75A25fCA122bb6898B8B1282a` (Celo mainnet cUSD)
@@ -66,3 +69,13 @@ Fallback / legacy mode:
 - You can still send cUSD directly via `cUSD.transfer(faucetAddress, amount)` as normal ERC-20 transfer.
 - There is no withdraw/emergency-withdraw/admin function in the faucet contract.
 - Cooldown is also enforced on-chain via `disburseCUSD` and `cooldownRemaining(recipient)`.
+
+## 8) If Remix shows red error / Gas estimation failed
+Quick checks:
+- Make sure your opened file is **Solidity contract** (`GoodMarketMiniPayCUSDFaucet.sol`), not the Python deploy script.
+- Re-compile with Solidity compiler `0.8.20`.
+- Constructor fields must be:
+  - `cUSDToken = 0x765DE816845861e75A25fCA122bb6898B8B1282a`
+  - `fixedDisburser = <public address of TOPWALLET_KEY signer>`
+  - `fixedCooldownSeconds = 172800` (must be > 0)
+- Deploy `Value` must be `0`.
