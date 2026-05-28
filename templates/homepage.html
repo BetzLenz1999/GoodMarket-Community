@@ -2965,11 +2965,25 @@
                 const accounts = await provider.request({ method: 'eth_requestAccounts' });
                 if (!accounts || !accounts.length) throw new Error('No wallet account found.');
                 const wallet = accounts[0];
-                showWalletStatus('walletConnectStatus', '🔀 Switching your wallet to the Celo network…', 'info');
-                const onCelo = await ensureCeloChain(provider);
-                if (!onCelo) {
-                    showWalletStatus('walletConnectStatus', '⚠️ Could not switch to Celo automatically — please switch manually in your wallet and try again.', 'warning');
-                    return;
+                let onCelo = false;
+                if (provider && provider.isMiniPay) {
+                    // MiniPay is Celo-only. Skip any chain-switch prompts.
+                    onCelo = true;
+                    try {
+                        const chainId = await provider.request({ method: 'eth_chainId' });
+                        if (String(chainId || '').toLowerCase() !== CELO_CHAIN_HEX.toLowerCase()) {
+                            console.warn('MiniPay reported non-Celo chainId:', chainId);
+                        }
+                    } catch (_) {
+                        // Continue login flow; MiniPay should still be Celo-only.
+                    }
+                } else {
+                    showWalletStatus('walletConnectStatus', '🔀 Switching your wallet to the Celo network…', 'info');
+                    onCelo = await ensureCeloChain(provider);
+                    if (!onCelo) {
+                        showWalletStatus('walletConnectStatus', '⚠️ Could not switch to Celo automatically — please switch manually in your wallet and try again.', 'warning');
+                        return;
+                    }
                 }
                 const message = makeLoginMessage(wallet);
                 const messageHex = utf8ToHex(message);
