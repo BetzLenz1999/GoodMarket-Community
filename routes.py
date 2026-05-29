@@ -6572,80 +6572,22 @@ def swap_page():
     fuse_wfuse_contract = os.getenv("FUSE_WFUSE_TOKEN", "0x0BE9e53fd7EDaC9F859882AfdDa116645287C629")
     voltage_router_contract = os.getenv("VOLTAGE_ROUTER", "0xE3F85aAd0c8DD7337427B9dF5d0fB741d65EEEB5")
 
-    # Squid Router Celo -> Base ETH widget configuration.  These values have
-    # production-safe defaults, so Vercel does not need extra Squid env vars just
-    # to render the widget.  Keep them overrideable so production can add an
-    # official integrator ID or change Squid endpoints/tokens without editing the
-    # template.  Source token defaults are the Celo assets requested for the first
-    # release; the destination is native ETH on Base using Squid's canonical
-    # native-token placeholder.
-    squid_integrator_id = os.getenv("SQUID_INTEGRATOR_ID", "")
-    squid_api_url = os.getenv("SQUID_API_URL", "https://apiplus.squidrouter.com").rstrip("/")
-    squid_iframe_base_url = os.getenv("SQUID_WIDGET_IFRAME_URL", "https://studio.squidrouter.com/iframe")
-    squid_app_url = os.getenv("SQUID_APP_URL", "https://app.squidrouter.com/")
-    squid_from_chain_id = int(os.getenv("SQUID_FROM_CHAIN_ID", str(celo_chain_id)))
-    squid_to_chain_id = int(os.getenv("SQUID_TO_CHAIN_ID", "8453"))
-    squid_to_token = os.getenv("SQUID_TO_TOKEN", "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE")
-    squid_source_tokens = [
-        {
-            "symbol": "CELO",
-            "name": "Celo",
-            "address": os.getenv("SQUID_CELO_TOKEN", "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-            "note": "Native gas token on Celo",
-        },
-        {
-            "symbol": "cUSD",
-            "name": "Celo Dollar",
-            "address": os.getenv("SQUID_CUSD_TOKEN", "0x765DE816845861e75A25fCA122bb6898B8B1282a"),
-            "note": "Celo-native stablecoin",
-        },
-        {
-            "symbol": "USDC",
-            "name": "USD Coin",
-            "address": os.getenv("SQUID_USDC_TOKEN", "0xcebA9300f2b948710d2653dD7B07f33A8B32118C"),
-            "note": "Native Circle USDC on Celo",
-        },
-        {
-            "symbol": "USDT",
-            "name": "Tether USD",
-            "address": os.getenv("SQUID_USDT_TOKEN", "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e"),
-            "note": "Tether on Celo",
-        },
-    ]
-    squid_source_chain_id = int(squid_from_chain_id)
-    squid_destination_chain_id = int(squid_to_chain_id)
-    squid_widget_config = {
-        "apiUrl": squid_api_url,
-        "themeType": "dark",
-        "initialAssets": {
-            "from": {
-                "address": squid_source_tokens[0]["address"],
-                "chainId": squid_source_chain_id,
-            },
-            "to": {
-                "address": squid_to_token,
-                "chainId": squid_destination_chain_id,
-            },
-        },
-        "defaultTokensPerChain": [
-            {"address": token["address"], "chainId": squid_source_chain_id}
-            for token in squid_source_tokens
-        ] + [{"address": squid_to_token, "chainId": squid_destination_chain_id}],
-        "availableChains": {
-            "source": [squid_source_chain_id],
-            "destination": [squid_destination_chain_id],
-        },
-        "availableTokens": {
-            "source": {
-                str(squid_source_chain_id): [token["address"] for token in squid_source_tokens],
-            },
-            "destination": {
-                str(squid_destination_chain_id): [squid_to_token],
-            },
-        },
-    }
-    if squid_integrator_id:
-        squid_widget_config["integratorId"] = squid_integrator_id
+    # LI.FI / Jumper widget configuration for the Buy ETH (cross-chain swap)
+    # pane.  LI.FI does NOT require contacting their team for an integrator
+    # ID — the field is just a self-chosen identifier that gets sent in the
+    # `x-lifi-integrator` header, so a sensible default keeps the widget
+    # rendering even without env overrides.  Defaults target the original
+    # Squid use case (Celo → native ETH on Base) but LI.FI supports many
+    # more chains/tokens (BNB, Polygon, Arbitrum, Optimism, etc.) so the
+    # user can pick a different destination from inside the widget UI.
+    lifi_integrator = os.getenv("LIFI_INTEGRATOR", "goodmarket-community")
+    lifi_api_url = os.getenv("LIFI_API_URL", "https://li.quest/v1").rstrip("/")
+    lifi_from_chain_id = int(os.getenv("LIFI_FROM_CHAIN_ID", str(celo_chain_id)))
+    lifi_to_chain_id = int(os.getenv("LIFI_TO_CHAIN_ID", "8453"))
+    # LI.FI's convention for native tokens is the zero address.
+    lifi_native_token = "0x0000000000000000000000000000000000000000"
+    lifi_to_token = os.getenv("LIFI_TO_TOKEN", lifi_native_token)
+    lifi_from_token = os.getenv("LIFI_FROM_TOKEN", lifi_native_token)
 
     return render_template(
         "swap.html",
@@ -6666,15 +6608,12 @@ def swap_page():
         fuse_gd_decimals=fuse_gd_decimals,
         fuse_wfuse_contract=fuse_wfuse_contract,
         voltage_router_contract=voltage_router_contract,
-        squid_integrator_id=squid_integrator_id,
-        squid_api_url=squid_api_url,
-        squid_iframe_base_url=squid_iframe_base_url,
-        squid_app_url=squid_app_url,
-        squid_widget_config=squid_widget_config,
-        squid_from_chain_id=squid_from_chain_id,
-        squid_to_chain_id=squid_to_chain_id,
-        squid_to_token=squid_to_token,
-        squid_source_tokens=squid_source_tokens,
+        lifi_integrator=lifi_integrator,
+        lifi_api_url=lifi_api_url,
+        lifi_from_chain_id=lifi_from_chain_id,
+        lifi_to_chain_id=lifi_to_chain_id,
+        lifi_from_token=lifi_from_token,
+        lifi_to_token=lifi_to_token,
     )
 
 
