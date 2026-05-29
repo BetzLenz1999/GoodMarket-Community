@@ -64,6 +64,64 @@ def admin_required(f):
     return wrapper
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_float(name: str, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
+    raw = os.getenv(name)
+    try:
+        value = float(raw) if raw is not None and raw.strip() else default
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        value = default
+    if minimum is not None:
+        value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
+
+def _lifi_rpc_urls(celo_chain_id: int, to_chain_id: int, fuse_chain_id: int) -> dict[int, list[str]]:
+    """Build LI.FI SDK RPC config from safe defaults plus optional env overrides.
+
+    LI.FI's hosted widget can use public RPCs automatically, but route
+    simulation and balance reads are a common source of intermittent swap /
+    bridge failures when those public endpoints rate-limit.  We provide stable
+    defaults for the app's common chains and let operators override or extend
+    them with either LIFI_RPC_URLS_JSON or LIFI_RPC_URL_<chain_id>.
+    """
+
+    rpc_urls: dict[int, list[str]] = {
+        celo_chain_id: [os.getenv("LIFI_CELO_RPC_URL", os.getenv("CELO_RPC_URL", "https://forno.celo.org"))],
+        8453: [os.getenv("LIFI_BASE_RPC_URL", "https://mainnet.base.org")],
+        fuse_chain_id: [os.getenv("LIFI_FUSE_RPC_URL", os.getenv("FUSE_RPC_URL", "https://rpc.fuse.io"))],
+    }
+
+    raw_json = os.getenv("LIFI_RPC_URLS_JSON")
+    if raw_json:
+        try:
+            configured = json.loads(raw_json)
+            if isinstance(configured, dict):
+                for chain_id, urls in configured.items():
+                    values = urls if isinstance(urls, list) else [urls]
+                    cleaned = [str(url).strip() for url in values if str(url).strip()]
+                    if cleaned:
+                        rpc_urls[int(chain_id)] = cleaned
+        except (TypeError, ValueError, json.JSONDecodeError):
+            logger.warning("Invalid LIFI_RPC_URLS_JSON; ignoring custom LI.FI RPC map")
+
+    for chain_id in {celo_chain_id, to_chain_id, 8453, fuse_chain_id, 1, 10, 56, 137, 42161, 43114}:
+        override = os.getenv(f"LIFI_RPC_URL_{chain_id}")
+        if override:
+            rpc_urls[int(chain_id)] = [url.strip() for url in override.split(",") if url.strip()]
+
+    return {chain_id: urls for chain_id, urls in rpc_urls.items() if urls}
+
+
 def _parse_iso_datetime(value):
     """Safely parse ISO datetime strings to timezone-aware UTC datetime."""
     if not value:
@@ -6588,6 +6646,13 @@ def swap_page():
     lifi_native_token = "0x0000000000000000000000000000000000000000"
     lifi_to_token = os.getenv("LIFI_TO_TOKEN", lifi_native_token)
     lifi_from_token = os.getenv("LIFI_FROM_TOKEN", lifi_native_token)
+    lifi_route_priority = os.getenv("LIFI_ROUTE_PRIORITY", "FASTEST").upper()
+    if lifi_route_priority not in {"FASTEST", "CHEAPEST"}:
+        logger.warning("Invalid LIFI_ROUTE_PRIORITY=%r; using FASTEST", lifi_route_priority)
+        lifi_route_priority = "FASTEST"
+    lifi_slippage = _env_float("LIFI_SLIPPAGE", 0.01, minimum=0.001, maximum=0.03)
+    lifi_use_recommended_route = _env_bool("LIFI_USE_RECOMMENDED_ROUTE", True)
+    lifi_rpc_urls = _lifi_rpc_urls(celo_chain_id, lifi_to_chain_id, fuse_chain_id)
 
     return render_template(
         "swap.html",
@@ -6614,6 +6679,10 @@ def swap_page():
         lifi_to_chain_id=lifi_to_chain_id,
         lifi_from_token=lifi_from_token,
         lifi_to_token=lifi_to_token,
+        lifi_route_priority=lifi_route_priority,
+        lifi_slippage=lifi_slippage,
+        lifi_use_recommended_route=lifi_use_recommended_route,
+        lifi_rpc_urls=lifi_rpc_urls,
     )
 
 

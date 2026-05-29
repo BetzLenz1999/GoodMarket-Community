@@ -714,6 +714,27 @@
             line-height: 1.4;
         }
         .lifi-react-status strong { color: #bae6fd; white-space: nowrap; }
+        .lifi-react-status--stack {
+            align-items: flex-start;
+            flex-direction: column;
+            justify-content: flex-start;
+            gap: 0.45rem;
+        }
+        .lifi-retry-btn {
+            border: 1px solid rgba(56,189,248,0.45);
+            background: rgba(14,165,233,0.14);
+            color: #bae6fd;
+            border-radius: 999px;
+            padding: 0.35rem 0.7rem;
+            font-size: 0.78rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.15s ease, background 0.15s ease;
+        }
+        .lifi-retry-btn:hover {
+            background: rgba(14,165,233,0.24);
+            transform: translateY(-1px);
+        }
         .lifi-wallet-hint {
             margin-bottom: 0.9rem;
             padding: 0.85rem 1rem;
@@ -728,6 +749,7 @@
             gap: 0.45rem;
         }
         .lifi-wallet-hint.is-wc { background: rgba(56,189,248,0.08); border-color: rgba(56,189,248,0.30); }
+        .lifi-wallet-hint.is-stability { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.30); }
         .lifi-wallet-hint-row {
             display: flex;
             align-items: center;
@@ -1182,6 +1204,14 @@
                     Destination wallet defaults to your GoodMarket wallet: <code style="color:#bae6fd;">{{ wallet }}</code>.
                 </div>
 
+                <div class="lifi-wallet-hint is-stability">
+                    <div class="lifi-wallet-hint-row">
+                        <span class="lifi-wallet-badge" style="background:rgba(245,158,11,0.18); color:#fde68a;">🛡️ Stability mode</span>
+                        <span>Mas stable defaults: {{ lifi_route_priority|default("FASTEST", true)|lower }} recommended route, {{ (lifi_slippage|default(0.01) * 100)|round(1) }}% max slippage, at dedicated RPC config kapag available.</span>
+                    </div>
+                    <div class="lifi-wallet-hint-note">Kung mag-fail ang bridge/swap after a quote sits too long, click <strong>Refresh quote widget</strong> para kumuha ng fresh route bago mag-sign ulit.</div>
+                </div>
+
                 <div id="lifiWalletHint" class="lifi-wallet-hint" hidden>
                     <div class="lifi-wallet-hint-row">
                         <span class="lifi-wallet-badge">
@@ -1559,6 +1589,10 @@
         "toChainId": lifi_to_chain_id|default(8453),
         "fromToken": lifi_from_token|default("0x0000000000000000000000000000000000000000", true),
         "toToken": lifi_to_token|default("0x0000000000000000000000000000000000000000", true),
+        "routePriority": lifi_route_priority|default("FASTEST", true),
+        "slippage": lifi_slippage|default(0.01),
+        "useRecommendedRoute": lifi_use_recommended_route|default(true),
+        "rpcUrls": lifi_rpc_urls|default({}, true),
         "walletAddress": wallet,
         "loginMethod": login_method
     }|tojson }}</script>
@@ -1572,7 +1606,11 @@
             fromChainId: {{ lifi_from_chain_id|default(42220) }},
             toChainId: {{ lifi_to_chain_id|default(8453) }},
             fromToken: {{ lifi_from_token|default('0x0000000000000000000000000000000000000000', true)|tojson }},
-            toToken: {{ lifi_to_token|default('0x0000000000000000000000000000000000000000', true)|tojson }}
+            toToken: {{ lifi_to_token|default('0x0000000000000000000000000000000000000000', true)|tojson }},
+            routePriority: {{ lifi_route_priority|default('FASTEST', true)|tojson }},
+            slippage: {{ lifi_slippage|default(0.01) }},
+            useRecommendedRoute: {{ lifi_use_recommended_route|default(true)|tojson }},
+            rpcUrls: {{ lifi_rpc_urls|default({}, true)|tojson }}
         };
         const CELO_CHAIN_ID  = 42220;
         // Pure self-custody mode: never use server-side signing.
