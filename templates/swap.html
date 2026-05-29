@@ -685,49 +685,21 @@
         }
 
 
-        /* Celo → Base ETH purchase widget */
-        .squid-pane .swap-card {
+        /* Cross-chain Buy ETH widget (LI.FI / Jumper) */
+        .buyeth-pane .swap-card {
             border: 1px solid rgba(56,189,248,0.32);
             background: linear-gradient(135deg, rgba(14,165,233,0.12), rgba(124,58,237,0.08));
         }
-        .squid-token-buttons {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 0.45rem;
-            margin: 0.85rem 0 1rem;
-        }
-        .squid-token-btn {
-            border: 1px solid rgba(255,255,255,0.11);
-            background: rgba(255,255,255,0.045);
-            color: rgba(255,255,255,0.72);
-            border-radius: 12px;
-            padding: 0.55rem 0.35rem;
-            font-family: inherit;
-            font-size: 0.82rem;
-            font-weight: 700;
-            cursor: pointer;
-            transition: all 0.18s;
-        }
-        .squid-token-btn:hover {
-            border-color: rgba(56,189,248,0.45);
-            color: #e0f2fe;
-            background: rgba(14,165,233,0.12);
-        }
-        .squid-token-btn.active {
-            border-color: rgba(56,189,248,0.7);
-            background: rgba(14,165,233,0.22);
-            color: #fff;
-            box-shadow: 0 0 0 1px rgba(56,189,248,0.15) inset;
-        }
-        .squid-widget-wrap {
+        .lifi-widget-wrap {
             overflow: hidden;
             border-radius: 18px;
             border: 1px solid rgba(255,255,255,0.12);
             background: rgba(15,23,42,0.58);
-            min-height: 720px;
+            min-height: 660px;
+            padding: 0.4rem;
         }
-        .squid-react-shell { min-height: 690px; }
-        .squid-react-status {
+        .lifi-widget-wrap > div { width: 100%; }
+        .lifi-react-status {
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -735,16 +707,14 @@
             margin-bottom: 0.75rem;
             padding: 0.65rem 0.8rem;
             border-radius: 12px;
-            background: rgba(34,197,94,0.08);
-            border: 1px solid rgba(34,197,94,0.26);
-            color: rgba(255,255,255,0.78);
-            font-size: 0.78rem;
-            line-height: 1.35;
+            background: rgba(56,189,248,0.08);
+            border: 1px solid rgba(56,189,248,0.28);
+            color: rgba(255,255,255,0.85);
+            font-size: 0.82rem;
+            line-height: 1.4;
         }
-        .squid-react-status strong { color: #bbf7d0; white-space: nowrap; }
-        .squid-react-status[data-connected="false"] { background: rgba(56,189,248,0.08); border-color: rgba(56,189,248,0.28); }
-        .squid-react-status[data-connected="false"] strong { color: #bae6fd; }
-        .squid-wallet-hint {
+        .lifi-react-status strong { color: #bae6fd; white-space: nowrap; }
+        .lifi-wallet-hint {
             margin-bottom: 0.9rem;
             padding: 0.85rem 1rem;
             border-radius: 12px;
@@ -752,19 +722,19 @@
             border: 1px solid rgba(34,197,94,0.28);
             color: rgba(255,255,255,0.85);
             font-size: 0.85rem;
-            line-height: 1.5;
+            line-height: 1.55;
             display: flex;
             flex-direction: column;
             gap: 0.45rem;
         }
-        .squid-wallet-hint.is-wc { background: rgba(56,189,248,0.08); border-color: rgba(56,189,248,0.30); }
-        .squid-wallet-hint-row {
+        .lifi-wallet-hint.is-wc { background: rgba(56,189,248,0.08); border-color: rgba(56,189,248,0.30); }
+        .lifi-wallet-hint-row {
             display: flex;
             align-items: center;
             flex-wrap: wrap;
             gap: 0.5rem 0.6rem;
         }
-        .squid-wallet-badge {
+        .lifi-wallet-badge {
             display: inline-flex;
             align-items: center;
             gap: 0.4rem;
@@ -776,22 +746,29 @@
             font-size: 0.78rem;
             letter-spacing: 0.01em;
         }
-        .squid-wallet-hint.is-wc .squid-wallet-badge {
+        .lifi-wallet-hint.is-wc .lifi-wallet-badge {
             background: rgba(56,189,248,0.18);
             color: #bae6fd;
         }
-        .squid-wallet-hint code {
+        .lifi-wallet-hint code {
             color: #e2e8f0;
             background: rgba(15,23,42,0.55);
             padding: 0.12rem 0.45rem;
             border-radius: 6px;
             font-size: 0.80rem;
         }
-        .squid-wallet-hint-note { color: rgba(255,255,255,0.65); font-size: 0.80rem; }
+        .lifi-wallet-hint-note { color: rgba(255,255,255,0.7); font-size: 0.82rem; }
+        .lifi-wallet-hint-note.is-wc-strong {
+            color: #fde68a;
+            background: rgba(234,179,8,0.10);
+            border: 1px solid rgba(234,179,8,0.28);
+            padding: 0.5rem 0.7rem;
+            border-radius: 10px;
+            font-weight: 600;
+        }
         @media(max-width: 560px) {
-            .squid-token-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            .squid-widget-wrap { min-height: 690px; }
-            .squid-react-status { align-items: flex-start; flex-direction: column; gap: 0.25rem; }
+            .lifi-widget-wrap { min-height: 660px; }
+            .lifi-react-status { align-items: flex-start; flex-direction: column; gap: 0.25rem; }
         }
     </style>
     <!-- WalletConnect bridge for users without injected wallet -->
@@ -848,7 +825,7 @@
              users too — Uniswap V3 here uses CIP-64 fee abstraction. -->
         <div id="swapTabSwitcher" class="swap-tabs" role="tablist" aria-label="Swap mode">
             <button type="button" id="tabBtnGoodSwap" class="swap-tab-btn active" role="tab" aria-selected="true" onclick="setSwapTab('goodswap')">GoodSwap</button>
-            <button type="button" id="tabBtnSquid" class="swap-tab-btn" role="tab" aria-selected="false" onclick="setSwapTab('squid')">Buy ETH</button>
+            <button type="button" id="tabBtnBuyEth" class="swap-tab-btn" role="tab" aria-selected="false" onclick="setSwapTab('buyeth')">Buy ETH</button>
             <button type="button" id="tabBtnBridge" class="swap-tab-btn" role="tab" aria-selected="false" onclick="setSwapTab('bridge')">Bridge</button>
         </div>
 
@@ -1192,60 +1169,46 @@
 
         </div><!-- /.pane-goodswap -->
 
-        <!-- Celo assets → native ETH on Base purchase pane. -->
-        <div id="swapPaneSquid" class="pane pane-squid squid-pane hidden-tab">
+        <!-- Cross-chain Buy ETH pane (LI.FI / Jumper widget). -->
+        <div id="swapPaneBuyEth" class="pane pane-buyeth buyeth-pane hidden-tab">
             <div class="swap-card">
                 <div class="network-badge" style="background:rgba(14,165,233,0.15); border-color:rgba(14,165,233,0.32); color:#7dd3fc;">
                     <span class="network-dot" style="background:#38bdf8;"></span>
-                    Celo Mainnet → Base
+                    Cross-chain swap (powered by LI.FI / Jumper)
                 </div>
 
                 <div class="info-box-bridge" style="margin-bottom:0.9rem; padding:0.78rem 0.9rem; border-radius:12px; background:rgba(14,165,233,0.08); border:1px solid rgba(14,165,233,0.25); color:rgba(255,255,255,0.8); font-size:0.84rem; line-height:1.58;">
-                    Buy <strong>ETH on Base</strong> using your Celo assets. Pick your Celo source token below; the cross-chain route and wallet confirmation happen securely in one flow.
+                    Buy <strong>ETH on Base</strong> by default — pero pwede mong palitan ang source/destination chain at token (Celo, BNB, Polygon, Arbitrum, Optimism, etc.) sa loob ng widget.
                     Destination wallet defaults to your GoodMarket wallet: <code style="color:#bae6fd;">{{ wallet }}</code>.
                 </div>
 
-                <div class="token-box" style="margin-bottom:0.75rem;">
-                    <div class="token-box-label">You pay from Celo</div>
-                    <div class="squid-token-buttons" id="squidSourceTokenButtons">
-                        {% for token in squid_source_tokens %}
-                        <button
-                            type="button"
-                            class="squid-token-btn{% if loop.first %} active{% endif %}"
-                            data-symbol="{{ token.symbol }}"
-                            data-address="{{ token.address }}"
-                            onclick='setSquidSourceToken({{ token.symbol|tojson }}, {{ token.address|tojson }})' 
-                            title="{{ token.name }} · {{ token.note }}"
-                        >{{ token.symbol }}</button>
-                        {% endfor %}
-                    </div>
-                    <div style="font-size:0.77rem; color:rgba(255,255,255,0.48); line-height:1.5;">
-                        Supported Celo sources for this launch: <strong style="color:#e2e8f0;">cUSD, USDC, USDT, and CELO</strong>. Destination is fixed to native ETH on Base.
-                    </div>
-                </div>
-
-                <div id="squidWalletHint" class="squid-wallet-hint" hidden>
-                    <div class="squid-wallet-hint-row">
-                        <span class="squid-wallet-badge">
-                            <span id="squidWalletBadgeIcon">🔗</span>
-                            <span id="squidWalletBadgeLabel">Wallet</span>
+                <div id="lifiWalletHint" class="lifi-wallet-hint" hidden>
+                    <div class="lifi-wallet-hint-row">
+                        <span class="lifi-wallet-badge">
+                            <span id="lifiWalletBadgeIcon">🔗</span>
+                            <span id="lifiWalletBadgeLabel">Wallet</span>
                         </span>
-                        <code id="squidWalletAddress">{{ wallet }}</code>
+                        <code id="lifiWalletAddress">{{ wallet }}</code>
                     </div>
-                    <div class="squid-wallet-hint-note" id="squidWalletHintNote"></div>
+                    <div class="lifi-wallet-hint-note" id="lifiWalletHintNote"></div>
                 </div>
 
-                <div class="squid-widget-wrap">
-                    <div id="squidReactWidgetRoot" aria-live="polite"></div>
+                <div class="lifi-widget-wrap">
+                    <div id="lifiWidgetRoot" aria-live="polite">
+                        <div class="lifi-react-status" data-connected="false">
+                            <strong>⏳ Loading Buy ETH widget…</strong>
+                            <span>Pinipreload ang LI.FI cross-chain widget. Mga ilang segundo lang.</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div class="info-card" style="margin-top:1rem;">
                 <div class="info-card-title">About Buy ETH</div>
-                This is a non-custodial flow restricted by GoodMarket defaults to <strong style="color:#e2e8f0;">Celo → Base ETH</strong>.
-                You sign from your wallet, and the bridge + swap route completes cross-chain. Keep enough CELO or fee currency on Celo for source-chain gas.
+                Non-custodial cross-chain swap powered by <strong style="color:#e2e8f0;">LI.FI / Jumper</strong>. Pwede mong gamitin ang Celo, BNB Chain, Polygon, Arbitrum, Optimism, atbp. as source — at i-receive ang native ETH (o ibang token) sa Base, Ethereum, o sa iba pang supported chain.
+                Kailangan mo i-connect ang wallet sa loob ng widget; bawat swap ay pinipirmahan mo mismo sa wallet mo.
             </div>
-        </div><!-- /.pane-squid -->
+        </div><!-- /.pane-buyeth -->
 
         <!-- Bridge Pane (Celo G$ ↔ XDC G$) -->
         <div id="swapPaneBridge" class="pane pane-bridge hidden-tab">
@@ -1589,35 +1552,33 @@
         gas top-up (3-day coverage / 48h cooldown reminder).
     -->
     <script src="/static/js/gas-coverage-banner.js?v={{ ASSET_VERSION }}"></script>
-    <script type="application/json" id="squidWidgetBootstrap">{{ {
-        "apiUrl": squid_api_url|default("https://apiplus.squidrouter.com", true),
-        "integratorId": squid_integrator_id|default("", true),
-        "fromChainId": squid_from_chain_id|default(42220),
-        "toChainId": squid_to_chain_id|default(8453),
-        "toToken": squid_to_token|default("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", true),
-        "sourceTokens": squid_source_tokens|default([]),
-        "widgetConfig": squid_widget_config|default({}, true),
+    <script type="application/json" id="lifiWidgetBootstrap">{{ {
+        "integrator": lifi_integrator|default("goodmarket-community", true),
+        "apiUrl": lifi_api_url|default("https://li.quest/v1", true),
+        "fromChainId": lifi_from_chain_id|default(42220),
+        "toChainId": lifi_to_chain_id|default(8453),
+        "fromToken": lifi_from_token|default("0x0000000000000000000000000000000000000000", true),
+        "toToken": lifi_to_token|default("0x0000000000000000000000000000000000000000", true),
         "walletAddress": wallet,
         "loginMethod": login_method
     }|tojson }}</script>
-    <script type="module" src="{{ url_for('static', filename='js/squid-widget-react.js', v=ASSET_VERSION) }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/lifi-widget-react.js', v=ASSET_VERSION) }}"></script>
     <script>
         // ─── Constants ────────────────────────────────────────────────────────────
         const WALLET_ADDRESS = "{{ wallet }}";
-        const SQUID_CONFIG = {
-            apiUrl: {{ squid_api_url|default('https://apiplus.squidrouter.com', true)|tojson }},
-            integratorId: {{ squid_integrator_id|default('', true)|tojson }},
-            fromChainId: {{ squid_from_chain_id|default(42220) }},
-            toChainId: {{ squid_to_chain_id|default(8453) }},
-            toToken: {{ squid_to_token|default('0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE', true)|tojson }},
-            sourceTokens: {{ squid_source_tokens|default([])|tojson }},
-            widgetConfig: {{ squid_widget_config|default({}, true)|tojson }}
+        const LIFI_CONFIG = {
+            integrator: {{ lifi_integrator|default('goodmarket-community', true)|tojson }},
+            apiUrl: {{ lifi_api_url|default('https://li.quest/v1', true)|tojson }},
+            fromChainId: {{ lifi_from_chain_id|default(42220) }},
+            toChainId: {{ lifi_to_chain_id|default(8453) }},
+            fromToken: {{ lifi_from_token|default('0x0000000000000000000000000000000000000000', true)|tojson }},
+            toToken: {{ lifi_to_token|default('0x0000000000000000000000000000000000000000', true)|tojson }}
         };
         const CELO_CHAIN_ID  = 42220;
         // Pure self-custody mode: never use server-side signing.
         window.useServerSigning = false;
         const LOGIN_METHOD = '{{ login_method }}';
-        window.GMSquidBootstrap = { ...SQUID_CONFIG, walletAddress: WALLET_ADDRESS, loginMethod: LOGIN_METHOD };
+        window.GMLifiBootstrap = { ...LIFI_CONFIG, walletAddress: WALLET_ADDRESS, loginMethod: LOGIN_METHOD };
         const WC_PROJECT_ID = '{{ walletconnect_project_id }}';
         const PREFER_WC_SIGNING = ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
         const CELO_RPC       = "https://forno.celo.org";
@@ -3805,8 +3766,8 @@
 
                 if (want === "bridge" || want === "xdc" || want === "bridge-xdc") {
                     target = "bridge";
-                } else if (want === "squid" || want === "buy" || want === "buy-eth" || want === "buy_eth" || want === "buy-tokens" || want === "buy_tokens") {
-                    target = "squid";
+                } else if (want === "buyeth" || want === "buy-eth" || want === "buy_eth" || want === "buy" || want === "buy-tokens" || want === "buy_tokens" || want === "squid" || want === "lifi" || want === "jumper") {
+                    target = "buyeth";
                 } else if (want === "goodswap" || want === "swap") {
                     target = "goodswap";
                 } else if (want === "reserve" || want === "goodreserve") {
@@ -3860,13 +3821,13 @@
                 // existing bookmarks / power-user navigation stay
                 // intact.
                 const focusBridge   = (target === "bridge") || !!bridgeDir;
-                const focusSquid    = target === "squid";
-                const focusGoodSwap = !focusBridge && !focusSquid && ((target === "goodswap") || !!goodswapPane);
+                const focusBuyEth   = target === "buyeth";
+                const focusGoodSwap = !focusBridge && !focusBuyEth && ((target === "goodswap") || !!goodswapPane);
 
                 const apply = () => {
                     if (typeof setSwapTab !== "function") return;
                     if (target === "bridge" && !document.querySelector(".pane-bridge")) return;
-                    if (target === "squid" && !document.querySelector(".pane-squid")) return;
+                    if (target === "buyeth" && !document.querySelector(".pane-buyeth")) return;
                     if (bridgeDir && !document.querySelector(".pane-bridge")) return;
                     if (target) setSwapTab(target);
                     if (goodswapPane && typeof setGoodSwapSubTab === "function") {
@@ -3874,15 +3835,15 @@
                     }
                     if (bridgeDir && typeof setBridgeSubTab === "function") setBridgeSubTab(bridgeDir);
 
-                    if (focusBridge || focusGoodSwap || focusSquid) {
+                    if (focusBridge || focusGoodSwap || focusBuyEth) {
                         const switcher = document.getElementById("swapTabSwitcher");
                         if (switcher) switcher.style.display = "none";
                         // Hide inactive top panes outright so they cannot be
                         // reached by toggling a stale top-tab button.
-                        ["swapPaneGoodSwap", "swapPaneSquid", "swapPaneBridge"].forEach((id) => {
+                        ["swapPaneGoodSwap", "swapPaneBuyEth", "swapPaneBridge"].forEach((id) => {
                             const pane = document.getElementById(id);
                             const keep = (focusBridge && id === "swapPaneBridge")
-                                || (focusSquid && id === "swapPaneSquid")
+                                || (focusBuyEth && id === "swapPaneBuyEth")
                                 || (focusGoodSwap && id === "swapPaneGoodSwap");
                             if (pane && !keep) pane.style.display = "none";
                         });
@@ -3898,38 +3859,38 @@
 
         function setSwapTab(name) {
             const goodswapPane = document.querySelector(".pane-goodswap");
-            const squidPane    = document.querySelector(".pane-squid");
+            const buyEthPane   = document.querySelector(".pane-buyeth");
             const bridgePane   = document.querySelector(".pane-bridge");
             const goodswapBtn  = document.getElementById("tabBtnGoodSwap");
-            const squidBtn     = document.getElementById("tabBtnSquid");
+            const buyEthBtn    = document.getElementById("tabBtnBuyEth");
             const bridgeBtn    = document.getElementById("tabBtnBridge");
             if (!goodswapPane) return;
 
             const isBridge   = name === "bridge";
-            const isSquid    = name === "squid" || name === "buy" || name === "buy-eth" || name === "buy_eth" || name === "buy_tokens" || name === "buy-tokens";
+            const isBuyEth   = name === "buyeth" || name === "buy-eth" || name === "buy_eth" || name === "buy" || name === "buy_tokens" || name === "buy-tokens" || name === "squid" || name === "lifi" || name === "jumper";
             // Back-compat: 'dex' / 'reserve' aliases route to GoodSwap top
             // tab and leave the sub-tab choice up to the caller (or
             // setGoodSwapSubTab() invoked by autoSelectSwapTab).
-            const isGoodSwap = !isBridge && !isSquid;
+            const isGoodSwap = !isBridge && !isBuyEth;
 
             goodswapPane.classList.toggle("hidden-tab", !isGoodSwap);
-            if (squidPane) squidPane.classList.toggle("hidden-tab", !isSquid);
+            if (buyEthPane) buyEthPane.classList.toggle("hidden-tab", !isBuyEth);
             if (bridgePane) bridgePane.classList.toggle("hidden-tab", !isBridge);
 
             if (goodswapBtn) {
                 goodswapBtn.classList.toggle("active", isGoodSwap);
                 goodswapBtn.setAttribute("aria-selected", String(isGoodSwap));
             }
-            if (squidBtn) {
-                squidBtn.classList.toggle("active", isSquid);
-                squidBtn.setAttribute("aria-selected", String(isSquid));
+            if (buyEthBtn) {
+                buyEthBtn.classList.toggle("active", isBuyEth);
+                buyEthBtn.setAttribute("aria-selected", String(isBuyEth));
             }
             if (bridgeBtn) {
                 bridgeBtn.classList.toggle("active", isBridge);
                 bridgeBtn.setAttribute("aria-selected", String(isBridge));
             }
 
-            if (isSquid) refreshSquidWidget();
+            if (isBuyEth) refreshLifiWidget();
 
             // Honour 'dex' / 'reserve' shorthand by also flipping the
             // GoodSwap sub-tab so e.g. setSwapTab('reserve') from a button
@@ -3992,39 +3953,25 @@
             if (isFuse) loadFuseSwapBalances();
         }
 
-        let squidSelectedSource = (SQUID_CONFIG.sourceTokens && SQUID_CONFIG.sourceTokens[0])
-            ? SQUID_CONFIG.sourceTokens[0]
-            : { symbol: "CELO", address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" };
-
-        function refreshSquidWidget() {
-            if (window.GMSquidReactWidget && typeof window.GMSquidReactWidget.refresh === "function") {
-                window.GMSquidReactWidget.refresh();
+        function refreshLifiWidget() {
+            if (window.GMLifiReactWidget && typeof window.GMLifiReactWidget.refresh === "function") {
+                window.GMLifiReactWidget.refresh();
             }
         }
 
-        function setSquidSourceToken(symbol, address) {
-            squidSelectedSource = { symbol, address };
-            document.querySelectorAll(".squid-token-btn").forEach((btn) => {
-                btn.classList.toggle("active", btn.dataset.symbol === symbol);
-            });
-            if (window.GMSquidReactWidget && typeof window.GMSquidReactWidget.setSourceToken === "function") {
-                window.GMSquidReactWidget.setSourceToken(symbol, address);
-            } else {
-                refreshSquidWidget();
-            }
-        }
-
-        // Detect which connection method the user used to sign in to
-        // GoodMarket and surface the provider that is now passed into
-        // the React Squid widget. The old cross-origin iframe could only
-        // show a hint; the React SDK lives in this page, so it can reuse
-        // the same EIP-1193 provider that powers the rest of /swap.
-        function renderSquidWalletHint() {
-            const hint = document.getElementById("squidWalletHint");
-            const icon = document.getElementById("squidWalletBadgeIcon");
-            const label = document.getElementById("squidWalletBadgeLabel");
-            const addr = document.getElementById("squidWalletAddress");
-            const note = document.getElementById("squidWalletHintNote");
+        // Surface a clear hint above the LI.FI widget explaining what the
+        // user should expect during the swap-signing step.  For
+        // WalletConnect / manual address sessions the signing UI appears
+        // inside the user's wallet *app* — so the page tells them to look
+        // there.  For browser-injected wallets the wallet pops a signature
+        // dialog right on this page, so no extra reminder is needed (but
+        // we still surface the connection state for parity).
+        function renderLifiWalletHint() {
+            const hint = document.getElementById("lifiWalletHint");
+            const icon = document.getElementById("lifiWalletBadgeIcon");
+            const label = document.getElementById("lifiWalletBadgeLabel");
+            const addr = document.getElementById("lifiWalletAddress");
+            const note = document.getElementById("lifiWalletHintNote");
             if (!hint || !icon || !label || !addr || !note) return;
             const hasWallet = WALLET_ADDRESS && WALLET_ADDRESS !== "None";
             if (!hasWallet) { hint.hidden = true; return; }
@@ -4035,27 +3982,25 @@
             const ua = (navigator.userAgent || "").toLowerCase();
             const isMiniPay = ua.indexOf("minipay") !== -1;
             hint.classList.toggle("is-wc", isWC);
+            note.classList.remove("is-wc-strong");
             if (isWC) {
                 icon.textContent = "\ud83d\udd17";
                 label.textContent = "WalletConnect";
-                note.textContent = "Naka-connect ka sa GoodMarket via WalletConnect. Ipapasa ito direkta sa React Squid widget para auto-connected ang parehong wallet.";
+                note.classList.add("is-wc-strong");
+                note.textContent = "\u26a0\ufe0f WalletConnect mode: kapag nag-click ka ng \"Swap\" / \"Review\" sa Buy ETH widget, BALIK KA SA WALLET APP MO (MetaMask, Trust, Valora, etc.) para i-approve ang transaction. Bumalik dito sa page after confirming.";
             } else if (isMiniPay) {
                 icon.textContent = "\ud83d\udcb3";
                 label.textContent = "MiniPay";
-                note.textContent = "Naka-connect ka via MiniPay. Ire-reuse ng React Squid widget ang MiniPay provider sa page na ito.";
+                note.textContent = "Naka-connect ka via MiniPay. I-connect ang MiniPay sa loob ng Buy ETH widget; ang signature confirmation prompt ay lalabas dito mismo sa page.";
             } else {
                 icon.textContent = "\ud83e\uddea";
                 label.textContent = "Injected Wallet";
-                note.textContent = "Naka-connect ka via injected wallet (MetaMask / Rabby / Trust, etc.). Ipinapasa ito sa React Squid widget para sa in-widget auto-connect.";
+                note.textContent = "Naka-connect ka via injected wallet (MetaMask / Rabby / Trust, etc.). Sa Buy ETH widget, i-click ang \"Connect wallet\" at piliin ang naka-install na wallet mo \u2014 mag-po-pop up ang sign transaction dito mismo sa page.";
             }
             hint.hidden = false;
         }
 
-        try { renderSquidWalletHint(); } catch (_) {}
-        window.GMSquidResolveProvider = async function() {
-            if (typeof _awaitEthProvider === "function") return await _awaitEthProvider(4200);
-            return (typeof _getEthProvider === "function") ? _getEthProvider() : (window.ethereum || null);
-        };
+        try { renderLifiWalletHint(); } catch (_) {}
 
         // Toggle the active sub-pane inside the Bridge tab. Each direction
         // owns its own DOM (Celo → XDC was already on /swap; XDC → Celo
