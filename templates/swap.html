@@ -685,7 +685,7 @@
         }
 
 
-        /* Cross-chain Buy ETH widget (LI.FI / Jumper) */
+        /* Cross-chain Buy Crypto widget (LI.FI / Jumper) */
         .buyeth-pane .swap-card {
             border: 1px solid rgba(56,189,248,0.32);
             background: linear-gradient(135deg, rgba(14,165,233,0.12), rgba(124,58,237,0.08));
@@ -825,7 +825,7 @@
              users too — Uniswap V3 here uses CIP-64 fee abstraction. -->
         <div id="swapTabSwitcher" class="swap-tabs" role="tablist" aria-label="Swap mode">
             <button type="button" id="tabBtnGoodSwap" class="swap-tab-btn active" role="tab" aria-selected="true" onclick="setSwapTab('goodswap')">GoodSwap</button>
-            <button type="button" id="tabBtnBuyEth" class="swap-tab-btn" role="tab" aria-selected="false" onclick="setSwapTab('buyeth')">Buy ETH</button>
+            <button type="button" id="tabBtnBuyEth" class="swap-tab-btn" role="tab" aria-selected="false" onclick="setSwapTab('buyeth')">Buy Crypto</button>
             <button type="button" id="tabBtnBridge" class="swap-tab-btn" role="tab" aria-selected="false" onclick="setSwapTab('bridge')">Bridge</button>
         </div>
 
@@ -1169,7 +1169,7 @@
 
         </div><!-- /.pane-goodswap -->
 
-        <!-- Cross-chain Buy ETH pane (LI.FI / Jumper widget). -->
+        <!-- Cross-chain Buy Crypto pane (LI.FI / Jumper widget). -->
         <div id="swapPaneBuyEth" class="pane pane-buyeth buyeth-pane hidden-tab">
             <div class="swap-card">
                 <div class="network-badge" style="background:rgba(14,165,233,0.15); border-color:rgba(14,165,233,0.32); color:#7dd3fc;">
@@ -1196,7 +1196,7 @@
                 <div class="lifi-widget-wrap">
                     <div id="lifiWidgetRoot" aria-live="polite">
                         <div class="lifi-react-status" data-connected="false">
-                            <strong>⏳ Loading Buy ETH widget…</strong>
+                            <strong>⏳ Loading Buy Crypto widget…</strong>
                             <span>Pinipreload ang LI.FI cross-chain widget. Mga ilang segundo lang.</span>
                         </div>
                     </div>
@@ -1204,7 +1204,7 @@
             </div>
 
             <div class="info-card" style="margin-top:1rem;">
-                <div class="info-card-title">About Buy ETH</div>
+                <div class="info-card-title">About Buy Crypto</div>
                 Non-custodial cross-chain swap powered by <strong style="color:#e2e8f0;">LI.FI / Jumper</strong>. Pwede mong gamitin ang Celo, BNB Chain, Polygon, Arbitrum, Optimism, atbp. as source — at i-receive ang native ETH (o ibang token) sa Base, Ethereum, o sa iba pang supported chain.
                 Kailangan mo i-connect ang wallet sa loob ng widget; bawat swap ay pinipirmahan mo mismo sa wallet mo.
             </div>
@@ -3987,15 +3987,15 @@
                 icon.textContent = "\ud83d\udd17";
                 label.textContent = "WalletConnect";
                 note.classList.add("is-wc-strong");
-                note.textContent = "\u26a0\ufe0f WalletConnect mode: kapag nag-click ka ng \"Swap\" / \"Review\" sa Buy ETH widget, BALIK KA SA WALLET APP MO (MetaMask, Trust, Valora, etc.) para i-approve ang transaction. Bumalik dito sa page after confirming.";
+                note.textContent = "\u26a0\ufe0f WalletConnect mode: kapag nag-click ka ng \"Swap\" / \"Review\" sa Buy Crypto widget, BALIK KA SA WALLET APP MO (MetaMask, Trust, Valora, etc.) para i-approve ang transaction. Bumalik dito sa page after confirming.";
             } else if (isMiniPay) {
                 icon.textContent = "\ud83d\udcb3";
                 label.textContent = "MiniPay";
-                note.textContent = "Naka-connect ka via MiniPay. I-connect ang MiniPay sa loob ng Buy ETH widget; ang signature confirmation prompt ay lalabas dito mismo sa page.";
+                note.textContent = "Naka-connect ka via MiniPay. I-connect ang MiniPay sa loob ng Buy Crypto widget; ang signature confirmation prompt ay lalabas dito mismo sa page.";
             } else {
                 icon.textContent = "\ud83e\uddea";
                 label.textContent = "Injected Wallet";
-                note.textContent = "Naka-connect ka via injected wallet (MetaMask / Rabby / Trust, etc.). Sa Buy ETH widget, i-click ang \"Connect wallet\" at piliin ang naka-install na wallet mo \u2014 mag-po-pop up ang sign transaction dito mismo sa page.";
+                note.textContent = "Naka-connect ka via injected wallet (MetaMask / Rabby / Trust, etc.). Sa Buy Crypto widget, i-click ang \"Connect wallet\" at piliin ang naka-install na wallet mo \u2014 mag-po-pop up ang sign transaction dito mismo sa page.";
             }
             hint.hidden = false;
         }
