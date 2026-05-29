@@ -6572,7 +6572,7 @@ def swap_page():
     fuse_wfuse_contract = os.getenv("FUSE_WFUSE_TOKEN", "0x0BE9e53fd7EDaC9F859882AfdDa116645287C629")
     voltage_router_contract = os.getenv("VOLTAGE_ROUTER", "0xE3F85aAd0c8DD7337427B9dF5d0fB741d65EEEB5")
 
-    # LI.FI / Jumper widget configuration for the Buy ETH (cross-chain swap)
+    # LI.FI / Jumper widget configuration for the Buy Crypto (cross-chain swap)
     # pane.  LI.FI does NOT require contacting their team for an integrator
     # ID — the field is just a self-chosen identifier that gets sent in the
     # `x-lifi-integrator` header, so a sensible default keeps the widget

@@ -2,7 +2,7 @@
  * GoodMarket — LI.FI / Jumper widget mount
  * ---------------------------------------------------------------------------
  * Renders the @lifi/widget React component into #lifiWidgetRoot on the
- * /swap "Buy ETH" tab.  LI.FI's widget handles its own wallet connection
+ * /swap "Buy Crypto" tab.  LI.FI's widget handles its own wallet connection
  * (injected EIP-1193 wallets + WalletConnect via wagmi), so users can
  * connect from inside the widget regardless of how they signed in to
  * GoodMarket itself.  The widget supports cross-chain swaps between many
@@ -12,7 +12,7 @@
  * The widget is loaded via esm.sh on demand to keep the rest of /swap
  * snappy — it is only fetched/mounted when this script runs (and the
  * inline page script defers the script tag until the user opens the
- * Buy ETH tab).
+ * Buy Crypto tab).
  *
  * Exposes window.GMLifiReactWidget = { refresh() } so the host page can
  * re-render the widget after layout changes (e.g. tab switching).
@@ -45,7 +45,7 @@ function renderFallbackMessage(message) {
     box.className = "lifi-react-status";
     box.setAttribute("data-connected", "false");
     box.style.marginBottom = "0.75rem";
-    box.innerHTML = `<strong>⚠️ Buy ETH widget unavailable</strong><span>${message}</span>`;
+    box.innerHTML = `<strong>⚠️ Buy Crypto widget unavailable</strong><span>${message}</span>`;
     rootEl.appendChild(box);
 }
 
@@ -63,7 +63,7 @@ class WidgetErrorBoundary extends React.Component {
     render() {
         if (this.state.hasError) {
             return React.createElement("div", { className: "lifi-react-status", "data-connected": "false" },
-                React.createElement("strong", null, "⚠️ Buy ETH widget failed to render"),
+                React.createElement("strong", null, "⚠️ Buy Crypto widget failed to render"),
                 React.createElement("span", null, "Please refresh the page. If this continues, reconnect your wallet and try again.")
             );
         }
