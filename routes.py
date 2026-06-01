@@ -6642,10 +6642,24 @@ def swap_page():
     lifi_api_url = os.getenv("LIFI_API_URL", "https://li.quest/v1").rstrip("/")
     lifi_from_chain_id = int(os.getenv("LIFI_FROM_CHAIN_ID", str(celo_chain_id)))
     lifi_to_chain_id = int(os.getenv("LIFI_TO_CHAIN_ID", "8453"))
-    # LI.FI's convention for native tokens is the zero address.
-    lifi_native_token = "0x0000000000000000000000000000000000000000"
-    lifi_to_token = os.getenv("LIFI_TO_TOKEN", lifi_native_token)
-    lifi_from_token = os.getenv("LIFI_FROM_TOKEN", lifi_native_token)
+    # LI.FI's native-token convention is the zero address on every EVM chain
+    # EXCEPT Celo — there the native CELO asset is itself an ERC-20 at
+    # 0x471EcE3750Da237f93B8E339c536989b8978a438, and LI.FI's API returns
+    # `Token 42220-0x0000… is invalid or in deny list.` if the widget tries
+    # to use the zero address.  That 400 response was what blocked the
+    # initial gas/quote estimate and bubbled up to users as "failed
+    # bridging/swapping".  So we pick the correct sentinel per chain, with
+    # an env override (`LIFI_FROM_TOKEN`) as the final say.
+    lifi_zero_address = "0x0000000000000000000000000000000000000000"
+    lifi_celo_native = "0x471EcE3750Da237f93B8E339c536989b8978a438"
+    lifi_from_native_default = (
+        lifi_celo_native if lifi_from_chain_id == celo_chain_id else lifi_zero_address
+    )
+    lifi_to_native_default = (
+        lifi_celo_native if lifi_to_chain_id == celo_chain_id else lifi_zero_address
+    )
+    lifi_from_token = os.getenv("LIFI_FROM_TOKEN", lifi_from_native_default)
+    lifi_to_token = os.getenv("LIFI_TO_TOKEN", lifi_to_native_default)
     lifi_route_priority = os.getenv("LIFI_ROUTE_PRIORITY", "FASTEST").upper()
     if lifi_route_priority not in {"FASTEST", "CHEAPEST"}:
         logger.warning("Invalid LIFI_ROUTE_PRIORITY=%r; using FASTEST", lifi_route_priority)

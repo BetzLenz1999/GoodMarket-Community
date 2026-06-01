@@ -9,19 +9,44 @@
  * chains; defaults target Celo → native ETH on Base but the user can
  * change source/destination from inside the widget UI.
  *
- * The widget is loaded via esm.sh on demand to keep the rest of /swap
- * snappy — it is only fetched/mounted when this script runs (and the
- * inline page script defers the script tag until the user opens the
- * Buy Crypto tab).
+ * The widget is loaded from a single locally-vendored ESM bundle at
+ * /static/js/vendor/lifi-widget.bundle.js (see tools/lifi-bundler/) so
+ * the user only ever waits on ONE HTTP request to get the entire widget
+ * runtime instead of waterfalling ~1,200 separate ES modules through
+ * esm.sh, which previously caused multi-second cold loads + mid-load
+ * failures bubbling up as "failed bridging/swapping".
  *
  * Exposes window.GMLifiReactWidget = { refresh() } so the host page can
  * re-render the widget after layout changes (e.g. tab switching).
  */
-import React, { useMemo } from "https://esm.sh/react@18.3.1";
-import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
-import { LiFiWidget } from "https://esm.sh/@lifi/widget@3?deps=react@18.3.1,react-dom@18.3.1";
+// IMPORTANT: We deliberately load LI.FI / Jumper from a single locally-
+// vendored ESM bundle instead of esm.sh.  esm.sh waterfalls @lifi/widget
+// into ~1,200 separate module requests (~4.5MB uncompressed) which made
+// the Buy Crypto pane take 20-30s+ to load on slower connections AND
+// caused mid-load failures that bubbled up to users as "bridging/
+// swapping failed".  The vendored bundle ships React + ReactDOM + the
+// widget in one file, so the browser only makes ONE HTTP request to get
+// the entire widget runtime.  Build it with `npm --prefix
+// tools/lifi-bundler run build` whenever the widget version is bumped.
+import { LiFiWidget, React, ReactDOM } from "/static/js/vendor/lifi-widget.bundle.js";
+const { useMemo } = React;
+const { createRoot } = ReactDOM;
 
-const NATIVE_TOKEN = "0x0000000000000000000000000000000000000000";
+// LI.FI uses the zero address as the native-token sentinel on every
+// supported EVM chain EXCEPT Celo, where the native CELO is itself an
+// ERC-20 deployed at 0x471EcE...A438.  Using the zero address there
+// trips LI.FI's API into returning `Token 42220-0x0000… is invalid or
+// in deny list.` which kills the first gas/quote call and breaks the
+// widget on load — the failure mode users reported as "failed
+// bridging/swapping".  We pick per-chain defaults so the widget always
+// boots with a valid sentinel even when the bootstrap config is
+// missing or older.
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const CELO_CHAIN_ID = 42220;
+const CELO_NATIVE_TOKEN = "0x471EcE3750Da237f93B8E339c536989b8978a438";
+function nativeTokenForChain(chainId) {
+    return Number(chainId) === CELO_CHAIN_ID ? CELO_NATIVE_TOKEN : ZERO_ADDRESS;
+}
 const DEFAULT_STABILITY = Object.freeze({
     routePriority: "FASTEST",
     slippage: 0.01,
@@ -126,8 +151,8 @@ function makeConfig(bootstrap) {
     const integrator = bootstrap.integrator || "goodmarket-community";
     const fromChain = Number(bootstrap.fromChainId || 42220);
     const toChain = Number(bootstrap.toChainId || 8453);
-    const fromToken = bootstrap.fromToken || NATIVE_TOKEN;
-    const toToken = bootstrap.toToken || NATIVE_TOKEN;
+    const fromToken = bootstrap.fromToken || nativeTokenForChain(fromChain);
+    const toToken = bootstrap.toToken || nativeTokenForChain(toChain);
     const routePriority = normalizeRoutePriority(bootstrap.routePriority);
     const slippage = clampSlippage(bootstrap.slippage);
     const useRecommendedRoute = normalizeBoolean(bootstrap.useRecommendedRoute, DEFAULT_STABILITY.useRecommendedRoute);
