@@ -29,8 +29,21 @@
 // the entire widget runtime.  Build it with `npm --prefix
 // tools/lifi-bundler run build` whenever the widget version is bumped.
 import { LiFiWidget, React, ReactDOM } from "/static/js/vendor/lifi-widget.bundle.js";
-const { useMemo } = React;
+const { useMemo, useState, useEffect } = React;
 const { createRoot } = ReactDOM;
+
+// Minimum bridge amount LI.FI's underlying providers typically accept.
+// Below this, the API either returns no routes or returns ones whose fees
+// exceed the output, and wallets reject the tx as "will likely fail".
+// $1 covers Allbridge, Glacis, Eco, Across, Stargate minimums.
+const MIN_BRIDGE_USD = 1;
+// Recommended on-chain gas reserve for Celo bridge txs.  Even with low
+// 0.001–0.005 CELO base fees, two sequential txs (approve + bridge) plus
+// L1 calldata can spike to ~0.03 CELO during congestion.
+const CELO_GAS_RESERVE_WEI = 50000000000000000n;  // 0.05 CELO
+// Same for Base ETH — a destination swap typically costs $0.10–$0.30 in ETH,
+// so any nonzero balance ≥ 0.0002 ETH (~$0.50) is comfortable.
+const BASE_ETH_GAS_RESERVE_WEI = 200000000000000n;  // 0.0002 ETH
 
 // LI.FI uses the zero address as the native-token sentinel on every
 // supported EVM chain EXCEPT Celo, where the native CELO is itself an
@@ -165,6 +178,45 @@ function readRpcUrls(bootstrap) {
     }, {});
 }
 
+function firstRpcUrl(rpcUrls, chainId, fallback) {
+    const entry = rpcUrls && rpcUrls[chainId];
+    if (Array.isArray(entry) && entry.length && entry[0]) return entry[0];
+    return fallback;
+}
+
+async function fetchNativeBalance(rpcUrl, address) {
+    if (!rpcUrl || !address) return null;
+    try {
+        const res = await fetch(rpcUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                jsonrpc: "2.0",
+                id: 1,
+                method: "eth_getBalance",
+                params: [address, "latest"],
+            }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message || "RPC error");
+        const hex = String(data.result || "0x0");
+        if (!/^0x[0-9a-fA-F]*$/.test(hex)) throw new Error(`bad balance hex: ${hex}`);
+        return BigInt(hex);
+    } catch (err) {
+        console.warn("[GoodMarket LI.FI] balance fetch failed for", rpcUrl, err);
+        return null;
+    }
+}
+
+function formatNativeBalance(wei, symbol, decimalsToShow = 4) {
+    if (wei === null || wei === undefined) return null;
+    const s = wei.toString().padStart(19, "0");
+    const whole = s.slice(0, -18) || "0";
+    const frac = s.slice(-18).slice(0, decimalsToShow);
+    return `${whole}.${frac} ${symbol}`;
+}
+
 function makeConfig(bootstrap) {
     const integrator = bootstrap.integrator || "goodmarket-community";
     const fromChain = Number(bootstrap.fromChainId || 42220);
@@ -260,14 +312,128 @@ function makeConfig(bootstrap) {
     return config;
 }
 
+function PreflightPanel({ bootstrap, config, refreshKey }) {
+    const wallet = bootstrap.walletAddress;
+    const connected = isPresentWallet(wallet);
+    const toChain = Number(config.toChain || bootstrap.toChainId || 8453);
+    const fromChain = Number(config.fromChain || bootstrap.fromChainId || CELO_CHAIN_ID);
+    const [balances, setBalances] = useState({ celo: null, base: null, loaded: false, error: false });
+
+    useEffect(() => {
+        if (!connected) {
+            setBalances({ celo: null, base: null, loaded: true, error: false });
+            return undefined;
+        }
+        let cancelled = false;
+        setBalances((prev) => ({ ...prev, loaded: false, error: false }));
+        const celoRpc = firstRpcUrl(bootstrap.rpcUrls, CELO_CHAIN_ID, "https://forno.celo.org");
+        const baseRpc = firstRpcUrl(bootstrap.rpcUrls, 8453, "https://mainnet.base.org");
+        Promise.all([
+            fetchNativeBalance(celoRpc, wallet),
+            fetchNativeBalance(baseRpc, wallet),
+        ]).then(([celo, base]) => {
+            if (cancelled) return;
+            setBalances({
+                celo,
+                base,
+                loaded: true,
+                error: celo === null && base === null,
+            });
+        });
+        return () => { cancelled = true; };
+    }, [wallet, connected, refreshKey]);
+
+    const rows = [];
+
+    // Always-on educational row about bridge minimums.
+    rows.push({
+        kind: "info",
+        key: "min-amount",
+        text: `Bridges (Allbridge, Glacis, Across, Stargate) usually need ≥ $${MIN_BRIDGE_USD} USD per transfer. Smaller amounts may quote zero routes or be eaten by fees.`,
+    });
+
+    if (!connected) {
+        rows.push({
+            kind: "info",
+            key: "connect",
+            text: "Connect a wallet inside the widget to see balance-aware checks (gas reserve on Celo, ETH on destination chain).",
+        });
+    } else if (!balances.loaded) {
+        rows.push({
+            kind: "info",
+            key: "loading",
+            text: "Checking your balances on Celo and the destination chain…",
+        });
+    } else {
+        if (balances.celo !== null) {
+            const formatted = formatNativeBalance(balances.celo, "CELO");
+            if (balances.celo === 0n) {
+                rows.push({
+                    kind: "warn",
+                    key: "celo-zero",
+                    text: `Celo balance is 0 CELO. You can't pay gas or fund the bridge yet — top up your wallet first.`,
+                });
+            } else if (balances.celo < CELO_GAS_RESERVE_WEI) {
+                rows.push({
+                    kind: "warn",
+                    key: "celo-low",
+                    text: `Low Celo balance (${formatted}). Bridge txs need ~0.05 CELO of headroom for gas — sending more than ${formatNativeBalance(balances.celo > CELO_GAS_RESERVE_WEI ? balances.celo - CELO_GAS_RESERVE_WEI : 0n, "CELO")} will likely fail.`,
+                });
+            } else {
+                rows.push({
+                    kind: "info",
+                    key: "celo-ok",
+                    text: `Celo balance: ${formatted}. When using the widget's "Max" button, manually reduce by ~0.05 CELO so there's headroom for gas — LI.FI does NOT auto-reserve on Celo because CELO is an ERC-20.`,
+                });
+            }
+        }
+
+        if (toChain === 8453 && balances.base !== null && fromChain !== 8453) {
+            const formatted = formatNativeBalance(balances.base, "ETH");
+            if (balances.base === 0n) {
+                rows.push({
+                    kind: "warn",
+                    key: "base-zero",
+                    text: `0 ETH on Base. The most reliable Celo→Base routes are 2-step (bridge to USDC, then swap to ETH on Base); the second step needs Base ETH for gas. Either bridge ≥ $${MIN_BRIDGE_USD * 5} so a single-tx route is picked, OR pre-fund your Base wallet with a few cents of ETH first.`,
+                });
+            } else if (balances.base < BASE_ETH_GAS_RESERVE_WEI) {
+                rows.push({
+                    kind: "warn",
+                    key: "base-low",
+                    text: `Low Base ETH balance (${formatted}). The 2-step Celo→Base→ETH route needs ~0.0002 ETH on Base for the destination swap — top up a bit more before bridging.`,
+                });
+            }
+        }
+
+        if (balances.error) {
+            rows.push({
+                kind: "info",
+                key: "rpc-fail",
+                text: "Couldn't read your balances on Celo / Base (public RPC rate-limit). Refresh the widget to retry.",
+            });
+        }
+    }
+
+    return React.createElement("div",
+        { className: "lifi-react-status lifi-react-status--stack", "data-connected": connected ? "true" : "false" },
+        React.createElement("strong", null, "🛡️ LI.FI stability mode"),
+        React.createElement("span", null, `Using ${config.routePriority.toLowerCase()}${config.useRecommendedRoute ? " recommended" : ""} routes with ${(config.slippage * 100).toFixed(1)}% slippage, multi-step bridges enabled, and Permit2 signing bypassed for Celo.`),
+        ...rows.map((row) => React.createElement(
+            "span",
+            { key: row.key, className: `lifi-preflight-row lifi-preflight-row--${row.kind}` },
+            row.kind === "warn" ? "⚠️ " : "ℹ️ ",
+            row.text,
+        )),
+        React.createElement("button",
+            { type: "button", className: "lifi-retry-btn", onClick: () => mount(true) },
+            "Refresh quote widget & balances")
+    );
+}
+
 function GoodMarketLifiWidget({ bootstrap, refreshKey }) {
     const config = useMemo(() => makeConfig(bootstrap), [bootstrap, refreshKey]);
     return React.createElement(React.Fragment, null,
-        React.createElement("div", { className: "lifi-react-status lifi-react-status--stack", "data-connected": isPresentWallet(bootstrap.walletAddress) ? "true" : "false" },
-            React.createElement("strong", null, "🛡️ LI.FI stability mode"),
-            React.createElement("span", null, `Using ${config.routePriority.toLowerCase()}${config.useRecommendedRoute ? " recommended" : ""} routes with ${(config.slippage * 100).toFixed(1)}% slippage tolerance, multi-step bridges enabled, and Permit2 signing bypassed for Celo. If your wallet shows "Transaction will likely fail" or "An error occurred when attempting to switch chain", add the destination network (e.g. Base) manually in your wallet and refresh the widget below.`),
-            React.createElement("button", { type: "button", className: "lifi-retry-btn", onClick: () => mount(true) }, "Refresh quote widget")
-        ),
+        React.createElement(PreflightPanel, { bootstrap, config, refreshKey }),
         React.createElement(LiFiWidget, {
             integrator: config.integrator,
             config,
