@@ -1596,6 +1596,17 @@
         "walletAddress": wallet,
         "loginMethod": login_method
     }|tojson }}</script>
+    {#
+        Eagerly preload the vendored LI.FI bundle so the browser can start
+        downloading the ~2MB (gzipped) widget runtime in parallel with the
+        rest of the page, rather than waiting until lifi-widget-react.js
+        is parsed.  modulepreload tells the browser to fetch + parse it
+        as an ES module.  The href intentionally OMITS the ASSET_VERSION
+        query string so it matches the exact URL that lifi-widget-react.js
+        imports — without that match the browser would issue a duplicate
+        request when the script later runs.
+    #}
+    <link rel="modulepreload" href="{{ url_for('static', filename='js/vendor/lifi-widget.bundle.js') }}">
     <script type="module" src="{{ url_for('static', filename='js/lifi-widget-react.js', v=ASSET_VERSION) }}"></script>
     <script>
         // ─── Constants ────────────────────────────────────────────────────────────
