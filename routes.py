@@ -6415,36 +6415,23 @@ def claim_availability():
         from blockchain import (
             get_ubi_entitlement,
             invalidate_entitlement_cache,
-            check_fuse_ubi_entitlement,
             check_xdc_ubi_entitlement,
         )
         if force:
             invalidate_entitlement_cache(wallet)
 
         celo = get_ubi_entitlement(wallet)
-        # Fuse claiming is enabled for wallets that actually have a Fuse
-        # network — browser extension / injected MetaMask and compatible
-        # WalletConnect users. MiniPay and Trust Wallet are filtered out
-        # client-side in getClaimWalletCapabilities() (they don't expose Fuse),
-        # so the backend only needs to report the real on-chain entitlement.
-        # Operators can still hard-disable the whole network with
-        # FUSE_CLAIM_ENABLED=false if the Fuse claim reserve runs low (the
-        # original reason this was switched off).
-        fuse_claim_enabled = (
-            os.getenv("FUSE_CLAIM_ENABLED", "true") or "true"
-        ).strip().lower() in ("1", "true", "yes", "on")
-        if fuse_claim_enabled:
-            fuse = check_fuse_ubi_entitlement(wallet)
-            fuse.setdefault("is_available", True)
-        else:
-            fuse = {
-                "success": True,
-                "can_claim": False,
-                "claimable": 0,
-                "chain_id": int(os.getenv("FUSE_CHAIN_ID", "122")),
-                "error": "Fuse claim is temporarily not available.",
-                "is_available": False,
-            }
+        # Fuse claiming is temporarily disabled because the Fuse claim contract
+        # balance is too low. Keep the network visible as "Not Available" but
+        # never recommend it or let the frontend treat it as claimable.
+        fuse = {
+            "success": True,
+            "can_claim": False,
+            "claimable": 0,
+            "chain_id": int(os.getenv("FUSE_CHAIN_ID", "122")),
+            "error": "Fuse claim is temporarily not available.",
+            "is_available": False,
+        }
         xdc = check_xdc_ubi_entitlement(wallet)
 
         claims = {
@@ -6465,7 +6452,7 @@ def claim_availability():
                 "network": "fuse",
                 "label": "Fuse",
                 "success": bool(fuse.get("success")),
-                "can_claim": bool(fuse.get("can_claim")) and bool(fuse.get("is_available", True)),
+                "can_claim": False,
                 "is_available": bool(fuse.get("is_available", True)),
                 "claimable": float(fuse.get("claimable") or 0),
                 "claimable_formatted": f"{float(fuse.get('claimable') or 0):.2f}",
