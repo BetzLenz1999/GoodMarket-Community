@@ -3038,41 +3038,45 @@
 
 
 
-        async function claimFuseInjected(provider, from) {
+        async function ensureFuseNetworkForClaim(provider) {
             const currentChain = await provider.request({ method: 'eth_chainId' });
             const normalizedCurrentChain = _normalizeChainIdHex(currentChain);
-            if (normalizedCurrentChain !== FUSE_CHAIN_ID_HEX) {
+            if (normalizedCurrentChain === FUSE_CHAIN_ID_HEX) return;
+
+            try {
+                await provider.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: FUSE_CHAIN_ID_HEX }]
+                });
+            } catch (switchErr) {
+                if (switchErr && switchErr.code === 4001) {
+                    throw new Error('Fuse network switch was cancelled.');
+                }
+                if (switchErr && switchErr.code !== 4902) {
+                    throw new Error(switchErr.message || 'Could not switch to Fuse network.');
+                }
                 try {
                     await provider.request({
-                        method: 'wallet_switchEthereumChain',
-                        params: [{ chainId: FUSE_CHAIN_ID_HEX }]
+                        method: 'wallet_addEthereumChain',
+                        params: [{
+                            chainId: FUSE_CHAIN_ID_HEX,
+                            chainName: 'Fuse Mainnet',
+                            rpcUrls: FUSE_RPC_URLS.slice(),
+                            nativeCurrency: { name: 'FUSE', symbol: 'FUSE', decimals: 18 },
+                            blockExplorerUrls: ['https://explorer.fuse.io']
+                        }]
                     });
-                } catch (switchErr) {
-                    if (switchErr && switchErr.code === 4001) {
-                        throw new Error('Fuse network switch was cancelled.');
+                } catch (addErr) {
+                    if (addErr && addErr.code === 4001) {
+                        throw new Error('Adding Fuse network was cancelled.');
                     }
-                    if (switchErr && switchErr.code !== 4902) {
-                        throw new Error(switchErr.message || 'Could not switch to Fuse network.');
-                    }
-                    try {
-                        await provider.request({
-                            method: 'wallet_addEthereumChain',
-                            params: [{
-                                chainId: FUSE_CHAIN_ID_HEX,
-                                chainName: 'Fuse Mainnet',
-                                rpcUrls: FUSE_RPC_URLS.slice(),
-                                nativeCurrency: { name: 'FUSE', symbol: 'FUSE', decimals: 18 },
-                                blockExplorerUrls: ['https://explorer.fuse.io']
-                            }]
-                        });
-                    } catch (addErr) {
-                        if (addErr && addErr.code === 4001) {
-                            throw new Error('Adding Fuse network was cancelled.');
-                        }
-                        throw new Error((addErr && addErr.message) || 'Could not add Fuse network.');
-                    }
+                    throw new Error((addErr && addErr.message) || 'Could not add Fuse network.');
                 }
             }
+        }
+
+        async function claimFuseInjected(provider, from) {
+            await ensureFuseNetworkForClaim(provider);
 
             const sendFuseTx = () => provider.request({
                 method: 'eth_sendTransaction',
@@ -3798,6 +3802,12 @@
                     status: 'Checking wallet gas…',
                     color: 'var(--text-dim)'
                 },
+                checking_server_gas: {
+                    label: 'Checking gas reserve…',
+                    icon: '🔎',
+                    status: 'Checking gas reserve…',
+                    color: 'var(--text-dim)'
+                },
                 requesting_faucet: {
                     label: 'Requesting faucet top-up…',
                     icon: '🚰',
@@ -3847,6 +3857,9 @@
         const CELO_GAS_BUFFER_DENOMINATOR = 100n;
         const CELO_FALLBACK_CLAIM_GAS = 220000n;
         const CELO_FALLBACK_GAS_PRICE_WEI = 50000000000n; // 50 gwei
+        const FUSE_GAS_MIN_FLOOR_WEI = 3000000000000000n; // 0.003 FUSE floor (matches FAUCET_MIN_FUSE)
+        const FUSE_FALLBACK_CLAIM_GAS = 220000n;
+        const FUSE_FALLBACK_GAS_PRICE_WEI = 20000000000n; // 20 gwei (matches backend fallback)
 
         async function getProviderGasSnapshot(provider) {
             // Dynamic readiness check: balance must cover the actual cost of
@@ -3914,6 +3927,72 @@
                     gasReady: balance >= required,
                 };
             };
+            try {
+                return await snapshot();
+            } catch (e1) {
+                if (!_isRpcHtmlError(e1)) throw e1;
+                await new Promise(r => setTimeout(r, 2500));
+                return await snapshot();
+            }
+        }
+
+        async function getFuseProviderGasSnapshot(provider, from) {
+            // Fast-path for Fuse claims: if the connected wallet already has
+            // enough native FUSE, do not call the faucet endpoint at all. The
+            // backend still performs the authoritative check when this local
+            // snapshot is short or unavailable.
+            const snapshot = async () => {
+                await ensureFuseNetworkForClaim(provider);
+
+                const balanceHex = await provider.request({
+                    method: 'eth_getBalance',
+                    params: [from || WALLET, 'latest']
+                });
+                const balance = BigInt(balanceHex);
+
+                let gasPrice = FUSE_FALLBACK_GAS_PRICE_WEI;
+                try {
+                    const gasPriceHex = await provider.request({
+                        method: 'eth_gasPrice',
+                        params: []
+                    });
+                    const parsed = BigInt(gasPriceHex);
+                    if (parsed > 0n) gasPrice = parsed;
+                } catch (_) {
+                    // Keep fallback gas price.
+                }
+
+                let gasEstimate = FUSE_FALLBACK_CLAIM_GAS;
+                try {
+                    const estHex = await provider.request({
+                        method: 'eth_estimateGas',
+                        params: [{
+                            from: from || WALLET,
+                            to: FUSE_UBI_CONTRACT,
+                            data: CLAIM_DATA,
+                            value: '0x0'
+                        }]
+                    });
+                    const parsedEst = BigInt(estHex);
+                    if (parsedEst > 0n) gasEstimate = parsedEst;
+                } catch (_) {
+                    // Keep fallback gas estimate.
+                }
+
+                const dynamicRequired =
+                    (gasEstimate * gasPrice * CELO_GAS_BUFFER_NUMERATOR) /
+                    CELO_GAS_BUFFER_DENOMINATOR;
+                const required = dynamicRequired > FUSE_GAS_MIN_FLOOR_WEI
+                    ? dynamicRequired
+                    : FUSE_GAS_MIN_FLOOR_WEI;
+
+                return {
+                    balance,
+                    required,
+                    gasReady: balance >= required,
+                };
+            };
+
             try {
                 return await snapshot();
             } catch (e1) {
@@ -4254,11 +4333,26 @@
 
         async function ensureFuseGasReadyBeforeClaim(options = {}) {
             const forceOnchain = !!options.forceOnchain;
+            const provider = options.provider || null;
+            const from = options.from || WALLET;
             const correlationId = `fuseclaim-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
             window.__claimFuseFaucetCorrelationId = correlationId;
             setClaimGasUiState('checking_balance');
 
+            if (!forceOnchain && provider) {
+                try {
+                    const localGasSnap = await getFuseProviderGasSnapshot(provider, from);
+                    if (localGasSnap.gasReady) {
+                        setClaimGasUiState('gas_ready');
+                        return { gasReady: true, toppedUp: false, source: 'wallet_balance' };
+                    }
+                } catch (localGasErr) {
+                    console.warn('[Fuse claim] wallet gas snapshot failed; falling back to backend faucet preflight:', localGasErr);
+                }
+            }
+
             const requestFuseFaucetGas = async (forceFlag) => {
+                setClaimGasUiState('checking_server_gas');
                 const gasData = await _safeFetchJson('/api/fuse/faucet/gas', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-Correlation-ID': correlationId },
@@ -4270,7 +4364,6 @@
                 };
             };
 
-            setClaimGasUiState('requesting_faucet');
             let { gasData, terminal } = await requestFuseFaucetGas(forceOnchain);
 
             if (gasData.gas_ready) {
@@ -4692,7 +4785,7 @@
                     await ensureXdcGasReadyBeforeClaim();
                 } else if (network === 'fuse') {
                     setStatus('Checking Fuse gas…', 'var(--text-dim)');
-                    await ensureFuseGasReadyBeforeClaim();
+                    await ensureFuseGasReadyBeforeClaim({ provider, from });
                 }
 
                 const txHash = network === 'fuse'
