@@ -2955,6 +2955,46 @@
         // Backward-compatible alias.
         const _isXdcRpcHtmlError = _isRpcHtmlError;
 
+        // Detects when the *wallet's own* configured RPC for a network is
+        // failing (e.g. MetaMask still has XDC pointed at the dead
+        // erpc.xinfin.network and surfaces "RPC endpoint returned too many
+        // errors … Consider using a different RPC endpoint"). These are not
+        // contract reverts — the cure is to point the wallet at a healthy RPC.
+        function _isWalletRpcUnreachableError(err) {
+            if (!err) return false;
+            const msg = ((err.shortMessage || err.message) || '').toLowerCase();
+            if (!msg) return false;
+            return (
+                msg.includes('too many errors')
+                || msg.includes('different rpc endpoint')
+                || msg.includes('rpc endpoint returned')
+                || msg.includes('could not be reached')
+                || msg.includes('internal json-rpc error')
+                || msg.includes('bad gateway')
+                || msg.includes('502')
+                || msg.includes('503')
+                || msg.includes('504')
+                || msg.includes('gateway timeout')
+            );
+        }
+
+        // Ask the wallet to (re)register XDC with our healthy multi-RPC list.
+        // Modern MetaMask supports updating an existing network's RPC
+        // endpoints via wallet_addEthereumChain, so this lets a user whose
+        // wallet still has the dead RPC adopt a working one.
+        async function _promptAddHealthyXdcRpc(provider) {
+            return provider.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                    chainId: XDC_CHAIN_ID_HEX,
+                    chainName: 'XDC Network',
+                    rpcUrls: XDC_RPC_URLS.slice(),
+                    nativeCurrency: { name: 'XDC', symbol: 'XDC', decimals: 18 },
+                    blockExplorerUrls: ['https://xdcscan.com']
+                }]
+            });
+        }
+
         // Lenient JSON fetch: tries res.json() and only flags the error as
         // an HTML/upstream issue when the body is genuinely unparseable
         // (e.g. Flask 404 HTML, Cloudflare challenge). Valid JSON responses
@@ -3029,6 +3069,19 @@
                 return await sendXdcTx();
             } catch (sendErr) {
                 if (_isUserRejectedError(sendErr)) throw sendErr;
+                // The wallet's own XDC RPC is unreachable (e.g. still pinned to
+                // the dead erpc.xinfin.network). Ask it to adopt our healthy
+                // RPC list, then retry the send once.
+                if (_isWalletRpcUnreachableError(sendErr)) {
+                    try {
+                        await _promptAddHealthyXdcRpc(provider);
+                        await new Promise(r => setTimeout(r, 1200));
+                        return await sendXdcTx();
+                    } catch (rpcFixErr) {
+                        if (_isUserRejectedError(rpcFixErr)) throw rpcFixErr;
+                        throw sendErr;
+                    }
+                }
                 if (!_isXdcRpcHtmlError(sendErr)) throw sendErr;
                 // Transient public-RPC HTML/parse error — wait a moment and
                 // try once more before giving up.
@@ -4719,11 +4772,18 @@
                 }, 4000);
             } catch (err) {
                 const raw = (err && (err.shortMessage || err.message)) || `${network.toUpperCase()} claim failed`;
-                const msg = _isUserRejectedError(err)
-                    ? `${network.toUpperCase()} transaction cancelled.`
-                    : (_isRpcHtmlError(err)
-                        ? `${network.toUpperCase()} network is temporarily busy. Please retry in 30–60 seconds.`
-                        : ((window.GMTxError && GMTxError.format) ? GMTxError.format(err) : raw));
+                let msg;
+                if (_isUserRejectedError(err)) {
+                    msg = `${network.toUpperCase()} transaction cancelled.`;
+                } else if (network === 'xdc' && _isWalletRpcUnreachableError(err)) {
+                    msg = "Your wallet's XDC RPC endpoint is offline. Open your wallet's XDC Network settings and set the RPC URL to <strong>https://earpc.xinfin.network</strong> (or remove &amp; re-add XDC Network), then retry.";
+                } else if (_isRpcHtmlError(err)) {
+                    msg = `${network.toUpperCase()} network is temporarily busy. Please retry in 30–60 seconds.`;
+                } else if (window.GMTxError && GMTxError.format) {
+                    msg = GMTxError.format(err);
+                } else {
+                    msg = raw;
+                }
                 setStatus('❌ ' + msg, 'var(--red)');
                 btn.disabled = false;
                 label.textContent = network === 'fuse' ? 'Retry Fuse Claim' : 'Retry XDC Claim';
