@@ -216,7 +216,11 @@ window.GMPrivy = {
           return;
         }
         try {
-          state.loginFn();
+          // Explicitly pass loginMethods so the Privy modal always shows
+          // the social-login options (email / Google) instead of falling
+          // back to dashboard defaults which may auto-connect a browser
+          // wallet or skip the chooser entirely.
+          state.loginFn({ loginMethods: ["email", "google"] });
         } catch (err) {
           state.pendingLogin = null;
           reject(err);
