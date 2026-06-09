@@ -1335,22 +1335,6 @@
             display: block;
         }
 
-        .status-message.info .privy-loader {
-            display: inline-block;
-            width: 14px;
-            height: 14px;
-            border: 2px solid #d97706;
-            border-top-color: transparent;
-            border-radius: 50%;
-            animation: privy-spin 0.8s linear infinite;
-            vertical-align: middle;
-            margin-right: 6px;
-        }
-
-        @keyframes privy-spin {
-            to { transform: rotate(360deg); }
-        }
-
         /* Responsive Styles for Section Titles and Descriptions */
         h2 {
             text-align: center;
@@ -1616,7 +1600,8 @@
         }
     </script>
 
-    <!-- Privy embedded-wallet config (consumed by static/js/privy-wallet.js). -->
+    <!-- Privy embedded-wallet config (consumed by static/js/privy-wallet.js,
+         lazy-loaded when the user taps "Create Wallet"). -->
     <script>
         window.__GM_PRIVY_CONFIG__ = {
             appId: {{ (privy_app_id or "") | tojson }},
@@ -1624,12 +1609,6 @@
             explorer: {{ (celo_explorer or "https://celoscan.io") | tojson }}
         };
     </script>
-    {% if privy_app_id %}
-    <!-- Preload the Privy bundle so it's cached by the time the user clicks
-         "Create Wallet". The bundle is ~1.5 MB gzipped; preload fetches it
-         at low priority without blocking render. -->
-    <link rel="preload" href="{{ url_for('static', filename='js/privy-wallet.js', v=ASSET_VERSION) }}" as="script">
-    {% endif %}
 </head>
 <body>
     <!-- Header -->
@@ -2290,14 +2269,16 @@
         }
 
 
-        function showWalletStatus(targetId, message, type = 'info', html = false) {
+        function showWalletStatus(targetId, message, type = 'info') {
             const el = document.getElementById(targetId);
             if (!el) return;
             el.className = 'status-message ' + type;
-            if (html) { el.innerHTML = message; } else { el.textContent = message; }
+            el.textContent = message;
         }
 
         // ── Privy embedded wallet (Create Wallet) ────────────────────────────
+        // The Privy SDK bundle is large, so we lazy-load it only when the user
+        // taps "Create Wallet" rather than on every homepage visit.
         let _gmPrivyLoading = null;
         function _loadPrivyBundle() {
             if (window.GMPrivy) return Promise.resolve();
@@ -2306,11 +2287,14 @@
                 const s = document.createElement('script');
                 s.src = "{{ url_for('static', filename='js/privy-wallet.js', v=ASSET_VERSION) }}";
                 s.onload = () => {
+                    // GMPrivy is set synchronously by the bundle. Its login()
+                    // method now gates internally on SDK readiness, so we can
+                    // resolve immediately once the script has executed.
                     if (window.GMPrivy) { resolve(); return; }
                     reject(new Error('Privy bundle loaded but GMPrivy not found.'));
                 };
                 s.onerror = () => {
-                    _gmPrivyLoading = null;
+                    _gmPrivyLoading = null;  // allow retry on next click
                     reject(new Error('Failed to load Privy. Check your connection and try again.'));
                 };
                 document.body.appendChild(s);
@@ -2318,31 +2302,18 @@
             return _gmPrivyLoading;
         }
 
-        // Eagerly load + initialize the Privy bundle during idle time so the
-        // modal opens near-instantly when the user clicks "Create Wallet".
-        if (window.__GM_PRIVY_CONFIG__ && window.__GM_PRIVY_CONFIG__.appId) {
-            var _privyIdleInit = function () {
-                _loadPrivyBundle().catch(function () {});
-            };
-            if (typeof requestIdleCallback === 'function') {
-                requestIdleCallback(_privyIdleInit, { timeout: 4000 });
-            } else {
-                setTimeout(_privyIdleInit, 2000);
-            }
-        }
-
         async function connectPrivyWallet() {
             const statusId = 'privyStatus';
             const btn = document.getElementById('privyCreateBtn');
             if (btn) btn.disabled = true;
             try {
-                showWalletStatus(statusId, '<span class="privy-loader"></span> Loading secure wallet…', 'info', true);
+                showWalletStatus(statusId, '⏳ Loading secure wallet…', 'info');
                 await _loadPrivyBundle();
                 if (!window.GMPrivy || !window.GMPrivy.isConfigured()) {
                     showWalletStatus(statusId, '❌ Wallet creation is not configured on the server (PRIVY_APP_ID missing).', 'error');
                     return;
                 }
-                showWalletStatus(statusId, '<span class="privy-loader"></span> Opening login — sign up with email or Google.', 'info', true);
+                showWalletStatus(statusId, '⏳ Opening login — sign up with email or Google.', 'info');
                 const { address } = await window.GMPrivy.login();
                 if (!address) throw new Error('No wallet address returned by Privy.');
                 showWalletStatus(statusId, '✍️ Verifying your new wallet…', 'info');
