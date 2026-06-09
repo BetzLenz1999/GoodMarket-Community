@@ -2325,6 +2325,7 @@
                 showWalletStatus(statusId, '✍️ Verifying your new wallet…', 'info');
                 const message = makeLoginMessage(address);
                 const signature = await window.GMPrivy.signMessage(message);
+                showWalletStatus(statusId, '🔐 Securing your session…', 'info');
                 const verifyData = await postVerifyIdentity(address, signature, message, getPendingReferralCode());
                 try { localStorage.setItem('gm_login_method', 'privy'); } catch (_) {}
                 const okMsg = (verifyData && verifyData.referral_warning)
@@ -2981,17 +2982,33 @@
         }
 
         async function postVerifyIdentity(walletAddress, signature, message, referralCode = '') {
-            const resp = await fetch('/verify-identity', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    wallet_address: walletAddress,
-                    signature,
-                    message,
-                    referral_code: referralCode || ''
-                })
-            });
-            const data = await resp.json();
+            // Guard the verification request with a timeout so a slow/stalled
+            // network never leaves the login flow hanging on "Verifying…".
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 20000);
+            let resp;
+            try {
+                resp = await fetch('/verify-identity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        wallet_address: walletAddress,
+                        signature,
+                        message,
+                        referral_code: referralCode || ''
+                    }),
+                    signal: controller.signal
+                });
+            } catch (netErr) {
+                if (netErr && netErr.name === 'AbortError') {
+                    throw new Error('Verification timed out. Check your connection and try again.');
+                }
+                throw new Error('Network error during verification. Please try again.');
+            } finally {
+                clearTimeout(timer);
+            }
+            let data = {};
+            try { data = await resp.json(); } catch (_) { /* non-JSON error body */ }
             if (!(resp.ok && data.success)) {
                 throw new Error(data.error || data.message || 'Identity verification failed');
             }

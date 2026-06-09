@@ -49,6 +49,24 @@ function readConfig() {
 
 const CONFIG = readConfig();
 
+// Reject a promise if it doesn't settle in time so a hung Privy SDK call
+// (common right after a brand-new embedded wallet is provisioned) surfaces a
+// retryable error instead of leaving the UI stuck on a status message forever.
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(label || "The wallet took too long to respond. Please try again.")),
+      ms
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 // Module-level state for the imperative bridge between React and plain JS.
 const state = {
   ready: false,
@@ -60,6 +78,7 @@ const state = {
   logoutFn: null,
   createWalletFn: null,
   pendingLogin: null, // { resolve, reject }
+  loginWatchdog: null, // timer id guarding post-auth wallet provisioning
   providerInstalled: false,
 };
 
@@ -127,9 +146,37 @@ function getEmbedded() {
   );
 }
 
+function settlePendingLogin(kind, payload) {
+  if (!state.pendingLogin) return;
+  if (state.loginWatchdog) {
+    clearTimeout(state.loginWatchdog);
+    state.loginWatchdog = null;
+  }
+  const pending = state.pendingLogin;
+  state.pendingLogin = null;
+  if (kind === "resolve") pending.resolve(payload);
+  else pending.reject(payload);
+}
+
 async function resolvePendingLogin() {
   if (!state.pendingLogin) return;
   if (!state.authenticated) return;
+
+  // Once the user is authenticated the embedded wallet should appear within a
+  // second or two. Arm a one-time watchdog so that if provisioning silently
+  // stalls, login() rejects with a retryable error instead of hanging (which
+  // previously left the homepage stuck mid-flow).
+  if (!state.loginWatchdog) {
+    state.loginWatchdog = setTimeout(() => {
+      state.loginWatchdog = null;
+      if (state.pendingLogin && !getEmbedded()) {
+        settlePendingLogin(
+          "reject",
+          new Error("Your wallet is taking longer than expected to set up. Please try again.")
+        );
+      }
+    }, 30000);
+  }
 
   // If the user is authenticated but has no embedded wallet yet, create one
   // now. This handles the case where a user signs up via email/Google but
@@ -145,9 +192,7 @@ async function resolvePendingLogin() {
       const msg = (createErr && createErr.message) || "";
       if (!/already/i.test(msg)) {
         // Real error: reject so the UI shows feedback
-        const { reject } = state.pendingLogin;
-        state.pendingLogin = null;
-        reject(createErr);
+        settlePendingLogin("reject", createErr);
         return;
       }
       wallet = getEmbedded();
@@ -155,15 +200,13 @@ async function resolvePendingLogin() {
   }
 
   if (!wallet) return; // embedded wallet still being created — wait for next tick
-  const { resolve } = state.pendingLogin;
-  state.pendingLogin = null;
   let provider = null;
   try {
     provider = await wallet.getEthereumProvider();
   } catch (_) {
     /* provider optional for the login flow; signMessage works without it */
   }
-  resolve({ address: wallet.address, provider });
+  settlePendingLogin("resolve", { address: wallet.address, provider });
 }
 
 function Controller() {
@@ -180,9 +223,10 @@ function Controller() {
     },
     onError: (err) => {
       if (state.pendingLogin) {
-        const { reject } = state.pendingLogin;
-        state.pendingLogin = null;
-        reject(new Error(typeof err === "string" ? err : "Privy login failed"));
+        settlePendingLogin(
+          "reject",
+          new Error(typeof err === "string" ? err : "Privy login failed")
+        );
       }
     },
   });
@@ -276,9 +320,38 @@ window.GMPrivy = {
       }
     }),
   signMessage: async (message) => {
-    if (!state.signMessageFn) throw new Error("Privy is not ready yet.");
-    const { signature } = await state.signMessageFn({ message });
-    return signature;
+    // A freshly created embedded wallet can lag a few hundred ms behind the
+    // "authenticated" event: the signer function and/or the wallet object may
+    // not exist for the first moment after login. Wait for both to be ready
+    // (bounded) instead of throwing immediately.
+    const deadline = Date.now() + 12000;
+    while ((!state.signMessageFn || !getEmbedded()) && Date.now() < deadline) {
+      await sleep(200);
+    }
+    if (!state.signMessageFn || !getEmbedded()) {
+      throw new Error("Wallet is still being set up. Please try again in a moment.");
+    }
+
+    // Retry transient "not ready / not connected" signer failures that happen
+    // right after wallet creation. Never retry an explicit user rejection.
+    let lastErr = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const { signature } = await withTimeout(
+          state.signMessageFn({ message }),
+          15000,
+          "Signing timed out. Please try again."
+        );
+        if (signature) return signature;
+        lastErr = new Error("The wallet returned an empty signature. Please try again.");
+      } catch (err) {
+        lastErr = err;
+        const msg = (err && err.message) || "";
+        if (/reject|denied|cancel|user closed|exit/i.test(msg)) throw err;
+      }
+      if (attempt < 2) await sleep(700);
+    }
+    throw lastErr || new Error("Unable to sign the login message. Please try again.");
   },
   exportWallet: async () => {
     if (!state.exportWalletFn) throw new Error("Privy is not ready yet.");
