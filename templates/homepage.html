@@ -3464,13 +3464,16 @@
                 });
                 if (!address) throw new Error('No accounts returned from wallet');
                 
-                // CRITICAL: Store session info in localStorage so wc-bridge.js
+                // CRITICAL: Store FULL session in localStorage so wc-bridge.js
                 // on other pages can restore the session
                 try {
                     localStorage.setItem('wc_session_topic', session.topic);
                     localStorage.setItem('wc_session_address', address);
                     localStorage.setItem('wc_session_timestamp', Date.now().toString());
+                    // Store the full session object for restoration
+                    localStorage.setItem('wc_session_data', JSON.stringify(session));
                     console.log('[homepage] Stored WC session:', session.topic, address);
+                    console.log('[homepage] Full session stored in localStorage');
                 } catch (e) {
                     console.warn('[homepage] Could not store WC session:', e);
                 }
