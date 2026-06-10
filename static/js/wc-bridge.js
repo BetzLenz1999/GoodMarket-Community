@@ -265,14 +265,24 @@
             // users who logged in via WalletConnect and are now trying to
             // sign transactions. Without this, the new SignClient instance
             // doesn't know about the session from the login flow.
-            // The "Unknown connector error" occurs because the session topic
-            // stored during login is not recognized by this new SignClient.
             try {
                 // First check SignClient's own session storage
                 var sessions = client.getActiveSessions();
                 var sessionKeys = sessions ? Object.keys(sessions) : [];
-                console.log('[wc-bridge] SignClient initialized, checking for sessions...');
+                console.log('[wc-bridge] SignClient initialized');
                 console.log('[wc-bridge] Found sessions from SignClient:', sessionKeys.length);
+                
+                // Also check localStorage directly to see what's stored
+                try {
+                    var wcStorageKeys = [];
+                    for (var i = 0; i < localStorage.length; i++) {
+                        var key = localStorage.key(i);
+                        if (key && key.indexOf('walletconnect') !== -1) {
+                            wcStorageKeys.push(key);
+                        }
+                    }
+                    console.log('[wc-bridge] localStorage WC keys:', wcStorageKeys);
+                } catch (lsErr) {}
                 
                 if (sessionKeys.length > 0) {
                     // Found existing session(s) - use the first one
@@ -294,29 +304,32 @@
                     }
                 } else {
                     // No sessions from SignClient - check our own localStorage backup
-                    console.log('[wc-bridge] No sessions from SignClient, checking localStorage...');
+                    console.log('[wc-bridge] No sessions from SignClient, checking localStorage backup...');
                     try {
                         var storedTopic = localStorage.getItem('wc_session_topic');
                         var storedAddress = localStorage.getItem('wc_session_address');
                         var storedTimestamp = localStorage.getItem('wc_session_timestamp');
                         
                         if (storedTopic && storedAddress) {
-                            // Session exists in localStorage but not in SignClient
-                            // This means SignClient session expired or wasn't stored
-                            // Mark session as expired so user needs to reconnect
-                            console.log('[wc-bridge] Found localStorage backup but SignClient session missing');
-                            console.log('[wc-bridge] Stored topic:', storedTopic, 'address:', storedAddress);
+                            // We have localStorage data - this means user logged in via WC
+                            // but SignClient didn't persist the session
+                            _state.address = storedAddress;
+                            console.log('[wc-bridge] Restored address from localStorage:', storedAddress);
+                            console.log('[wc-bridge] Stored topic:', storedTopic);
                             
-                            // Clear stale localStorage data
-                            localStorage.removeItem('wc_session_topic');
-                            localStorage.removeItem('wc_session_address');
-                            localStorage.removeItem('wc_session_timestamp');
+                            // Try to restore session using the stored topic
+                            // SignClient should be able to find it if it was stored
+                            var storedSession = client.session.get(storedTopic);
+                            if (storedSession) {
+                                _state.browserSession = storedSession;
+                                console.log('[wc-bridge] Restored full session from topic!');
+                            } else {
+                                console.log('[wc-bridge] Could not restore full session, only have address');
+                            }
                         }
                     } catch (lsErr) {
                         console.warn('[wc-bridge] Could not access localStorage:', lsErr);
                     }
-                    
-                    console.log('[wc-bridge] No active sessions - user needs to reconnect');
                 }
             } catch (restoreErr) {
                 console.warn('[wc-bridge] Could not restore existing sessions:', restoreErr);

@@ -3463,6 +3463,19 @@
                     return false;
                 });
                 
+                // Extract address from session FIRST, then store in localStorage
+                const ns = session.namespaces || {};
+                let address = null;
+                Object.keys(ns).some((key) => {
+                    const accts = ns[key]?.accounts || [];
+                    if (accts.length) {
+                        address = accts[0].split(':').pop();
+                        return true;
+                    }
+                    return false;
+                });
+                if (!address) throw new Error('No accounts returned from wallet');
+                
                 // CRITICAL: Store session info in localStorage so wc-bridge.js
                 // on other pages can restore the session
                 try {
@@ -3473,7 +3486,7 @@
                 } catch (e) {
                     console.warn('[homepage] Could not store WC session:', e);
                 }
-                if (!address) throw new Error('No accounts returned from wallet');
+                
                 const message = makeLoginMessage(address);
                 showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve login signature in your wallet.', 'info');
                 const messageHex = '0x' + Array.from(new TextEncoder().encode(message)).map(b => b.toString(16).padStart(2, '0')).join('');
