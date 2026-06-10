@@ -265,12 +265,30 @@
             });
         }).then(function (client) {
             _state.signClient = client;
-            // Do NOT auto-pick up existing sessions from local storage here.
-            // Sessions stored from a previous page visit (e.g. the login flow)
-            // are frequently expired on the WalletConnect relay — using their
-            // topic for a new request produces "Unknown connector error".
-            // Instead, connect() always calls client.connect() to establish a
-            // fresh session and QR approval for each wallet-scoped action.
+            
+            // Restore existing session if available - this is critical for
+            // users who logged in via WalletConnect and are now trying to
+            // sign transactions. Without this, the new SignClient instance
+            // doesn't know about the session from the login flow.
+            // The "Unknown connector error" occurs because the session topic
+            // stored during login is not recognized by this new SignClient.
+            try {
+                var sessions = client.getActiveSessions();
+                var sessionKeys = sessions ? Object.keys(sessions) : [];
+                if (sessionKeys.length > 0) {
+                    // Found existing session(s) - use the first one
+                    var existingSession = sessions[sessionKeys[0]];
+                    if (existingSession && existingSession.topic) {
+                        _state.browserSession = existingSession;
+                        _state.address = existingSession.peer?.metadata?.name ? 
+                            existingSession.self?.metadata?.publicKey : _state.address;
+                        console.log('[wc-bridge] Restored existing WalletConnect session:', existingSession.topic);
+                    }
+                }
+            } catch (restoreErr) {
+                console.warn('[wc-bridge] Could not restore existing sessions:', restoreErr);
+            }
+            
             return client;
         });
     }
@@ -766,40 +784,65 @@
                     });
                 }
                 // Fall through to the in-browser SignClient session.
+                // If no browser session exists, try to establish one first
                 if (!_state.browserSession) {
-                    throw _wcRpcError("WalletConnect browser session is not active.", null, -32603);
-                }
-                return _wcGetClient().then(function (client) {
-                    // Wrap the request with a timeout to prevent the wallet
-                    // (MetaMask Mobile in particular) from hanging
-                    // indefinitely. The wallet sometimes silently drops
-                    // requests so we surface a clear failure after 45s.
-                    var requestPromise = client.request({
-                        topic: _state.browserSession.topic,
-                        chainId: "eip155:" + Number(_config.chainId || DEFAULT_CHAIN_ID),
-                        request: { method: method, params: p }
+                    return connect().then(function () {
+                        // After connect, _state.browserSession should be set
+                        // Retry the request with the new session
+                        if (!_state.browserSession) {
+                            throw _wcRpcError("WalletConnect session could not be established. Please try again.", null, -32603);
+                        }
+                        return _doWcRequest(client, method, p);
                     });
-                    // Fire-and-forget: bring the wallet app to the foreground
-                    // on mobile so the user actually sees the sign / tx
-                    // prompt that's now sitting in the wallet's queue.
-                    // Without this MetaMask Mobile / Trust Wallet etc. are
-                    // happy to receive the request silently and the user
-                    // is left staring at the dApp tab thinking nothing
-                    // happened. This is what @walletconnect/modal does
-                    // internally — we do it manually because we use the
-                    // raw SignClient SDK.
-                    _wakeWalletAppFor(_state.browserSession);
-                    return _withTimeout(requestPromise, 45000,
-                        "WalletConnect request timeout (45s). Wallet may not respond to requests - try refreshing or switching wallets.");
-                }).catch(function (wcErr) {
-                    // Re-throw with .code preserved so ethers.js sees a
-                    // proper EIP-1193 error (4001 → user rejected, etc.)
-                    // instead of wrapping it as "could not coalesce error".
-                    var code = (wcErr && typeof wcErr.code === "number") ? wcErr.code : -32603;
-                    var msg = (wcErr && wcErr.message) ? String(wcErr.message) : "WalletConnect request failed";
-                    throw _wcRpcError(msg, msg, code);
+                }
+                // Session exists - try to use it, but handle "Unknown connector" (expired sessions)
+                return _wcGetClient().then(function (client) {
+                    return _doWcRequest(client, method, p).catch(function (wcErr) {
+                        var errMsg = (wcErr && wcErr.message) ? String(wcErr.message) : "";
+                        // Check if this is an "Unknown connector" error - session expired or invalid
+                        if (/unknown connector/i.test(errMsg)) {
+                            console.log('[wc-bridge] Session expired or invalid, attempting to reconnect...');
+                            _state.browserSession = null; // Clear the stale session
+                            // Try to reconnect
+                            return connect().then(function () {
+                                if (!_state.browserSession) {
+                                    throw _wcRpcError("WalletConnect session expired. Please approve the new connection request.", null, -32603);
+                                }
+                                return _doWcRequest(client, method, p);
+                            });
+                        }
+                        // Re-throw with .code preserved so ethers.js sees a
+                        // proper EIP-1193 error (4001 → user rejected, etc.)
+                        var code = (wcErr && typeof wcErr.code === "number") ? wcErr.code : -32603;
+                        throw _wcRpcError(errMsg || "WalletConnect request failed", errMsg, code);
+                    });
                 });
             });
+        }
+
+        // Helper to make WC request - extracted for reuse on reconnect
+        function _doWcRequest(client, method, p) {
+            // Wrap the request with a timeout to prevent the wallet
+            // (MetaMask Mobile in particular) from hanging
+            // indefinitely. The wallet sometimes silently drops
+            // requests so we surface a clear failure after 45s.
+            var requestPromise = client.request({
+                topic: _state.browserSession.topic,
+                chainId: "eip155:" + Number(_config.chainId || DEFAULT_CHAIN_ID),
+                request: { method: method, params: p }
+            });
+            // Fire-and-forget: bring the wallet app to the foreground
+            // on mobile so the user actually sees the sign / tx
+            // prompt that's now sitting in the wallet's queue.
+            // Without this MetaMask Mobile / Trust Wallet etc. are
+            // happy to receive the request silently and the user
+            // is left staring at the dApp tab thinking nothing
+            // happened. This is what @walletconnect/modal does
+            // internally — we do it manually because we use the
+            // raw SignClient SDK.
+            _wakeWalletAppFor(_state.browserSession);
+            return _withTimeout(requestPromise, 45000,
+                "WalletConnect request timeout (45s). Wallet may not respond to requests - try refreshing or switching wallets.");
         }
 
         // Read-only RPC calls — answer directly off Celo RPC to avoid an
