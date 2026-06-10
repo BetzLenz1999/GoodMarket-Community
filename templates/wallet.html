@@ -1904,6 +1904,12 @@
             const p = _getEthProvider();
             if (p) return p;
         }
+        // WalletConnect fallback: if no injected provider found and WC is preferred,
+        // try to get the WalletConnect provider so users can still sign transactions
+        if (!first) {
+            const wcProvider = await _walletGetWcProviderIfPreferred();
+            if (wcProvider) return wcProvider;
+        }
         return null;
     }
 
@@ -2681,7 +2687,7 @@
                     provider = await _walletGetWcProviderIfPreferred();
                 }
                 if (!provider) {
-                    throw new Error('No wallet detected. Please connect your GoodMarket wallet, or sign in again with WalletConnect.');
+                    throw new Error('No wallet detected. Please connect your GoodMarket wallet via MetaMask, Trust Wallet, MiniPay, or use WalletConnect to sign transactions.');
                 }
 
                 const accounts = await provider.request({ method: 'eth_requestAccounts' });
@@ -4460,7 +4466,7 @@
                 usingWcBridge = !!provider;
             }
             if (!provider) {
-                setStatus('⚠️ No wallet detected. Open in MetaMask, Trust Wallet, MiniPay, or sign in again with WalletConnect.', '#fbbf24');
+                setStatus('⚠️ No wallet detected. Please open this page in MetaMask, Trust Wallet, MiniPay, or reconnect using WalletConnect to sign transactions.', '#fbbf24');
                 return;
             }
 
@@ -4726,7 +4732,7 @@
         async function getClaimProviderAndFrom() {
             let provider = await _vAwaitEthProvider();
             if (!provider) provider = await _walletGetWcProviderIfPreferred();
-            if (!provider) throw new Error('No wallet detected. Open in MetaMask or sign in again with WalletConnect.');
+            if (!provider) throw new Error('No wallet detected. Please open this page in MetaMask, Trust Wallet, MiniPay, or reconnect using WalletConnect to sign transactions.');
             const accounts = await provider.request({ method: 'eth_requestAccounts' });
             if (!accounts || !accounts.length) throw new Error('No wallet account available.');
             const from = accounts[0];
@@ -5074,7 +5080,7 @@
         async function signWithWallet(address) {
             const provider = await _vAwaitEthProvider();
             if (!provider) {
-                throw new Error('No wallet detected. Open this page in MiniPay, MetaMask, Trust Wallet, or WalletConnect.');
+                throw new Error('No wallet detected. Please open this page in MiniPay, MetaMask, Trust Wallet, or reconnect using WalletConnect to sign transactions.');
             }
 
             const accounts = await provider.request({ method: 'eth_requestAccounts' });
