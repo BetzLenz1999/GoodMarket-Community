@@ -3451,18 +3451,6 @@
                 const session = await result.approval();
                 window._wcSession = session;
                 
-                // Extract address from session
-                const ns = session.namespaces || {};
-                let address = null;
-                Object.keys(ns).some((key) => {
-                    const accts = ns[key]?.accounts || [];
-                    if (accts.length) {
-                        address = accts[0].split(':').pop();
-                        return true;
-                    }
-                    return false;
-                });
-                
                 // Extract address from session FIRST, then store in localStorage
                 const ns = session.namespaces || {};
                 let address = null;
