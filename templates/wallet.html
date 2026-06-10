@@ -4552,6 +4552,25 @@
 
                 setStatus('Gas ready. Connecting to wallet…', 'var(--text-dim)');
 
+                // WalletConnect: the login session stored in localStorage cannot
+                // be reused for transactions — the relay rejects it with
+                // "Unknown connector error" because the session is scoped to the
+                // login dApp handshake, not to a claim transaction.  Force a fresh
+                // connection by (1) resetting the bridge state so _wcGetClient()
+                // creates a new SignClient instance and (2) removing the stale
+                // wc@2:* localStorage keys so the new SignClient has no sessions
+                // to restore.  connect() will then call client.connect() →
+                // show a fresh QR → establish a live session → use it for
+                // eth_sendTransaction.
+                if (usingWcBridge) {
+                    try {
+                        if (typeof GMWalletConnect !== 'undefined') GMWalletConnect.reset();
+                        Object.keys(localStorage).forEach(function(k) {
+                            if (/^wc@2:/.test(k)) localStorage.removeItem(k);
+                        });
+                    } catch (_) {}
+                }
+
                 const accounts = await provider.request({ method: 'eth_requestAccounts' });
                 if (!accounts || !accounts.length) throw new Error('No wallet account available.');
                 const from = accounts[0];
