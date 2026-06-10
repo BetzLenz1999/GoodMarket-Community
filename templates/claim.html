@@ -102,6 +102,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
             integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
             crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <!-- Shared WalletConnect bridge (claim / send / FV signing fallback for WC users). -->
+    <script src="/static/js/wc-bridge.js?v={{ ASSET_VERSION }}"></script>
     <!--
         Shared "gas coverage" banner shown after a successful GoodDollar Celo
         gas top-up. Surfaces the 3-day coverage / 48h cooldown reminder so
@@ -123,6 +125,34 @@
             "function withdraw(address paymentId, bytes memory signature) public",
             "function hasPayment(address paymentId) view returns (bool)"
         ];
+
+        // Configure the shared WalletConnect bridge so users that logged in via
+        // WalletConnect (no `window.ethereum`) can still claim / send / sign with
+        // approval prompts coming back through their original WC session.
+        if (typeof GMWalletConnect !== "undefined") {
+            GMWalletConnect.configure({
+                walletAddress: "{{ wallet | default('') }}",
+                loginMethod: "{{ login_method | default('walletconnect') }}",
+                projectId: "{{ walletconnect_project_id|default('', true) }}",
+                sidecarEnabled: {{ 'true' if walletconnect_sidecar_enabled|default(true) else 'false' }},
+                dappName: "GoodMarket — Claim",
+                dappDescription: "Claim daily G$ on Celo",
+                assetVersion: "{{ ASSET_VERSION }}",
+            });
+        }
+
+        // Returns an EIP-1193-shaped provider for WC users when no injected
+        // provider is available. `null` if the user can't / shouldn't use
+        // WalletConnect.
+        async function _getWcProviderIfPreferred() {
+            try {
+                if (typeof GMWalletConnect === "undefined") return null;
+                if (!GMWalletConnect.isPreferred()) return null;
+                return GMWalletConnect.getProvider();
+            } catch (_) {
+                return null;
+            }
+        }
 
         let paymentPrivKey = null;
         let paymentWallet = null;
@@ -274,7 +304,12 @@
                 found = _getEthProvider();
                 if (found) return found;
             }
-            return null;
+            // WalletConnect fallback: if no injected provider found and WC is preferred,
+            // try to get the WalletConnect provider
+            if (!found) {
+                found = await _getWcProviderIfPreferred();
+            }
+            return found;
         }
         if (_isTrustWalletMobileContext()) {
             window.addEventListener("pageshow", () => {
@@ -428,7 +463,7 @@
                 } else {
                     const injectedProvider = await _awaitEthProvider(1200);
                     if (!injectedProvider) {
-                        showAlert("alert-error", "⚠️ No Web3 wallet detected. Please open this page in MetaMask, MiniPay, Trust Wallet dApp browser, or another Celo-compatible wallet.");
+                        showAlert("alert-error", "⚠️ No Web3 wallet detected. Please open this page in MetaMask, MiniPay, Trust Wallet dApp browser, WalletConnect, or another Celo-compatible wallet.");
                         return;
                     }
 
