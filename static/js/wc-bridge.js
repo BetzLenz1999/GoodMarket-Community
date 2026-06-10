@@ -265,22 +265,12 @@
             });
         }).then(function (client) {
             _state.signClient = client;
-            try {
-                var sessions = client.session && client.session.getAll ? client.session.getAll() : [];
-                if (sessions && sessions.length && !_state.browserSession) {
-                    _state.browserSession = sessions[sessions.length - 1];
-                    _state.mode = "browser";
-                    var ns = _state.browserSession.namespaces || {};
-                    Object.keys(ns).some(function (key) {
-                        var accts = (ns[key] && ns[key].accounts) || [];
-                        if (accts.length) {
-                            _state.address = String(accts[0]).split(":").pop();
-                            return true;
-                        }
-                        return false;
-                    });
-                }
-            } catch (_) { /* no-op */ }
+            // Do NOT auto-pick up existing sessions from local storage here.
+            // Sessions stored from a previous page visit (e.g. the login flow)
+            // are frequently expired on the WalletConnect relay — using their
+            // topic for a new request produces "Unknown connector error".
+            // Instead, connect() always calls client.connect() to establish a
+            // fresh session and QR approval for each wallet-scoped action.
             return client;
         });
     }
