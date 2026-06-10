@@ -1658,12 +1658,14 @@
     // Configure the shared WalletConnect bridge so users that logged in via
     // WalletConnect (no `window.ethereum`) can still claim / send / sign with
     // approval prompts coming back through their original WC session.
+    // IMPORTANT: sidecarEnabled=false to prevent new QR from appearing during signing.
+    // Signing should use existing session, not create new one.
     if (typeof GMWalletConnect !== "undefined") {
         GMWalletConnect.configure({
             walletAddress: "{{ wallet }}",
             loginMethod: "{{ login_method }}",
             projectId: "{{ walletconnect_project_id|default('', true) }}",
-            sidecarEnabled: {{ 'true' if walletconnect_sidecar_enabled|default(true) else 'false' }},
+            sidecarEnabled: false, // Disabled to prevent QR during signing - use existing WC session
             dappName: "GoodMarket — Wallet",
             dappDescription: "Claim and send GoodDollar on Celo",
             assetVersion: "{{ ASSET_VERSION }}",
