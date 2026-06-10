@@ -784,38 +784,49 @@
                     });
                 }
                 // Fall through to the in-browser SignClient session.
-                // If no browser session exists, try to establish one first
-                if (!_state.browserSession) {
-                    return connect().then(function () {
-                        // After connect, _state.browserSession should be set
-                        // Retry the request with the new session
-                        if (!_state.browserSession) {
-                            throw _wcRpcError("WalletConnect session could not be established. Please try again.", null, -32603);
-                        }
-                        return _doWcRequest(client, method, p);
-                    });
-                }
-                // Session exists - try to use it, but handle "Unknown connector" (expired sessions)
+                // Try to restore existing session first before showing QR
+                // Transaction signing should NOT show QR - use existing session or fail gracefully
                 return _wcGetClient().then(function (client) {
-                    return _doWcRequest(client, method, p).catch(function (wcErr) {
-                        var errMsg = (wcErr && wcErr.message) ? String(wcErr.message) : "";
-                        // Check if this is an "Unknown connector" error - session expired or invalid
-                        if (/unknown connector/i.test(errMsg)) {
-                            console.log('[wc-bridge] Session expired or invalid, attempting to reconnect...');
-                            _state.browserSession = null; // Clear the stale session
-                            // Try to reconnect
-                            return connect().then(function () {
-                                if (!_state.browserSession) {
-                                    throw _wcRpcError("WalletConnect session expired. Please approve the new connection request.", null, -32603);
+                    console.log('[wc-bridge] bridgeRequest for', method, '- browserSession:', !!_state.browserSession, 'topic:', _state.browserSession?.topic);
+                    
+                    // Try to restore session from SignClient if not already set
+                    if (!_state.browserSession) {
+                        try {
+                            var sessions = client.getActiveSessions();
+                            var sessionKeys = sessions ? Object.keys(sessions) : [];
+                            console.log('[wc-bridge] Found', sessionKeys.length, 'active sessions from SignClient');
+                            if (sessionKeys.length > 0) {
+                                var existingSession = sessions[sessionKeys[0]];
+                                if (existingSession && existingSession.topic) {
+                                    _state.browserSession = existingSession;
+                                    console.log('[wc-bridge] Restored existing session:', existingSession.topic);
                                 }
-                                return _doWcRequest(client, method, p);
-                            });
+                            }
+                        } catch (restoreErr) {
+                            console.warn('[wc-bridge] Could not restore session:', restoreErr);
                         }
-                        // Re-throw with .code preserved so ethers.js sees a
-                        // proper EIP-1193 error (4001 → user rejected, etc.)
-                        var code = (wcErr && typeof wcErr.code === "number") ? wcErr.code : -32603;
-                        throw _wcRpcError(errMsg || "WalletConnect request failed", errMsg, code);
-                    });
+                    }
+                    
+                    // If we have a session, use it
+                    if (_state.browserSession) {
+                        return _doWcRequest(client, method, p).catch(function (wcErr) {
+                            var errMsg = (wcErr && wcErr.message) ? String(wcErr.message) : "";
+                            // Handle "Unknown connector" - session expired, try to reconnect
+                            if (/unknown connector/i.test(errMsg)) {
+                                console.log('[wc-bridge] Session expired/invalid, attempting reconnect...');
+                                _state.browserSession = null;
+                                // Don't show QR for reconnection during signing
+                                // Just fail with clear message
+                                throw _wcRpcError("WalletConnect session expired. Please refresh the page and try signing again.", null, -32603);
+                            }
+                            var code = (wcErr && typeof wcErr.code === "number") ? wcErr.code : -32603;
+                            throw _wcRpcError(errMsg || "WalletConnect request failed", errMsg, code);
+                        });
+                    }
+                    
+                    // No session available - fail gracefully without showing QR
+                    // Transaction signing should never require user to scan new QR
+                    throw _wcRpcError("No active WalletConnect session. Please refresh the page and try again.", null, -32603);
                 });
             });
         }
