@@ -510,7 +510,14 @@
     }
 
     function connect() {
-        if (_state.address) return Promise.resolve(_state.address);
+        // Only short-circuit if there is an active session backing the address.
+        // Returning an address without a session would silently fail on the next
+        // wallet-scoped method (eth_sendTransaction / personal_sign) because
+        // neither the sidecar sessionId nor the browser session would be set.
+        var hasActiveSession =
+            (_state.mode === "sidecar" && !!_state.sessionId) ||
+            (_state.mode === "browser" && !!_state.browserSession);
+        if (hasActiveSession && _state.address) return Promise.resolve(_state.address);
         var wantedAddress = String(_config.walletAddress || "").toLowerCase();
 
         // Try the Node sidecar first when enabled (matches homepage login flow).
@@ -670,6 +677,14 @@
         var p = params || [];
 
         if (method === "eth_accounts" || method === "eth_requestAccounts") {
+            // Return the known wallet address immediately without triggering a new
+            // WalletConnect session (QR scan). The WC session is only established
+            // on demand when a real wallet-scoped action (eth_sendTransaction /
+            // personal_sign) is first needed. This prevents an unexpected QR modal
+            // appearing for users who already logged in via WalletConnect.
+            if (_config.walletAddress) {
+                return Promise.resolve([_config.walletAddress]);
+            }
             return connect().then(function (addr) { return [addr]; });
         }
         if (method === "eth_chainId") {
