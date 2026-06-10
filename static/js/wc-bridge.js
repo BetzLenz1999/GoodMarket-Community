@@ -272,18 +272,6 @@
                 console.log('[wc-bridge] SignClient initialized');
                 console.log('[wc-bridge] Found sessions from SignClient:', sessionKeys.length);
                 
-                // Also check localStorage directly to see what's stored
-                try {
-                    var wcStorageKeys = [];
-                    for (var i = 0; i < localStorage.length; i++) {
-                        var key = localStorage.key(i);
-                        if (key && key.indexOf('walletconnect') !== -1) {
-                            wcStorageKeys.push(key);
-                        }
-                    }
-                    console.log('[wc-bridge] localStorage WC keys:', wcStorageKeys);
-                } catch (lsErr) {}
-                
                 if (sessionKeys.length > 0) {
                     // Found existing session(s) - use the first one
                     var existingSession = sessions[sessionKeys[0]];
@@ -308,23 +296,25 @@
                     try {
                         var storedTopic = localStorage.getItem('wc_session_topic');
                         var storedAddress = localStorage.getItem('wc_session_address');
-                        var storedTimestamp = localStorage.getItem('wc_session_timestamp');
+                        var storedSessionData = localStorage.getItem('wc_session_data');
                         
                         if (storedTopic && storedAddress) {
-                            // We have localStorage data - this means user logged in via WC
-                            // but SignClient didn't persist the session
                             _state.address = storedAddress;
-                            console.log('[wc-bridge] Restored address from localStorage:', storedAddress);
+                            console.log('[wc-bridge] Found localStorage backup');
                             console.log('[wc-bridge] Stored topic:', storedTopic);
+                            console.log('[wc-bridge] Stored address:', storedAddress);
                             
-                            // Try to restore session using the stored topic
-                            // SignClient should be able to find it if it was stored
-                            var storedSession = client.session.get(storedTopic);
-                            if (storedSession) {
-                                _state.browserSession = storedSession;
-                                console.log('[wc-bridge] Restored full session from topic!');
-                            } else {
-                                console.log('[wc-bridge] Could not restore full session, only have address');
+                            // Try to parse stored session data
+                            if (storedSessionData) {
+                                try {
+                                    var parsedSession = JSON.parse(storedSessionData);
+                                    if (parsedSession && parsedSession.topic) {
+                                        _state.browserSession = parsedSession;
+                                        console.log('[wc-bridge] Restored full session from localStorage!');
+                                    }
+                                } catch (parseErr) {
+                                    console.log('[wc-bridge] Could not parse stored session data');
+                                }
                             }
                         }
                     } catch (lsErr) {
