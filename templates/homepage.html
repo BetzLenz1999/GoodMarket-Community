@@ -2320,6 +2320,8 @@
                     return;
                 }
                 showWalletStatus(statusId, '⏳ Opening login — sign up with email or Google.', 'info');
+                // Hide our modal while Privy shows its own UI so they don't overlap.
+                closeWalletModal();
                 const { address } = await window.GMPrivy.login();
                 if (!address) throw new Error('No wallet address returned by Privy.');
                 showWalletStatus(statusId, '✍️ Verifying your new wallet…', 'info');
@@ -2335,9 +2337,10 @@
             } catch (err) {
                 const msg = (err && err.message) ? err.message : 'Wallet creation failed';
                 const cancelled = /reject|denied|cancel|close|exit/i.test(msg);
-                showWalletStatus(statusId, (cancelled ? '⚠️ Login was cancelled. ' : '❌ ') + msg, cancelled ? 'warning' : 'error');
-                // Restore the option cards so the user can try again
+                // Restore option cards and reopen our modal (we closed it when Privy opened)
                 optionCards.forEach(function(c) { c.style.display = ''; });
+                openWalletModal();
+                showWalletStatus(statusId, (cancelled ? '⚠️ Login was cancelled. ' : '❌ ') + msg, cancelled ? 'warning' : 'error');
             } finally {
                 if (btn) btn.disabled = false;
             }
