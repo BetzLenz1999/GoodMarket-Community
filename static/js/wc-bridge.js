@@ -519,130 +519,102 @@
 
     function connect() {
         // Only short-circuit if there is an active session backing the address.
-        // Returning an address without a session would silently fail on the next
-        // wallet-scoped method (eth_sendTransaction / personal_sign) because
-        // neither the sidecar sessionId nor the browser session would be set.
         var hasActiveSession =
             (_state.mode === "sidecar" && !!_state.sessionId) ||
             (_state.mode === "browser" && !!_state.browserSession);
         if (hasActiveSession && _state.address) return Promise.resolve(_state.address);
+        
         var wantedAddress = String(_config.walletAddress || "").toLowerCase();
-
-        // Try the Node sidecar first when enabled (matches homepage login flow).
-        var sidecarPromise = Promise.resolve(null);
-        if (_config.sidecarEnabled !== false) {
-            sidecarPromise = (function () {
-                return fetch("/api/wc-uri")
-                    .then(function (resp) {
-                        if (!resp.ok) throw new Error("WalletConnect sidecar unavailable");
-                        return resp.json();
-                    })
-                    .then(function (data) {
-                        if (!data || !data.success || !data.id || !data.uri) {
-                            throw new Error((data && data.error) || "WalletConnect sidecar unavailable");
-                        }
-                        _state.sessionId = data.id;
-                        _state.mode = "sidecar";
-                        _defaultShowQr(data.uri, "Approve in your wallet");
-
-                        var pollStart = Date.now();
-                        var deadline = pollStart + 120000;
-                        function poll() {
-                            var dt = Date.now() - pollStart;
-                            if (Date.now() >= deadline) {
-                                throw new Error("WalletConnect approval timed out.");
+        
+        // First, try to restore existing session from SignClient.
+        // This is critical to prevent QR modal from appearing during signing.
+        return _wcGetClient().then(function (client) {
+            // Check if session was restored in _wcGetClient
+            if (_state.browserSession && _state.address) {
+                _state.mode = "browser";
+                return _state.address;
+            }
+            
+            // If sidecar is disabled (for signing pages like wallet.html),
+            // don't try to create new session - just return error
+            if (_config.sidecarEnabled === false) {
+                throw new Error("No active WalletConnect session. Please refresh and try again.");
+            }
+            
+            // Continue with sidecar (for login pages that need QR)
+            return null;
+        }).then(function (restoredAddr) {
+            if (restoredAddr) return restoredAddr;
+            
+            // Try Node sidecar first (for login pages)
+            var sidecarPromise = Promise.resolve(null);
+            if (_config.sidecarEnabled !== false) {
+                sidecarPromise = (function () {
+                    return fetch("/api/wc-uri")
+                        .then(function (resp) {
+                            if (!resp.ok) throw new Error("WalletConnect sidecar unavailable");
+                            return resp.json();
+                        })
+                        .then(function (data) {
+                            if (!data || !data.success || !data.id || !data.uri) {
+                                throw new Error((data && data.error) || "WalletConnect sidecar unavailable");
                             }
-                            // Adaptive polling: start fast (200ms), then back off
-                            // exponentially. Speeds up approvals on fast wallets
-                            // like Trust Wallet while still handling slow network
-                            // conditions gracefully.
-                            var pollAttempts = Math.floor(dt / 200);
-                            var delayMs = Math.min(200 + (pollAttempts * 50), 2000);
-                            return _delay(delayMs)
-                                .then(function () { return fetch("/api/wc-session/" + encodeURIComponent(_state.sessionId)); })
-                                .then(function (r) { return r.json(); })
-                                .then(function (st) {
-                                    if (!st || !st.success) return poll();
-                                    if (st.status === "approved" && st.address) {
-                                        _state.address = st.address;
-                                        return _state.address;
-                                    }
-                                    if (st.status === "rejected") {
-                                        throw new Error("WalletConnect request was rejected.");
-                                    }
-                                    return poll();
-                                });
-                        }
-                        return poll();
-                    })
-                    .then(function (addr) {
-                        _defaultHideQr();
-                        return addr;
-                    })
-                    .catch(function (err) {
-                        _defaultHideQr();
-                        // Sidecar unavailable / timed out — fall back to in-browser WC SDK.
-                        try { _config.log("wc-bridge sidecar fallback:", err && err.message); } catch (_) {}
-                        return null;
-                    });
-            })();
-        }
+                            _state.sessionId = data.id;
+                            _state.mode = "sidecar";
+                            _defaultShowQr(data.uri, "Approve in your wallet");
 
-        return sidecarPromise.then(function (addr) {
+                            var pollStart = Date.now();
+                            var deadline = pollStart + 120000;
+                            function poll() {
+                                var dt = Date.now() - pollStart;
+                                if (Date.now() >= deadline) {
+                                    throw new Error("WalletConnect approval timed out.");
+                                }
+                                var pollAttempts = Math.floor(dt / 200);
+                                var delayMs = Math.min(200 + (pollAttempts * 50), 2000);
+                                return _delay(delayMs)
+                                    .then(function () { return fetch("/api/wc-session/" + encodeURIComponent(_state.sessionId)); })
+                                    .then(function (r) { return r.json(); })
+                                    .then(function (st) {
+                                        if (!st || !st.success) return poll();
+                                        if (st.status === "approved" && st.address) {
+                                            _state.address = st.address;
+                                            return _state.address;
+                                        }
+                                        if (st.status === "rejected") {
+                                            throw new Error("WalletConnect request was rejected.");
+                                        }
+                                        return poll();
+                                    });
+                            }
+                            return poll();
+                        })
+                        .then(function (addr) {
+                            _defaultHideQr();
+                            return addr;
+                        })
+                        .catch(function (err) {
+                            _defaultHideQr();
+                            try { _config.log("wc-bridge sidecar fallback:", err && err.message); } catch (_) {}
+                            return null;
+                        });
+                })();
+            }
+
+            return sidecarPromise;
+        }).then(function (addr) {
             if (addr) return addr;
-            return _wcGetClient().then(function (client) {
-                if (_state.browserSession && _state.address) {
-                    _state.mode = "browser";
-                    return _state.address;
-                }
-                return client.connect({
-                    requiredNamespaces: {},
-                    optionalNamespaces: {
-                        eip155: {
-                            methods: [
-                                "eth_accounts",
-                                "eth_sendTransaction",
-                                "eth_getTransactionReceipt",
-                                "eth_chainId",
-                                "personal_sign",
-                                "eth_sign",
-                                "eth_signTypedData",
-                                "eth_signTypedData_v4"
-                            ],
-                            chains: ["eip155:" + Number(_config.chainId || DEFAULT_CHAIN_ID)],
-                            events: ["chainChanged", "accountsChanged"]
-                        }
-                    }
-                }).then(function (result) {
-                    _state.mode = "browser";
-                    if (result && result.uri) {
-                        _defaultShowQr(result.uri, "Approve in your wallet");
-                    }
-                    return result.approval();
-                }).then(function (session) {
-                    _defaultHideQr();
-                    _state.browserSession = session;
-                    var ns = session.namespaces || {};
-                    Object.keys(ns).some(function (key) {
-                        var accts = (ns[key] && ns[key].accounts) || [];
-                        if (accts.length) {
-                            _state.address = String(accts[0]).split(":").pop();
-                            return true;
-                        }
-                        return false;
-                    });
-                    if (!_state.address) {
-                        throw new Error("No accounts returned from wallet");
-                    }
-                    return _state.address;
-                }, function (err) {
-                    _defaultHideQr();
-                    throw err;
-                });
-            });
+            
+            // For browser SDK path (should rarely be reached now with session restoration)
+            if (_state.browserSession && _state.address) {
+                _state.mode = "browser";
+                return _state.address;
+            }
+            
+            // If we get here and no session, throw error (no QR)
+            throw new Error("No active WalletConnect session. Please refresh and try again.");
         }).then(function (addr) {
             if (wantedAddress && addr && String(addr).toLowerCase() !== wantedAddress) {
-                // Force a fresh session next time so user can re-approve.
                 reset();
                 throw new Error("Wrong WalletConnect wallet connected. Please connect your GoodMarket wallet.");
             }
