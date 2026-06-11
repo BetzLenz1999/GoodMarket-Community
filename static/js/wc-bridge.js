@@ -85,6 +85,17 @@
                 decimals: 18
             },
             blockExplorerUrls: ["https://basescan.org"]
+        },
+        "0x7a": { // Fuse Mainnet
+            name: "Fuse Network",
+            chainId: 122,
+            rpc: "https://rpc.fuse.io",
+            nativeCurrency: {
+                name: "Fuse",
+                symbol: "FUSE",
+                decimals: 18
+            },
+            blockExplorerUrls: ["https://explorer.fuse.io"]
         }
     };
 
