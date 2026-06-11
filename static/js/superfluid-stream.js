@@ -397,7 +397,7 @@ async function getMyOutgoingStreams() {
                     streams.push({
                         recipient: recipient,
                         flowRate: flowInfo.flowRate,
-                        alias: storedStreams[recipient].alias || '',
+                        startTime: storedStreams[recipient].startTime,
                         startTime: storedStreams[recipient].startTime,
                     });
                 }
