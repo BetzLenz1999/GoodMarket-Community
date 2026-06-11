@@ -4551,7 +4551,7 @@ def add_module_link():
                     try:
                         json_resp = requests.get(json_url, timeout=15, headers=medium_headers, allow_redirects=True)
                         json_resp.raise_for_status()
-                        # Medium prepends '])}while(1);</x>' as XSSI protection — strip it
+                        # Medium prepends '])}while(1);</x>' as XSSI protection ��� strip it
                         raw = json_resp.text
                         json_start = raw.find('{')
                         if json_start != -1:
@@ -6535,14 +6535,18 @@ def wallet_page():
                         buy_eth_visible = False
     except Exception:
         pass
-    return render_template(
+    resp = make_response(render_template(
         "wallet.html",
         wallet=wallet,
         login_method=session.get("login_method", "walletconnect"),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         buy_eth_visible=buy_eth_visible,
-    )
+    ))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @routes.route("/swap")
@@ -7134,6 +7138,100 @@ def wallet_prepare_send():
 
     except Exception as e:
         logger.error(f"wallet_prepare_send error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Superfluid G$ Streaming API
+# ─────────────────────────────────────────────────────────────────────────────
+
+@routes.route("/api/superfluid/streams", methods=["GET"])
+def superfluid_streams():
+    """Proxy Superfluid subgraph to fetch active G$ streams for current wallet."""
+    wallet = session.get("wallet")
+    if not wallet or not session.get("verified"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    import urllib.request as _ureq
+    import json as _json
+
+    GD_TOKEN = os.getenv("GOODDOLLAR_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A").lower()
+    SF_URL = "https://subgraph-endpoints.superfluid.dev/celo-mainnet/protocol-v1"
+    addr = wallet.lower()
+
+    query = """{{
+      outgoing: streams(
+        where: {{ sender: "{addr}", token: "{token}", currentFlowRate_gt: "0" }}
+        orderBy: updatedAtTimestamp, orderDirection: desc, first: 20
+      ) {{
+        id sender {{ id }} receiver {{ id }}
+        currentFlowRate streamedUntilUpdatedAt updatedAtTimestamp
+      }}
+      incoming: streams(
+        where: {{ receiver: "{addr}", token: "{token}", currentFlowRate_gt: "0" }}
+        orderBy: updatedAtTimestamp, orderDirection: desc, first: 20
+      ) {{
+        id sender {{ id }} receiver {{ id }}
+        currentFlowRate streamedUntilUpdatedAt updatedAtTimestamp
+      }}
+    }}""".format(addr=addr, token=GD_TOKEN)
+
+    try:
+        payload = _json.dumps({"query": query}).encode()
+        req = _ureq.Request(SF_URL, data=payload,
+                            headers={"Content-Type": "application/json"}, method="POST")
+        with _ureq.urlopen(req, timeout=10) as resp:
+            data = _json.loads(resp.read())
+        if "errors" in data:
+            return jsonify({"success": False, "error": data["errors"][0]["message"]}), 500
+        gd = data.get("data", {})
+        return jsonify({
+            "success": True,
+            "outgoing": gd.get("outgoing", []),
+            "incoming": gd.get("incoming", []),
+            "wallet": wallet
+        })
+    except Exception as e:
+        logger.error(f"Superfluid streams fetch error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/superfluid/streams/record", methods=["POST"])
+def superfluid_stream_record():
+    """Record a newly created Superfluid stream in the database for tracking."""
+    wallet = session.get("wallet")
+    if not wallet or not session.get("verified"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        body = request.get_json(silent=True) or {}
+        sender   = body.get("sender", wallet)
+        receiver = body.get("receiver", "")
+        flow_rate = body.get("flow_rate", "0")
+        token    = body.get("token", "")
+        tx_hash  = body.get("tx_hash", "")
+
+        if not receiver:
+            return jsonify({"success": False, "error": "receiver required"}), 400
+
+        supabase = get_supabase_client()
+        if supabase:
+            safe_supabase_operation(
+                lambda: supabase.table("superfluid_streams").upsert({
+                    "wallet":    wallet.lower(),
+                    "sender":    sender.lower(),
+                    "receiver":  receiver.lower(),
+                    "flow_rate": str(flow_rate),
+                    "token":     token.lower(),
+                    "tx_hash":   tx_hash,
+                    "status":    "active",
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }, on_conflict="sender,receiver,token").execute(),
+                operation_name="record superfluid stream"
+            )
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"superfluid_stream_record error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -8031,7 +8129,7 @@ FAUCET_FORCE_ONCHAIN_HOUR_WINDOW = 3600  # 1 hour in seconds
 # (approve + swap), not just one claim(), so the default must cover a small
 # two-transaction gas budget while keeping faucet spend bounded. Operators can
 # override via env if Celo gas conditions change.
-MINIPAY_CUSD_FAUCET_AMOUNT = Decimal(os.getenv("MINIPAY_CUSD_FAUCET_AMOUNT", "0.016"))
+MINIPAY_CUSD_FAUCET_AMOUNT = Decimal(os.getenv("MINIPAY_CUSD_FAUCET_AMOUNT", "0.02"))
 MINIPAY_CUSD_FAUCET_PROGRAM_LABEL = "Program by Betz & Omar Team"
 # Threshold below which we treat the user as needing a stablecoin gas top-up.
 # Must be <= MINIPAY_CUSD_FAUCET_AMOUNT so the user graduates to "stable_ready"
@@ -8344,7 +8442,12 @@ def _get_xdc_gas_status(w3, checksum_wallet: str) -> dict:
     except Exception:
         estimated_gas = 220000
 
-    gas_price_wei = int(w3.eth.gas_price)
+    try:
+        gas_price_wei = int(w3.eth.gas_price)
+    except Exception:
+        # Fallback gas price ~20 gwei if the RPC fails to report.
+        gas_price_wei = int(w3.to_wei(20, "gwei"))
+
     required_wei = int(estimated_gas * gas_price_wei * FAUCET_BUFFER_MULTIPLIER)
     minimum_wei = w3.to_wei(FAUCET_MIN_XDC, "ether")
     required_wei = max(required_wei, int(minimum_wei))
@@ -9415,6 +9518,24 @@ def _execute_onchain_xdc_faucet_topup(w3, checksum_wallet: str, correlation_id: 
     faucet_acct = Account.from_key(key)
     faucet_contract = Web3.to_checksum_address(GOODDOLLAR_XDC_FAUCET_CONTRACT)
 
+    # Ask the faucet itself whether it will serve this wallet (canTop). A False
+    # result means topWallet() would revert (wallet already topped today, above
+    # the topping amount, or not eligible), so skip the doomed broadcast and
+    # return a clear reason instead of burning signer gas on a reverting tx.
+    # None means we couldn't read it — fall through and let the contract decide.
+    can_top = _faucet_can_top(w3, GOODDOLLAR_XDC_FAUCET_CONTRACT, checksum_wallet)
+    if can_top is False:
+        logger.info(
+            f"ℹ️ XDC faucet canTop=false wallet={checksum_wallet.lower()} "
+            f"correlation_id={correlation_id} — skipping on-chain topWallet"
+        )
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": "faucet_not_eligible",
+            "error": "GoodDollar XDC faucet reports this wallet is not eligible for a top-up right now (canTop=false).",
+        }
+
     # calldata for topWallet(address): 0x3771dcf8 + padded wallet bytes
     call_data = "0x3771dcf8" + "000000000000000000000000" + checksum_wallet[2:].lower()
     nonce = w3.eth.get_transaction_count(faucet_acct.address, "pending")
@@ -9438,17 +9559,37 @@ def _execute_onchain_xdc_faucet_topup(w3, checksum_wallet: str, correlation_id: 
         "data": call_data,
     }
 
+    # Pre-check: abort before broadcasting if the signer can't cover gas.
+    # This mirrors the Fuse sibling and surfaces a clear signer_insufficient_funds
+    # reason instead of a generic rpc_error from a failed broadcast.
+    signer_balance_wei = int(w3.eth.get_balance(faucet_acct.address))
+    estimated_tx_cost_wei = int(tx["gas"] * tx["gasPrice"] + tx.get("value", 0))
+    if signer_balance_wei < estimated_tx_cost_wei:
+        return {
+            "success": False,
+            "status": "onchain_failed",
+            "reason": "signer_insufficient_funds",
+            "error": "On-chain XDC faucet signer has insufficient XDC for gas",
+            "signer_balance_wei": str(signer_balance_wei),
+            "estimated_tx_cost_wei": str(estimated_tx_cost_wei),
+            "shortfall_wei": str(estimated_tx_cost_wei - signer_balance_wei),
+        }
+
     try:
         signed = faucet_acct.sign_transaction(tx)
         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
         tx_hash_hex = "0x" + tx_hash.hex()
     except Exception as e:
+        err = str(e)
+        reason = "signer_insufficient_funds" if "insufficient funds for gas" in err.lower() else "rpc_error"
         return {
             "success": False,
             "status": "onchain_failed",
-            "reason": "rpc_error",
-            "error": str(e),
+            "reason": reason,
+            "error": err,
+            "signer_balance_wei": str(signer_balance_wei),
+            "estimated_tx_cost_wei": str(estimated_tx_cost_wei),
         }
 
     if receipt and receipt.get("status") == 1:
