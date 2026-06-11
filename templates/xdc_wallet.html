@@ -2253,6 +2253,19 @@
                 btnText.textContent = `⏳ Confirm in ${walletName}...`;
                 const from = connectedAccounts[0];
 
+                // Verify the wallet is actually on XDC before sending the tx.
+                // For WalletConnect, wallet_switchEthereumChain resolves immediately
+                // (the bridge accepts the call) but the mobile wallet app may not
+                // have actually switched yet. Re-check eth_chainId here so we catch
+                // that edge case before submitting.
+                const chainAfterSwitch = await ep.request({ method: 'eth_chainId' });
+                if (parseInt(chainAfterSwitch, 16) !== XDC_CHAIN_ID) {
+                    throw new Error(
+                        `Wallet is still on chain ${parseInt(chainAfterSwitch, 16)}, not XDC (50). ` +
+                        `Please switch your wallet to XDC Network manually, then try again.`
+                    );
+                }
+
                 // Call UBIScheme.claim() — function selector: keccak256("claim()") = 0x4e71d92d
                 const txHash = await ep.request({
                     method: 'eth_sendTransaction',
@@ -2264,6 +2277,79 @@
                     }]
                 });
 
+                // ── Wait for on-chain confirmation ─────────────────────────────
+                // eth_sendTransaction only means the wallet submitted the tx.
+                // We must poll eth_getTransactionReceipt to confirm it was
+                // actually mined AND that receipt.status === "0x1" (success).
+                // If we skip this, a reverted tx (e.g. user not registered on
+                // GoodDollar) will incorrectly display "G$ claimed!".
+                // Poll against a public XDC RPC so WalletConnect users (whose
+                // ep may not support eth_getTransactionReceipt) are covered too.
+                btnText.textContent = '⏳ Waiting for confirmation...';
+                setAlert('alert-success',
+                    `⏳ <strong>Transaction submitted.</strong> Waiting for on-chain confirmation…<br>
+                    <a class="tx-link" href="https://xdcscan.com/tx/${txHash}" target="_blank" rel="noopener">
+                        View on XDCScan ↗ ${txHash.substring(0,10)}...${txHash.slice(-8)}
+                    </a>`
+                );
+
+                const XDC_RPC_URLS = [
+                    'https://earpc.xinfin.network',
+                    'https://rpc.ankr.com/xdc',
+                    'https://erpc.xdcrpc.com'
+                ];
+                async function pollReceipt(hash, timeoutMs = 60000, intervalMs = 3000) {
+                    const deadline = Date.now() + timeoutMs;
+                    while (Date.now() < deadline) {
+                        for (const rpc of XDC_RPC_URLS) {
+                            try {
+                                const r = await fetch(rpc, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        jsonrpc: '2.0', id: 1,
+                                        method: 'eth_getTransactionReceipt',
+                                        params: [hash]
+                                    })
+                                });
+                                const json = await r.json();
+                                if (json && json.result) return json.result;
+                            } catch (_) { /* try next RPC */ }
+                        }
+                        await new Promise(res => setTimeout(res, intervalMs));
+                    }
+                    return null; // timed out
+                }
+
+                const receipt = await pollReceipt(txHash, 90000, 3000);
+
+                if (!receipt) {
+                    // Tx submitted but not mined within 90s — show pending state
+                    // and let the user check XDCScan. Do NOT mark as claimed.
+                    setAlert('alert-error',
+                        `⚠️ <strong>Transaction pending — not yet confirmed.</strong><br>
+                        The transaction was submitted but hasn't been mined yet. ` +
+                        `<a class="tx-link" href="https://xdcscan.com/tx/${txHash}" target="_blank" rel="noopener">
+                            Check status on XDCScan ↗
+                        </a><br>Please refresh the page once confirmed.`
+                    );
+                    btn.disabled = false;
+                    btnText.textContent = '🌟 Claim G$ on XDC';
+                    return;
+                }
+
+                if (parseInt(receipt.status, 16) === 0) {
+                    // Transaction was mined but reverted on-chain.
+                    // This is the core bug: old code showed "claimed!" here.
+                    throw new Error(
+                        `Transaction was rejected by the XDC smart contract (reverted). ` +
+                        `This usually means your wallet address is not yet registered on ` +
+                        `GoodDollar, or you have already claimed today. ` +
+                        `Check XDCScan for details: ${txHash.substring(0,10)}...`
+                    );
+                }
+
+                // receipt.status === "0x1" — genuinely mined and succeeded
                 setAlert('alert-success',
                     `✅ <strong>G$ claimed on XDC Network!</strong><br>
                     <a class="tx-link" href="https://xdcscan.com/tx/${txHash}" target="_blank" rel="noopener">
