@@ -27,11 +27,8 @@ const SUPERFLUID_CONFIG = {
 // G$ Token address on Celo (Super Token wrapper)
 const G_DOLLAR_SUPER_TOKEN = _backendConfig.super_token_address || '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A';
 
-console.log('[Superfluid] Using config:', {
-    hostAddress: SUPERFLUID_CONFIG.hostAddress,
-    cfaV1Address: SUPERFLUID_CONFIG.cfaV1Address,
-    superToken: G_DOLLAR_SUPER_TOKEN
-});
+// Superfluid Subgraph URL for Celo (for querying historical streams)
+const SUPERFLUID_SUBGRAPH_URL = 'https://api.thegraph.com/subgraphs/name/superfluid-finance/superfluid-celo';
 
 // CFAv1 ABI - minimal functions needed for flow operations
 const CFAV1_ABI = [
@@ -41,13 +38,6 @@ const CFAV1_ABI = [
     "function getFlow(address superToken, address sender, address receiver) external view returns (uint256,uint256,uint256,uint256)",
     "function getAccountFlowInfo(address superToken, address account) external view returns (int96,uint256,uint256)",
     "function getFlowRate(address superToken, address sender, address receiver) external view returns (int96)"
-];
-
-// ERC20 ABI for balance checks
-const ERC20_ABI = [
-    "function balanceOf(address account) external view returns (uint256)",
-    "function decimals() external view returns (uint8)",
-    "function symbol() external view returns (string)"
 ];
 
 // Global state
@@ -205,6 +195,16 @@ async function createStream(recipientAddress, flowRate) {
             blockNumber: receipt.blockNumber
         });
         
+        // Add successful transaction to history
+        addStreamTransaction({
+            type: 'create',
+            recipient: recipientChecksum,
+            flowRate: flowRate,
+            txHash: receipt.transactionHash,
+            status: 'confirmed',
+            blockNumber: receipt.blockNumber,
+        });
+        
         return {
             success: true,
             txHash: receipt.transactionHash,
@@ -213,6 +213,16 @@ async function createStream(recipientAddress, flowRate) {
         };
     } catch (err) {
         console.error('[Superfluid] Failed to create stream:', err);
+        
+        // Add failed transaction to history
+        addStreamTransaction({
+            type: 'create',
+            recipient: recipientChecksum,
+            flowRate: flowRate,
+            txHash: null,
+            status: 'failed',
+            error: err.message || 'Unknown error',
+        });
         
         // Parse common errors
         const errorMsg = err.message || '';
@@ -295,6 +305,16 @@ async function deleteStream(recipientAddress) {
             recipient: recipientChecksum,
             txHash: receipt.transactionHash
         });
+
+        // Add delete transaction to history
+        addStreamTransaction({
+            type: 'delete',
+            recipient: recipientChecksum,
+            flowRate: 0,
+            txHash: receipt.transactionHash,
+            status: 'confirmed',
+            blockNumber: receipt.blockNumber,
+        });
         
         return {
             success: true,
@@ -302,7 +322,17 @@ async function deleteStream(recipientAddress) {
             recipient: recipientChecksum,
         };
     } catch (err) {
-        console.error('[Superfluid] Failed to delete stream:', err);
+        console.error("[Superfluid] Failed to delete stream:", err);
+        
+        // Add failed transaction to history
+        addStreamTransaction({
+            type: 'delete',
+            recipient: recipientChecksum,
+            flowRate: 0,
+            txHash: null,
+            status: 'failed',
+            error: err.message || 'Unknown error',
+        });
         throw new Error('Failed to delete stream: ' + (err.reason || err.message || 'Unknown error'));
     }
 }
@@ -412,14 +442,95 @@ async function getMyIncomingStreams() {
 }
 
 /**
- * Store stream info locally (for tracking)
+ * Stream Transaction History Storage
+ * Stores complete history of all stream transactions with tx hashes
  */
-function storeStream(recipientAddress, alias = '') {
+const STREAM_HISTORY_KEY = 'sf_stream_history';
+const STREAM_HISTORY_MAX = 100; // Keep last 100 transactions
+
+/**
+ * Add a stream transaction to history
+ * @param {Object} txData - Transaction data
+ */
+function addStreamTransaction(txData) {
+    const history = getStreamHistory();
+    
+    const txRecord = {
+        id: generateTxId(),
+        type: txData.type, // 'create', 'update', 'delete'
+        recipient: _ethers ? _ethers.utils.getAddress(txData.recipient) : txData.recipient,
+        flowRate: txData.flowRate,
+        txHash: txData.txHash,
+        timestamp: Date.now(),
+        status: txData.status || 'confirmed',
+        blockNumber: txData.blockNumber,
+        error: txData.error || null,
+    };
+    
+    history.unshift(txRecord); // Add to beginning
+    
+    // Keep only last N records
+    if (history.length > STREAM_HISTORY_MAX) {
+        history.pop();
+    }
+    
+    localStorage.setItem(STREAM_HISTORY_KEY, JSON.stringify(history));
+    return txRecord;
+}
+
+/**
+ * Generate unique transaction ID
+ */
+function generateTxId() {
+    return 'sf_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+/**
+ * Get complete stream transaction history
+ */
+function getStreamHistory() {
+    try {
+        const stored = localStorage.getItem(STREAM_HISTORY_KEY);
+        return stored ? JSON.parse(stored) : [];
+    } catch (err) {
+        return [];
+    }
+}
+
+/**
+ * Get transaction history for a specific recipient
+ */
+function getStreamHistoryForRecipient(recipient) {
+    const history = getStreamHistory();
+    const checksumAddr = _ethers ? _ethers.utils.getAddress(recipient) : recipient;
+    return history.filter(tx => tx.recipient.toLowerCase() === checksumAddr.toLowerCase());
+}
+
+/**
+ * Get transaction by hash
+ */
+function getStreamTxByHash(txHash) {
+    const history = getStreamHistory();
+    return history.find(tx => tx.txHash && tx.txHash.toLowerCase() === txHash.toLowerCase());
+}
+
+/**
+ * Clear stream history (for testing)
+ */
+function clearStreamHistory() {
+    localStorage.removeItem(STREAM_HISTORY_KEY);
+}
+
+/**
+ * Store stream info locally (for tracking active streams)
+ */
+function storeStream(recipientAddress, flowRate, txHash) {
     const streams = getStoredStreams();
     const checksumAddr = _ethers ? _ethers.utils.getAddress(recipientAddress) : recipientAddress;
     streams[checksumAddr] = {
-        alias: alias,
+        flowRate: flowRate,
         startTime: Date.now(),
+        startTxHash: txHash,
     };
     localStorage.setItem('sf_streams', JSON.stringify(streams));
 }
@@ -536,21 +647,39 @@ function getWeb3() {
 
 // Export functions for use in wallet.html
 window.SuperfluidStream = {
+    // Initialization
     init: initSuperfluid,
     isReady: isSuperfluidReady,
+    
+    // Stream operations
     createStream: createStream,
     updateStream: updateStream,
     deleteStream: deleteStream,
+    
+    // Stream queries
     getFlowInfo: getFlowInfo,
     getMyOutgoingStreams: getMyOutgoingStreams,
     getMyIncomingStreams: getMyIncomingStreams,
+    
+    // Local storage helpers
     storeStream: storeStream,
     removeStoredStream: removeStoredStream,
     getStoredStreams: getStoredStreams,
+    
+    // Transaction history
+    getStreamHistory: getStreamHistory,
+    getStreamHistoryForRecipient: getStreamHistoryForRecipient,
+    getStreamTxByHash: getStreamTxByHash,
+    getStreamHistoryWithTxData: getStreamHistoryWithTxData,
+    clearStreamHistory: clearStreamHistory,
+    
+    // Formatting helpers
     formatFlowRate: formatFlowRate,
     flowRateToHumanReadable: flowRateToHumanReadable,
     selectorToFlowRate: selectorToFlowRate,
     estimateStreamTotal: estimateStreamTotal,
+    
+    // Raw access
     getSuperfluid: getSuperfluid,
     getWeb3: getWeb3,
 };
