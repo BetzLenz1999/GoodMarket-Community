@@ -3495,9 +3495,12 @@
                 const signature = await sigReqPromise;
                 const wcFbVerifyData = await postVerifyIdentity(address, signature, message, getPendingReferralCode());
                 
-                // CRITICAL: Wait for session to be persisted before redirect
-                // Give SignClient time to save session to its internal storage
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                // CRITICAL: Wait for session to be persisted before redirect.
+                // WalletConnect v2 uses IndexedDB for session storage. A 1 s delay
+                // is not enough on low-end Android devices; 2.5 s gives the browser
+                // enough time to flush the IndexedDB transaction so that the session
+                // is available via getActiveSessions() on the next page load.
+                await new Promise(resolve => setTimeout(resolve, 2500));
                 
                 const wcFbOkMsg = (wcFbVerifyData && wcFbVerifyData.referral_warning)
                     ? ('✅ Wallet connected via browser WalletConnect fallback. ⚠️ ' + wcFbVerifyData.referral_warning + ' Redirecting...')

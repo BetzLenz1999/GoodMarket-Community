@@ -266,63 +266,107 @@
             // sign transactions. Without this, the new SignClient instance
             // doesn't know about the session from the login flow.
             try {
-                // First check SignClient's own session storage
+                // First check SignClient's own session storage (IndexedDB-backed).
+                // This is the most reliable source because it is managed by the
+                // WalletConnect SDK itself and survives page navigations.
                 var sessions = client.getActiveSessions();
                 var sessionKeys = sessions ? Object.keys(sessions) : [];
-                console.log('[wc-bridge] SignClient initialized');
-                console.log('[wc-bridge] Found sessions from SignClient:', sessionKeys.length);
                 
+                // Filter out expired sessions (WC expiry is in seconds)
+                var nowSec = Math.floor(Date.now() / 1000);
+                sessionKeys = sessionKeys.filter(function (k) {
+                    var s = sessions[k];
+                    return s && (!s.expiry || s.expiry > nowSec);
+                });
+
                 if (sessionKeys.length > 0) {
-                    // Found existing session(s) - use the first one
-                    var existingSession = sessions[sessionKeys[0]];
+                    // Prefer a session whose address matches the configured wallet
+                    var wantedAddr = String(_config.walletAddress || "").toLowerCase();
+                    var bestKey = sessionKeys[0];
+                    if (wantedAddr) {
+                        for (var ki = 0; ki < sessionKeys.length; ki++) {
+                            var s = sessions[sessionKeys[ki]];
+                            var ns = s && (s.namespaces || {});
+                            var matched = Object.keys(ns).some(function (k) {
+                                return ((ns[k] && ns[k].accounts) || []).some(function (a) {
+                                    return String(a).split(":").pop().toLowerCase() === wantedAddr;
+                                });
+                            });
+                            if (matched) { bestKey = sessionKeys[ki]; break; }
+                        }
+                    }
+
+                    var existingSession = sessions[bestKey];
                     if (existingSession && existingSession.topic) {
                         _state.browserSession = existingSession;
-                        // Get address from session namespaces
-                        var ns = existingSession.namespaces || {};
-                        Object.keys(ns).some(function (key) {
-                            var accts = (ns[key] && ns[key].accounts) || [];
+                        var ns2 = existingSession.namespaces || {};
+                        Object.keys(ns2).some(function (key) {
+                            var accts = (ns2[key] && ns2[key].accounts) || [];
                             if (accts.length) {
                                 _state.address = String(accts[0]).split(":").pop();
                                 return true;
                             }
                             return false;
                         });
-                        console.log('[wc-bridge] Restored session from SignClient:', existingSession.topic);
-                        console.log('[wc-bridge] Session address:', _state.address);
                     }
                 } else {
-                    // No sessions from SignClient - check our own localStorage backup
-                    console.log('[wc-bridge] No sessions from SignClient, checking localStorage backup...');
+                    // No live sessions from SignClient's IndexedDB — check our own
+                    // localStorage backup that the homepage wrote at login time.
                     try {
                         var storedTopic = localStorage.getItem('wc_session_topic');
                         var storedAddress = localStorage.getItem('wc_session_address');
                         var storedSessionData = localStorage.getItem('wc_session_data');
-                        
-                        if (storedTopic && storedAddress) {
-                            _state.address = storedAddress;
-                            console.log('[wc-bridge] Found localStorage backup');
-                            console.log('[wc-bridge] Stored topic:', storedTopic);
-                            console.log('[wc-bridge] Stored address:', storedAddress);
-                            
-                            // Try to parse stored session data
-                            if (storedSessionData) {
-                                try {
-                                    var parsedSession = JSON.parse(storedSessionData);
-                                    if (parsedSession && parsedSession.topic) {
-                                        _state.browserSession = parsedSession;
-                                        console.log('[wc-bridge] Restored full session from localStorage!');
+                        var storedTimestamp = parseInt(localStorage.getItem('wc_session_timestamp') || '0', 10);
+
+                        // Reject backup sessions older than 7 days (604800000 ms) to
+                        // avoid trying to use an obviously expired WC session.
+                        var MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+                        var sessionAge = storedTimestamp ? (Date.now() - storedTimestamp) : Infinity;
+                        var sessionTooOld = sessionAge > MAX_SESSION_AGE_MS;
+
+                        if (storedTopic && storedAddress && !sessionTooOld && storedSessionData) {
+                            try {
+                                var parsedSession = JSON.parse(storedSessionData);
+                                // Reject if the session's own expiry has passed
+                                var parsedExpiry = parsedSession && parsedSession.expiry;
+                                var nowSec2 = Math.floor(Date.now() / 1000);
+                                if (parsedSession && parsedSession.topic && (!parsedExpiry || parsedExpiry > nowSec2)) {
+                                    // CRITICAL: register the restored session into the SignClient's
+                                    // internal session store so client.request({ topic }) works.
+                                    // Without this step, the client has no record of this topic
+                                    // and every request fails with "No active session".
+                                    try {
+                                        if (client.session && typeof client.session.set === 'function') {
+                                            client.session.set(parsedSession.topic, parsedSession);
+                                        }
+                                    } catch (setErr) {
+                                        // session.set is an internal API — ignore if unavailable
                                     }
-                                } catch (parseErr) {
-                                    console.log('[wc-bridge] Could not parse stored session data');
+                                    _state.browserSession = parsedSession;
+                                    _state.address = storedAddress;
                                 }
+                            } catch (parseErr) {
+                                // Could not parse stored session data — ignore
                             }
                         }
+
+                        // If a backup existed but is stale/expired, clean it up so
+                        // the next login starts fresh.
+                        if (storedTopic && (sessionTooOld || !storedSessionData)) {
+                            try {
+                                localStorage.removeItem('wc_session_topic');
+                                localStorage.removeItem('wc_session_address');
+                                localStorage.removeItem('wc_session_data');
+                                localStorage.removeItem('wc_session_timestamp');
+                            } catch (_) {}
+                        }
                     } catch (lsErr) {
-                        console.warn('[wc-bridge] Could not access localStorage:', lsErr);
+                        // localStorage access failed — ignore (e.g. Safari private mode)
                     }
                 }
             } catch (restoreErr) {
-                console.warn('[wc-bridge] Could not restore existing sessions:', restoreErr);
+                // If anything in the restore block throws, continue without a session
+                // rather than crashing the entire provider init.
             }
             
             return client;
@@ -792,40 +836,47 @@
                     });
                 }
                 // Fall through to the in-browser SignClient session.
-                // Try to restore existing session first before showing QR
-                // Transaction signing should NOT show QR - use existing session or fail gracefully
+                // _wcGetClient() already runs the full session-restore logic
+                // (IndexedDB → localStorage backup → client.session.set), so
+                // by the time we reach this block _state.browserSession should
+                // already be populated if a valid session exists.
                 return _wcGetClient().then(function (client) {
-                    console.log('[wc-bridge] bridgeRequest for', method, '- browserSession:', !!_state.browserSession, 'topic:', _state.browserSession?.topic);
-                    
-                    // Try to restore session from SignClient if not already set
+                    // If session was not restored during _wcGetClient (unlikely but
+                    // possible if it ran before configure() set walletAddress), do
+                    // one last attempt against SignClient's live session map.
                     if (!_state.browserSession) {
                         try {
+                            var nowSec = Math.floor(Date.now() / 1000);
                             var sessions = client.getActiveSessions();
-                            var sessionKeys = sessions ? Object.keys(sessions) : [];
-                            console.log('[wc-bridge] Found', sessionKeys.length, 'active sessions from SignClient');
+                            var sessionKeys = Object.keys(sessions || {}).filter(function (k) {
+                                var s = sessions[k];
+                                return s && (!s.expiry || s.expiry > nowSec);
+                            });
                             if (sessionKeys.length > 0) {
-                                var existingSession = sessions[sessionKeys[0]];
-                                if (existingSession && existingSession.topic) {
-                                    _state.browserSession = existingSession;
-                                    console.log('[wc-bridge] Restored existing session:', existingSession.topic);
-                                }
+                                _state.browserSession = sessions[sessionKeys[0]];
                             }
-                        } catch (restoreErr) {
-                            console.warn('[wc-bridge] Could not restore session:', restoreErr);
-                        }
+                        } catch (_) { /* ignore */ }
                     }
-                    
+
                     // If we have a session, use it
                     if (_state.browserSession) {
                         return _doWcRequest(client, method, p).catch(function (wcErr) {
                             var errMsg = (wcErr && wcErr.message) ? String(wcErr.message) : "";
-                            // Handle "Unknown connector" - session expired, try to reconnect
-                            if (/unknown connector/i.test(errMsg)) {
-                                console.log('[wc-bridge] Session expired/invalid, attempting reconnect...');
+                            // Session was rejected or expired by the relay — clear it so
+                            // the next action triggers a fresh re-authenticate flow rather
+                            // than looping on the same dead session.
+                            if (/unknown connector|session.*not found|no matching key|expired/i.test(errMsg)) {
                                 _state.browserSession = null;
-                                // Don't show QR for reconnection during signing
-                                // Just fail with clear message
-                                throw _wcRpcError("WalletConnect session expired. Please refresh the page and try signing again.", null, -32603);
+                                try {
+                                    localStorage.removeItem('wc_session_topic');
+                                    localStorage.removeItem('wc_session_address');
+                                    localStorage.removeItem('wc_session_data');
+                                    localStorage.removeItem('wc_session_timestamp');
+                                } catch (_) {}
+                                throw _wcRpcError(
+                                    "Your WalletConnect session has expired. Please log out and log in again to reconnect your wallet.",
+                                    null, -32603
+                                );
                             }
                             var code = (wcErr && typeof wcErr.code === "number") ? wcErr.code : -32603;
                             throw _wcRpcError(errMsg || "WalletConnect request failed", errMsg, code);
@@ -833,8 +884,15 @@
                     }
                     
                     // No session available - fail gracefully without showing QR
-                    // Transaction signing should never require user to scan new QR
-                    throw _wcRpcError("No active WalletConnect session. Please refresh the page and try again.", null, -32603);
+                    // Transaction signing should never require user to scan new QR.
+                    // Clear any stale localStorage so re-login starts clean.
+                    try {
+                        localStorage.removeItem('wc_session_topic');
+                        localStorage.removeItem('wc_session_address');
+                        localStorage.removeItem('wc_session_data');
+                        localStorage.removeItem('wc_session_timestamp');
+                    } catch (_) {}
+                    throw _wcRpcError("No active WalletConnect session. Please log out and log in again to reconnect your wallet.", null, -32603);
                 });
             });
         }
