@@ -988,7 +988,7 @@ function gdToWeiHex(amountGd) {
     return '0x' + gdToWei(amountGd).toString(16);
 }
 
-// ─── DApp Browser (window.ethereum) ──────────────────────────────────────────
+// ─── DApp Browser (window.ethereum) ───────���──────────────────────────────────
 // Handles multi-wallet injections: prefer MiniPay in MiniPay dApp browser,
 // then Trust Wallet, then MetaMask (excluding Brave), then first provider.
 function _getEthProvider() {
@@ -1113,8 +1113,8 @@ async function wcConnectForReloadly() {
         requiredNamespaces: {},
         optionalNamespaces: {
             eip155: {
-                methods: ['eth_accounts', 'eth_sendTransaction', 'eth_getTransactionReceipt', 'eth_chainId', 'personal_sign'],
-                chains: ['eip155:42220'],
+                methods: ['eth_accounts', 'eth_sendTransaction', 'eth_getTransactionReceipt', 'eth_chainId', 'personal_sign', 'wallet_switchEthereumChain', 'wallet_addEthereumChain'],
+                chains: ['eip155:42220', 'eip155:50', 'eip155:122', 'eip155:8453'],
                 events: ['chainChanged', 'accountsChanged']
             }
         }
@@ -1143,6 +1143,25 @@ async function wcConnectForReloadly() {
     return _wcAddress;
 }
 
+// Derive the correct eip155 chain for a WalletConnect client.request():
+// (1) chainId in tx params, (2) approved session namespace chain, (3) Celo.
+function _wcEip155Chain(session, method, params) {
+    try {
+        if (method === 'eth_sendTransaction' && Array.isArray(params) && params[0] && params[0].chainId) {
+            var txChain = parseInt(String(params[0].chainId), 16);
+            if (!isNaN(txChain) && txChain > 0) return 'eip155:' + txChain;
+        }
+        var ns = session && (session.namespaces || {});
+        var chains = (ns.eip155 && ns.eip155.chains) || [];
+        if (!chains.length && ns.eip155 && ns.eip155.accounts && ns.eip155.accounts.length) {
+            var parts = String(ns.eip155.accounts[0]).split(':');
+            if (parts.length >= 2) return parts[0] + ':' + parts[1];
+        }
+        if (chains.length) return chains[0];
+    } catch (_) {}
+    return 'eip155:42220';
+}
+
 async function wcSendTxReloadly(txParams) {
     if (!_wcAddress) await wcConnectForReloadly();
     if (_wcMode === "sidecar") {
@@ -1161,7 +1180,7 @@ async function wcSendTxReloadly(txParams) {
     const client = await _wcGetClient();
     const reqPromise = client.request({
         topic: _wcBrowserSession.topic,
-        chainId: 'eip155:42220',
+        chainId: _wcEip155Chain(_wcBrowserSession, 'eth_sendTransaction', [txParams]),
         request: { method: 'eth_sendTransaction', params: [txParams] }
     });
     // Wake the wallet app to the foreground so the user actually sees

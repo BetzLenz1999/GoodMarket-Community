@@ -2065,12 +2065,28 @@
                 });
                 try { window._wcSignClient = _wcSignClient; } catch (_) {}
             }
-            // Restore an existing eip155:42220 session from localStorage so
-            // users that just logged in via WalletConnect don't get a new QR
-            // every time they open /swap. This mirrors what savings.html /
-            // wc-bridge.js already do; without it /swap creates a duplicate
-            // pairing alongside the homepage one and Trust Wallet rejects
-            // the second handshake with a "parse error".
+            // Derive the correct eip155 chain string for a WalletConnect
+            // client.request() call. Priority: (1) chainId in tx params,
+            // (2) first chain approved in the session namespaces, (3) Celo.
+            function _wcEip155Chain(session, method, params) {
+                try {
+                    if (method === 'eth_sendTransaction' && Array.isArray(params) && params[0] && params[0].chainId) {
+                        var txChain = parseInt(String(params[0].chainId), 16);
+                        if (!isNaN(txChain) && txChain > 0) return 'eip155:' + txChain;
+                    }
+                    var ns = session && (session.namespaces || {});
+                    var chains = (ns.eip155 && ns.eip155.chains) || [];
+                    if (!chains.length && ns.eip155 && ns.eip155.accounts && ns.eip155.accounts.length) {
+                        var parts = String(ns.eip155.accounts[0]).split(':');
+                        if (parts.length >= 2) return parts[0] + ':' + parts[1];
+                    }
+                    if (chains.length) return chains[0];
+                } catch (_) {}
+                return 'eip155:42220';
+            }
+            // Restore an existing session from localStorage so users that just
+            // logged in via WalletConnect don't get a new QR every time they
+            // open /swap. This mirrors what savings.html / wc-bridge.js do.
             try {
                 if (!_wcBrowserSession && _wcSignClient.session && _wcSignClient.session.getAll) {
                     const sessions = _wcSignClient.session.getAll();
@@ -2325,7 +2341,7 @@
                 try {
                     const reqPromise = client.request({
                         topic: _wcBrowserSession.topic,
-                        chainId: 'eip155:42220',
+                        chainId: _wcEip155Chain(_wcBrowserSession, 'eth_sendTransaction', [txParams]),
                         request: { method: 'eth_sendTransaction', params: [txParams] }
                     });
                     // Bring MetaMask Mobile / Trust Wallet to the foreground
@@ -3498,7 +3514,7 @@
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════════════
+        // ═══════════════════════════════════════════════��═══════════════════════
         // Fuse Swap tab: Fuse G$ -> native FUSE through Voltage Finance.
         // ═══════════════════════════════════════════════════════════════════════
         function showFuseSwapAlert(type, html) {
