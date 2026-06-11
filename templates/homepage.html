@@ -3427,12 +3427,18 @@
                 showWalletStatus('walletConnectStatus', '⏳ Processing barcode and URI code…', 'info');
                 const client = await _wcWithTimeout(_wcGetClient(), 20000, 'sdk_init');
                 showWalletStatus('walletConnectStatus', '⏳ Processing barcode and URI code…', 'info');
+                // Request both Celo (42220) and XDC (50) in optionalNamespaces so
+                // the session supports cross-chain signing on the XDC wallet page.
+                // Without eip155:50 here, client.request({ chainId:"eip155:50" })
+                // is rejected by the WC SDK ("chain not approved") and the wallet
+                // app falls back to Celo — showing "Celo" in the signature prompt
+                // even when the user is on the XDC claim page.
                 const result = await _wcWithTimeout(client.connect({
                     requiredNamespaces: {},
                     optionalNamespaces: {
                         eip155: {
                             methods: ['eth_accounts', 'eth_sendTransaction', 'eth_getTransactionReceipt', 'eth_chainId', 'personal_sign'],
-                            chains: ['eip155:42220'],
+                            chains: ['eip155:42220', 'eip155:50'],
                             events: ['chainChanged', 'accountsChanged']
                         }
                     }
