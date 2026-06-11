@@ -865,7 +865,7 @@
 </head>
 <body>
 
-<!-- ══════════════════════════════════════════════════════
+<!-- ═════════════════════════════════════════��════════════
      PDF GUIDE OVERLAY
      ══════════════════════════════════════════════════════ -->
 <div id="pdf-guide-overlay" style="
@@ -5115,9 +5115,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Build WC session provider wrapper
                 const wcProvider = {
                     request: function(args) {
+                        // Derive the correct chain dynamically from the session
+                        // namespaces so requests on non-Celo networks (XDC, Fuse,
+                        // Base) are routed to the right chain instead of always
+                        // using the hardcoded Celo eip155:42220.
+                        let _eip155Chain = 'eip155:42220';
+                        try {
+                            const _ns = window._wcSession && (window._wcSession.namespaces || {});
+                            const _chains = (_ns.eip155 && _ns.eip155.chains) || [];
+                            const _method = args && args.method;
+                            const _params = args && args.params;
+                            if (_method === 'eth_sendTransaction' && Array.isArray(_params) && _params[0] && _params[0].chainId) {
+                                const _txChain = parseInt(String(_params[0].chainId), 16);
+                                if (!isNaN(_txChain) && _txChain > 0) _eip155Chain = 'eip155:' + _txChain;
+                            } else if (_chains.length) {
+                                _eip155Chain = _chains[0];
+                            } else if (_ns.eip155 && _ns.eip155.accounts && _ns.eip155.accounts.length) {
+                                const _parts = String(_ns.eip155.accounts[0]).split(':');
+                                if (_parts.length >= 2) _eip155Chain = _parts[0] + ':' + _parts[1];
+                            }
+                        } catch (_) {}
                         const reqPromise = window._wcSignClient.request({
                             topic: window._wcSession.topic,
-                            chainId: 'eip155:42220',
+                            chainId: _eip155Chain,
                             request: args
                         });
                         // Wake the user's wallet app to the foreground so
@@ -5258,8 +5278,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 requiredNamespaces: {},
                 optionalNamespaces: {
                     eip155: {
-                        methods: ['eth_accounts', 'eth_sendTransaction', 'eth_getTransactionReceipt', 'eth_chainId', 'personal_sign'],
-                        chains:  ['eip155:42220', 'eip155:1'],
+                        methods: ['eth_accounts', 'eth_sendTransaction', 'eth_getTransactionReceipt', 'eth_chainId', 'personal_sign', 'wallet_switchEthereumChain', 'wallet_addEthereumChain'],
+                        chains:  ['eip155:42220', 'eip155:1', 'eip155:50', 'eip155:122', 'eip155:8453'],
                         events:  ['chainChanged', 'accountsChanged']
                     }
                 }
