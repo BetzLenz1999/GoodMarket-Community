@@ -5834,13 +5834,31 @@
             };
             const txHash = await signTransaction(txData);
             
-            // Add to history
+            // Add to local history
             addToStreamHistory({
                 receiver: receiver,
                 rate: amount,
                 status: 'active',
                 txHash: txHash
             });
+            
+            // Record to Supabase
+            try {
+                await fetch('/api/streaming/record', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        wallet_address: WALLET,
+                        type: 'outgoing',
+                        counterparty: receiver,
+                        flow_rate_per_day: amount,
+                        flow_rate_per_month: monthlyAmount,
+                        tx_hash: txHash
+                    })
+                });
+            } catch (supabaseErr) {
+                console.error('Failed to record to Supabase:', supabaseErr);
+            }
             
             result.innerHTML = `
                 <div style="color:#00e676;margin-bottom:0.5rem;">✅ Stream created!</div>
@@ -5997,6 +6015,21 @@
                     startTime: activeStream.startTime || activeStream.timestamp,
                     stoppedTime: Date.now()
                 });
+                
+                // Update Supabase record
+                try {
+                    await fetch('/api/streaming/update', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            tx_hash: txHash,
+                            status: 'stopped',
+                            total_streamed: totalStreamed
+                        })
+                    });
+                } catch (supabaseErr) {
+                    console.error('Failed to update Supabase:', supabaseErr);
+                }
             } else {
                 addToStreamHistory({
                     receiver: receiver,
