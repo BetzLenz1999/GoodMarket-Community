@@ -5695,50 +5695,9 @@
 
     // Get provider for signing (Injected or WalletConnect)
     async function _getSigningProvider() {
-        // Check for various wallet providers (injected wallets / browser extensions)
-        const providers = [
-            // MetaMask and compatible browsers
-            () => window.ethereum,
-            // Coinbase Wallet
-            () => window.coinbaseWalletExtension,
-            // OKX Wallet
-            () => window.okxwallet,
-            // Bitget Wallet
-            () => window.bitkeep,
-            // Rabby Wallet
-            () => window.rabby,
-            // Trust Wallet (if exposed as ethereum)
-            () => window.ethereum?.isTrust ? window.ethereum : null,
-            // Generic injected provider
-            () => {
-                // Check if any injected provider exists
-                const win = window;
-                if (win.ethereum && win.ethereum.isMetaMask) return win.ethereum;
-                if (win.ethereum && win.ethereum.isCoinbaseWallet) return win.ethereum;
-                if (win.ethereum && win.ethereum.isRabby) return win.ethereum;
-                // Return any ethereum provider if available
-                if (win.ethereum) return win.ethereum;
-                return null;
-            }
-        ];
-        
-        // Try to find an available provider
-        for (const getProvider of providers) {
-            try {
-                const provider = getProvider();
-                if (provider) {
-                    console.log('Found signing provider:', provider.isMetaMask ? 'MetaMask' : 
-                                provider.isCoinbaseWallet ? 'Coinbase' : 
-                                provider.isRabby ? 'Rabby' : 
-                                'Other injected wallet');
-                    return provider;
-                }
-            } catch (err) {
-                console.warn('Provider check error:', err);
-            }
+        if (window.ethereum) {
+            return window.ethereum;
         }
-        
-        // Fallback to WalletConnect
         if (typeof GMWalletConnect !== 'undefined' && GMWalletConnect.isPreferred()) {
             try {
                 return GMWalletConnect.getProvider();
@@ -5746,7 +5705,6 @@
                 console.error('WC provider error:', err);
             }
         }
-        
         return null;
     }
 
