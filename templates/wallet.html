@@ -1801,7 +1801,59 @@
             dappName: "GoodMarket — Wallet",
             dappDescription: "Claim and send GoodDollar on Celo",
             assetVersion: "{{ ASSET_VERSION }}",
+            // Persist WC session to localStorage
+            sessionStorage: {
+                get: (key) => {
+                    try {
+                        return localStorage.getItem('wc_session_' + key);
+                    } catch (e) {
+                        return null;
+                    }
+                },
+                set: (key, value) => {
+                    try {
+                        localStorage.setItem('wc_session_' + key, value);
+                    } catch (e) {
+                        console.warn('Failed to save WC session:', e);
+                    }
+                },
+                remove: (key) => {
+                    try {
+                        localStorage.removeItem('wc_session_' + key);
+                    } catch (e) {}
+                }
+            }
         });
+        
+        // Restore WC session on page load if user logged in via WalletConnect
+        if (GMWalletConnect.isPreferred()) {
+            try {
+                const storedSession = localStorage.getItem('wc_stored_session');
+                if (storedSession) {
+                    try {
+                        const sessionData = JSON.parse(storedSession);
+                        const walletMatch = sessionData.wallet && sessionData.wallet.toLowerCase() === '{{ wallet }}'.toLowerCase();
+                        const methodMatch = sessionData.method === '{{ login_method }}';
+                        
+                        if (walletMatch && methodMatch && GMWalletConnect.restoreSession) {
+                            console.log('Attempting to restore WalletConnect session...');
+                            GMWalletConnect.restoreSession().then(() => {
+                                console.log('WalletConnect session restored successfully');
+                            }).catch((err) => {
+                                console.warn('Failed to restore WC session:', err);
+                                // Clear stale session
+                                localStorage.removeItem('wc_stored_session');
+                            });
+                        }
+                    } catch (e) {
+                        console.warn('Invalid WC session data:', e);
+                        localStorage.removeItem('wc_stored_session');
+                    }
+                }
+            } catch (e) {
+                console.warn('WC session restore check failed:', e);
+            }
+        }
     }
 
     // Returns an EIP-1193-shaped provider for WC users when no injected
@@ -1812,9 +1864,30 @@
         try {
             if (typeof GMWalletConnect === "undefined") return null;
             if (!GMWalletConnect.isPreferred()) return null;
-            return GMWalletConnect.getProvider();
+            
+            const provider = GMWalletConnect.getProvider();
+            
+            // Save WC session info for persistence
+            _saveWcSession();
+            
+            return provider;
         } catch (_) {
             return null;
+        }
+    }
+    
+    // Save WalletConnect session to localStorage
+    function _saveWcSession() {
+        try {
+            const sessionData = {
+                wallet: '{{ wallet }}',
+                method: '{{ login_method }}',
+                timestamp: Date.now()
+            };
+            localStorage.setItem('wc_stored_session', JSON.stringify(sessionData));
+            console.log('WalletConnect session saved');
+        } catch (e) {
+            console.warn('Failed to save WC session:', e);
         }
     }
 
@@ -5758,20 +5831,25 @@
         }
         
         try {
-            // First check current chain
-            const chainId = await provider.request({ method: 'eth_chainId' });
-            const currentChainId = parseInt(chainId, 16);
+            // Determine target chain from txData or default to Celo
+            const targetChainId = txData.chainId || '0xa4ec'; // Default to Celo (42220)
+            const targetChainIdNum = typeof targetChainId === 'string' ? parseInt(targetChainId, 16) : targetChainId;
             
-            if (currentChainId !== 42220) {
-                // Try to switch to Celo
+            // Check current chain and switch if needed
+            const currentChainHex = await provider.request({ method: 'eth_chainId' });
+            const currentChainId = parseInt(currentChainHex, 16);
+            
+            if (currentChainId !== targetChainIdNum) {
+                // Try to switch to the correct network
                 try {
                     await provider.request({
                         method: 'wallet_switchEthereumChain',
-                        params: [{ chainId: '0xa4ec' }] // 0xa4ec = 42220 in hex
+                        params: [{ chainId: targetChainId }]
                     });
                 } catch (switchErr) {
                     console.error('Chain switch error:', switchErr);
-                    throw new Error('Please switch to Celo network (chainId: 42220)');
+                    // Don't fail if switch fails - user might need to manually switch
+                    console.warn(`Current chain (${currentChainId}) differs from target (${targetChainIdNum}). Transaction may fail.');
                 }
             }
             
@@ -5793,7 +5871,7 @@
                 to: txData.to,
                 data: txData.data,
                 value: txData.value || '0x0',
-                chainId: '0xa4ec' // Celo chainId in hex (42220)
+                chainId: targetChainId // Use dynamic chainId from txData
             };
             
             // Add gas estimate if possible
