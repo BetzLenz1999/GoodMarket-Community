@@ -2236,6 +2236,8 @@ if __name__ == "__main__":
 # ============================
 # Reference: https://docs.gooddollar.org/for-developers/developer-guides/use-gusd-streaming
 
+from web3 import Web3  # Import Web3 for checksum address conversion
+
 SUPERFLUID_CFAV1_FORWARDER = os.getenv(
     "SUPERFLUID_CFAV1_FORWARDER", 
     "0xcfA132E353cB4E398080B9700609bb008eceB125"
