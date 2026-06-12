@@ -1662,15 +1662,16 @@
                 
                 <div style="margin-bottom:0.85rem;">
                     <label style="display:block;font-size:0.78rem;color:var(--text-dim);margin-bottom:0.3rem;">Recipient Address</label>
-                    <input type="text" id="streamReceiver" placeholder="0x..." 
+                    <input type="text" id="streamReceiver" placeholder="0x..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                            style="width:100%;padding:0.7rem 0.85rem;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:#fff;font-size:0.88rem;font-family:monospace;outline:none;"
-                           oninput="validateStreamReceiver()">
+                           onpaste="setTimeout(validateStreamReceiver, 10)"
+                           onblur="validateStreamReceiver()">
                     <div id="streamReceiverError" style="color:var(--red);font-size:0.72rem;margin-top:0.25rem;display:none;"></div>
                 </div>
 
                 <div style="margin-bottom:0.85rem;">
                     <label style="display:block;font-size:0.78rem;color:var(--text-dim);margin-bottom:0.3rem;">Amount (G$/day)</label>
-                    <input type="number" id="streamAmount" placeholder="10" min="0.000001" step="0.01"
+                    <input type="number" id="streamAmount" placeholder="10" min="0" step="0.01"
                            style="width:100%;padding:0.7rem 0.85rem;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:#fff;font-size:0.88rem;outline:none;"
                            oninput="calculateStreamBuffer()">
                 </div>
@@ -5644,6 +5645,23 @@
         }
         
         try {
+            // First check current chain
+            const chainId = await provider.request({ method: 'eth_chainId' });
+            const currentChainId = parseInt(chainId, 16);
+            
+            if (currentChainId !== 42220) {
+                // Try to switch to Celo
+                try {
+                    await provider.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: '0xa4ec' }] // 0xa4ec = 42220 in hex
+                    });
+                } catch (switchErr) {
+                    console.error('Chain switch error:', switchErr);
+                    throw new Error('Please switch to Celo network (chainId: 42220)');
+                }
+            }
+            
             const accounts = await provider.request({ method: 'eth_requestAccounts' });
             if (!accounts || accounts.length === 0) {
                 throw new Error('No accounts found. Please unlock your wallet.');
@@ -5656,22 +5674,38 @@
                 throw new Error(`Wrong wallet. Expected ${expectedAccount.slice(0, 10)}..., got ${connectedAccount.slice(0, 10)}...`);
             }
             
+            // Build transaction params with gas
+            const txParams = {
+                from: connectedAccount,
+                to: txData.to,
+                data: txData.data,
+                value: txData.value || '0x0',
+                chainId: '0xa4ec' // Celo chainId in hex (42220)
+            };
+            
+            // Add gas estimate if possible
+            try {
+                const gasEstimate = await provider.request({
+                    method: 'eth_estimateGas',
+                    params: [txParams]
+                });
+                txParams.gas = gasEstimate;
+            } catch (gasErr) {
+                // Use default gas if estimate fails
+                txParams.gas = '0x1dcd6' // ~200000 gas
+            }
+            
             const txHash = await provider.request({
                 method: 'eth_sendTransaction',
-                params: [{
-                    to: txData.to,
-                    from: connectedAccount,
-                    data: txData.data,
-                    value: txData.value || '0x0',
-                    chainId: 42220 // Celo
-                }]
+                params: [txParams]
             });
             
             return txHash;
         } catch (err) {
-            if (err.code === 4001 || err.message?.includes('rejected')) {
+            if (err.code === 4001 || err.message?.includes('rejected') || err.code === 'ACTION_REJECTED') {
                 throw new Error('Transaction rejected by user.');
             }
+            // Re-throw with more context
             throw err;
         }
     }
@@ -5681,7 +5715,18 @@
         const receiver = document.getElementById('streamReceiver').value.trim();
         const amount = parseFloat(document.getElementById('streamAmount').value);
         
-        if (!validateStreamReceiver() || amount <= 0) {
+        // Validate inputs
+        if (!receiver || !/^0x[a-fA-F0-9]{40}$/.test(receiver)) {
+            const result = document.getElementById('streamResult');
+            result.innerHTML = '<div style="color:#ff7070;">❌ Please enter a valid wallet address</div>';
+            result.style.display = 'block';
+            return;
+        }
+        
+        if (!amount || amount <= 0) {
+            const result = document.getElementById('streamResult');
+            result.innerHTML = '<div style="color:#ff7070;">❌ Please enter a valid amount (G$/day)</div>';
+            result.style.display = 'block';
             return;
         }
         
@@ -5750,7 +5795,18 @@
         const receiver = document.getElementById('streamReceiver').value.trim();
         const amount = parseFloat(document.getElementById('streamAmount').value);
         
-        if (!validateStreamReceiver() || amount < 0) {
+        // Validate inputs
+        if (!receiver || !/^0x[a-fA-F0-9]{40}$/.test(receiver)) {
+            const result = document.getElementById('streamResult');
+            result.innerHTML = '<div style="color:#ff7070;">❌ Please enter a valid wallet address</div>';
+            result.style.display = 'block';
+            return;
+        }
+        
+        if (amount < 0) {
+            const result = document.getElementById('streamResult');
+            result.innerHTML = '<div style="color:#ff7070;">❌ Please enter a valid amount</div>';
+            result.style.display = 'block';
             return;
         }
         
