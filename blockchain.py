@@ -2229,3 +2229,435 @@ if __name__ == "__main__":
     test_wallet = "0xFf00A683f7bD77665754A65F2B82fdEFc4371a50"
     result = has_recent_ubi_claim(test_wallet)
     print(result["message"])
+
+
+# ============================
+# Superfluid P2P Streaming Module
+# ============================
+# Reference: https://docs.gooddollar.org/for-developers/developer-guides/use-gusd-streaming
+
+SUPERFLUID_CFAV1_FORWARDER = os.getenv(
+    "SUPERFLUID_CFAV1_FORWARDER", 
+    "0xcfA132E353cB4E398080B9700609bb008eceB125"
+)
+
+SUPERFLUID_CFA_ABI = [
+    {
+        "inputs": [
+            {"internalType": "contract ISuperToken", "name": "token", "type": "address"},
+            {"internalType": "address", "name": "sender", "type": "address"},
+            {"internalType": "address", "name": "receiver", "type": "address"},
+            {"internalType": "int96", "name": "flowRate", "type": "int96"},
+            {"internalType": "bytes", "name": "userData", "type": "bytes"}
+        ],
+        "name": "createFlow",
+        "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {"internalType": "contract ISuperToken", "name": "token", "type": "address"},
+            {"internalType": "address", "name": "sender", "type": "address"},
+            {"internalType": "address", "name": "receiver", "type": "address"},
+            {"internalType": "int96", "name": "flowRate", "type": "int96"},
+            {"internalType": "bytes", "name": "userData", "type": "bytes"}
+        ],
+        "name": "updateFlow",
+        "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {"internalType": "contract ISuperToken", "name": "token", "type": "address"},
+            {"internalType": "address", "name": "sender", "type": "address"},
+            {"internalType": "address", "name": "receiver", "type": "address"},
+            {"internalType": "bytes", "name": "userData", "type": "bytes"}
+        ],
+        "name": "deleteFlow",
+        "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {"internalType": "contract ISuperToken", "name": "token", "type": "address"},
+            {"internalType": "address", "name": "account", "type": "address"}
+        ],
+        "name": "getAccountFlowInfo",
+        "outputs": [
+            {"internalType": "uint256", "name": "lastUpdated", "type": "uint256"},
+            {"internalType": "int96", "name": "flowRate", "type": "int96"},
+            {"internalType": "uint256", "name": "deposit", "type": "uint256"},
+            {"internalType": "uint256", "name": "owedDeposit", "type": "uint256"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {"internalType": "contract ISuperToken", "name": "token", "type": "address"},
+            {"internalType": "address", "name": "sender", "type": "address"},
+            {"internalType": "address", "name": "receiver", "type": "address"}
+        ],
+        "name": "getFlowInfo",
+        "outputs": [
+            {"internalType": "uint256", "name": "lastUpdated", "type": "uint256"},
+            {"internalType": "int96", "name": "flowRate", "type": "int96"},
+            {"internalType": "uint256", "name": "deposit", "type": "uint256"},
+            {"internalType": "uint256", "name": "owedDeposit", "type": "uint256"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {"internalType": "contract ISuperToken", "name": "token", "type": "address"},
+            {"internalType": "int96", "name": "flowRate", "type": "int96"}
+        ],
+        "name": "getBufferAmountByFlowRate",
+        "outputs": [{"internalType": "uint256", "name": "bufferAmount", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {"internalType": "contract ISuperToken", "name": "token", "type": "address"},
+            {"internalType": "address", "name": "sender", "type": "address"},
+            {"internalType": "address", "name": "receiver", "type": "address"}
+        ],
+        "name": "getFlowrate",
+        "outputs": [{"internalType": "int96", "name": "flowRate", "type": "int96"}],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]
+
+
+def calculate_flow_rate(per_month: float) -> int:
+    """
+    Convert G$ per month to int96 flow rate (wad/second).
+    
+    Formula: flowRate = amount_per_month * 10^18 / 2592000
+    Where 2592000 = seconds in 30 days (30 * 24 * 60 * 60)
+    
+    Args:
+        per_month: Amount of G$ per month
+        
+    Returns:
+        Flow rate in wei/second (int96)
+    """
+    return int(per_month * (10 ** 18) / 2592000)
+
+
+def get_required_buffer(g_dollar_address: str, flow_rate: int) -> float:
+    """
+    Get the required buffer amount for a given flow rate.
+    
+    Args:
+        g_dollar_address: G$ token address
+        flow_rate: Flow rate in wei/second
+        
+    Returns:
+        Required buffer in G$ (as float)
+    """
+    try:
+        w3 = _get_w3()
+        contract = w3.eth.contract(
+            address=Web3.to_checksum_address(SUPERFLUID_CFAV1_FORWARDER),
+            abi=SUPERFLUID_CFA_ABI
+        )
+        buffer_raw = contract.functions.getBufferAmountByFlowRate(
+            Web3.to_checksum_address(g_dollar_address),
+            flow_rate
+        ).call()
+        return buffer_raw / (10 ** 18)
+    except Exception as e:
+        logger.error(f"get_required_buffer error: {e}")
+        return 0.0
+
+
+def get_p2p_stream_info(g_dollar_address: str, sender: str, receiver: str) -> dict:
+    """
+    Get P2P stream information between sender and receiver.
+    
+    Args:
+        g_dollar_address: G$ token address
+        sender: Sender wallet address
+        receiver: Receiver wallet address
+        
+    Returns:
+        Dict with stream info: flow_rate, last_updated, deposit, etc.
+    """
+    try:
+        w3 = _get_w3()
+        contract = w3.eth.contract(
+            address=Web3.to_checksum_address(SUPERFLUID_CFAV1_FORWARDER),
+            abi=SUPERFLUID_CFA_ABI
+        )
+        info = contract.functions.getFlowInfo(
+            Web3.to_checksum_address(g_dollar_address),
+            Web3.to_checksum_address(sender),
+            Web3.to_checksum_address(receiver)
+        ).call()
+        
+        last_updated, flow_rate, deposit, owed_deposit = info
+        flow_rate_gps = flow_rate / (10 ** 18)  # Convert to G$/second
+        
+        return {
+            "success": True,
+            "has_stream": flow_rate != 0,
+            "flow_rate": flow_rate,
+            "flow_rate_gps": float(flow_rate_gps),  # G$ per second
+            "flow_rate_per_month": float(flow_rate_gps * 2592000),  # G$ per month
+            "last_updated": last_updated,
+            "deposit": deposit / (10 ** 18),  # Convert to G$
+            "owed_deposit": owed_deposit / (10 ** 18),
+            "sender": sender,
+            "receiver": receiver,
+            "token": g_dollar_address,
+            "forwarder": SUPERFLUID_CFAV1_FORWARDER
+        }
+    except Exception as e:
+        logger.error(f"get_p2p_stream_info error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def prepare_p2p_stream_create(
+    g_dollar_address: str,
+    sender: str,
+    receiver: str,
+    flow_rate_per_month: float
+) -> dict:
+    """
+    Prepare P2P stream creation transaction data.
+    
+    Args:
+        g_dollar_address: G$ token address (use DEV address for testing)
+        sender: Sender wallet address
+        receiver: Receiver wallet address
+        flow_rate_per_month: Desired G$ per month
+        
+    Returns:
+        Dict with transaction data ready for signing
+    """
+    try:
+        from eth_abi import encode as abi_encode
+        
+        # Calculate flow rate
+        flow_rate = calculate_flow_rate(flow_rate_per_month)
+        
+        # Get required buffer
+        buffer_g = get_required_buffer(g_dollar_address, flow_rate)
+        
+        # Build the function call data
+        selector = Web3.keccak(text="createFlow(address,address,address,int96,bytes)")[:4]
+        encoded_args = abi_encode(
+            ["address", "address", "address", "int96", "bytes"],
+            [
+                Web3.to_checksum_address(g_dollar_address),
+                Web3.to_checksum_address(sender),
+                Web3.to_checksum_address(receiver),
+                flow_rate,
+                b""
+            ]
+        )
+        data = "0x" + (selector + encoded_args).hex()
+        
+        return {
+            "success": True,
+            "to": SUPERFLUID_CFAV1_FORWARDER,
+            "data": data,
+            "value": "0x0",
+            "chain_id": CELO_CHAIN_ID,
+            "token": "G$",
+            "flow_rate": flow_rate,
+            "flow_rate_per_month": flow_rate_per_month,
+            "required_buffer": buffer_g,
+            "sender": sender,
+            "receiver": receiver,
+            "description": "Create P2P Stream"
+        }
+    except Exception as e:
+        logger.error(f"prepare_p2p_stream_create error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def prepare_p2p_stream_update(
+    g_dollar_address: str,
+    sender: str,
+    receiver: str,
+    new_flow_rate_per_month: float
+) -> dict:
+    """
+    Prepare P2P stream update transaction data.
+    
+    Args:
+        g_dollar_address: G$ token address
+        sender: Sender wallet address
+        receiver: Receiver wallet address
+        new_flow_rate_per_month: New desired G$ per month
+        
+    Returns:
+        Dict with transaction data ready for signing
+    """
+    try:
+        from eth_abi import encode as abi_encode
+        
+        # Calculate flow rate
+        flow_rate = calculate_flow_rate(new_flow_rate_per_month)
+        
+        # Build the function call data
+        selector = Web3.keccak(text="updateFlow(address,address,address,int96,bytes)")[:4]
+        encoded_args = abi_encode(
+            ["address", "address", "address", "int96", "bytes"],
+            [
+                Web3.to_checksum_address(g_dollar_address),
+                Web3.to_checksum_address(sender),
+                Web3.to_checksum_address(receiver),
+                flow_rate,
+                b""
+            ]
+        )
+        data = "0x" + (selector + encoded_args).hex()
+        
+        return {
+            "success": True,
+            "to": SUPERFLUID_CFAV1_FORWARDER,
+            "data": data,
+            "value": "0x0",
+            "chain_id": CELO_CHAIN_ID,
+            "token": "G$",
+            "flow_rate": flow_rate,
+            "flow_rate_per_month": new_flow_rate_per_month,
+            "sender": sender,
+            "receiver": receiver,
+            "description": "Update P2P Stream"
+        }
+    except Exception as e:
+        logger.error(f"prepare_p2p_stream_update error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def prepare_p2p_stream_delete(
+    g_dollar_address: str,
+    sender: str,
+    receiver: str
+) -> dict:
+    """
+    Prepare P2P stream deletion transaction data.
+    
+    Args:
+        g_dollar_address: G$ token address
+        sender: Sender wallet address
+        receiver: Receiver wallet address
+        
+    Returns:
+        Dict with transaction data ready for signing
+    """
+    try:
+        from eth_abi import encode as abi_encode
+        
+        # Build the function call data
+        selector = Web3.keccak(text="deleteFlow(address,address,address,bytes)")[:4]
+        encoded_args = abi_encode(
+            ["address", "address", "address", "bytes"],
+            [
+                Web3.to_checksum_address(g_dollar_address),
+                Web3.to_checksum_address(sender),
+                Web3.to_checksum_address(receiver),
+                b""
+            ]
+        )
+        data = "0x" + (selector + encoded_args).hex()
+        
+        return {
+            "success": True,
+            "to": SUPERFLUID_CFAV1_FORWARDER,
+            "data": data,
+            "value": "0x0",
+            "chain_id": CELO_CHAIN_ID,
+            "token": "G$",
+            "sender": sender,
+            "receiver": receiver,
+            "description": "Delete P2P Stream"
+        }
+    except Exception as e:
+        logger.error(f"prepare_p2p_stream_delete error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def get_user_stream_summary(g_dollar_address: str, wallet_address: str) -> dict:
+    """
+    Get a user's aggregate stream info (incoming + outgoing).
+    
+    Args:
+        g_dollar_address: G$ token address
+        wallet_address: User's wallet address
+        
+    Returns:
+        Dict with net flow rate, deposit, etc.
+    """
+    try:
+        w3 = _get_w3()
+        contract = w3.eth.contract(
+            address=Web3.to_checksum_address(SUPERFLUID_CFAV1_FORWARDER),
+            abi=SUPERFLUID_CFA_ABI
+        )
+        
+        info = contract.functions.getAccountFlowInfo(
+            Web3.to_checksum_address(g_dollar_address),
+            Web3.to_checksum_address(wallet_address)
+        ).call()
+        
+        last_updated, net_flow_rate, total_deposit, owed_deposit = info
+        net_flow_rate_gps = net_flow_rate / (10 ** 18)
+        
+        return {
+            "success": True,
+            "wallet": wallet_address,
+            "net_flow_rate": net_flow_rate,
+            "net_flow_rate_gps": float(net_flow_rate_gps),
+            "net_flow_rate_per_month": float(net_flow_rate_gps * 2592000),
+            "total_deposit": total_deposit / (10 ** 18),
+            "owed_deposit": owed_deposit / (10 ** 18),
+            "last_updated": last_updated,
+            "token": g_dollar_address
+        }
+    except Exception as e:
+        logger.error(f"get_user_stream_summary error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def get_active_g_dollar_address() -> str:
+    """Return the active G$ address based on environment."""
+    if os.getenv('USE_DEV_G_DOLLAR', 'false').lower() == 'true':
+        return os.getenv(
+            'SUPERFLUID_DEV_G_DOLLAR_ADDRESS', 
+            '0xFa51eFDc0910CCdA91732e6806912Fa12e2FD475'
+        )
+    return os.getenv(
+        'GOODDOLLAR_CONTRACT_ADDRESS', 
+        '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A'
+    )
+
+
+def get_p2p_stream_constants() -> dict:
+    """Return P2P streaming constants for frontend reference."""
+    return {
+        "cfav1_forwarder": SUPERFLUID_CFAV1_FORWARDER,
+        "chain_id": CELO_CHAIN_ID,
+        "chain_name": "Celo",
+        "rpc_url": CELO_RPC,
+        "production_g_dollar": os.getenv(
+            'GOODDOLLAR_CONTRACT_ADDRESS', 
+            '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A'
+        ),
+        "dev_g_dollar": os.getenv(
+            'SUPERFLUID_DEV_G_DOLLAR_ADDRESS',
+            '0xFa51eFDc0910CCdA91732e6806912Fa12e2FD475'
+        ),
+        "flow_rate_divisor": 2592000,  # seconds in 30 days
+        "docs_url": "https://docs.gooddollar.org/for-developers/developer-guides/use-gusd-streaming"
+    }

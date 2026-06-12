@@ -10399,6 +10399,286 @@ def xdc_faucet_gas():
 
 
 @routes.route("/api/fuse/faucet/gas", methods=["POST"])
+
+
+# ============================
+# Superfluid P2P Streaming Routes
+# ============================
+# Reference: https://docs.gooddollar.org/for-developers/developer-guides/use-gusd-streaming
+
+@routes.route("/api/p2p/stream/constants", methods=["GET"])
+def p2p_stream_constants():
+    """
+    Get P2P streaming configuration constants.
+    
+    Returns CFAv1Forwarder address, chain info, G$ addresses, etc.
+    """
+    try:
+        from blockchain import get_p2p_stream_constants
+        return jsonify({
+            "success": True,
+            "data": get_p2p_stream_constants()
+        })
+    except Exception as e:
+        logger.error(f"p2p_stream_constants error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/p2p/stream/create/prepare", methods=["POST"])
+def p2p_stream_create_prepare():
+    """
+    Prepare P2P stream creation transaction.
+    
+    Request body:
+    {
+        "receiver": "0x...",  # Receiver wallet address
+        "flow_rate_per_month": 100  # G$ per month
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        receiver = data.get("receiver", "").strip()
+        flow_rate_per_month = float(data.get("flow_rate_per_month", 0))
+        
+        if not receiver:
+            return jsonify({"success": False, "error": "Receiver address required"}), 400
+        
+        if flow_rate_per_month <= 0:
+            return jsonify({"success": False, "error": "Flow rate must be positive"}), 400
+        
+        # Get sender from session
+        wallet = session.get("wallet")
+        if not wallet:
+            return jsonify({"success": False, "error": "Not authenticated"}), 401
+        
+        from blockchain import prepare_p2p_stream_create, get_active_g_dollar_address
+        
+        g_dollar_address = get_active_g_dollar_address()
+        tx_data = prepare_p2p_stream_create(
+            g_dollar_address=g_dollar_address,
+            sender=wallet,
+            receiver=receiver,
+            flow_rate_per_month=flow_rate_per_month
+        )
+        
+        if not tx_data.get("success"):
+            return jsonify(tx_data), 400
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                **tx_data,
+                "g_dollar_address": g_dollar_address,
+                "sender": wallet,
+                "flow_rate_per_month": flow_rate_per_month,
+                "required_buffer": tx_data.get("required_buffer", 0),
+                "warning": "Sender must have sufficient G$ balance + buffer to create stream"
+            }
+        })
+    except Exception as e:
+        logger.error(f"p2p_stream_create_prepare error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/p2p/stream/update/prepare", methods=["POST"])
+def p2p_stream_update_prepare():
+    """
+    Prepare P2P stream update transaction.
+    
+    Request body:
+    {
+        "receiver": "0x...",  # Receiver wallet address
+        "new_flow_rate_per_month": 200  # New G$ per month
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        receiver = data.get("receiver", "").strip()
+        new_flow_rate_per_month = float(data.get("new_flow_rate_per_month", 0))
+        
+        if not receiver:
+            return jsonify({"success": False, "error": "Receiver address required"}), 400
+        
+        if new_flow_rate_per_month < 0:
+            return jsonify({"success": False, "error": "Flow rate cannot be negative"}), 400
+        
+        # Get sender from session
+        wallet = session.get("wallet")
+        if not wallet:
+            return jsonify({"success": False, "error": "Not authenticated"}), 401
+        
+        from blockchain import prepare_p2p_stream_update, get_active_g_dollar_address
+        
+        g_dollar_address = get_active_g_dollar_address()
+        tx_data = prepare_p2p_stream_update(
+            g_dollar_address=g_dollar_address,
+            sender=wallet,
+            receiver=receiver,
+            new_flow_rate_per_month=new_flow_rate_per_month
+        )
+        
+        if not tx_data.get("success"):
+            return jsonify(tx_data), 400
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                **tx_data,
+                "g_dollar_address": g_dollar_address,
+                "sender": wallet,
+                "new_flow_rate_per_month": new_flow_rate_per_month
+            }
+        })
+    except Exception as e:
+        logger.error(f"p2p_stream_update_prepare error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/p2p/stream/delete/prepare", methods=["POST"])
+def p2p_stream_delete_prepare():
+    """
+    Prepare P2P stream deletion (stop stream) transaction.
+    
+    Request body:
+    {
+        "receiver": "0x..."  # Receiver wallet address
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        receiver = data.get("receiver", "").strip()
+        
+        if not receiver:
+            return jsonify({"success": False, "error": "Receiver address required"}), 400
+        
+        # Get sender from session
+        wallet = session.get("wallet")
+        if not wallet:
+            return jsonify({"success": False, "error": "Not authenticated"}), 401
+        
+        from blockchain import prepare_p2p_stream_delete, get_active_g_dollar_address
+        
+        g_dollar_address = get_active_g_dollar_address()
+        tx_data = prepare_p2p_stream_delete(
+            g_dollar_address=g_dollar_address,
+            sender=wallet,
+            receiver=receiver
+        )
+        
+        if not tx_data.get("success"):
+            return jsonify(tx_data), 400
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                **tx_data,
+                "g_dollar_address": g_dollar_address,
+                "sender": wallet,
+                "warning": "Stream will be deleted. Any remaining buffer will be returned."
+            }
+        })
+    except Exception as e:
+        logger.error(f"p2p_stream_delete_prepare error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/p2p/stream/info", methods=["GET"])
+def p2p_stream_info():
+    """
+    Get P2P stream information between sender and receiver.
+    
+    Query params:
+    - sender: Sender wallet address
+    - receiver: Receiver wallet address
+    """
+    try:
+        sender = request.args.get("sender", "").strip()
+        receiver = request.args.get("receiver", "").strip()
+        
+        if not sender or not receiver:
+            return jsonify({"success": False, "error": "Sender and receiver addresses required"}), 400
+        
+        from blockchain import get_p2p_stream_info, get_active_g_dollar_address
+        
+        g_dollar_address = get_active_g_dollar_address()
+        info = get_p2p_stream_info(
+            g_dollar_address=g_dollar_address,
+            sender=sender,
+            receiver=receiver
+        )
+        
+        return jsonify(info)
+    except Exception as e:
+        logger.error(f"p2p_stream_info error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/p2p/stream/summary", methods=["GET"])
+def p2p_stream_summary():
+    """
+    Get user's aggregate stream summary (incoming + outgoing).
+    
+    Query params:
+    - wallet: Wallet address to check
+    """
+    try:
+        wallet = request.args.get("wallet", "").strip()
+        
+        if not wallet:
+            # Try session
+            wallet = session.get("wallet")
+        
+        if not wallet:
+            return jsonify({"success": False, "error": "Wallet address required"}), 400
+        
+        from blockchain import get_user_stream_summary, get_active_g_dollar_address
+        
+        g_dollar_address = get_active_g_dollar_address()
+        summary = get_user_stream_summary(
+            g_dollar_address=g_dollar_address,
+            wallet_address=wallet
+        )
+        
+        return jsonify(summary)
+    except Exception as e:
+        logger.error(f"p2p_stream_summary error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/p2p/buffer/calculate", methods=["GET"])
+def p2p_buffer_calculate():
+    """
+    Calculate required buffer for a given flow rate.
+    
+    Query params:
+    - flow_rate_per_month: G$ per month
+    """
+    try:
+        flow_rate_per_month = float(request.args.get("flow_rate_per_month", 0))
+        
+        if flow_rate_per_month <= 0:
+            return jsonify({"success": False, "error": "Flow rate must be positive"}), 400
+        
+        from blockchain import calculate_flow_rate, get_required_buffer, get_active_g_dollar_address
+        
+        g_dollar_address = get_active_g_dollar_address()
+        flow_rate = calculate_flow_rate(flow_rate_per_month)
+        buffer = get_required_buffer(g_dollar_address, flow_rate)
+        
+        return jsonify({
+            "success": True,
+            "flow_rate_per_month": flow_rate_per_month,
+            "flow_rate": flow_rate,
+            "flow_rate_per_second": flow_rate / (10 ** 18),
+            "required_buffer": buffer,
+            "total_required": flow_rate_per_month + buffer,
+            "g_dollar_address": g_dollar_address
+        })
+    except Exception as e:
+        logger.error(f"p2p_buffer_calculate error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @auth_required
 def fuse_faucet_gas():
     """Fuse claim-safe flow: gas readiness check + faucet top-up attempts."""
