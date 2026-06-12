@@ -5428,7 +5428,8 @@
     function addToStreamHistory(entry) {
         streamHistory.unshift({
             ...entry,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            startTime: entry.status === 'active' ? Date.now() : entry.startTime
         });
         // Keep only last MAX_HISTORY_ITEMS
         if (streamHistory.length > MAX_HISTORY_ITEMS) {
@@ -5438,7 +5439,16 @@
         renderStreamHistory();
     }
 
-    // Render stream history list
+    // Calculate streamed amount based on time and rate
+    function calculateStreamedAmount(rate, startTime, isActive) {
+        if (!rate || rate <= 0) return 0;
+        const now = Date.now();
+        const elapsed = (now - startTime) / 1000; // seconds
+        const streamedPerSecond = rate / 86400; // G$/day to G$/sec
+        return streamedPerSecond * elapsed;
+    }
+
+    // Render stream history list with real-time streamed amount
     function renderStreamHistory() {
         const listEl = document.getElementById('streamHistoryList');
         const emptyEl = document.getElementById('streamHistoryEmpty');
@@ -5456,16 +5466,35 @@
         const html = streamHistory.map((item, idx) => {
             const shortReceiver = item.receiver ? item.receiver.slice(0, 6) + '...' + item.receiver.slice(-4) : '—';
             const date = new Date(item.timestamp).toLocaleDateString();
-            const statusColor = item.status === 'active' ? '#00e676' : (item.status === 'stopped' ? '#ff7070' : '#f59e0b');
-            const actionBtns = item.status === 'active' ? `
+            
+            // Determine actual status based on on-chain data or local record
+            let isActuallyActive = item.status === 'active';
+            
+            // For active streams, show real-time streamed amount
+            let streamedAmount = '';
+            let statusColor = '#ff7070'; // stopped color default
+            let statusText = 'STOPPED';
+            
+            if (isActuallyActive && item.rate > 0) {
+                const streamed = calculateStreamedAmount(item.rate, item.startTime || item.timestamp, true);
+                streamedAmount = `<div style="font-size:0.75rem;color:#00e676;margin-top:0.2rem;">⏱️ Streamed: ${streamed.toFixed(4)} G$</div>`;
+                statusColor = '#00e676';
+                statusText = 'ACTIVE';
+            } else if (item.totalStreamed) {
+                streamedAmount = `<div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.2rem;">⏱️ Total: ${item.totalStreamed.toFixed(4)} G$</div>`;
+                statusColor = '#ff7070';
+                statusText = 'STOPPED';
+            }
+            
+            const actionBtns = isActuallyActive ? `
                 <button onclick="loadFromHistory(${idx})" style="padding:0.25rem 0.5rem;border-radius:6px;border:1px solid rgba(6,182,212,0.4);background:rgba(6,182,212,0.1);color:#06b6d4;font-size:0.7rem;cursor:pointer;margin-right:0.25rem;">Load</button>
                 <button onclick="handleStopFromHistory('${item.receiver}')" style="padding:0.25rem 0.5rem;border-radius:6px;border:1px solid rgba(255,82,82,0.4);background:rgba(255,82,82,0.08);color:#ff7070;font-size:0.7rem;cursor:pointer;">Stop</button>
             ` : '';
             
             return `
-                <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:0.6rem;margin-bottom:0.5rem;">
+                <div style="background:rgba(255,255,255,0.03);border:1px solid ${isActuallyActive ? 'rgba(0,230,118,0.2)' : 'rgba(255,255,255,0.06)'};border-radius:8px;padding:0.6rem;margin-bottom:0.5rem;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">
-                        <span style="font-size:0.75rem;color:${statusColor};font-weight:600;text-transform:uppercase;">${item.status}</span>
+                        <span style="font-size:0.75rem;color:${statusColor};font-weight:600;text-transform:uppercase;">● ${statusText}</span>
                         <span style="font-size:0.7rem;color:var(--text-muted);">${date}</span>
                     </div>
                     <div style="font-size:0.8rem;color:#fff;margin-bottom:0.3rem;">
@@ -5474,12 +5503,18 @@
                     <div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:0.3rem;">
                         💰 Rate: ${item.rate || '—'} G$/day
                     </div>
+                    ${streamedAmount}
                     ${actionBtns}
                 </div>
             `;
         }).join('');
         
         listEl.innerHTML = html;
+        
+        // Update every second for active streams
+        if (streamHistory.some(h => h.status === 'active')) {
+            setTimeout(renderStreamHistory, 1000);
+        }
     }
 
     // Load stream data from history
@@ -5906,13 +5941,34 @@
             };
             const txHash = await signTransaction(txData);
             
-            // Update history to stopped
-            addToStreamHistory({
-                receiver: receiver,
-                rate: 0,
-                status: 'stopped',
-                txHash: txHash
-            });
+            // Update the active stream in history to stopped with total streamed
+            const activeIndex = streamHistory.findIndex(h => h.receiver === receiver && h.status === 'active');
+            if (activeIndex !== -1) {
+                const activeStream = streamHistory[activeIndex];
+                const totalStreamed = calculateStreamedAmount(
+                    activeStream.rate, 
+                    activeStream.startTime || activeStream.timestamp, 
+                    true
+                );
+                // Remove the active entry and add stopped entry
+                streamHistory.splice(activeIndex, 1);
+                addToStreamHistory({
+                    receiver: receiver,
+                    rate: activeStream.rate,
+                    status: 'stopped',
+                    txHash: txHash,
+                    totalStreamed: totalStreamed,
+                    startTime: activeStream.startTime || activeStream.timestamp,
+                    stoppedTime: Date.now()
+                });
+            } else {
+                addToStreamHistory({
+                    receiver: receiver,
+                    rate: 0,
+                    status: 'stopped',
+                    txHash: txHash
+                });
+            }
             
             result.innerHTML = `
                 <div style="color:#00e676;margin-bottom:0.5rem;">✅ Stream stopped!</div>
