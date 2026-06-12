@@ -1663,7 +1663,7 @@
                 <div style="margin-bottom:0.85rem;">
                     <label style="display:block;font-size:0.78rem;color:var(--text-dim);margin-bottom:0.3rem;">Recipient Address</label>
                     <input type="text" id="streamReceiver" placeholder="0x..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-                           style="width:100%;padding:0.7rem 0.85rem;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:#fff;font-size:0.88rem;font-family:monospace;outline:none;"
+                           style="width:100%;padding:0.7rem 0.85rem;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:#fff;font-size:0.88rem;font-family:monospace;outline:none;cursor:text;pointer-events:auto;-webkit-user-select:text;-moz-user-select:text;user-select:text;"
                            onpaste="setTimeout(validateStreamReceiver, 10)"
                            onblur="validateStreamReceiver()">
                     <div id="streamReceiverError" style="color:var(--red);font-size:0.72rem;margin-top:0.25rem;display:none;"></div>
@@ -1672,7 +1672,7 @@
                 <div style="margin-bottom:0.85rem;">
                     <label style="display:block;font-size:0.78rem;color:var(--text-dim);margin-bottom:0.3rem;">Amount (G$/day)</label>
                     <input type="number" id="streamAmount" placeholder="10" min="0" step="0.01"
-                           style="width:100%;padding:0.7rem 0.85rem;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:#fff;font-size:0.88rem;outline:none;"
+                           style="width:100%;padding:0.7rem 0.85rem;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:#fff;font-size:0.88rem;outline:none;cursor:text;pointer-events:auto;-webkit-user-select:text;-moz-user-select:text;user-select:text;"
                            oninput="calculateStreamBuffer()">
                 </div>
 
@@ -6065,6 +6065,26 @@
             loadStreamConstants();
             loadIncomingStreamInfo();
             loadStreamHistory();
+            
+            // Ensure inputs are always editable
+            setTimeout(function() {
+                const receiverInput = document.getElementById('streamReceiver');
+                const amountInput = document.getElementById('streamAmount');
+                
+                if (receiverInput) {
+                    receiverInput.removeAttribute('readonly');
+                    receiverInput.removeAttribute('disabled');
+                    receiverInput.style.pointerEvents = 'auto';
+                    receiverInput.style.cursor = 'text';
+                }
+                
+                if (amountInput) {
+                    amountInput.removeAttribute('readonly');
+                    amountInput.removeAttribute('disabled');
+                    amountInput.style.pointerEvents = 'auto';
+                    amountInput.style.cursor = 'text';
+                }
+            }, 100);
         }
         return _originalOpenModal(modalId);
     };
