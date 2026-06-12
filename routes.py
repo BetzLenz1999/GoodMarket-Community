@@ -10679,6 +10679,129 @@ def p2p_buffer_calculate():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ============================================
+# SUPABASE STREAMING TRACKING APIs
+# ============================================
+
+@routes.route("/api/streaming/record", methods=["POST"])
+def streaming_record():
+    """
+    Record a new stream transaction to Supabase
+    
+    Body:
+    {
+        "wallet_address": "0x...",
+        "type": "outgoing" | "incoming",
+        "counterparty": "0x...",
+        "flow_rate_per_day": 10.0,
+        "flow_rate_per_month": 300.0,
+        "tx_hash": "0x..."
+    }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        
+        # Validate required fields
+        required = ["wallet_address", "type", "counterparty", "flow_rate_per_day", "flow_rate_per_month"]
+        for field in required:
+            if not data.get(field):
+                return jsonify({"success": False, "error": f"Missing field: {field}"}), 400
+        
+        # Validate type
+        if data["type"] not in ["incoming", "outgoing"]:
+            return jsonify({"success": False, "error": "Type must be 'incoming' or 'outgoing'"}), 400
+        
+        from supabase_client import record_stream
+        result = record_stream(data)
+        
+        if result.get("success"):
+            return jsonify({"success": True, "message": "Stream recorded", "id": result.get("id")})
+        else:
+            return jsonify({"success": False, "error": result.get("message", "Unknown error")}), 500
+            
+    except Exception as e:
+        logger.error(f"streaming_record error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/streaming/update", methods=["POST"])
+def streaming_update():
+    """
+    Update stream status in Supabase
+    
+    Body:
+    {
+        "tx_hash": "0x...",
+        "status": "stopped" | "active",
+        "total_streamed": 125.50 (optional)
+    }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        
+        if not data.get("tx_hash"):
+            return jsonify({"success": False, "error": "Missing tx_hash"}), 400
+        
+        if not data.get("status"):
+            return jsonify({"success": False, "error": "Missing status"}), 400
+        
+        from supabase_client import update_stream
+        result = update_stream(
+            tx_hash=data["tx_hash"],
+            status=data["status"],
+            total_streamed=data.get("total_streamed")
+        )
+        
+        if result.get("success"):
+            return jsonify({"success": True, "message": "Stream updated"})
+        else:
+            return jsonify({"success": False, "error": result.get("message", "Unknown error")}), 500
+            
+    except Exception as e:
+        logger.error(f"streaming_update error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/streaming/stats", methods=["GET"])
+def streaming_stats():
+    """
+    Get aggregate streaming statistics
+    
+    Returns:
+    {
+        "total_incoming": float,
+        "total_outgoing": float,
+        "active_incoming_count": int,
+        "active_outgoing_count": int
+    }
+    """
+    try:
+        from supabase_client import get_streaming_stats
+        stats = get_streaming_stats()
+        return jsonify({"success": True, "data": stats})
+        
+    except Exception as e:
+        logger.error(f"streaming_stats error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/streaming/wallet/<wallet_address>", methods=["GET"])
+def streaming_wallet(wallet_address):
+    """
+    Get all streams for a specific wallet
+    
+    Returns list of stream records
+    """
+    try:
+        from supabase_client import get_wallet_streams
+        streams = get_wallet_streams(wallet_address)
+        return jsonify({"success": True, "data": streams, "count": len(streams)})
+        
+    except Exception as e:
+        logger.error(f"streaming_wallet error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @auth_required
 def fuse_faucet_gas():
     """Fuse claim-safe flow: gas readiness check + faucet top-up attempts."""

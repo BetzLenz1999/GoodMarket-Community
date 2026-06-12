@@ -1534,3 +1534,169 @@ def set_admin_status(wallet_address: str, is_admin_status: bool) -> dict:
 
 # Global logger instance
 supabase_logger = SupabaseLogger()
+
+
+# ============================================
+# G$ STREAMING TRACKER FUNCTIONS
+# ============================================
+
+def record_stream(data: dict) -> dict:
+    """
+    Record a new stream transaction to Supabase
+    
+    Args:
+        data = {
+            "wallet_address": "0x...",
+            "type": "outgoing" | "incoming",
+            "counterparty": "0x...",
+            "flow_rate_per_day": 10.0,
+            "flow_rate_per_month": 300.0,
+            "tx_hash": "0x..."
+        }
+    
+    Returns:
+        {"success": bool, "message": str}
+    """
+    try:
+        client = get_supabase_client()
+        if not client:
+            return {"success": False, "message": "Supabase not configured"}
+        
+        # Add timestamps
+        data["created_at"] = datetime.utcnow().isoformat()
+        data["updated_at"] = datetime.utcnow().isoformat()
+        data["status"] = "active"
+        
+        # Insert to streaming_records
+        result = client.table("streaming_records").insert(data).execute()
+        
+        if result.data:
+            logger.info(f"Recorded stream: {data['wallet_address'][:8]}... -> {data['counterparty'][:8]}...")
+            return {"success": True, "message": "Stream recorded", "id": result.data[0].get("id")}
+        else:
+            return {"success": False, "message": "No data returned"}
+            
+    except Exception as e:
+        logger.error(f"Failed to record stream: {e}")
+        return {"success": False, "message": str(e)}
+
+
+def update_stream(tx_hash: str, status: str = "stopped", total_streamed: float = None) -> dict:
+    """
+    Update stream status in Supabase
+    
+    Args:
+        tx_hash: Transaction hash of the stream
+        status: "active", "stopped", or "updated"
+        total_streamed: Total G$ streamed (optional)
+    
+    Returns:
+        {"success": bool, "message": str}
+    """
+    try:
+        client = get_supabase_client()
+        if not client:
+            return {"success": False, "message": "Supabase not configured"}
+        
+        update_data = {
+            "status": status,
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+        if status == "stopped":
+            update_data["stopped_at"] = datetime.utcnow().isoformat()
+        
+        if total_streamed is not None:
+            update_data["total_streamed"] = total_streamed
+        
+        result = client.table("streaming_records").update(update_data).eq("tx_hash", tx_hash).execute()
+        
+        if result.data:
+            logger.info(f"Updated stream {tx_hash[:10]}... to status: {status}")
+            return {"success": True, "message": "Stream updated"}
+        else:
+            return {"success": False, "message": "Stream not found"}
+            
+    except Exception as e:
+        logger.error(f"Failed to update stream: {e}")
+        return {"success": False, "message": str(e)}
+
+
+def get_streaming_stats() -> dict:
+    """
+    Get aggregate streaming statistics
+    
+    Returns:
+        {
+            "total_incoming": float,
+            "total_outgoing": float,
+            "active_incoming_count": int,
+            "active_outgoing_count": int
+        }
+    """
+    try:
+        client = get_supabase_client()
+        if not client:
+            return {
+                "total_incoming": 0,
+                "total_outgoing": 0,
+                "active_incoming_count": 0,
+                "active_outgoing_count": 0,
+                "error": "Supabase not configured"
+            }
+        
+        # Get incoming stats
+        incoming_result = client.table("streaming_records").select(
+            "flow_rate_per_day"
+        ).eq("type", "incoming").eq("status", "active").execute()
+        
+        # Get outgoing stats
+        outgoing_result = client.table("streaming_records").select(
+            "flow_rate_per_day"
+        ).eq("type", "outgoing").eq("status", "active").execute()
+        
+        total_incoming = sum(r.get("flow_rate_per_day", 0) for r in incoming_result.data)
+        total_outgoing = sum(r.get("flow_rate_per_day", 0) for r in outgoing_result.data)
+        
+        return {
+            "total_incoming": total_incoming,
+            "total_outgoing": total_outgoing,
+            "active_incoming_count": len(incoming_result.data),
+            "active_outgoing_count": len(outgoing_result.data)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get streaming stats: {e}")
+        return {
+            "total_incoming": 0,
+            "total_outgoing": 0,
+            "active_incoming_count": 0,
+            "active_outgoing_count": 0,
+            "error": str(e)
+        }
+
+
+def get_wallet_streams(wallet_address: str) -> list:
+    """
+    Get all streams for a specific wallet
+    
+    Args:
+        wallet_address: Wallet address to query
+    
+    Returns:
+        List of stream records
+    """
+    try:
+        client = get_supabase_client()
+        if not client:
+            return []
+        
+        result = client.table("streaming_records").select("*").eq(
+            "wallet_address", wallet_address
+        ).order("created_at", desc=True).execute()
+        
+        return result.data if result.data else []
+        
+    except Exception as e:
+        logger.error(f"Failed to get wallet streams: {e}")
+        return []
