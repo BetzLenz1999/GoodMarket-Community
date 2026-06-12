@@ -5995,10 +5995,16 @@
             }
             
             // Pass the full txData object to signTransaction
+            // Include chainId for WalletConnect (convert snake_case chain_id to camelCase)
+            const chainIdHex = prepareData.data.chain_id 
+                ? '0x' + parseInt(prepareData.data.chain_id).toString(16) 
+                : '0xa4ec'; // Default to Celo
+            
             const txData = {
                 to: prepareData.data.to,
                 data: prepareData.data.data,
-                value: prepareData.data.value || '0x0'
+                value: prepareData.data.value || '0x0',
+                chainId: chainIdHex
             };
             const txHash = await signTransaction(txData);
             
@@ -6092,10 +6098,16 @@
             }
             
             // Pass the full txData object to signTransaction
+            // Include chainId for WalletConnect (convert snake_case chain_id to camelCase)
+            const chainIdHex = prepareData.data.chain_id 
+                ? '0x' + parseInt(prepareData.data.chain_id).toString(16) 
+                : '0xa4ec'; // Default to Celo
+            
             const txData = {
                 to: prepareData.data.to,
                 data: prepareData.data.data,
-                value: prepareData.data.value || '0x0'
+                value: prepareData.data.value || '0x0',
+                chainId: chainIdHex
             };
             const txHash = await signTransaction(txData);
             
@@ -6156,10 +6168,16 @@
             }
             
             // Pass the full txData object to signTransaction
+            // Include chainId for WalletConnect (convert snake_case chain_id to camelCase)
+            const chainIdHex = prepareData.data.chain_id 
+                ? '0x' + parseInt(prepareData.data.chain_id).toString(16) 
+                : '0xa4ec'; // Default to Celo
+            
             const txData = {
                 to: prepareData.data.to,
                 data: prepareData.data.data,
-                value: prepareData.data.value || '0x0'
+                value: prepareData.data.value || '0x0',
+                chainId: chainIdHex
             };
             const txHash = await signTransaction(txData);
             
