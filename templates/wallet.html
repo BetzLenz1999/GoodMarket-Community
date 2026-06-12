@@ -1640,7 +1640,7 @@
             <!-- Incoming Stream Status -->
             <div style="margin-bottom:1rem;">
                 <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">📥 Incoming Stream</div>
-                <div id="incomingStreamCard" style="background:rgba(0,230,118,0.06);border:1px solid rgba(0,230,118,0.15);border-radius:12px;padding:0.85rem;cursor:pointer;transition:all 0.2s;" onclick="fillFromIncomingStream()">
+                <div style="background:rgba(0,230,118,0.06);border:1px solid rgba(0,230,118,0.15);border-radius:12px;padding:0.85rem;">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem;">
                         <span style="color:var(--text-dim);font-size:0.85rem;">Status</span>
                         <span id="incomingStreamBadge" style="padding:0.2rem 0.6rem;border-radius:999px;font-size:0.75rem;font-weight:600;background:rgba(255,255,255,0.08);color:var(--text-dim);">No incoming stream</span>
@@ -1654,7 +1654,6 @@
                         <span id="incomingStreamFrom" style="color:#fff;font-family:monospace;font-size:0.8rem;">—</span>
                     </div>
                 </div>
-                <div id="incomingStreamHint" style="font-size:0.7rem;color:var(--text-muted);margin-top:0.4rem;text-align:center;opacity:0;">Click to fill recipient</div>
             </div>
 
             <!-- Outgoing Stream Form -->
@@ -5592,8 +5591,6 @@
         const listEl = document.getElementById('streamHistoryList');
         const emptyEl = document.getElementById('streamHistoryEmpty');
         
-        console.log('[StreamModal] renderStreamHistory called, history length:', streamHistory.length);
-        
         if (!listEl) return;
         
         if (streamHistory.length === 0) {
@@ -5603,8 +5600,6 @@
         }
         
         if (emptyEl) emptyEl.style.display = 'none';
-        
-        console.log('[StreamModal] Rendering', streamHistory.length, 'history items');
         
         const html = streamHistory.map((item, idx) => {
             const shortReceiver = item.receiver ? item.receiver.slice(0, 6) + '...' + item.receiver.slice(-4) : '—';
@@ -5786,20 +5781,14 @@
     }
 
     // Load incoming stream info
-    let incomingStreamSender = null; // Store incoming stream sender
-    
     async function loadIncomingStreamInfo() {
         try {
-            console.log('[StreamModal] Fetching stream summary for:', WALLET);
             const res = await fetch(`/api/p2p/stream/summary?wallet=${WALLET}`);
             const data = await res.json();
-            
-            console.log('[StreamModal] Stream summary response:', data);
             
             const badge = document.getElementById('incomingStreamBadge');
             const rate = document.getElementById('incomingStreamRate');
             const from = document.getElementById('incomingStreamFrom');
-            const hint = document.getElementById('incomingStreamHint');
             
             if (data.success && data.net_flow_rate > 0) {
                 // Convert to daily rate
@@ -5811,10 +5800,6 @@
                 }
                 if (rate) rate.textContent = `${dailyRate} G$/day`;
                 if (from) from.textContent = 'Someone';
-                if (hint) hint.style.opacity = '1';
-                
-                // Store incoming stream sender (would need to fetch from API)
-                incomingStreamSender = null; // TODO: Get actual sender from API
             } else {
                 if (badge) {
                     badge.textContent = 'No incoming stream';
@@ -5823,18 +5808,10 @@
                 }
                 if (rate) rate.textContent = '— G$/day';
                 if (from) from.textContent = '—';
-                if (hint) hint.style.opacity = '0';
             }
         } catch (err) {
             console.error('Failed to load incoming stream info:', err);
         }
-    }
-    
-    // Fill receiver from incoming stream (placeholder for future implementation)
-    function fillFromIncomingStream() {
-        // This would need the actual sender address from the API
-        console.log('[StreamModal] fillFromIncomingStream called');
-        // For now, just log - actual sender needs to come from stream summary API
     }
 
     // Get provider for signing (Injected or WalletConnect)
@@ -6276,12 +6253,7 @@
     // Override openModal to load stream info when stream modal opens
     const _originalOpenModal = window.openModal;
     window.openModal = function(modalId) {
-        console.log('[StreamModal] openModal called for:', modalId);
-        
         if (modalId === 'streamModal') {
-            console.log('[StreamModal] Loading stream data...');
-            
-            // Load stream data
             loadStreamConstants();
             loadIncomingStreamInfo();
             loadStreamHistory();
@@ -6290,11 +6262,6 @@
             setTimeout(function() {
                 const receiverInput = document.getElementById('streamReceiver');
                 const amountInput = document.getElementById('streamAmount');
-                
-                console.log('[StreamModal] Inputs found:', {
-                    receiver: !!receiverInput,
-                    amount: !!amountInput
-                });
                 
                 if (receiverInput) {
                     receiverInput.removeAttribute('readonly');
@@ -6309,11 +6276,7 @@
                     amountInput.style.pointerEvents = 'auto';
                     amountInput.style.cursor = 'text';
                 }
-                
-                // Debug: log streamHistory
-                console.log('[StreamModal] streamHistory:', streamHistory);
-                console.log('[StreamModal] streamConstants:', streamConstants);
-            }, 200);
+            }, 100);
         }
         return _originalOpenModal(modalId);
     };
