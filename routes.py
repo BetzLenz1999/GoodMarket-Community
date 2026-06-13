@@ -10645,6 +10645,35 @@ def p2p_stream_summary():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@routes.route("/api/p2p/stream/incoming", methods=["GET"])
+def p2p_stream_incoming():
+    """
+    Get incoming streams to a wallet using Superfluid subgraph.
+    Returns sender addresses and stream info.
+    
+    Query params:
+    - wallet: Wallet address to check
+    """
+    try:
+        wallet = request.args.get("wallet", "").strip()
+        
+        if not wallet:
+            # Try session
+            wallet = session.get("wallet")
+        
+        if not wallet:
+            return jsonify({"success": False, "error": "Wallet address required"}), 400
+        
+        from blockchain import get_incoming_streams_subgraph
+        
+        result = get_incoming_streams_subgraph(wallet)
+        
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"p2p_stream_incoming error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @routes.route("/api/p2p/buffer/calculate", methods=["GET"])
 def p2p_buffer_calculate():
     """
