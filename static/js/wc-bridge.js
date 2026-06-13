@@ -940,36 +940,41 @@
         function _doWcRequest(client, method, p) {
             // Determine the target chain for this specific request.
             //
-            // For eth_sendTransaction the caller may embed a `chainId` field
-            // inside the tx-params object (index 0 of the params array). We
-            // honour that field so cross-chain pages (e.g. xdc_wallet.html
-            // which sets chainId:"0x32" / 50) route the request to the correct
-            // EIP-155 chain instead of always using the session's default chain
-            // (_config.chainId is set at configure() time and defaults to Celo).
+            // AUTOMATIC DETECTION based on request type:
             //
-            // For other methods (personal_sign, etc.), we also check if the first
-            // param is an object with a chainId field, allowing automatic network
-            // detection based on the caller's context.
+            // 1. wallet_switchEthereumChain / wallet_addEthereumChain:
+            //    These methods contain the target chain in params[0].chainId.
+            //    We MUST use this chain to route the request correctly, regardless
+            //    of _config.chainId. Otherwise, switching to XDC would route to Celo.
             //
-            // Without this, a WalletConnect session established on Celo would
-            // send an XDC eth_sendTransaction as "eip155:42220" — causing the
-            // wallet app to label the prompt "Celo" and execute the call on the
-            // wrong network.
+            // 2. eth_sendTransaction:
+            //    If the caller provides chainId in tx params, we use it.
+            //    Otherwise, use _config.chainId.
+            //
+            // 3. Other methods (personal_sign, eth_chainId, etc.):
+            //    Use _config.chainId (defaults to Celo).
+            //
+            // This approach mirrors injected wallet behavior where network
+            // operations are routed based on the actual network being targeted.
             var targetChainId = Number(_config.chainId || DEFAULT_CHAIN_ID);
             
-            // Check for chainId in various parameter locations
-            if (Array.isArray(p) && p.length > 0) {
-                // For eth_sendTransaction: chainId is in the tx params object
-                if (method === "eth_sendTransaction" && p[0] && typeof p[0] === "object" && p[0].chainId) {
-                    var txChain = parseInt(String(p[0].chainId), 16);
-                    if (!isNaN(txChain) && txChain > 0) targetChainId = txChain;
-                }
-                // For personal_sign and other methods: check if first param is an
-                // object with chainId (some callers embed it there for network routing)
-                else if (p[0] && typeof p[0] === "object" && p[0].chainId) {
-                    var signChain = parseInt(String(p[0].chainId), 16);
-                    if (!isNaN(signChain) && signChain > 0) targetChainId = signChain;
-                }
+            // For wallet_switchEthereumChain and wallet_addEthereumChain,
+            // extract chainId from params - this is the network being switched to
+            if ((method === "wallet_switchEthereumChain" || method === "wallet_addEthereumChain") &&
+                Array.isArray(p) && p.length > 0 && p[0] && p[0].chainId) {
+                var switchChain = parseInt(String(p[0].chainId), 16);
+                if (!isNaN(switchChain) && switchChain > 0) targetChainId = switchChain;
+            }
+            // For eth_sendTransaction: chainId is in the tx params object
+            else if (method === "eth_sendTransaction" && Array.isArray(p) && p.length > 0 &&
+                p[0] && typeof p[0] === "object" && p[0].chainId) {
+                var txChain = parseInt(String(p[0].chainId), 16);
+                if (!isNaN(txChain) && txChain > 0) targetChainId = txChain;
+            }
+            // For other methods: check if first param is an object with chainId
+            else if (Array.isArray(p) && p.length > 0 && p[0] && typeof p[0] === "object" && p[0].chainId) {
+                var signChain = parseInt(String(p[0].chainId), 16);
+                if (!isNaN(signChain) && signChain > 0) targetChainId = signChain;
             }
 
             // Debug logging for chain selection
