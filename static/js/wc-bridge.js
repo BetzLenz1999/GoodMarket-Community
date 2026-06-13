@@ -385,9 +385,31 @@
                                     }
                                 } catch (_) { /* optional — ignore */ }
 
-                                _state.browserSession = parsedSession;
-                                _state.address = storedAddress;
-                                try { _config.log("[wc-bridge] Restored WC session from localStorage backup:", storedTopic); } catch (_) {}
+                                // Verify the relay subscription actually works by checking
+                                // if the topic is registered in the client's session store.
+                                // Without this verification, we mark the session as restored
+                                // but it will fail on the first actual request.
+                                var sessionsAfterRestore = client.getActiveSessions();
+                                var sessionRestored = sessionsAfterRestore && 
+                                    Object.keys(sessionsAfterRestore).length > 0 &&
+                                    sessionsAfterRestore[parsedSession.topic];
+
+                                if (sessionRestored) {
+                                    _state.browserSession = parsedSession;
+                                    _state.address = storedAddress;
+                                    try { _config.log("[wc-bridge] Restored WC session from localStorage backup:", storedTopic); } catch (_) {}
+                                } else {
+                                    // Session couldn't be restored — the relay subscription
+                                    // likely failed. Clear localStorage so next login starts fresh.
+                                    try {
+                                        localStorage.removeItem('wc_session_topic');
+                                        localStorage.removeItem('wc_session_address');
+                                        localStorage.removeItem('wc_session_data');
+                                        localStorage.removeItem('wc_session_timestamp');
+                                        localStorage.removeItem('wc_session_chains');
+                                    } catch (_) {}
+                                    try { _config.log("[wc-bridge] localStorage session restoration failed — clearing stale data"); } catch (_) {}
+                                }
                             }
                         } catch (parseErr) { /* ignore */ }
                     }
@@ -398,6 +420,7 @@
                             localStorage.removeItem('wc_session_address');
                             localStorage.removeItem('wc_session_data');
                             localStorage.removeItem('wc_session_timestamp');
+                            localStorage.removeItem('wc_session_chains');
                         } catch (_) {}
                     }
                 } catch (lsErr) { /* ignore — Safari private mode etc. */ }
@@ -903,6 +926,7 @@
                                     localStorage.removeItem('wc_session_address');
                                     localStorage.removeItem('wc_session_data');
                                     localStorage.removeItem('wc_session_timestamp');
+                                    localStorage.removeItem('wc_session_chains');
                                 } catch (_) {}
                                 throw _wcRpcError(
                                     "Your WalletConnect session has expired. Please log out and log in again to reconnect your wallet.",
@@ -922,6 +946,7 @@
                         localStorage.removeItem('wc_session_address');
                         localStorage.removeItem('wc_session_data');
                         localStorage.removeItem('wc_session_timestamp');
+                        localStorage.removeItem('wc_session_chains');
                     } catch (_) {}
                     throw _wcRpcError("No active WalletConnect session. Please log out and log in again to reconnect your wallet.", null, -32603);
                 });
@@ -933,21 +958,39 @@
             // Determine the target chain for this specific request.
             //
             // For eth_sendTransaction the caller may embed a `chainId` field
-            // inside the tx-params object (index 0 of the params array).  We
+            // inside the tx-params object (index 0 of the params array). We
             // honour that field so cross-chain pages (e.g. xdc_wallet.html
             // which sets chainId:"0x32" / 50) route the request to the correct
             // EIP-155 chain instead of always using the session's default chain
             // (_config.chainId is set at configure() time and defaults to Celo).
+            //
+            // For other methods (personal_sign, etc.), we also check if the first
+            // param is an object with a chainId field, allowing automatic network
+            // detection based on the caller's context.
             //
             // Without this, a WalletConnect session established on Celo would
             // send an XDC eth_sendTransaction as "eip155:42220" — causing the
             // wallet app to label the prompt "Celo" and execute the call on the
             // wrong network.
             var targetChainId = Number(_config.chainId || DEFAULT_CHAIN_ID);
-            if (method === "eth_sendTransaction" && Array.isArray(p) && p[0] && p[0].chainId) {
-                var txChain = parseInt(String(p[0].chainId), 16);
-                if (!isNaN(txChain) && txChain > 0) targetChainId = txChain;
+            
+            // Check for chainId in various parameter locations
+            if (Array.isArray(p) && p.length > 0) {
+                // For eth_sendTransaction: chainId is in the tx params object
+                if (method === "eth_sendTransaction" && p[0] && typeof p[0] === "object" && p[0].chainId) {
+                    var txChain = parseInt(String(p[0].chainId), 16);
+                    if (!isNaN(txChain) && txChain > 0) targetChainId = txChain;
+                }
+                // For personal_sign and other methods: check if first param is an
+                // object with chainId (some callers embed it there for network routing)
+                else if (p[0] && typeof p[0] === "object" && p[0].chainId) {
+                    var signChain = parseInt(String(p[0].chainId), 16);
+                    if (!isNaN(signChain) && signChain > 0) targetChainId = signChain;
+                }
             }
+
+            // Debug logging for chain selection
+            try { _config.log("[wc-bridge] Request: method=" + method + " targetChainId=" + targetChainId); } catch (_) {}
 
             // Wrap the request with a timeout to prevent the wallet
             // (MetaMask Mobile in particular) from hanging

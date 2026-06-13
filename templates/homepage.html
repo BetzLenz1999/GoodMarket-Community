@@ -3478,8 +3478,24 @@
                     localStorage.setItem('wc_session_timestamp', Date.now().toString());
                     // Store the full session object for restoration
                     localStorage.setItem('wc_session_data', JSON.stringify(session));
+                    
+                    // Also store the approved chains separately for easy access
+                    // by pages that need to know which chains are supported
+                    const approvedChains = [];
+                    const ns = session.namespaces || {};
+                    Object.keys(ns).forEach(key => {
+                        const chainData = ns[key];
+                        if (chainData && chainData.chains) {
+                            approvedChains.push(...chainData.chains);
+                        }
+                    });
+                    if (approvedChains.length > 0) {
+                        localStorage.setItem('wc_session_chains', JSON.stringify(approvedChains));
+                    }
+                    
                     console.log('[homepage] Stored WC session:', session.topic, address);
                     console.log('[homepage] Full session stored in localStorage');
+                    console.log('[homepage] Approved chains:', approvedChains);
                 } catch (e) {
                     console.warn('[homepage] Could not store WC session:', e);
                 }
