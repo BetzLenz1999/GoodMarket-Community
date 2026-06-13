@@ -2642,6 +2642,75 @@ def get_user_stream_summary(g_dollar_address: str, wallet_address: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
+def get_incoming_streams(g_dollar_address: str, receiver: str, known_senders: list = None) -> dict:
+    """
+    Get all incoming streams to a wallet from known senders.
+    
+    Args:
+        g_dollar_address: G$ token address
+        receiver: Receiver wallet address
+        known_senders: List of known sender addresses to check (optional)
+                      If not provided, returns empty list
+    
+    Returns:
+        Dict with list of incoming streams
+    """
+    try:
+        if not known_senders:
+            return {
+                "success": True,
+                "receiver": receiver,
+                "incoming_streams": [],
+                "count": 0
+            }
+        
+        w3 = _get_w3()
+        contract = w3.eth.contract(
+            address=Web3.to_checksum_address(SUPERFLUID_CFAV1_FORWARDER),
+            abi=SUPERFLUID_CFA_ABI
+        )
+        
+        incoming_streams = []
+        
+        for sender in known_senders:
+            try:
+                sender_checksum = Web3.to_checksum_address(sender)
+                info = contract.functions.getFlowInfo(
+                    Web3.to_checksum_address(g_dollar_address),
+                    sender_checksum,
+                    Web3.to_checksum_address(receiver)
+                ).call()
+                
+                last_updated, flow_rate, deposit, owed_deposit = info
+                
+                # Only include if there's an active stream (flow_rate != 0)
+                if flow_rate != 0:
+                    flow_rate_gps = flow_rate / (10 ** 18)
+                    incoming_streams.append({
+                        "sender": sender_checksum,
+                        "flow_rate": flow_rate,
+                        "flow_rate_gps": float(flow_rate_gps),
+                        "flow_rate_per_day": float(flow_rate_gps * 86400),
+                        "flow_rate_per_month": float(flow_rate_gps * 2592000),
+                        "deposit": deposit / (10 ** 18),
+                        "last_updated": last_updated,
+                        "status": "active"
+                    })
+            except Exception as sender_err:
+                logger.warning(f"Error checking stream from {sender[:10]}...: {sender_err}")
+                continue
+        
+        return {
+            "success": True,
+            "receiver": receiver,
+            "incoming_streams": incoming_streams,
+            "count": len(incoming_streams)
+        }
+    except Exception as e:
+        logger.error(f"get_incoming_streams error: {e}")
+        return {"success": False, "error": str(e)}
+
+
 def get_active_g_dollar_address() -> str:
     """Return the active G$ address based on environment."""
     if os.getenv('USE_DEV_G_DOLLAR', 'false').lower() == 'true':

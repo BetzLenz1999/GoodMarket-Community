@@ -1739,12 +1739,31 @@
 
             <div id="streamResult" style="margin-top:0.75rem;text-align:center;font-size:0.85rem;display:none;"></div>
 
-            <!-- Stream History -->
+            <!-- Stream History with Tabs -->
             <div style="margin-top:1rem;padding-top:0.85rem;border-top:1px solid rgba(255,255,255,0.07);">
                 <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">📜 Stream History</div>
-                <div id="streamHistoryList" style="max-height:200px;overflow-y:auto;">
-                    <div id="streamHistoryEmpty" style="text-align:center;color:var(--text-muted);font-size:0.8rem;padding:1rem;">
-                        No stream history yet
+                
+                <!-- Tabs -->
+                <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;">
+                    <button id="outgoingTab" onclick="switchStreamTab('outgoing')" style="flex:1;padding:0.4rem;background:rgba(6,182,212,0.15);border:1px solid rgba(6,182,212,0.4);border-radius:6px;color:#06b6d4;font-size:0.75rem;font-weight:600;cursor:pointer;">📤 Outgoing</button>
+                    <button id="incomingTab" onclick="switchStreamTab('incoming')" style="flex:1;padding:0.4rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text-dim);font-size:0.75rem;font-weight:600;cursor:pointer;">📥 Incoming</button>
+                </div>
+                
+                <!-- Outgoing Stream History -->
+                <div id="outgoingHistorySection">
+                    <div id="streamHistoryList" style="max-height:200px;overflow-y:auto;">
+                        <div id="streamHistoryEmpty" style="text-align:center;color:var(--text-muted);font-size:0.8rem;padding:1rem;">
+                            No stream history yet
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Incoming Stream History -->
+                <div id="incomingHistorySection" style="display:none;">
+                    <div id="incomingStreamHistoryList" style="max-height:200px;overflow-y:auto;">
+                        <div id="incomingStreamHistoryEmpty" style="text-align:center;color:var(--text-muted);font-size:0.8rem;padding:1rem;">
+                            No incoming streams yet
+                        </div>
                     </div>
                 </div>
             </div>
@@ -5413,10 +5432,13 @@
     // Stream state
     let currentStreamInfo = null;
     let streamConstants = null;
-    let streamHistory = [];  // Local storage stream history
+    let streamHistory = [];  // Outgoing stream history (localStorage)
+    let incomingStreamHistory = [];  // Incoming stream history (localStorage)
 
     // LocalStorage keys
     const STREAM_HISTORY_KEY = 'goodmarket_stream_history';
+    const INCOMING_STREAM_HISTORY_KEY = 'goodmarket_incoming_stream_history';
+    const KNOWN_STREAM_COUNTERPARTIES_KEY = 'goodmarket_stream_counterparties';
     const MAX_HISTORY_ITEMS = 50;
 
     // Load stream history from localStorage
@@ -5453,7 +5475,124 @@
             streamHistory = streamHistory.slice(0, MAX_HISTORY_ITEMS);
         }
         saveStreamHistory();
+        // Also track counterparty for incoming stream checks
+        if (entry.receiver) {
+            addKnownCounterparty(entry.receiver);
+        }
         renderStreamHistory();
+    }
+
+    // Load incoming stream history from localStorage
+    function loadIncomingStreamHistory() {
+        try {
+            const stored = localStorage.getItem(INCOMING_STREAM_HISTORY_KEY);
+            if (stored) {
+                incomingStreamHistory = JSON.parse(stored);
+            }
+        } catch (err) {
+            incomingStreamHistory = [];
+        }
+        renderIncomingStreamHistory();
+    }
+
+    // Save incoming stream history to localStorage
+    function saveIncomingStreamHistory() {
+        try {
+            localStorage.setItem(INCOMING_STREAM_HISTORY_KEY, JSON.stringify(incomingStreamHistory));
+        } catch (err) {
+            console.error('Failed to save incoming stream history:', err);
+        }
+    }
+
+    // Add to incoming stream history
+    function addToIncomingStreamHistory(entry) {
+        // Check if already exists (by sender address)
+        const existingIndex = incomingStreamHistory.findIndex(s => s.sender === entry.sender);
+        if (existingIndex >= 0) {
+            // Update existing
+            incomingStreamHistory[existingIndex] = {
+                ...incomingStreamHistory[existingIndex],
+                ...entry,
+                updatedAt: Date.now()
+            };
+        } else {
+            // Add new
+            incomingStreamHistory.unshift({
+                ...entry,
+                timestamp: Date.now(),
+                startTime: entry.status === 'active' ? Date.now() : entry.startTime
+            });
+        }
+        // Keep only last MAX_HISTORY_ITEMS
+        if (incomingStreamHistory.length > MAX_HISTORY_ITEMS) {
+            incomingStreamHistory = incomingStreamHistory.slice(0, MAX_HISTORY_ITEMS);
+        }
+        saveIncomingStreamHistory();
+        renderIncomingStreamHistory();
+    }
+
+    // Get known counterparties (people user has streamed to/from)
+    function getKnownCounterparties() {
+        try {
+            const stored = localStorage.getItem(KNOWN_STREAM_COUNTERPARTIES_KEY);
+            if (stored) {
+                return JSON.parse(stored);
+            }
+        } catch (err) {}
+        return [];
+    }
+
+    // Add known counterparty
+    function addKnownCounterparty(address) {
+        try {
+            let counterparties = getKnownCounterparties();
+            if (!counterparties.includes(address.toLowerCase())) {
+                counterparties.push(address.toLowerCase());
+                localStorage.setItem(KNOWN_STREAM_COUNTERPARTIES_KEY, JSON.stringify(counterparties));
+            }
+        } catch (err) {
+            console.error('Failed to save counterparty:', err);
+        }
+    }
+
+    // Check for incoming streams from known counterparties
+    async function checkIncomingStreams() {
+        const counterparties = getKnownCounterparties();
+        if (counterparties.length === 0) {
+            console.log('No known counterparties to check for incoming streams');
+            return;
+        }
+
+        try {
+            const sendersParam = counterparties.join(',');
+            const res = await fetch(`/api/p2p/stream/incoming?wallet=${WALLET}&senders=${sendersParam}`);
+            const data = await res.json();
+
+            if (data.success && data.incoming_streams) {
+                // Update incoming stream history with active streams
+                for (const stream of data.incoming_streams) {
+                    addToIncomingStreamHistory({
+                        sender: stream.sender,
+                        rate: stream.flow_rate_per_day,
+                        status: 'active',
+                        txHash: null  // Don't have txHash for incoming
+                    });
+                }
+
+                // Mark streams as stopped if no longer in active list
+                const activeSenders = data.incoming_streams.map(s => s.sender.toLowerCase());
+                for (let i = 0; i < incomingStreamHistory.length; i++) {
+                    if (incomingStreamHistory[i].status === 'active' && 
+                        !activeSenders.includes(incomingStreamHistory[i].sender.toLowerCase())) {
+                        incomingStreamHistory[i].status = 'stopped';
+                        incomingStreamHistory[i].stoppedAt = Date.now();
+                    }
+                }
+                saveIncomingStreamHistory();
+            }
+        } catch (err) {
+            console.error('Failed to check incoming streams:', err);
+        }
     }
 
     // Calculate streamed amount based on time and rate
@@ -5534,6 +5673,67 @@
         }
     }
 
+    // Render incoming stream history list
+    function renderIncomingStreamHistory() {
+        const listEl = document.getElementById('incomingStreamHistoryList');
+        const emptyEl = document.getElementById('incomingStreamHistoryEmpty');
+        
+        if (!listEl) return;
+        
+        if (incomingStreamHistory.length === 0) {
+            if (emptyEl) emptyEl.style.display = 'block';
+            listEl.innerHTML = '<div id="incomingStreamHistoryEmpty" style="text-align:center;color:var(--text-muted);font-size:0.8rem;padding:1rem;">No incoming streams yet</div>';
+            return;
+        }
+        
+        if (emptyEl) emptyEl.style.display = 'none';
+        
+        const html = incomingStreamHistory.map((item, idx) => {
+            const shortSender = item.sender ? item.sender.slice(0, 6) + '...' + item.sender.slice(-4) : '—';
+            const date = new Date(item.timestamp).toLocaleDateString();
+            
+            let isActuallyActive = item.status === 'active';
+            
+            let receivedAmount = '';
+            let statusColor = '#ff7070';
+            let statusText = 'STOPPED';
+            
+            if (isActuallyActive && item.rate > 0) {
+                const received = calculateStreamedAmount(item.rate, item.startTime || item.timestamp, true);
+                receivedAmount = `<div style="font-size:0.75rem;color:#00e676;margin-top:0.2rem;">⏱️ Received: ${received.toFixed(4)} G$</div>`;
+                statusColor = '#00e676';
+                statusText = 'ACTIVE';
+            } else if (item.totalReceived) {
+                receivedAmount = `<div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.2rem;">⏱️ Total: ${item.totalReceived.toFixed(4)} G$</div>`;
+                statusColor = '#ff7070';
+                statusText = 'STOPPED';
+            }
+            
+            return `
+                <div style="background:rgba(255,255,255,0.03);border:1px solid ${isActuallyActive ? 'rgba(0,230,118,0.2)' : 'rgba(255,255,255,0.06)'};border-radius:8px;padding:0.6rem;margin-bottom:0.5rem;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">
+                        <span style="font-size:0.75rem;color:${statusColor};font-weight:600;text-transform:uppercase;">● ${statusText}</span>
+                        <span style="font-size:0.7rem;color:var(--text-muted);">${date}</span>
+                    </div>
+                    <div style="font-size:0.8rem;color:#fff;margin-bottom:0.3rem;">
+                        📥 From: <span style="font-family:monospace;">${shortSender}</span>
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:0.3rem;">
+                        💰 Rate: ${item.rate || '—'} G$/day
+                    </div>
+                    ${receivedAmount}
+                </div>
+            `;
+        }).join('');
+        
+        listEl.innerHTML = html;
+        
+        // Update every second for active streams
+        if (incomingStreamHistory.some(h => h.status === 'active')) {
+            setTimeout(renderIncomingStreamHistory, 1000);
+        }
+    }
+
     // Load stream data from history
     function loadFromHistory(idx) {
         if (streamHistory[idx]) {
@@ -5551,6 +5751,34 @@
         document.getElementById('streamReceiver').value = receiver;
         validateStreamReceiver();
         await handleStopStream();
+    }
+
+    // Switch between outgoing and incoming stream history tabs
+    function switchStreamTab(tab) {
+        const outgoingTab = document.getElementById('outgoingTab');
+        const incomingTab = document.getElementById('incomingTab');
+        const outgoingSection = document.getElementById('outgoingHistorySection');
+        const incomingSection = document.getElementById('incomingHistorySection');
+        
+        if (tab === 'outgoing') {
+            outgoingTab.style.background = 'rgba(6,182,212,0.15)';
+            outgoingTab.style.borderColor = 'rgba(6,182,212,0.4)';
+            outgoingTab.style.color = '#06b6d4';
+            incomingTab.style.background = 'rgba(255,255,255,0.05)';
+            incomingTab.style.borderColor = 'rgba(255,255,255,0.1)';
+            incomingTab.style.color = 'var(--text-dim)';
+            outgoingSection.style.display = 'block';
+            incomingSection.style.display = 'none';
+        } else {
+            incomingTab.style.background = 'rgba(0,230,118,0.15)';
+            incomingTab.style.borderColor = 'rgba(0,230,118,0.4)';
+            incomingTab.style.color = '#00e676';
+            outgoingTab.style.background = 'rgba(255,255,255,0.05)';
+            outgoingTab.style.borderColor = 'rgba(255,255,255,0.1)';
+            outgoingTab.style.color = 'var(--text-dim)';
+            incomingSection.style.display = 'block';
+            outgoingSection.style.display = 'none';
+        }
     }
 
     // Load stream constants on modal open
@@ -6065,6 +6293,8 @@
             loadStreamConstants();
             loadIncomingStreamInfo();
             loadStreamHistory();
+            loadIncomingStreamHistory();
+            checkIncomingStreams(); // Check for incoming streams from known counterparties
             
             // Ensure inputs are always editable
             setTimeout(function() {

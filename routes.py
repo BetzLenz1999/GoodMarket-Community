@@ -10645,6 +10645,47 @@ def p2p_stream_summary():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@routes.route("/api/p2p/stream/incoming", methods=["GET"])
+def p2p_stream_incoming():
+    """
+    Get incoming streams to a wallet from known senders.
+    
+    Query params:
+    - wallet: Receiver wallet address
+    - senders: Comma-separated list of sender addresses to check (optional)
+               If not provided, will try to get from localStorage history on frontend
+    """
+    try:
+        wallet = request.args.get("wallet", "").strip()
+        
+        if not wallet:
+            # Try session
+            wallet = session.get("wallet")
+        
+        if not wallet:
+            return jsonify({"success": False, "error": "Wallet address required"}), 400
+        
+        # Get known senders from query param (comma-separated)
+        senders_param = request.args.get("senders", "").strip()
+        known_senders = []
+        if senders_param:
+            known_senders = [s.strip() for s in senders_param.split(",") if s.strip()]
+        
+        from blockchain import get_incoming_streams, get_active_g_dollar_address
+        
+        g_dollar_address = get_active_g_dollar_address()
+        incoming = get_incoming_streams(
+            g_dollar_address=g_dollar_address,
+            receiver=wallet,
+            known_senders=known_senders if known_senders else None
+        )
+        
+        return jsonify(incoming)
+    except Exception as e:
+        logger.error(f"p2p_stream_incoming error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @routes.route("/api/p2p/buffer/calculate", methods=["GET"])
 def p2p_buffer_calculate():
     """
