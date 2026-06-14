@@ -7,10 +7,6 @@
   "scripts": {},
   "dependencies": {
     "@privy-io/react-auth": "^3.29.2",
-    "@turnkey/canvas": "^0.2.0",
-    "@turnkey/http": "^2.6.0",
-    "@turnkey/iframe-stamper": "^2.0.0",
-    "@turnkey/crypto": "^0.15.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "viem": "^2.52.2"
