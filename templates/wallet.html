@@ -4345,6 +4345,8 @@
             // inside the same request). Mirror of Celo behavior.
             if (gasData.gas_ready) {
                 setClaimGasUiState('gas_ready');
+                // Wait for wallet RPC to sync with on-chain balance
+                await new Promise(r => setTimeout(r, 3000));
                 return {
                     gasReady: true,
                     toppedUp: !!gasData.topped_up,
@@ -4391,6 +4393,8 @@
             const postFaucet = await pollForXdcGasArrival(150000);
             if (postFaucet && postFaucet.gasReady) {
                 setClaimGasUiState('gas_ready');
+                // Wait for wallet RPC to sync with on-chain balance before proceeding
+                await new Promise(r => setTimeout(r, 3000));
                 return { gasReady: true, toppedUp: true, source: gasData.topup_source || 'faucet' };
             }
             throw new Error((postFaucet && postFaucet.error) || 'XDC gas top-up did not arrive in time. Please retry shortly.');
