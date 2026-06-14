@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, render_template, session, redirect
 from blockchain import has_recent_ubi_claim, is_identity_verified, check_ubi_entitlement
 from analytics_service import analytics
 from routes import routes
+from turnkey_routes import turnkey_routes
 from learn_and_earn import init_learn_and_earn, init_learn_earn_stream_scheduler
 from web3 import Web3
 from datetime import datetime # Import datetime for session timestamp
@@ -518,6 +519,10 @@ if not initialize_blockchain():
 # This must be before any catch-all routes
 app.register_blueprint(routes)
 logger.info("✅ Routes blueprint registered with API endpoints")
+
+# Register TurnKey routes for email OTP login and wallet management
+app.register_blueprint(turnkey_routes)
+logger.info("✅ TurnKey routes registered for email login")
 
 
 # Context processor: inject feature visibility into all templates (server-side, no flicker)
