@@ -2115,15 +2115,6 @@
                     <span class="option-arrow">→</span>
                 </button>
 
-                <button class="wallet-option-card" id="turnkeyEmailBtn" onclick="showTurnkeyEmailLogin()" style="border-color: rgba(139, 92, 246, 0.5);">
-                    <div class="option-icon">📧</div>
-                    <div class="option-text">
-                        <div class="option-title">Email Login</div>
-                        <p class="option-desc">Login with email OTP — your keys, your wallet</p>
-                    </div>
-                    <span class="option-arrow">→</span>
-                </button>
-
                 <button class="wallet-option-card wc-option" onclick="showWalletConnectOptions()">
                     <div class="option-icon">🔗</div>
                     <div class="option-text">
@@ -2134,44 +2125,6 @@
                 </button>
 
                 <div id="privyStatus" class="status-message"></div>
-            </div>
-
-            <!-- Step 1B: TurnKey Email Login Form -->
-            <div class="wallet-form" id="turnkeyEmailForm" style="display:none;">
-                <button class="back-btn" onclick="showWalletOptions()">← Back to login options</button>
-                
-                <div id="turnkeyEmailStep">
-                    <div class="wallet-input-group">
-                        <label class="wallet-label" for="turnkeyEmail">Email Address</label>
-                        <input type="email" id="turnkeyEmail" class="wallet-input" placeholder="your@email.com" autocomplete="email" />
-                        <p style="font-size:0.72rem;color:#6b7280;margin-top:0.35rem;line-height:1.45;">We'll send a verification code to this email.</p>
-                    </div>
-                    
-                    <div id="turnkeyReferralWrap" class="wallet-input-group" style="margin-top:0.85rem;">
-                        <label class="wallet-label" for="turnkeyReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
-                        <input type="text" id="turnkeyReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" autocomplete="off" />
-                    </div>
-                    
-                    <button class="wallet-submit-btn" id="turnkeySendOtpBtn" onclick="sendTurnkeyOtp()" style="margin-top:1rem;">
-                        Send Verification Code
-                    </button>
-                </div>
-                
-                <div id="turnkeyOtpStep" style="display:none;">
-                    <div class="wallet-input-group">
-                        <label class="wallet-label" for="turnkeyOtpCode">Enter Verification Code</label>
-                        <input type="text" id="turnkeyOtpCode" class="wallet-input" placeholder="123456" maxlength="9" autocomplete="one-time-code" style="letter-spacing:0.3em;font-size:1.4rem;text-align:center;" />
-                        <p style="font-size:0.72rem;color:#6b7280;margin-top:0.35rem;line-height:1.45;">Check your email for the 6-digit code.</p>
-                    </div>
-                    
-                    <button class="wallet-submit-btn" id="turnkeyVerifyBtn" onclick="verifyTurnkeyOtp()" style="margin-top:1rem;">
-                        Verify & Login
-                    </button>
-                    
-                    <button class="back-btn" onclick="backToTurnkeyEmailStep()" style="margin-top:0.75rem;">← Use different email</button>
-                </div>
-                
-                <div id="turnkeyStatus" class="status-message"></div>
             </div>
 
             <!-- Step 2A: WalletConnect / injected -->
@@ -2295,10 +2248,9 @@
 
         function showWalletOptions() {
             document.getElementById('walletOptions').style.display = 'flex';
-            ['walletConnectOptions', 'turnkeyEmailForm'].forEach(id => {
+            ['walletConnectOptions'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('visible');
-                if (el) el.style.display = 'none';
             });
             detectInjectedWallet();
         }
@@ -2314,191 +2266,6 @@
             const qrWrap = document.getElementById('wcQrWrap');
             if (qrWrap) qrWrap.style.display = 'none';
             detectInjectedWallet();
-        }
-
-        // ── TurnKey Email Login ───────────────────────────────────────────────
-        let _turnkeyEmail = '';
-        let _turnkeyPublicKey = '';
-        let _turnkeyActivityId = '';
-
-        function showTurnkeyEmailLogin() {
-            document.getElementById('walletOptions').style.display = 'none';
-            const f = document.getElementById('turnkeyEmailForm');
-            if (f) {
-                f.style.display = 'block';
-                f.classList.add('visible');
-            }
-            // Reset to email step
-            document.getElementById('turnkeyEmailStep').style.display = 'block';
-            document.getElementById('turnkeyOtpStep').style.display = 'none';
-            document.getElementById('turnkeyStatus').className = 'status-message';
-            document.getElementById('turnkeyStatus').textContent = '';
-        }
-
-        function backToTurnkeyEmailStep() {
-            document.getElementById('turnkeyEmailStep').style.display = 'block';
-            document.getElementById('turnkeyOtpStep').style.display = 'none';
-            document.getElementById('turnkeyStatus').className = 'status-message';
-            document.getElementById('turnkeyStatus').textContent = '';
-        }
-
-        async function sendTurnkeyOtp() {
-            const email = document.getElementById('turnkeyEmail').value.trim().toLowerCase();
-            const referralCode = document.getElementById('turnkeyReferralCode').value.trim();
-            
-            if (!email || !email.includes('@')) {
-                showTurnkeyStatus('Please enter a valid email address', 'error');
-                return;
-            }
-            
-            const btn = document.getElementById('turnkeySendOtpBtn');
-            btn.disabled = true;
-            btn.textContent = 'Sending...';
-            
-            try {
-                // Generate a keypair for this user
-                const keypair = await generateTurnkeyKeyPair();
-                _turnkeyPublicKey = keypair.publicKey;
-                _turnkeyEmail = email;
-                
-                // Store referral code in sessionStorage for later use
-                if (referralCode) {
-                    sessionStorage.setItem('pending_referral_code', referralCode);
-                }
-                
-                const response = await fetch('/api/turnkey/auth/init-otp', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({email: email})
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    _turnkeyActivityId = data.activityId;
-                    showTurnkeyStatus('✅ Code sent! Check your email.', 'success');
-                    // Show OTP step
-                    document.getElementById('turnkeyEmailStep').style.display = 'none';
-                    document.getElementById('turnkeyOtpStep').style.display = 'block';
-                    document.getElementById('turnkeyOtpCode').focus();
-                } else {
-                    showTurnkeyStatus('❌ ' + (data.error || 'Failed to send code'), 'error');
-                }
-            } catch (err) {
-                showTurnkeyStatus('❌ ' + (err.message || 'Network error'), 'error');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Send Verification Code';
-            }
-        }
-
-        async function verifyTurnkeyOtp() {
-            const otpCode = document.getElementById('turnkeyOtpCode').value.trim();
-            
-            if (!otpCode || otpCode.length < 6) {
-                showTurnkeyStatus('Please enter the 6-digit code from your email', 'error');
-                return;
-            }
-            
-            const btn = document.getElementById('turnkeyVerifyBtn');
-            btn.disabled = true;
-            btn.textContent = 'Verifying...';
-            
-            try {
-                // Step 1: Verify OTP and get verification token
-                const verifyRes = await fetch('/api/turnkey/auth/verify-otp', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        email: _turnkeyEmail,
-                        otpCode: otpCode,
-                        publicKey: _turnkeyPublicKey
-                    })
-                });
-                
-                const verifyData = await verifyRes.json();
-                
-                if (!verifyData.success) {
-                    showTurnkeyStatus('❌ ' + (verifyData.error || 'Invalid code'), 'error');
-                    return;
-                }
-                
-                showTurnkeyStatus('⏳ Creating your wallet...', 'info');
-                
-                // Step 2: Complete login and create wallet
-                const loginRes = await fetch('/api/turnkey/auth/login', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        email: _turnkeyEmail,
-                        publicKey: _turnkeyPublicKey,
-                        verificationToken: verifyData.verificationToken
-                    })
-                });
-                
-                const loginData = await loginRes.json();
-                
-                if (loginData.success) {
-                    // Store wallet in localStorage for persistence
-                    localStorage.setItem('turnkey_wallet', loginData.wallet);
-                    localStorage.setItem('turnkey_email', _turnkeyEmail);
-                    localStorage.setItem('turnkey_sub_org_id', loginData.subOrganizationId);
-                    
-                    // Get referral code if any
-                    const referralCode = sessionStorage.getItem('pending_referral_code') || '';
-                    sessionStorage.removeItem('pending_referral_code');
-                    
-                    // Reload page to trigger login flow
-                    const returnTo = sessionStorage.getItem('return_to_community_stories');
-                    let redirectUrl = '/dashboard';
-                    if (returnTo === 'true') {
-                        redirectUrl = '/community-stories';
-                    }
-                    if (referralCode) {
-                        redirectUrl += (redirectUrl.includes('?') ? '&' : '?') + 'ref=' + encodeURIComponent(referralCode);
-                    }
-                    
-                    showTurnkeyStatus('✅ Success! Redirecting...', 'success');
-                    setTimeout(() => { window.location.href = redirectUrl; }, 500);
-                } else {
-                    showTurnkeyStatus('❌ ' + (loginData.error || 'Login failed'), 'error');
-                }
-            } catch (err) {
-                showTurnkeyStatus('❌ ' + (err.message || 'Network error'), 'error');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Verify & Login';
-            }
-        }
-
-        async function generateTurnkeyKeyPair() {
-            // Generate a P-256 keypair using Web Crypto API
-            const keyPair = await crypto.subtle.generateKey(
-                {
-                    name: 'ECDSA',
-                    namedCurve: 'P-256'
-                },
-                true,
-                ['sign', 'verify']
-            );
-            
-            // Export public key
-            const publicKeyRaw = await crypto.subtle.exportKey('raw', keyPair.publicKey);
-            const publicKeyHex = Array.from(new Uint8Array(publicKeyRaw))
-                .map(b => b.toString(16).padStart(2, '0'))
-                .join('');
-            
-            return {
-                publicKey: '0x' + publicKeyHex,
-                privateKey: keyPair.privateKey  // Keep in memory only
-            };
-        }
-
-        function showTurnkeyStatus(message, type = 'info') {
-            const el = document.getElementById('turnkeyStatus');
-            if (!el) return;
-            el.className = 'status-message ' + type;
-            el.textContent = message;
         }
 
 
