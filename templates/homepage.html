@@ -2324,10 +2324,17 @@
                 closeWalletModal();
                 const { address } = await window.GMPrivy.login();
                 if (!address) throw new Error('No wallet address returned by Privy.');
+                
+                // Get user info for export feature
+                const user = window.GMPrivy.getUser();
+                if (user && user.email) {
+                    try { localStorage.setItem('privy_email', user.email); } catch (_) {}
+                }
+                
                 showWalletStatus(statusId, '✍️ Verifying your new wallet…', 'info');
                 const message = makeLoginMessage(address);
                 const signature = await window.GMPrivy.signMessage(message);
-                const verifyData = await postVerifyIdentity(address, signature, message, getPendingReferralCode());
+                const verifyData = await postVerifyIdentity(address, signature, message, getPendingReferralCode(), 'privy');
                 try { localStorage.setItem('gm_login_method', 'privy'); } catch (_) {}
                 const okMsg = (verifyData && verifyData.referral_warning)
                     ? ('✅ Wallet created. ⚠️ ' + verifyData.referral_warning + ' Redirecting...')
@@ -2983,7 +2990,7 @@
                 .join('');
         }
 
-        async function postVerifyIdentity(walletAddress, signature, message, referralCode = '') {
+        async function postVerifyIdentity(walletAddress, signature, message, referralCode = '', loginMethod = 'walletconnect') {
             const resp = await fetch('/verify-identity', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2991,7 +2998,8 @@
                     wallet_address: walletAddress,
                     signature,
                     message,
-                    referral_code: referralCode || ''
+                    referral_code: referralCode || '',
+                    login_method: loginMethod
                 })
             });
             const data = await resp.json();

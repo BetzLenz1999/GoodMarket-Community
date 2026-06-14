@@ -1592,6 +1592,7 @@ def verify_identity():
         data = request.get_json()
         wallet_address = data.get('wallet_address', '').strip()
         referral_code = data.get('referral_code', '').strip()
+        login_method = data.get('login_method', 'walletconnect').strip()
 
         if not wallet_address:
             return jsonify({'error': 'Wallet address is required'}), 400
@@ -1607,7 +1608,7 @@ def verify_identity():
         except Exception:
             return jsonify({'error': 'Could not normalize wallet address'}), 400
 
-        logger.info(f"🔐 Identity verification attempt for {wallet_address}")
+        logger.info(f"🔐 Identity verification attempt for {wallet_address} via {login_method}")
 
         # Check if user is already verified in the session
         if session.get('verified') and session.get('wallet') == wallet_address:
@@ -1682,7 +1683,7 @@ def verify_identity():
         session['wallet_address'] = wallet_address
         session['verified'] = True
         session['ubi_verified'] = True
-        session['login_method'] = 'walletconnect'
+        session['login_method'] = login_method
         session['verification_time'] = datetime.now().isoformat()
 
         # Record unverified visit or log face-verified status for attribution
