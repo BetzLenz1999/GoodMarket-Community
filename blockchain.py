@@ -9,6 +9,8 @@ logger = logging.getLogger("blockchain")
 
 CELO_CHAIN_ID = int(os.getenv("CHAIN_ID", "42220"))
 CELO_RPC = os.getenv("CELO_RPC_URL", "https://forno.celo.org")
+BASE_CHAIN_ID = int(os.getenv("BASE_CHAIN_ID", "8453"))
+BASE_RPC = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
 
 GOODDOLLAR_CONTRACTS = {
     "UBI_PROXY": os.getenv("UBI_PROXY_CONTRACT", "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1"),
@@ -19,6 +21,9 @@ GOODDOLLAR_CONTRACTS = {
 
 CUSD_CONTRACT = os.getenv("CUSD_CONTRACT", "0x765DE816845861e75A25fCA122bb6898B8B1282a")
 USDT_CONTRACT = os.getenv("USDT_CONTRACT", "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e")
+# Official native USDC contracts from Circle (mainnet).
+CELO_USDC_CONTRACT = os.getenv("CELO_USDC_CONTRACT", "0xcebA9300f2b948710d2653dD7B07f33A8B32118C")
+BASE_USDC_CONTRACT = os.getenv("BASE_USDC_CONTRACT", "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
 
 IDENTITY_ABI = [
     {
@@ -112,7 +117,9 @@ def _get_gd_usd_price() -> float:
 
 # Shared Web3 instance — reuse TCP connection instead of creating one per request
 _w3_singleton = None
+_base_w3_singleton = None
 _w3_lock = threading.Lock()
+_base_w3_lock = threading.Lock()
 
 def _get_w3():
     global _w3_singleton
@@ -121,6 +128,15 @@ def _get_w3():
             from web3 import Web3 as _W3
             _w3_singleton = _W3(_W3.HTTPProvider(CELO_RPC, request_kwargs={"timeout": 10}))
         return _w3_singleton
+
+
+def _get_base_w3():
+    global _base_w3_singleton
+    with _base_w3_lock:
+        if _base_w3_singleton is None or not _base_w3_singleton.is_connected():
+            from web3 import Web3 as _W3
+            _base_w3_singleton = _W3(_W3.HTTPProvider(BASE_RPC, request_kwargs={"timeout": 10}))
+        return _base_w3_singleton
 
 # Balance cache: {wallet_lower: {"gd": {...}, "celo": {...}, "expires_at": float}}
 _balance_cache: dict = {}
@@ -1024,87 +1040,76 @@ def get_celo_balance(wallet_address: str) -> dict:
         return {"success": False, "error": str(e), "balance": 0, "balance_formatted": "Error"}
 
 
-def get_cusd_balance(wallet_address: str) -> dict:
-    """Get cUSD (Celo Dollar) ERC-20 balance for a wallet address (cached 2 minutes)."""
+def _get_erc20_balance(
+    wallet_address: str,
+    token_contract: str,
+    cache_key_name: str,
+    symbol: str,
+    decimals: int,
+    w3_getter=None,
+) -> dict:
+    """Get an ERC-20 token balance for a wallet address (cached 2 minutes)."""
     import time
     key = wallet_address.lower()
     with _balance_cache_lock:
         entry = _balance_cache.get(key)
-        if entry and entry.get("cusd") and entry["expires_at"] > time.time():
-            logger.debug(f"💵 cUSD balance cache HIT for {wallet_address[:8]}...")
-            return entry["cusd"]
+        if entry and entry.get(cache_key_name) and entry["expires_at"] > time.time():
+            logger.debug(f"💵 {symbol} balance cache HIT for {wallet_address[:8]}...")
+            return entry[cache_key_name]
     try:
         from web3 import Web3
-        w3 = _get_w3()
+        w3 = w3_getter() if w3_getter else _get_w3()
         contract = w3.eth.contract(
-            address=Web3.to_checksum_address(CUSD_CONTRACT),
-            abi=_GD_ERC20_ABI
-        )
-        wallet_checksum = Web3.to_checksum_address(wallet_address)
-        balance_wei = contract.functions.balanceOf(wallet_checksum).call()
-        balance_cusd = balance_wei / (10 ** 18)
-        result = {
-            "success": True,
-            "balance": float(balance_cusd),
-            "balance_formatted": f"{balance_cusd:.6f} cUSD",
-            "wallet": wallet_address,
-            "contract": CUSD_CONTRACT,
-        }
-        with _balance_cache_lock:
-            existing = _balance_cache.get(key, {})
-            _balance_cache[key] = {**existing, "cusd": result, "expires_at": time.time() + BALANCE_CACHE_TTL}
-        return result
-    except Exception as e:
-        logger.error(f"cUSD balance error for {wallet_address}: {e}")
-        return {"success": False, "error": str(e), "balance": 0, "balance_formatted": "Error"}
-
-
-def get_usdt_balance(wallet_address: str) -> dict:
-    """Get USDT (Tether on Celo) ERC-20 balance for a wallet address (cached 2 minutes)."""
-    import time
-    key = wallet_address.lower()
-    with _balance_cache_lock:
-        entry = _balance_cache.get(key)
-        if entry and entry.get("usdt") and entry["expires_at"] > time.time():
-            logger.debug(f"💵 USDT balance cache HIT for {wallet_address[:8]}...")
-            return entry["usdt"]
-    try:
-        from web3 import Web3
-        w3 = _get_w3()
-        contract = w3.eth.contract(
-            address=Web3.to_checksum_address(USDT_CONTRACT),
+            address=Web3.to_checksum_address(token_contract),
             abi=_GD_ERC20_ABI
         )
         wallet_checksum = Web3.to_checksum_address(wallet_address)
         balance_raw = contract.functions.balanceOf(wallet_checksum).call()
-        balance_usdt = balance_raw / (10 ** 6)
+        balance_token = balance_raw / (10 ** decimals)
         result = {
             "success": True,
-            "balance": float(balance_usdt),
-            "balance_formatted": f"{balance_usdt:.6f} USDT",
+            "balance": float(balance_token),
+            "balance_formatted": f"{balance_token:.6f} {symbol}",
             "wallet": wallet_address,
-            "contract": USDT_CONTRACT,
+            "contract": token_contract,
         }
         with _balance_cache_lock:
             existing = _balance_cache.get(key, {})
-            _balance_cache[key] = {**existing, "usdt": result, "expires_at": time.time() + BALANCE_CACHE_TTL}
+            _balance_cache[key] = {**existing, cache_key_name: result, "expires_at": time.time() + BALANCE_CACHE_TTL}
         return result
     except Exception as e:
-        logger.error(f"USDT balance error for {wallet_address}: {e}")
+        logger.error(f"{symbol} balance error for {wallet_address}: {e}")
         return {"success": False, "error": str(e), "balance": 0, "balance_formatted": "Error"}
 
 
-def prepare_usdt_transfer_data(to_address: str, amount_usdt: float) -> dict:
-    """
-    Return the ABI-encoded calldata for a USDT ERC-20 transfer(address,uint256) call.
-    USDT on Celo uses 6 decimals.
-    """
+def get_cusd_balance(wallet_address: str) -> dict:
+    """Get cUSD (Celo Dollar) ERC-20 balance for a wallet address (cached 2 minutes)."""
+    return _get_erc20_balance(wallet_address, CUSD_CONTRACT, "cusd", "cUSD", 18)
+
+
+def get_usdt_balance(wallet_address: str) -> dict:
+    """Get USDT (Tether on Celo) ERC-20 balance for a wallet address (cached 2 minutes)."""
+    return _get_erc20_balance(wallet_address, USDT_CONTRACT, "usdt", "USDT", 6)
+
+
+def get_celo_usdc_balance(wallet_address: str) -> dict:
+    """Get native USDC on Celo balance for a wallet address (cached 2 minutes)."""
+    return _get_erc20_balance(wallet_address, CELO_USDC_CONTRACT, "celo_usdc", "USDC", 6)
+
+
+def get_base_usdc_balance(wallet_address: str) -> dict:
+    """Get native USDC on Base balance for a wallet address (cached 2 minutes)."""
+    return _get_erc20_balance(wallet_address, BASE_USDC_CONTRACT, "base_usdc", "USDC", 6, _get_base_w3)
+
+
+def _prepare_erc20_transfer_data(to_address: str, amount: float, token_contract: str, decimals: int, chain_id: int, token_label: str) -> dict:
+    """Return ABI-encoded calldata for an ERC-20 transfer(address,uint256) call."""
     try:
         from web3 import Web3
         from eth_abi import encode as abi_encode
-        token_addr = Web3.to_checksum_address(USDT_CONTRACT)
+        token_addr = Web3.to_checksum_address(token_contract)
         to_checksum = Web3.to_checksum_address(to_address)
-        amount_raw = int(amount_usdt * (10 ** 6))
+        amount_raw = int(amount * (10 ** decimals))
         selector = Web3.keccak(text="transfer(address,uint256)")[:4]
         encoded_args = abi_encode(["address", "uint256"], [to_checksum, amount_raw])
         data = "0x" + (selector + encoded_args).hex()
@@ -1113,42 +1118,34 @@ def prepare_usdt_transfer_data(to_address: str, amount_usdt: float) -> dict:
             "to": token_addr,
             "data": data,
             "value": "0x0",
-            "chain_id": CELO_CHAIN_ID,
-            "token": "USDT",
+            "chain_id": chain_id,
+            "token": token_label,
             "recipient": to_checksum,
-            "amount": amount_usdt,
+            "amount": amount,
         }
     except Exception as e:
-        logger.error(f"prepare_usdt_transfer_data error: {e}")
+        logger.error(f"prepare {token_label} transfer data error: {e}")
         return {"success": False, "error": str(e)}
+
+
+def prepare_usdt_transfer_data(to_address: str, amount_usdt: float) -> dict:
+    """Return the ABI-encoded calldata for a USDT ERC-20 transfer on Celo."""
+    return _prepare_erc20_transfer_data(to_address, amount_usdt, USDT_CONTRACT, 6, CELO_CHAIN_ID, "USDT")
 
 
 def prepare_cusd_transfer_data(to_address: str, amount_cusd: float) -> dict:
-    """
-    Return the ABI-encoded calldata for a cUSD ERC-20 transfer(address,uint256) call.
-    """
-    try:
-        from web3 import Web3
-        from eth_abi import encode as abi_encode
-        token_addr = Web3.to_checksum_address(CUSD_CONTRACT)
-        to_checksum = Web3.to_checksum_address(to_address)
-        amount_wei = int(amount_cusd * (10 ** 18))
-        selector = Web3.keccak(text="transfer(address,uint256)")[:4]
-        encoded_args = abi_encode(["address", "uint256"], [to_checksum, amount_wei])
-        data = "0x" + (selector + encoded_args).hex()
-        return {
-            "success": True,
-            "to": token_addr,
-            "data": data,
-            "value": "0x0",
-            "chain_id": CELO_CHAIN_ID,
-            "token": "cUSD",
-            "recipient": to_checksum,
-            "amount": amount_cusd,
-        }
-    except Exception as e:
-        logger.error(f"prepare_cusd_transfer_data error: {e}")
-        return {"success": False, "error": str(e)}
+    """Return the ABI-encoded calldata for a cUSD ERC-20 transfer on Celo."""
+    return _prepare_erc20_transfer_data(to_address, amount_cusd, CUSD_CONTRACT, 18, CELO_CHAIN_ID, "cUSD")
+
+
+def prepare_celo_usdc_transfer_data(to_address: str, amount_usdc: float) -> dict:
+    """Return the ABI-encoded calldata for a USDC ERC-20 transfer on Celo."""
+    return _prepare_erc20_transfer_data(to_address, amount_usdc, CELO_USDC_CONTRACT, 6, CELO_CHAIN_ID, "USDC")
+
+
+def prepare_base_usdc_transfer_data(to_address: str, amount_usdc: float) -> dict:
+    """Return the ABI-encoded calldata for a USDC ERC-20 transfer on Base."""
+    return _prepare_erc20_transfer_data(to_address, amount_usdc, BASE_USDC_CONTRACT, 6, BASE_CHAIN_ID, "Base USDC")
 
 
 def get_wallet_transfer_history(wallet_address: str, limit: int = 30) -> list:
@@ -1275,6 +1272,7 @@ def get_comprehensive_tx_history(wallet_address: str, limit: int = 50, force: bo
     TOKENS = [
         {"symbol": "G$",   "address": GOODDOLLAR_CONTRACTS["GOODDOLLAR_TOKEN"], "decimals": 18},
         {"symbol": "cUSD", "address": CUSD_CONTRACT,  "decimals": 18},
+        {"symbol": "USDC", "address": CELO_USDC_CONTRACT,  "decimals": 6},
         {"symbol": "USDT", "address": USDT_CONTRACT,  "decimals": 6},
     ]
     TRANSFER_SIG = UBI_EVENT_SIGNATURES["TRANSFER"]

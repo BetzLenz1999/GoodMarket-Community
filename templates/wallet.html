@@ -1353,6 +1353,19 @@
                 </div>
             </div>
             <div class="token-item">
+                <div class="token-icon" style="background:rgba(39,117,202,0.12);">
+                    <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="22" fill="#07162b"/><text x="22" y="28" text-anchor="middle" font-size="10" fill="#60a5fa" font-weight="900" font-family="Inter,sans-serif">USDC</text></svg>
+                </div>
+                <div class="token-meta">
+                    <div class="token-symbol">USDC</div>
+                    <div class="token-name">USD Coin on Celo</div>
+                </div>
+                <div class="token-balance">
+                    <div class="token-amount" id="celoUsdcBal">—</div>
+                    <div class="token-usd" id="celoUsdcBalUSD">Stablecoin</div>
+                </div>
+            </div>
+            <div class="token-item">
                 <div class="token-icon" style="background:rgba(38,161,123,0.12);">
                     <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="22" fill="#0a201a"/><text x="22" y="28" text-anchor="middle" font-size="10" fill="#26a17b" font-weight="900" font-family="Inter,sans-serif">USDT</text></svg>
                 </div>
@@ -1394,6 +1407,24 @@
                 <div class="token-balance">
                     <div class="token-amount" id="xdcBal">—</div>
                     <div class="token-usd" id="xdcBalSub">For gas fees</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Base Network Section -->
+        <div class="section-label" style="margin-top:1rem;">Supported Tokens · Base Network</div>
+        <div class="token-list">
+            <div class="token-item">
+                <div class="token-icon" style="background:rgba(39,117,202,0.12);">
+                    <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="22" fill="#07162b"/><text x="22" y="28" text-anchor="middle" font-size="10" fill="#60a5fa" font-weight="900" font-family="Inter,sans-serif">USDC</text></svg>
+                </div>
+                <div class="token-meta">
+                    <div class="token-symbol">Base USDC</div>
+                    <div class="token-name">USD Coin on Base</div>
+                </div>
+                <div class="token-balance">
+                    <div class="token-amount" id="baseUsdcBal">—</div>
+                    <div class="token-usd" id="baseUsdcBalUSD">Stablecoin</div>
                 </div>
             </div>
         </div>
@@ -1525,6 +1556,8 @@
                 <button class="token-chip active" onclick="selectToken('GD', this)">G$</button>
                 <button class="token-chip" onclick="selectToken('CUSD', this)">cUSD</button>
                 <button class="token-chip" onclick="selectToken('USDT', this)">USDT</button>
+                <button class="token-chip" onclick="selectToken('CELO_USDC', this)">USDC (Celo)</button>
+                <button class="token-chip" onclick="selectToken('BASE_USDC', this)">USDC (Base)</button>
                 <button class="token-chip" onclick="selectToken('CELO', this)">CELO</button>
                 <button class="token-chip" onclick="selectToken('XDC_GD', this)">XDC G$</button>
                 <button class="token-chip" onclick="selectToken('XDC', this)">XDC</button>
@@ -1819,7 +1852,7 @@
     }
 
     // ── Token state ──────────────────────────────────────────
-    let gdBal = 0, celoBal = 0, cusdBal = 0, usdtBal = 0;
+    let gdBal = 0, celoBal = 0, cusdBal = 0, usdtBal = 0, celoUsdcBal = 0, baseUsdcBal = 0;
     let xdcBal = 0, xdcGdBal = 0;
     let fuseBal = 0, fuseGdBal = 0;
     let gdUsdPrice = 0;
@@ -2160,9 +2193,9 @@
         if (!totalBalanceEl) return;
 
         // Convert non-G$ balances into G$ units using live G$/USD price when available.
-        // cUSD and USDT are treated as ~1 USD; CELO uses an existing rough USD estimate.
+        // cUSD, USDT, and USDC are treated as ~1 USD; CELO uses an existing rough USD estimate.
         const celoUsdEstimate = (celoBal || 0) * 0.75;
-        const stableUsdTotal = (cusdBal || 0) + (usdtBal || 0);
+        const stableUsdTotal = (cusdBal || 0) + (usdtBal || 0) + (celoUsdcBal || 0) + (baseUsdcBal || 0);
         const convertedToGd = gdUsdPrice > 0 ? (celoUsdEstimate + stableUsdTotal) / gdUsdPrice : 0;
         const totalGd = (gdBal || 0) + (xdcGdBal || 0) + (fuseGdBal || 0) + convertedToGd;
 
@@ -2462,6 +2495,22 @@
             document.getElementById('usdtBal').textContent = '0 USDT';
         }
 
+        if (data.celo_usdc && data.celo_usdc.success) {
+            celoUsdcBal = data.celo_usdc.balance || 0;
+            document.getElementById('celoUsdcBal').textContent = fmt(celoUsdcBal, 4) + ' USDC';
+            document.getElementById('celoUsdcBalUSD').textContent = '$' + fmt(celoUsdcBal, 2);
+        } else {
+            document.getElementById('celoUsdcBal').textContent = '0 USDC';
+        }
+
+        if (data.base_usdc && data.base_usdc.success) {
+            baseUsdcBal = data.base_usdc.balance || 0;
+            document.getElementById('baseUsdcBal').textContent = fmt(baseUsdcBal, 4) + ' USDC';
+            document.getElementById('baseUsdcBalUSD').textContent = '$' + fmt(baseUsdcBal, 2);
+        } else {
+            document.getElementById('baseUsdcBal').textContent = '0 USDC';
+        }
+
         updateTotalBalanceInGd();
     }
 
@@ -2663,6 +2712,8 @@
             GD:      { label: 'G$',      network: 'celo', chainId: 42220, explorer: 'https://explorer.celo.org/mainnet/tx/' },
             CUSD:    { label: 'cUSD',    network: 'celo', chainId: 42220, explorer: 'https://explorer.celo.org/mainnet/tx/' },
             USDT:    { label: 'USDT',    network: 'celo', chainId: 42220, explorer: 'https://explorer.celo.org/mainnet/tx/' },
+            CELO_USDC: { label: 'USDC',   network: 'celo', chainId: 42220, explorer: 'https://explorer.celo.org/mainnet/tx/' },
+            BASE_USDC: { label: 'Base USDC', network: 'base', chainId: 8453, explorer: 'https://basescan.org/tx/' },
             CELO:    { label: 'CELO',    network: 'celo', chainId: 42220, explorer: 'https://explorer.celo.org/mainnet/tx/' },
             XDC_GD:  { label: 'XDC G$',  network: 'xdc',  chainId: 50,    explorer: 'https://xdcscan.io/tx/' },
             XDC:     { label: 'XDC',     network: 'xdc',  chainId: 50,    explorer: 'https://xdcscan.io/tx/' },
@@ -2688,6 +2739,10 @@
             networkNote.style.display = '';
             networkNote.innerHTML = '🟡 Sending on Fuse Network — use a <strong>0x</strong> address';
             document.getElementById('sendTo').placeholder = '0x...';
+        } else if (meta.network === 'base') {
+            networkNote.style.display = '';
+            networkNote.innerHTML = '🔵 Sending on Base Network — use a <strong>0x</strong> address';
+            document.getElementById('sendTo').placeholder = '0x...';
         } else {
             networkNote.style.display = 'none';
             document.getElementById('sendTo').placeholder = '0x...';
@@ -2696,7 +2751,7 @@
 
     function setMaxSend() {
         const vals = {
-            GD: gdBal, CUSD: cusdBal, USDT: usdtBal,
+            GD: gdBal, CUSD: cusdBal, USDT: usdtBal, CELO_USDC: celoUsdcBal, BASE_USDC: baseUsdcBal,
             CELO: Math.max(0, celoBal - 0.001),
             XDC: Math.max(0, xdcBal - 0.01),
             XDC_GD: xdcGdBal,
@@ -2757,6 +2812,7 @@
         const meta = getSelectedTokenMeta();
         const isXdcToken = meta.network === 'xdc';
         const isFuseToken = meta.network === 'fuse';
+        const isBaseToken = meta.network === 'base';
 
         // Accept both 0x... and xdc... addresses; convert xdc prefix to 0x for validation
         let toAddr = toAddrRaw;
@@ -2849,6 +2905,17 @@
                                         nativeCurrency: { name: 'FUSE', symbol: 'FUSE', decimals: 18 },
                                         rpcUrls: ['https://rpc.fuse.io'],
                                         blockExplorerUrls: ['https://explorer.fuse.io']
+                                    }]
+                                });
+                            } else if (isBaseToken) {
+                                await provider.request({
+                                    method: 'wallet_addEthereumChain',
+                                    params: [{
+                                        chainId: '0x2105',
+                                        chainName: 'Base Mainnet',
+                                        nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+                                        rpcUrls: ['https://mainnet.base.org'],
+                                        blockExplorerUrls: ['https://basescan.org']
                                     }]
                                 });
                             } else {
