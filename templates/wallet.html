@@ -458,6 +458,147 @@
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-1.5px); }
         }
+
+        /* ── Claim Button Box (Full-width) ── */
+        .claim-button-box {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: 0.7rem 0.85rem;
+            border-radius: 16px;
+            border: 1px solid rgba(var(--accent-rgb), 0.4);
+            background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.18) 0%, rgba(83, 42, 182, 0.25) 100%);
+            cursor: pointer;
+            transition: all 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .claim-button-box::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(var(--accent-rgb), 0.15) 0%, transparent 60%);
+            animation: claimBoxGlow 3s ease-in-out infinite;
+            pointer-events: none;
+        }
+        @keyframes claimBoxGlow {
+            0%, 100% { opacity: 0.5; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.1); }
+        }
+        .claim-button-box:hover {
+            border-color: rgba(var(--accent-rgb), 0.6);
+            background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.25) 0%, rgba(83, 42, 182, 0.35) 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.3);
+        }
+        .claim-button-box:active {
+            transform: translateY(0);
+        }
+        .claim-button-box.is-disabled {
+            opacity: 0.6;
+            cursor: default;
+            background: rgba(255, 255, 255, 0.03);
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+        .claim-button-box.is-disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        .claim-button-box.is-claimed {
+            background: rgba(0, 230, 118, 0.08);
+            border-color: rgba(0, 230, 118, 0.3);
+        }
+        .claim-button-box.is-claimed:hover {
+            background: rgba(0, 230, 118, 0.12);
+            border-color: rgba(0, 230, 118, 0.4);
+            box-shadow: 0 4px 20px rgba(0, 230, 118, 0.15);
+        }
+        .claim-box-left {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            position: relative;
+            z-index: 1;
+        }
+        .claim-box-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.25), rgba(var(--accent-rgb), 0.3) 50%, rgba(83, 42, 182, 0.5) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.95rem;
+            font-weight: 900;
+            color: #d8ddff;
+            box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.4);
+            animation: claimIconPulse 2.5s ease-in-out infinite;
+        }
+        .claim-box-icon.claimed-icon {
+            background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.2), rgba(0, 230, 118, 0.3) 50%, rgba(0, 180, 90, 0.4) 100%);
+            animation: none;
+            box-shadow: 0 0 10px rgba(0, 230, 118, 0.3);
+        }
+        @keyframes claimIconPulse {
+            0%, 100% { box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.3); }
+            50% { box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.5); }
+        }
+        .claim-box-content {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+        }
+        .claim-box-title {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .claim-box-title .sparkle {
+            font-size: 0.7rem;
+            animation: sparkleAnim 1.5s ease-in-out infinite;
+        }
+        @keyframes sparkleAnim {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(0.85); }
+        }
+        .claim-box-amount {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: rgba(232, 234, 246, 0.85);
+        }
+        .claim-box-amount .amount-value {
+            color: #86efac;
+            font-weight: 700;
+        }
+        .claim-box-right {
+            position: relative;
+            z-index: 1;
+        }
+        .claim-box-arrow {
+            font-size: 1.1rem;
+            color: rgba(232, 234, 246, 0.6);
+            transition: transform 0.2s ease, color 0.2s ease;
+        }
+        .claim-button-box:hover .claim-box-arrow {
+            transform: translateX(3px);
+            color: #fff;
+        }
+        .claim-button-box.is-disabled .claim-box-arrow,
+        .claim-button-box.is-claimed .claim-box-arrow {
+            display: none;
+        }
+        .claim-box-timer {
+            font-size: 0.72rem;
+            color: rgba(232, 234, 246, 0.5);
+            text-align: right;
+        }
         .action-label {
             font-size: 0.86rem;
             font-weight: 600;
@@ -1153,6 +1294,20 @@
             .action-label {
                 font-size: 0.8rem;
             }
+            .claim-button-box {
+                padding: 0.6rem 0.7rem;
+            }
+            .claim-box-icon {
+                width: 34px;
+                height: 34px;
+                font-size: 0.85rem;
+            }
+            .claim-box-title {
+                font-size: 0.82rem;
+            }
+            .claim-box-amount {
+                font-size: 0.7rem;
+            }
         }
 
         @media (min-width: 481px) {
@@ -1258,12 +1413,23 @@
                     <div class="action-circle">↑</div>
                     <span class="action-label">Send</span>
                 </div>
-                <div class="action-item" onclick="openModal('claimModal');">
-                    <div class="action-circle claim-circle">
-                        <span class="claim-glyph">G$</span>
-                        <span class="claim-badge">✨</span>
+                <div class="claim-button-box" id="claimButtonBox" onclick="openModal('claimModal');">
+                    <div class="claim-box-left">
+                        <div class="claim-box-icon" id="claimBoxIcon">G$</div>
+                        <div class="claim-box-content">
+                            <div class="claim-box-title" id="claimBoxTitle">
+                                <span>Claim G$</span>
+                                <span class="sparkle" id="claimBoxSparkle">✨</span>
+                            </div>
+                            <div class="claim-box-amount" id="claimBoxAmount">
+                                Loading...
+                            </div>
+                        </div>
                     </div>
-                    <span class="action-label">Claim</span>
+                    <div class="claim-box-right">
+                        <div class="claim-box-arrow">→</div>
+                        <div class="claim-box-timer" id="claimBoxTimer"></div>
+                    </div>
                 </div>
                 <div class="action-item" onclick="openModal('streamModal')">
                     <div class="action-circle" style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;">💸</div>
@@ -3363,11 +3529,17 @@
         function startCountdown() {
             const box = document.getElementById('ubiCountdownBox');
             const display = document.getElementById('ubiCountdownDisplay');
+            const claimBoxTimer = document.getElementById('claimBoxTimer');
             box.style.display = 'block';
             if (_countdownInterval) clearInterval(_countdownInterval);
             function tick() {
                 const remaining = getNextResetMs();
-                display.textContent = formatCountdown(remaining);
+                const formatted = formatCountdown(remaining);
+                display.textContent = formatted;
+                // Also update the claim button timer if shown
+                if (claimBoxTimer && claimBoxTimer.textContent !== formatted) {
+                    claimBoxTimer.textContent = formatted;
+                }
                 if (remaining <= 0) {
                     clearInterval(_countdownInterval);
                     setStatus('🎉 Claim window is now open! Refresh to claim.', 'var(--green)');
@@ -3476,12 +3648,104 @@
             return caps.isMiniPay ? 'celo' : null;
         }
 
+        // Update the claim button box with total claimable G$ from all networks
+        function updateClaimButtonBox(data) {
+            const claims = data.claims || {};
+            const caps = getClaimWalletCapabilities();
+            
+            const claimBox = document.getElementById('claimButtonBox');
+            const claimBoxTitle = document.getElementById('claimBoxTitle');
+            const claimBoxAmount = document.getElementById('claimBoxAmount');
+            const claimBoxIcon = document.getElementById('claimBoxIcon');
+            const claimBoxSparkle = document.getElementById('claimBoxSparkle');
+            const claimBoxTimer = document.getElementById('claimBoxTimer');
+            
+            if (!claimBox) return;
+            
+            // Calculate total claimable G$ from all available networks
+            let totalClaimable = 0;
+            let claimableNetworks = [];
+            
+            if (claims.celo && claims.celo.can_claim && claims.celo.is_available !== false) {
+                const celoAmt = parseFloat(claims.celo.claimable) || parseFloat(claims.celo.entitlement) || 0;
+                totalClaimable += celoAmt;
+                claimableNetworks.push('Celo');
+            }
+            
+            if (claims.xdc && claims.xdc.can_claim && claims.xdc.is_available !== false) {
+                if (!caps.isMiniPay && caps.supportsXdc) {
+                    const xdcAmt = parseFloat(claims.xdc.claimable) || parseFloat(claims.xdc.entitlement) || 0;
+                    totalClaimable += xdcAmt;
+                    claimableNetworks.push('XDC');
+                }
+            }
+            
+            if (claims.fuse && claims.fuse.can_claim && claims.fuse.is_available !== false) {
+                if (!caps.isMiniPay && caps.supportsFuse) {
+                    const fuseAmt = parseFloat(claims.fuse.claimable) || parseFloat(claims.fuse.entitlement) || 0;
+                    totalClaimable += fuseAmt;
+                    claimableNetworks.push('Fuse');
+                }
+            }
+            
+            // Check for face verification needed
+            const needsVerification = claims.celo && (
+                claims.celo.reason === 'not_verified' || 
+                claims.celo.reason === 're_verification_needed' || 
+                claims.celo.is_verified === false
+            );
+            
+            // Check if any network has claimable balance
+            const hasClaimable = totalClaimable > 0 && !needsVerification;
+            
+            // Update button state
+            claimBox.classList.remove('is-disabled', 'is-claimed');
+            
+            if (needsVerification) {
+                // Face verification needed
+                claimBoxTitle.innerHTML = '<span>Verify Face ID</span>';
+                claimBoxIcon.textContent = '🪪';
+                claimBoxIcon.classList.remove('claimed-icon');
+                claimBoxSparkle.style.display = 'none';
+                claimBoxAmount.innerHTML = 'Required to claim G$';
+                claimBox.classList.add('is-disabled');
+            } else if (hasClaimable) {
+                // Has claimable G$
+                const formattedAmount = totalClaimable.toFixed(2);
+                const networkLabel = claimableNetworks.length > 1 
+                    ? claimableNetworks.join(' + ') 
+                    : claimableNetworks[0] || 'Celo';
+                
+                claimBoxTitle.innerHTML = '<span>Claim G$</span><span class="sparkle">✨</span>';
+                claimBoxIcon.textContent = 'G$';
+                claimBoxIcon.classList.remove('claimed-icon');
+                claimBoxSparkle.style.display = 'inline';
+                claimBoxAmount.innerHTML = `<span class="amount-value">${formattedAmount} G$</span> available${claimableNetworks.length > 1 ? ` (${networkLabel})` : ''}`;
+                claimBoxTimer.textContent = '';
+            } else {
+                // Already claimed today
+                claimBoxTitle.innerHTML = '<span>Already Claimed</span>';
+                claimBoxIcon.textContent = '✅';
+                claimBoxIcon.classList.add('claimed-icon');
+                claimBoxSparkle.style.display = 'none';
+                claimBoxAmount.innerHTML = 'Next claim available soon';
+                claimBox.classList.add('is-claimed');
+                
+                // Show countdown if available
+                const countdown = document.getElementById('ubiCountdownDisplay');
+                if (countdown && countdown.textContent && countdown.textContent !== '--:--:--') {
+                    claimBoxTimer.textContent = countdown.textContent;
+                }
+            }
+        }
+
         function applyClaimAvailabilityData(data) {
             claimAvailability = data;
             const claims = data.claims || {};
             recommendedClaimNetwork = pickRecommendedClaimNetwork();
             applyEntitlementData(claims.celo || data);
             renderClaimNetworks();
+            updateClaimButtonBox(data);
 
             if (needsVerification) return;
             const caps = getClaimWalletCapabilities();
