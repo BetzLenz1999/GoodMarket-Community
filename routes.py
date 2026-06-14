@@ -7160,12 +7160,17 @@ def xdc_wallet_page():
 @routes.route("/api/xdc/balances", methods=["GET"])
 @auth_required
 def xdc_balances():
-    """Get XDC and xUSDT balances for the current user"""
+    """Get XDC and xUSDT balances for the current user.
+    
+    Query params:
+        refresh: If 'true', bypass cache and fetch fresh balance
+    """
     try:
         wallet = session.get("wallet")
+        no_cache = request.args.get("refresh", "").lower() == "true"
         from blockchain import get_xdc_balance, get_xusdt_balance
-        xdc = get_xdc_balance(wallet)
-        xusdt = get_xusdt_balance(wallet)
+        xdc = get_xdc_balance(wallet, no_cache=no_cache)
+        xusdt = get_xusdt_balance(wallet, no_cache=no_cache)
         return jsonify({"success": True, "xdc": xdc, "xusdt": xusdt})
     except Exception as e:
         logger.error(f"xdc_balances error: {e}")
