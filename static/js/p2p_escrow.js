@@ -14,6 +14,13 @@
   const CHAIN_ID_CELO_MAINNET = 42220;
   const CHAIN_ID_HEX = "0x" + CHAIN_ID_CELO_MAINNET.toString(16);
 
+  // Celo RPC fallback URLs for reliability
+  const CELO_RPC_URLS = [
+    "https://forno.celo.org",
+    "https://1rpc.io/celo",
+    "https://celo.publicnode.com"
+  ];
+
   /** Return the injected provider (MetaMask / MiniPay / Valora) or null. */
   function getProvider() {
     if (typeof window === "undefined") return null;
@@ -47,7 +54,7 @@
             chainId: CHAIN_ID_HEX,
             chainName: "Celo",
             nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
-            rpcUrls: ["https://forno.celo.org"],
+            rpcUrls: CELO_RPC_URLS,
             blockExplorerUrls: ["https://celoscan.io"],
           }],
         });

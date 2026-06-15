@@ -51,12 +51,20 @@
     var DEFAULT_CHAIN_ID = 42220;
     var WC_CDN_URL = "https://cdn.jsdelivr.net/npm/@walletconnect/sign-client@2.17.0/dist/index.umd.js";
 
+    // Celo RPC fallback URLs for reliability
+    var CELO_RPC_URLS = [
+        "https://forno.celo.org",
+        "https://1rpc.io/celo",
+        "https://celo.publicnode.com"
+    ];
+
     // Supported networks for WalletConnect chain switching
     var SUPPORTED_NETWORKS = {
         "0xa4ec": { // Celo Mainnet
             name: "Celo",
             chainId: 42220,
             rpc: "https://forno.celo.org",
+            rpcUrls: CELO_RPC_URLS,
             nativeCurrency: {
                 name: "Celo",
                 symbol: "CELO",
@@ -413,22 +421,47 @@
         });
     }
 
-    function _celoJsonRpc(method, params) {
-        return fetch((_config.rpcUrl || DEFAULT_RPC_URL), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                jsonrpc: "2.0",
-                id: Date.now(),
-                method: method,
-                params: params || []
-            })
-        }).then(function (resp) {
-            return resp.json();
-        }).then(function (data) {
-            if (data.error) throw new Error(data.error.message || "RPC error");
-            return data.result;
+    // RPC call with fallback - tries each URL until one succeeds
+    function _celoJsonRpcWithFallback(urls, method, params) {
+        var lastError = new Error('All RPC endpoints failed');
+        return new Promise(function(resolve, reject) {
+            function tryNext(index) {
+                if (index >= urls.length) {
+                    reject(lastError);
+                    return;
+                }
+                var url = urls[index];
+                fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        jsonrpc: "2.0",
+                        id: Date.now(),
+                        method: method,
+                        params: params || []
+                    })
+                }).then(function (resp) {
+                    return resp.json();
+                }).then(function (data) {
+                    if (data.error) {
+                        lastError = new Error(data.error.message || "RPC error");
+                        tryNext(index + 1); // Try next URL
+                    } else {
+                        resolve(data.result);
+                    }
+                }).catch(function(e) {
+                    lastError = e;
+                    tryNext(index + 1); // Try next URL
+                });
+            }
+            tryNext(0);
         });
+    }
+
+    function _celoJsonRpc(method, params) {
+        // Use fallback RPCs - try config URL first, then fallbacks
+        var urls = (_config.rpcUrl ? [_config.rpcUrl] : []).concat(CELO_RPC_URLS);
+        return _celoJsonRpcWithFallback(urls, method, params);
     }
 
     function _defaultShowQr(uri, label) {

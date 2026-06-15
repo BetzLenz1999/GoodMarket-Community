@@ -594,7 +594,11 @@
     const CUSD_CONTRACT = "{{ cusd_contract }}";
     const USDT_CONTRACT = "{{ usdt_contract }}";
     const CHAIN_ID = {{ chain_id }};
-    const CELO_RPC = "https://forno.celo.org";
+    const CELO_RPC_URLS = [
+        "https://forno.celo.org",
+        "https://1rpc.io/celo",
+        "https://celo.publicnode.com"
+    ];
     const LOGIN_METHOD = "{{ login_method }}";
 
     // v5 dynamic lock-duration bounds. Kept here so all client-side
@@ -690,9 +694,11 @@
     let __readProvider = null;
     function getReadProvider() {
         if (!__readProvider) {
-            __readProvider = new ethers.JsonRpcProvider(CELO_RPC, {
-                chainId: CHAIN_ID, name: 'celo'
-            });
+            // Use FallbackProvider with multiple RPC endpoints for reliability
+            __readProvider = new ethers.FallbackProvider(
+                CELO_RPC_URLS.map(url => new ethers.JsonRpcProvider(url, { chainId: CHAIN_ID, name: 'celo' })),
+                1 // quorum: needs 1 provider to respond
+            );
         }
         return __readProvider;
     }
@@ -1081,25 +1087,36 @@
         'eth_signTypedData_v4',
     ]);
 
-    function _wcCeloJsonRpc(method, params) {
-        return fetch('https://forno.celo.org', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: Date.now(),
-                method: method,
-                params: params || []
-            })
-        }).then(function (resp) { return resp.json(); }).then(function (data) {
-            if (data && data.error) {
-                var err = new Error(data.error.message || 'Celo RPC error');
-                err.code = data.error.code;
-                err.data = data.error.data;
-                throw err;
+    // RPC call with fallback support - tries each URL until one succeeds
+    async function _rpcCallWithFallback(urls, method, params) {
+        const lastError = new Error('All RPC endpoints failed');
+        for (const url of urls) {
+            try {
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: Date.now(),
+                        method: method,
+                        params: params || []
+                    })
+                });
+                const data = await resp.json();
+                if (data && data.error) {
+                    throw new Error(data.error.message || 'Celo RPC error');
+                }
+                return data ? data.result : null;
+            } catch (e) {
+                lastError = e;
+                // Try next URL
             }
-            return data ? data.result : null;
-        });
+        }
+        throw lastError;
+    }
+
+    function _wcCeloJsonRpc(method, params) {
+        return _rpcCallWithFallback(CELO_RPC_URLS, method, params);
     }
 
     // Derive the correct eip155 chain string for a WalletConnect client.request()
@@ -2332,7 +2349,7 @@
                             chainId: '0x' + CHAIN_ID.toString(16),
                             chainName: 'Celo Mainnet',
                             nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
-                            rpcUrls: ['https://forno.celo.org'],
+                            rpcUrls: CELO_RPC_URLS,
                             blockExplorerUrls: ['https://celoscan.io']
                         }]
                     });
