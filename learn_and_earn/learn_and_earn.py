@@ -1642,10 +1642,24 @@ def start_quiz(current_user):
             }), 400
 
         # Check Learn wallet balance before allowing quiz
+        # Different balance check based on payout mode:
+        # - Streaming mode: Check LEARN_WALLET_PRIVATE_KEY balance (stream comes from this wallet)
+        # - Instant mode: Check LEARN_EARN_CONTRACT_ADDRESS balance (rewards come from contract)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            learn_balance = loop.run_until_complete(learn_blockchain_service.get_learn_wallet_balance())
+            if _is_streaming_mode(STREAMING_PAYOUT_MODE):
+                # Streaming mode: Check the wallet that will send the stream
+                learn_balance = loop.run_until_complete(
+                    learn_blockchain_service.get_learn_wallet_balance()
+                )
+                balance_source = 'wallet (for streaming)'
+            else:
+                # Instant mode: Check the contract that will send rewards
+                learn_balance = loop.run_until_complete(
+                    learn_blockchain_service.get_contract_balance()
+                )
+                balance_source = 'contract (for instant rewards)'
         finally:
             loop.close()
 
@@ -1654,7 +1668,7 @@ def start_quiz(current_user):
         # Use tolerance to avoid floating point precision issues (e.g., 1000.0 vs 1000.0000000000001)
         balance_tolerance = 0.01  # Allow 0.01 G$ tolerance
         if learn_balance < (min_required_balance - balance_tolerance):
-            logger.warning(f"⚠️ Learn wallet balance too low: {learn_balance} < {min_required_balance}")
+            logger.warning(f"⚠️ Learn {balance_source} balance too low: {learn_balance} < {min_required_balance}")
 
             # Get custom message from database
             from supabase_client import get_supabase_client, safe_supabase_operation
