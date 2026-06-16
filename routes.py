@@ -8035,7 +8035,7 @@ FAUCET_FORCE_ONCHAIN_HOUR_WINDOW = 3600  # 1 hour in seconds
 # (approve + swap), not just one claim(), so the default must cover a small
 # two-transaction gas budget while keeping faucet spend bounded. Operators can
 # override via env if Celo gas conditions change.
-MINIPAY_CUSD_FAUCET_AMOUNT = Decimal(os.getenv("MINIPAY_CUSD_FAUCET_AMOUNT", "0.016"))
+MINIPAY_CUSD_FAUCET_AMOUNT = Decimal(os.getenv("MINIPAY_CUSD_FAUCET_AMOUNT", "0.017"))
 MINIPAY_CUSD_FAUCET_PROGRAM_LABEL = "Program by Betz & Omar Team"
 # Threshold below which we treat the user as needing a stablecoin gas top-up.
 # Must be <= MINIPAY_CUSD_FAUCET_AMOUNT so the user graduates to "stable_ready"
