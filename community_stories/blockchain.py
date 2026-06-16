@@ -148,18 +148,23 @@ class CommunityStoriesBlockchain:
                 }
             
             # Estimate gas dynamically instead of hardcoding a fixed limit.
-            # G$ ERC-777 hooks add overhead vs plain ERC-20, so apply a 1.3x
+            # G$ ERC-777 hooks add overhead vs plain ERC-20, so apply a 1.5x
             # safety buffer on top of the estimate, and fall back to a
             # conservative ceiling only if estimation fails.
+            MAX_GAS_LIMIT = 300000  # Cap gas to prevent runaway costs
+            MIN_GAS_LIMIT = 100000  # Minimum floor for G$ ERC-777 transfers
+            GAS_BUFFER = 1.5  # Increased buffer for ERC-777 token hooks
             try:
                 estimated_gas = contract.functions.transfer(
                     Web3.to_checksum_address(recipient_wallet),
                     amount_wei
                 ).estimate_gas({'from': self.community_account.address})
-                gas_limit = int(estimated_gas * 1.3)
+                gas_limit = int(estimated_gas * GAS_BUFFER)
+                # Enforce min/max bounds
+                gas_limit = max(MIN_GAS_LIMIT, min(gas_limit, MAX_GAS_LIMIT))
                 logger.info(
                     f"⛽ Community Stories gas estimate: {estimated_gas} "
-                    f"(using limit: {gas_limit})"
+                    f"(using limit: {gas_limit}, buffer: {GAS_BUFFER}x)"
                 )
             except Exception as estimate_error:
                 logger.warning(
