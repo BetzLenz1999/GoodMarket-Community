@@ -25,22 +25,41 @@
             box-sizing: border-box;
         }
 
-        /* ── Compact 70% scale (desktop/mobile/dApp browser) ──
-           Matches wallet.html and overview.html so the whole landing
-           page — including the Get Started / WalletConnect modal —
-           renders at 70% scale. Using `html` (not `body`) ensures
-           position:fixed descendants like the modal also inherit the
-           zoom in every supporting browser. */
-        html {
-            zoom: 0.7;
-        }
-        @supports not (zoom: 1) {
-            /* Firefox <126 fallback */
+        /* Desktop/Laptop: subtle compact feel with reasonable padding */
+        @media (min-width: 769px) {
             body {
-                transform: scale(0.7);
-                transform-origin: top center;
-                width: 142.857%;
-                margin-left: -21.4285%;
+                padding: 0 1rem;
+            }
+        }
+
+        /* Tablet */
+        @media (max-width: 1024px) {
+            .hero-grid {
+                gap: 1.5rem;
+            }
+            .hero-section {
+                padding: 2rem 1.5rem 3rem;
+            }
+        }
+
+        /* Mobile */
+        @media (max-width: 768px) {
+            .hero-grid {
+                grid-template-columns: 1fr;
+                gap: 2rem;
+            }
+            .hero-content {
+                text-align: center;
+            }
+            .hero-section {
+                padding: 1.5rem 1rem 2rem;
+            }
+            .hero-eyebrow {
+                margin-left: auto;
+                margin-right: auto;
+            }
+            .hero-buttons {
+                justify-content: center;
             }
         }
 
