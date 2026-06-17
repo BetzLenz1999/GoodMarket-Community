@@ -35,13 +35,28 @@ Legacy contracts (read-only):
 """
 import os
 import logging
+import threading
+import time
 from web3 import Web3
 
 logger = logging.getLogger(__name__)
 
 CELO_RPC_URL = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')
+CELO_RPC_URLS = tuple(
+    url.strip()
+    for url in (
+        os.getenv('CELO_RPC_URLS', '')
+        or ','.join([
+            CELO_RPC_URL,
+            'https://1rpc.io/celo',
+            'https://celo.publicnode.com',
+        ])
+    ).split(',')
+    if url.strip()
+)
 CHAIN_ID = int(os.getenv('CHAIN_ID', 42220))
 SAVINGS_CONTRACT_ADDRESS = os.getenv('SAVINGS_CONTRACT_ADDRESS', '')
+SAVINGS_DEPLOYMENT_BLOCK = int(os.getenv('SAVINGS_DEPLOYMENT_BLOCK', 65917286))
 GD_TOKEN_ADDRESS = os.getenv('GOODDOLLAR_CONTRACT_ADDRESS', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
 CELO_TOKEN_ADDRESS = os.getenv('CELO_TOKEN_ADDRESS', '0x471EcE3750Da237f93B8E339c536989b8978a438')
 CUSD_TOKEN_ADDRESS = os.getenv('CUSD_TOKEN_ADDRESS', '0x765DE816845861e75A25fCA122bb6898B8B1282a')
@@ -59,6 +74,13 @@ LEGACY_V4_CONTRACT_ADDRESS = os.getenv(
 # Legacy v2 contract — frozen-in-place forever, read-only support so users with
 # old (single-token, deposit-id-based) saves can still see and withdraw them.
 LEGACY_V2_CONTRACT_ADDRESS = '0xF3cca43F5C108d3dEf01Ff1E138866aC1ed00e9c'
+
+_w3_pool = {}
+_w3_lock = threading.Lock()
+
+_history_cache = {}
+_history_cache_lock = threading.Lock()
+HISTORY_CACHE_TTL = 300
 
 # Map of supported tokens, used by the frontend / API to label slots.
 # USDT uses 6 decimals; all others are 18. Anywhere we convert raw on-chain
@@ -204,6 +226,32 @@ SAVINGS_ABI = [
         ],
         "stateMutability": "view",
         "type": "function",
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True, "internalType": "address", "name": "user", "type": "address"},
+            {"indexed": True, "internalType": "address", "name": "token", "type": "address"},
+            {"indexed": True, "internalType": "uint256", "name": "lockDays", "type": "uint256"},
+            {"indexed": False, "internalType": "uint256", "name": "amountAdded", "type": "uint256"},
+            {"indexed": False, "internalType": "uint256", "name": "newSlotTotal", "type": "uint256"},
+            {"indexed": False, "internalType": "uint256", "name": "unlocksAt", "type": "uint256"},
+            {"indexed": False, "internalType": "bool", "name": "isTopUp", "type": "bool"},
+        ],
+        "name": "Saved",
+        "type": "event",
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True, "internalType": "address", "name": "user", "type": "address"},
+            {"indexed": True, "internalType": "address", "name": "token", "type": "address"},
+            {"indexed": True, "internalType": "uint256", "name": "lockDays", "type": "uint256"},
+            {"indexed": False, "internalType": "uint256", "name": "principal", "type": "uint256"},
+            {"indexed": False, "internalType": "uint256", "name": "timestamp", "type": "uint256"},
+        ],
+        "name": "Withdrawn",
+        "type": "event",
     },
     # ── View: bonus calculator ───────────────────────────────────────────
     {
@@ -356,7 +404,23 @@ ERC20_ABI = [
 
 
 def get_w3():
-    return Web3(Web3.HTTPProvider(CELO_RPC_URL))
+    with _w3_lock:
+        urls = list(CELO_RPC_URLS) or [CELO_RPC_URL]
+        for url in urls:
+            w3 = _w3_pool.get(url)
+            if w3 is None:
+                w3 = Web3(Web3.HTTPProvider(url, request_kwargs={"timeout": 8}))
+                _w3_pool[url] = w3
+            try:
+                if w3.is_connected():
+                    return w3
+            except Exception:
+                continue
+        fallback = urls[0]
+        return _w3_pool.setdefault(
+            fallback,
+            Web3(Web3.HTTPProvider(fallback, request_kwargs={"timeout": 8})),
+        )
 
 
 def get_savings_contract(w3):
@@ -483,6 +547,156 @@ def get_user_deposits(wallet_address):
         return _normalize_active_slots(raw_slots)
     except Exception as e:
         logger.error(f"get_user_deposits error: {e}")
+        return []
+
+
+def _history_cache_get(wallet_address):
+    key = wallet_address.lower()
+    with _history_cache_lock:
+        entry = _history_cache.get(key)
+        if entry and entry["expires_at"] > time.time():
+            return entry["value"]
+    return None
+
+
+def _history_cache_set(wallet_address, value):
+    key = wallet_address.lower()
+    with _history_cache_lock:
+        _history_cache[key] = {
+            "value": value,
+            "expires_at": time.time() + HISTORY_CACHE_TTL,
+        }
+        if len(_history_cache) > 500:
+            oldest = min(_history_cache, key=lambda k: _history_cache[k]["expires_at"])
+            del _history_cache[oldest]
+
+
+def _chunked_event_logs(event, wallet_address, from_block, to_block, chunk_size=250_000):
+    logs = []
+    step = max(10_000, int(chunk_size or 250_000))
+    start = int(from_block)
+    end = int(to_block)
+    while start <= end:
+        stop = min(start + step - 1, end)
+        try:
+            logs.extend(event.get_logs(
+                from_block=start,
+                to_block=stop,
+                argument_filters={"user": wallet_address},
+            ))
+        except Exception:
+            if step > 10_000:
+                return _chunked_event_logs(event, wallet_address, start, end, step // 2)
+            raise
+        start = stop + 1
+    return logs
+
+
+def _merge_savings_history(saved_logs, withdrawn_logs):
+    events = []
+    for log in saved_logs or []:
+        events.append({"kind": "saved", "log": log})
+    for log in withdrawn_logs or []:
+        events.append({"kind": "withdrawn", "log": log})
+    events.sort(
+        key=lambda item: (
+            int(getattr(item["log"], "blockNumber", item["log"].get("blockNumber", 0))),
+            int(getattr(item["log"], "logIndex", item["log"].get("logIndex", item["log"].get("index", 0)))),
+        )
+    )
+
+    open_cycles = {}
+    closed_cycles = []
+
+    for item in events:
+        log = item["log"]
+        args = getattr(log, "args", None) or log.get("args", {})
+        token_addr = str(args.get("token") or args.get(1) or "")
+        lock_days = int(args.get("lockDays") or args.get(2) or 0)
+        key = f"{token_addr.lower()}|{lock_days}"
+        meta = _token_meta(token_addr)
+
+        if item["kind"] == "saved":
+            new_slot_total = args.get("newSlotTotal") or args.get(4)
+            unlocks_at_raw = args.get("unlocksAt") or args.get(5) or 0
+            is_top_up = bool(args.get("isTopUp") if "isTopUp" in args else args.get(6))
+            unlocks_at = int(unlocks_at_raw)
+            total_h = _raw_to_human(new_slot_total or 0, meta["decimals"])
+
+            cycle = open_cycles.get(key)
+            if not cycle or not is_top_up:
+                cycle = {
+                    "token": token_addr,
+                    "token_symbol": meta["symbol"],
+                    "decimals": meta["decimals"],
+                    "lock_days": lock_days,
+                    "amount_h": total_h,
+                    "deposited_at": max(0, unlocks_at - lock_days * 86400),
+                    "unlocks_at": unlocks_at,
+                    "first_block": int(getattr(log, "blockNumber", log.get("blockNumber", 0))),
+                }
+                open_cycles[key] = cycle
+            else:
+                cycle["amount_h"] = total_h
+        else:
+            principal = args.get("principal") or args.get(3) or 0
+            timestamp = int(args.get("timestamp") or args.get(4) or 0)
+            cycle = open_cycles.get(key)
+            if not cycle:
+                cycle = {
+                    "token": token_addr,
+                    "token_symbol": meta["symbol"],
+                    "decimals": meta["decimals"],
+                    "lock_days": lock_days,
+                    "amount_h": _raw_to_human(principal, meta["decimals"]),
+                    "deposited_at": 0,
+                    "unlocks_at": timestamp,
+                    "first_block": int(getattr(log, "blockNumber", log.get("blockNumber", 0))),
+                }
+            cycle["status"] = "withdrawn"
+            cycle["amount_h"] = _raw_to_human(principal, cycle["decimals"])
+            cycle["withdrawn_at"] = timestamp
+            tx_hash_value = getattr(log, "transactionHash", None) or log.get("transactionHash", "")
+            cycle["tx_hash"] = tx_hash_value.hex() if hasattr(tx_hash_value, "hex") else str(tx_hash_value)
+            cycle["withdrawn_block"] = int(getattr(log, "blockNumber", log.get("blockNumber", 0)))
+            closed_cycles.append(cycle)
+            open_cycles.pop(key, None)
+
+    now = int(time.time())
+    active_cycles = []
+    for cycle in open_cycles.values():
+        cycle["status"] = "ready" if cycle.get("unlocks_at") and now >= cycle["unlocks_at"] else "locked"
+        active_cycles.append(cycle)
+
+    return [*active_cycles, *closed_cycles]
+
+
+def get_user_history(wallet_address):
+    """Return active and withdrawn savings cycles for a wallet."""
+    if not wallet_address:
+        return []
+    cached = _history_cache_get(wallet_address)
+    if cached is not None:
+        return cached
+    try:
+        w3 = get_w3()
+        contract = get_savings_contract(w3)
+        addr = Web3.to_checksum_address(wallet_address)
+        latest = int(w3.eth.block_number)
+        saved_logs, withdrawn_logs = [], []
+        try:
+            saved_logs = _chunked_event_logs(contract.events.Saved(), addr, SAVINGS_DEPLOYMENT_BLOCK, latest)
+        except Exception as exc:
+            logger.warning(f"get_user_history saved log scan failed: {exc}")
+        try:
+            withdrawn_logs = _chunked_event_logs(contract.events.Withdrawn(), addr, SAVINGS_DEPLOYMENT_BLOCK, latest)
+        except Exception as exc:
+            logger.warning(f"get_user_history withdrawn log scan failed: {exc}")
+        merged = _merge_savings_history(saved_logs, withdrawn_logs)
+        _history_cache_set(wallet_address, merged)
+        return merged
+    except Exception as e:
+        logger.error(f"get_user_history error: {e}")
         return []
 
 
