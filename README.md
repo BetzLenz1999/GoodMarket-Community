@@ -223,28 +223,25 @@ The WalletConnect sidecar (`wc_service.js`) is started automatically by the Flas
 | `TELEGRAM_WEB_APP_URL` | Public base URL opened by Telegram Mini App buttons (e.g. `https://good-market-community.vercel.app`) |
 | `TELEGRAM_WEBHOOK_SECRET_TOKEN` | Optional shared secret for validating Telegram webhook calls |
 
-## Savings v5 — Custom Lock Days & USDT
+## Savings v6 — Weekly / Monthly Rewards
 
-The G$ Savings vault was redeployed as **GDSavings v5** to give savers full
-control over the lock period and to accept USDT alongside G$, CELO, and cUSD.
+The G$ Savings vault source is being prepared as **GDSavings v6** to simplify
+the UX to only two lock periods: Weekly (7 days) and Monthly (30 days).
 
 ### What changed vs. v4
 
-| | **v4** (previous) | **v5** (current) |
+| | **v4** (previous) | **v6** (prepared) |
 |---|---|---|
-| Lock durations | Fixed ladder: 1, 30, 60, …, 330, 365 days | **Any integer from 1 to 360 days** — saver chooses |
+| Lock periods | Fixed ladder: 1, 30, 60, …, 330, 365 days | Weekly (7d) or Monthly (30d) |
 | Tokens accepted | G$, CELO, cUSD | G$, CELO, cUSD, **USDT** (6-decimal, native USD₮ on Celo) |
-| Tester bonus | 1 day → +30 G$ | **1–29 days** → +30 G$ (any amount ≥ per-token MIN) |
-| Mid-tier bonus | 30–330d, step of 30 → `(lockDays/30) × 500 G$` | **30–360d, every day** → `⌊lockDays × 500 / 30⌋ G$` (≈16.67 G$/day, linear) |
-| Loyalty bonus | 365d only → +20,000 G$ | **300–360d**, amount ≥ 1M G$ equiv → +20,000 G$ (replaces mid-tier) |
+| Monthly rewards | 1 day → +30 G$ / 30d → +500 G$ / 365d → +20,000 G$ | **1,000–4,999 G$ → 50 G$; 5,000–9,999 G$ → 250 G$; 10,000–49,999 G$ → 500 G$; 50,000–99,999 G$ → 2,500 G$; 100,000+ G$ → 10,000 G$** |
+| Weekly rewards | — | **Monthly reward / 4**, rounded down |
 | Top-up rules | Inherits original unlock date | Inherits original unlock date (unchanged) |
 | Early withdrawal | Not allowed | Not allowed (unchanged) |
 
-The legacy v4 contract is **immutable on-chain** and remains the source of
-truth for deposits that were opened before the v5 redeploy. The Savings UI
-exposes a separate read-only **"Legacy Saves (v4 · READ-ONLY)"** panel that
-lets affected wallets withdraw matured v4 slots — new deposits and top-ups
-always go to v5.
+The v6 contract will become the runtime savings contract once it is
+redeployed. Legacy v2/v4 support has been removed from the Savings UI/backend,
+so new deploys and all user flows are being aligned to v6.
 
 ### Per-token deposit limits
 
@@ -258,7 +255,7 @@ always go to v5.
 `100k G$ equivalent` = 100,000 G$ / 100 CELO / 100 cUSD / 100 USDT  
 `1M G$ equivalent`  = 1,000,000 G$ / 1,000 CELO / 1,000 cUSD / 1,000 USDT
 
-### Deploying v5
+### Deploying v6
 
 Run the deployment script with `SAVING_KEY` set to the deployer wallet's
 private key. The USDT address defaults to native Tether on Celo
@@ -273,13 +270,11 @@ The script writes the new contract address + ABI to
 `contracts/savings_deployment_info.json`. After a successful deploy:
 
 1. Update `SAVINGS_CONTRACT_ADDRESS` in the deployment environment.
-2. Set `LEGACY_V4_CONTRACT_ADDRESS=0x78d2a6Dd976337d3bEaFA0c30df6a0fDE949a618`
-   so the legacy v4 panel can read existing slots. The pre-v5 deployment
-   info is preserved at `contracts/savings_deployment_info_v4.json` for
-   reference.
-3. Set `USDT_TOKEN_ADDRESS` to match the address used at deploy time
+   If you are keeping the previous v5 vault withdrawable while v6 is live,
+   set `LEGACY_V5_CONTRACT_ADDRESS` to the old v5 address.
+2. Set `USDT_TOKEN_ADDRESS` to match the address used at deploy time
    (defaults match the script).
-4. If the new v5 deploy block differs from the v4 deploy block (65917286),
+3. If the new deploy block differs from the previous value (65917286),
    update `SAVINGS_DEPLOYMENT_BLOCK` in `templates/savings.html` so the
    on-chain history reconstruction doesn't scan unnecessary blocks.
 
