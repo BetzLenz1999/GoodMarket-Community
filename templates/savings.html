@@ -600,13 +600,13 @@
         "https://celo.publicnode.com"
     ];
     const LOGIN_METHOD = "{{ login_method }}";
+    // Pure self-custody mode: never use server-side signing.
+    window.useServerSigning = ['turnkey_google', 'turnkey_email'].includes((LOGIN_METHOD || '').toLowerCase());
 
     // v5 dynamic lock-duration bounds. Kept here so all client-side
     // validation (input clamp, summary, bonus preview) shares one source.
     const MIN_LOCK_DAYS = 1;
     const MAX_LOCK_DAYS = 360;
-    // Pure self-custody mode: never use server-side signing.
-    window.useServerSigning = false;
 
     // Legacy server-sign helper intentionally disabled in pure self-custody mode.
     async function serverSignedTx(toAddr, abiFragment, args, alertId) {
