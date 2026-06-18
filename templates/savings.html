@@ -1233,10 +1233,6 @@
             ? timeoutMs
             : (_isTrustWalletMobileContext() ? 3200 : (_isLikelyMobileWalletContext() ? 2200 : 800));
         const start = Date.now();
-        if (typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred()) {
-            const wcProvider = await _walletGetWcProviderIfPreferred();
-            if (wcProvider) return wcProvider;
-        }
         let ep = _getEthProvider();
         if (ep) return ep;
         while (Date.now() - start < budget) {
