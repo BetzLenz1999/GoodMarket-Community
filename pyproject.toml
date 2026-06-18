@@ -27,5 +27,6 @@ dependencies = [
     "supabase>=2.28.3",
     "tenacity>=9.1.4",
     "web3>=7.15.0",
+    "turnkey-api-key-stamper>=0.1.0",
     "websockets>=15.0.1",
 ]
