@@ -279,13 +279,6 @@
             const trustBudget = _isTrustWalletMobileContext() ? 2600 : 800;
             const budget = typeof timeoutMs === "number" ? timeoutMs : trustBudget;
             const start = Date.now();
-            const wcPreferred = typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred();
-            if (wcPreferred) {
-                try {
-                    const wcProvider = await GMWalletConnect.getProvider();
-                    if (wcProvider) return wcProvider;
-                } catch (_) {}
-            }
             let found = _getEthProvider();
             if (found) return found;
             while (Date.now() - start < budget) {
@@ -294,6 +287,7 @@
                 found = _getEthProvider();
                 if (found) return found;
             }
+            const wcPreferred = typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred();
             if (wcPreferred) {
                 try {
                     const wcProvider = await GMWalletConnect.getProvider();
