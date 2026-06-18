@@ -108,6 +108,7 @@
         users on this claim-link page know not to drain the refilled CELO.
     -->
     <script src="/static/js/gas-coverage-banner.js?v={{ ASSET_VERSION }}"></script>
+    <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     <script>
         const LOGIN_METHOD = "{{ login_method | default('walletconnect') }}";
         const SESSION_WALLET = "{{ wallet | default('') }}";
@@ -128,6 +129,18 @@
         let paymentWallet = null;
         let paymentAmount = null;
         window.__announced6963Providers = window.__announced6963Providers || [];
+
+        if (typeof GMWalletConnect !== "undefined") {
+            GMWalletConnect.configure({
+                walletAddress: SESSION_WALLET || "",
+                loginMethod: LOGIN_METHOD,
+                projectId: "{{ walletconnect_project_id|default('', true) }}",
+                dappName: "GoodMarket Claim",
+                dappDescription: "Claim G$ from a GoodMarket payment link",
+                assetVersion: "{{ ASSET_VERSION }}",
+                sidecarEnabled: {{ 'true' if walletconnect_sidecar_enabled else 'false' }},
+            });
+        }
 
         (function initEip6963Discovery() {
             try {
@@ -266,6 +279,13 @@
             const trustBudget = _isTrustWalletMobileContext() ? 2600 : 800;
             const budget = typeof timeoutMs === "number" ? timeoutMs : trustBudget;
             const start = Date.now();
+            const wcPreferred = typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred();
+            if (wcPreferred) {
+                try {
+                    const wcProvider = await GMWalletConnect.getProvider();
+                    if (wcProvider) return wcProvider;
+                } catch (_) {}
+            }
             let found = _getEthProvider();
             if (found) return found;
             while (Date.now() - start < budget) {
@@ -273,6 +293,12 @@
                 await new Promise((r) => setTimeout(r, 120));
                 found = _getEthProvider();
                 if (found) return found;
+            }
+            if (wcPreferred) {
+                try {
+                    const wcProvider = await GMWalletConnect.getProvider();
+                    if (wcProvider) return wcProvider;
+                } catch (_) {}
             }
             return null;
         }
