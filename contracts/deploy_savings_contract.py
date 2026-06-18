@@ -1,5 +1,5 @@
 """
-GDSavings Contract Deployment Script for Celo Mainnet (v5)
+GDSavings Contract Deployment Script for Celo Mainnet (v6)
 
 Deploys the multi-token GDSavings vault (no owner, no pause, no early
 withdrawal). Tokens accepted: G$, CELO, cUSD, USDT.
@@ -7,28 +7,22 @@ withdrawal). Tokens accepted: G$, CELO, cUSD, USDT.
 Features:
   - One slot per (user, token, lockDays). Top-ups inherit the slot's
     original unlocksAt (no lock extension).
-  - Lock duration: any integer from 1 to 360 days (custom typed by user).
+  - Lock period: Weekly (7 days) or Monthly (30 days).
   - Per-token min/max (using each token's native decimals):
       G$:   1,000        - 10,000,000   (18d)
       CELO: 1            - 100,000      (18d)
       cUSD: 1            - 1,000,000    (18d)
       USDT: 1            - 1,000,000    ( 6d)
-  - Per-duration bonus structure (always paid in G$, regardless of
-    deposit token; internal contract ratio 1 G$ == 0.001 CELO == 0.001 cUSD
-    == 0.001 USDT):
-      1..29-day  -> 30 G$ if amount >= per-token MIN.
-      30..360-day -> (lockDays * 500 / 30) G$ if amount >= per-token
-                     "100k G$ equivalent" (G$ 100,000 / CELO 100 / cUSD 100
-                     / USDT 100).
-      >=300-day with amount >= per-token "1M G$ equivalent" replaces the
-      mid-tier value with 20,000 G$ loyalty bonus.
+  - Monthly reward tiers are fixed G$ payouts; weekly rewards are
+    derived as monthly_reward / 4 and rounded down.
+  - Reward payouts remain best-effort: if the reward pool is short,
+    users still withdraw principal.
   - Anyone can fund the G$ reward pool via fundRewardPool().
   - No owner, no admin, no pause, no emergency, no early withdrawal.
 
 Before re-deploying:
-  - Old (v4) deployment info is preserved at
-    contracts/savings_deployment_info_v4.json so the frontend can still
-    read+withdraw legacy v4 deposits.
+  - Update the frontend/backend to point at the new savings contract
+    address before switching users over to the new deploy.
 """
 
 import os
@@ -189,7 +183,7 @@ def deploy_contract():
 
         deployment_info = {
             "contract_name": "GDSavings",
-            "version": "5",
+            "version": "6",
             "contract_address": contract_address,
             "tx_hash": tx_hash_hex,
             "deployer": account.address,
@@ -206,7 +200,7 @@ def deploy_contract():
             "optimization_runs": 200,
             "notes": (
                 "Multi-token (G$, CELO, cUSD, USDT). Per-(user, token, lockDays) slot. "
-                "Lock duration is any integer 1..360 (custom typed by user). "
+                "Lock period is Weekly (7d) or Monthly (30d). "
                 "Top-ups inherit the slot's unlocksAt. No early withdrawal. "
                 "No owner, no pause. Reward pool is G$-only and trustless."
             ),
@@ -230,7 +224,7 @@ def deploy_contract():
 
 if __name__ == "__main__":
     logger.info("=" * 60)
-    logger.info("GDSavings v5 Contract Deployment - Celo Mainnet")
+    logger.info("GDSavings v6 Contract Deployment - Celo Mainnet")
     logger.info("=" * 60)
     result = deploy_contract()
     if result:
