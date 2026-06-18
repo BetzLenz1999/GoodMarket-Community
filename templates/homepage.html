@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2124,11 +2123,77 @@
                     </div>
                     <span class="option-arrow">→</span>
                 </button>
+                {% if google_client_id or turnkey_auth_proxy_config_id %}
+                <button class="wallet-option-card wc-option" onclick="showCreateWalletOptions()" style="border-color: rgba(124,58,237,0.5);">
+                    <div class="option-icon">✨</div>
+                    <div class="option-text">
+                        <div class="option-title">Create new wallet</div>
+                        <p class="option-desc">Email OTP or Google social login</p>
+                    </div>
+                    <span class="option-arrow">→</span>
+                </button>
+                {% endif %}
+            </div>
+
+            <!-- Step 2B: Create new wallet (email OTP + Google social login) -->
+            <div class="wallet-form" id="googleLoginOptions">
+                <button class="back-btn" onclick="showWalletOptions()">← Back to login options</button>
+
+                <div class="wallet-section-title" style="margin-top:0.25rem;">Create a seedless wallet</div>
+                <p style="color:#9ca3af;font-size:0.85rem;line-height:1.5;margin-bottom:1rem;">
+                    Use email OTP or Google social login to create your Turnkey wallet. WalletConnect and injected wallets stay unchanged.
+                </p>
+
+                <div class="wallet-input-group" style="margin-bottom:0.85rem;">
+                    <label class="wallet-label" for="turnkeyEmailAddress">Email address</label>
+                    <input type="email" id="turnkeyEmailAddress" class="wallet-input" placeholder="name@example.com" autocomplete="email" />
+                </div>
+
+                <div id="turnkeyEmailOtpWrap" class="wallet-input-group" style="margin-bottom:0.85rem; display:none;">
+                    <label class="wallet-label" for="turnkeyEmailOtpCode">Verification code</label>
+                    <input type="text" id="turnkeyEmailOtpCode" class="wallet-input" placeholder="Enter the 6-digit code" inputmode="numeric" autocomplete="one-time-code" />
+                </div>
+
+                <div class="wallet-input-group" style="margin-bottom:0.85rem;">
+                    <label class="wallet-label" for="turnkeyNameInput">Display name <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+                    <input type="text" id="turnkeyNameInput" class="wallet-input" placeholder="How should we label your wallet?" autocomplete="name" />
+                </div>
+
+                <div id="turnkeyLoginActions" style="display:flex;flex-direction:column;gap:0.7rem;margin-top:1rem;">
+                    <button type="button" class="wallet-option-card wc-option" style="border-color: rgba(124,58,237,0.45);" onclick="TurnkeyAuthFlow.sendEmailOtp()">
+                        <div class="option-icon">📩</div>
+                        <div class="option-text">
+                            <div class="option-title">Send email code</div>
+                            <p class="option-desc">Create or open your wallet with an OTP</p>
+                        </div>
+                        <span class="option-arrow">→</span>
+                    </button>
+                    <div style="display:flex;align-items:center;gap:.8rem;color:#9ca3af;font-size:.78rem;text-transform:uppercase;letter-spacing:.12em;">
+                        <span style="flex:1;height:1px;background:rgba(255,255,255,.08);"></span>
+                        <span>Or continue with Google</span>
+                        <span style="flex:1;height:1px;background:rgba(255,255,255,.08);"></span>
+                    </div>
+                    <div style="display:flex;flex-direction:column;align-items:center;gap:1rem;">
+                        <p style="color:#9ca3af;font-size:0.85rem;text-align:center;">Sign in with Google to create a seedless embedded wallet powered by Turnkey.</p>
+                        <div id="googleSignInBtnWrap"></div>
+                    </div>
+                </div>
+
+                <div id="turnkeyEmailStatus" class="status-message"></div>
+                <div style="display:flex;justify-content:flex-end;gap:.6rem;margin-top:1rem;">
+                    <button type="button" class="wallet-btn secondary" onclick="TurnkeyAuthFlow.completeEmailOtp()" style="min-width:140px;">Verify email code</button>
+                </div>
+                <div id="turnkeyGoogleStatus" class="status-message"></div>
             </div>
 
             <!-- Step 2A: WalletConnect / injected -->
             <div class="wallet-form" id="walletConnectOptions">
                 <button class="back-btn" onclick="showWalletOptions()">← Back to login options</button>
+
+                <div id="googleReferralWrap" class="wallet-input-group" style="margin-bottom:0.85rem;">
+                    <label class="wallet-label" for="googleReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
+                    <input type="text" id="googleReferralCode" class="wallet-input" placeholder="Enter referral code if you have one" autocomplete="off" oninput="syncReferralInputs(this)" />
+                </div>
 
                 <div id="wcReferralWrap" class="wallet-input-group" style="margin-bottom:0.85rem;">
                     <label class="wallet-label" for="wcReferralCode">Referral Code <span style="font-weight:400;color:#9ca3af;">(Optional)</span></label>
@@ -2247,11 +2312,27 @@
 
         function showWalletOptions() {
             document.getElementById('walletOptions').style.display = 'flex';
-            ['walletConnectOptions'].forEach(id => {
+            ['walletConnectOptions', 'googleLoginOptions'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('visible');
             });
             detectInjectedWallet();
+        }
+
+        function showCreateWalletOptions() {
+            document.getElementById('walletOptions').style.display = 'none';
+            const f = document.getElementById('googleLoginOptions');
+            if (f) f.classList.add('visible');
+            if (window.TurnkeyAuthFlow) {
+                window.TurnkeyAuthFlow.initGoogleButton();
+                window.TurnkeyAuthFlow.prepare();
+            } else if (window.TurnkeyGoogleLogin) {
+                window.TurnkeyGoogleLogin.init();
+            }
+        }
+
+        function showGoogleLoginOptions() {
+            showCreateWalletOptions();
         }
 
         function showWalletConnectOptions() {
@@ -2821,16 +2902,18 @@
 
         function getPendingReferralCode() {
             const fromWc = ((document.getElementById('wcReferralCode') || {}).value || '').trim();
+            const fromGoogle = ((document.getElementById('googleReferralCode') || {}).value || '').trim();
             const saved = (sessionStorage.getItem('pending_referral_code') || '').trim();
-            return (fromWc || saved || '').toUpperCase();
+            return (fromWc || fromGoogle || saved || '').toUpperCase();
         }
 
         function syncReferralInputs(sourceEl) {
             const value = (sourceEl && sourceEl.value ? sourceEl.value : '').trim().toUpperCase();
-            const wcEl = document.getElementById('wcReferralCode');
-            if (wcEl && wcEl !== sourceEl && wcEl.value !== value) {
-                wcEl.value = value;
-            }
+            const ids = ['wcReferralCode', 'googleReferralCode'];
+            ids.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el && el !== sourceEl && el.value !== value) el.value = value;
+            });
             if (value) {
                 try { sessionStorage.setItem('pending_referral_code', value); } catch (e) {}
             }
@@ -4101,5 +4184,15 @@
         document.addEventListener('DOMContentLoaded', loadCommunityTweets);
     })();
     </script>
+
+    {% if google_client_id %}
+    <!-- Turnkey auth -->
+    <script>
+        window.__GOOGLE_CLIENT_ID = "{{ google_client_id }}";
+        window.__TURNKEY_AUTH_PROXY_CONFIG_ID = "{{ turnkey_auth_proxy_config_id }}";
+        window.__TURNKEY_ORGANIZATION_ID = "{{ turnkey_organization_id }}";
+    </script>
+    <script src="{{ url_for('static', filename='js/turnkey-google-login.js', v=ASSET_VERSION) }}"></script>
+    {% endif %}
 </body>
 </html>
