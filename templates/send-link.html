@@ -207,7 +207,7 @@
         const LOGIN_METHOD = "{{ login_method }}";
         const WC_PROJECT_ID = "{{ walletconnect_project_id }}";
         // Pure self-custody mode: never use server-side signing.
-        const IS_SERVER_SIGNING = false;
+        const IS_SERVER_SIGNING = ['turnkey_google', 'turnkey_email'].includes((LOGIN_METHOD || '').toLowerCase());
         const PREFER_WC_SIGNING = ["walletconnect", "manual", "manual_address"].includes((LOGIN_METHOD || "").toLowerCase());
 
         // Handles multi-wallet injections: prefer MiniPay in MiniPay dApp browser,
