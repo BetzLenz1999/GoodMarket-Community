@@ -188,7 +188,7 @@
     <!-- Header -->
     <div class="page-header">
         <h1 class="page-title">🏦 Savings</h1>
-        <p class="page-subtitle">Lock G$, CELO, cUSD, or USDT for any number of days you choose (1 – 360) — earn a G$ bonus that grows with your lock period. Top-ups inherit the slot's original unlock date.</p>
+        <p class="page-subtitle">Lock G$, CELO, cUSD, or USDT on Weekly or Monthly terms — reward estimates update live as you type. Top-ups inherit the slot's original unlock date.</p>
     </div>
 
     <!-- Contract Stats -->
@@ -259,29 +259,14 @@
                 </div>
             </div>
 
-            <!-- Step 1: Choose duration -->
+            <!-- Step 1: Choose lock period -->
             <div class="form-group">
-                <label>2 · Choose Lock Duration <span style="opacity:.45; font-weight:400;">(1 – 360 days)</span></label>
-                <div class="input-wrap">
-                    <input type="number"
-                           id="saveDays"
-                           min="1"
-                           max="360"
-                           step="1"
-                           inputmode="numeric"
-                           value="60"
-                           placeholder="e.g. 60"
-                           oninput="onDaysChange(this.value)">
-                    <span class="input-suffix">days</span>
+                <label>2 · Choose Lock Period</label>
+                <div class="dur-grid" id="periodGrid" style="grid-template-columns:repeat(2,1fr);">
+                    <div class="dur-btn"          data-period="weekly"  onclick="selectPeriod(this)">Weekly<div class="dur-label">7 days</div></div>
+                    <div class="dur-btn selected" data-period="monthly" onclick="selectPeriod(this)">Monthly<div class="dur-label">30 days</div></div>
                 </div>
-                <div class="hint" id="daysHint">Type any number of days from 1 to 360. Longer locks earn a bigger G$ bonus.</div>
-                <div class="dur-grid" id="daysQuickPicks" style="grid-template-columns:repeat(5,1fr); margin-top:.65rem;">
-                    <div class="dur-btn"          data-days="1"   onclick="selectQuickDays(this)">1<div class="dur-label">Day</div></div>
-                    <div class="dur-btn"          data-days="30"  onclick="selectQuickDays(this)">30<div class="dur-label">Days</div></div>
-                    <div class="dur-btn"          data-days="90"  onclick="selectQuickDays(this)">90<div class="dur-label">Days</div></div>
-                    <div class="dur-btn"          data-days="180" onclick="selectQuickDays(this)">180<div class="dur-label">Days</div></div>
-                    <div class="dur-btn"          data-days="360" onclick="selectQuickDays(this)">360<div class="dur-label">Days</div></div>
-                </div>
+                <div class="hint" id="periodHint">Choose Weekly or Monthly. Reward estimates update as you type an amount.</div>
             </div>
 
             <!-- Step 2: Amount -->
@@ -298,7 +283,7 @@
             <div class="bonus-box" id="topupNotice" style="display:none; margin-bottom:1rem; background:rgba(56,189,248,.07); border-color:rgba(56,189,248,.25);">
                 <div class="bonus-icon">🔄</div>
                 <div class="bonus-text" id="topupNoticeText">
-                    You already have an active slot for this token + duration. <strong>This deposit will be added to that slot.</strong> The unlock date stays the same — top-ups never extend it.
+                    You already have an active slot for this token + period. <strong>This deposit will be added to that slot.</strong> The unlock date stays the same — top-ups never extend it.
                 </div>
             </div>
 
@@ -306,7 +291,7 @@
             <div class="bonus-box" id="bonusNotice" style="display:none; margin-bottom:1rem;">
                 <div class="bonus-icon">🎁</div>
                 <div class="bonus-text" id="bonusNoticeText">
-                    You qualify for a G$ bonus on withdrawal — paid from the community reward pool (if funded).
+                    Enter an amount to see your estimated reward.
                 </div>
             </div>
 
@@ -321,8 +306,8 @@
                     <span id="summaryAmount" style="font-weight:700; color:#e2e8f0;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.6rem;">
-                    <span style="font-size:.82rem; color:rgba(255,255,255,.4);">Lock Duration</span>
-                    <span id="summaryDuration" style="font-weight:700; color:#e2e8f0;">60 days</span>
+                    <span style="font-size:.82rem; color:rgba(255,255,255,.4);">Lock Period</span>
+                    <span id="summaryDuration" style="font-weight:700; color:#e2e8f0;">Monthly (30 days)</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span style="font-size:.82rem; color:rgba(255,255,255,.4);">Unlocks On</span>
@@ -336,7 +321,7 @@
                     <i class="fas fa-check-circle"></i> <span id="approveBtnLabel">Step 1 — Approve G$ Spending</span>
                 </button>
                 <button class="btn btn-primary" onclick="doSave()" id="saveBtn" disabled>
-                    <i class="fas fa-lock"></i> <span id="saveBtnLabel">Step 2 — Lock &amp; Save G$</span>
+                    <i class="fas fa-lock"></i> <span id="saveBtnLabel">Step 2 — Lock Monthly G$</span>
                 </button>
             </div>
 
@@ -355,17 +340,37 @@
                 <strong>Total Saved (history):</strong> <span id="myTotalSaved">0</span>
             </p>
             <p style="font-size:.75rem; color:rgba(255,255,255,.35); margin-bottom:.85rem;">
-                Each row is a unique <strong>(token · lockDays)</strong> slot. Top-ups merge into the same slot and inherit the original unlock date. Already-withdrawn saves are tucked into the collapsible <em>Withdrawn History</em> below — rebuilt from on-chain events, so it works on any device.
+                Each row is a unique <strong>(token · period)</strong> slot. Top-ups merge into the same slot and inherit the original unlock date. Already-withdrawn saves are tucked into the collapsible <em>Withdrawn History</em> below — rebuilt from on-chain events, so it works on any device.
             </p>
             <div id="depList" class="dep-list">
                 <div class="empty-state">Loading your saves…</div>
             </div>
         </div>
 
-        <!-- Withdrawn history panel — collapsible like the legacy card. Only
-             shown for wallets that have at least one withdrawn save on the
-             v4 contract. Source of truth is on-chain Withdrawn events, not
-             localStorage. -->
+        <div class="card" id="legacyV5Card" style="display:none; margin-top:1.25rem; border-color:rgba(167,139,250,.22); background:rgba(167,139,250,.04);">
+            <button type="button"
+                    id="legacyV5Toggle"
+                    onclick="toggleLegacyV5()"
+                    style="width:100%; background:transparent; border:none; padding:0; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:.75rem;">
+                <span style="font-size:1.05rem; font-weight:600; color:#f5f5f7;">
+                    ⏪Legacy v5 Saves
+                    <span id="legacyV5Count" style="display:inline-block; margin-left:.4rem; padding:.05rem .5rem; background:rgba(167,139,250,.22); color:#ddd6fe; border-radius:999px; font-size:.7rem; font-weight:600;">0</span>
+                    <span style="display:inline-block; margin-left:.35rem; padding:.05rem .45rem; background:rgba(167,139,250,.16); color:#c4b5fd; border-radius:6px; font-size:.62rem; font-weight:700; letter-spacing:.04em; vertical-align:middle;">WITHDRAW-ONLY</span>
+                </span>
+                <span id="legacyV5Chevron" style="color:rgba(255,255,255,.45); font-size:.9rem;">▾</span>
+            </button>
+            <div id="legacyV5Body" style="display:none; margin-top:.95rem;">
+                <p style="font-size:.74rem; color:rgba(255,255,255,.45); margin-bottom:.7rem;">
+                    Old v5 slots remain withdrawable here while the new v6 flow runs on the current contract. Top-ups and new deposits should go to v6; this panel is only for legacy v5 withdrawals.
+                </p>
+                <div id="legacyV5List" class="dep-list">
+                    <div class="empty-state">No legacy v5 saves yet.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Withdrawn history panel — collapsible and built from on-chain
+             events. Source of truth is the current contract, not localStorage. -->
         <div class="card" id="withdrawnCard" style="display:none; margin-top:1.25rem; border-color:rgba(148,163,184,.22); background:rgba(148,163,184,.04);">
             <button type="button"
                     id="withdrawnToggle"
@@ -388,61 +393,6 @@
             </div>
         </div>
 
-        <!-- Legacy v4 panel — only rendered for wallets that have active v4
-             slots on the pre-v5 multi-token contract. Read + withdraw only;
-             v5 active slots are the only thing that ever accepts new deposits. -->
-        <div class="card" id="legacyV4Card" style="display:none; margin-top:1.25rem; border-color:rgba(94,234,212,.35); background:rgba(94,234,212,.05);">
-            <button type="button"
-                    id="legacyV4Toggle"
-                    onclick="toggleLegacyV4()"
-                    style="width:100%; background:transparent; border:none; padding:0; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:.75rem;">
-                <span style="font-size:1.05rem; font-weight:600; color:#f5f5f7;">
-                    🗄️ Legacy Saves
-                    <span id="legacyV4Count" style="display:inline-block; margin-left:.4rem; padding:.05rem .5rem; background:rgba(94,234,212,.18); color:#5eead4; border-radius:999px; font-size:.7rem; font-weight:600;">0</span>
-                    <span style="display:inline-block; margin-left:.35rem; padding:.05rem .45rem; background:rgba(94,234,212,.16); color:#5eead4; border-radius:6px; font-size:.62rem; font-weight:700; letter-spacing:.04em; vertical-align:middle;">v4 · READ-ONLY</span>
-                </span>
-                <span id="legacyV4Chevron" style="color:rgba(255,255,255,.45); font-size:.9rem;">▴</span>
-            </button>
-            <div id="legacyV4Body" style="display:block; margin-top:.95rem;">
-                <p style="font-size:.74rem; color:rgba(255,255,255,.45); margin-bottom:.7rem;">
-                    Saves you opened on the previous multi-token savings contract
-                    (<code style="color:#5eead4; font-size:.7rem;">{{ legacy_v4_contract }}</code>).
-                    These are <strong>withdraw-only</strong> on this UI — new deposits and top-ups always go to the current v5 contract above.
-                    Once every v4 slot has been withdrawn, this section disappears.
-                </p>
-                <div id="legacyV4Alert" class="alert"></div>
-                <div id="legacyV4List" class="dep-list">
-                    <div class="empty-state">Loading legacy v4 saves…</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Legacy v2 panel — only rendered for wallets that have v2 deposits. -->
-        <div class="card" id="legacyCard" style="display:none; margin-top:1.25rem; border-color:rgba(251,191,36,.35); background:rgba(251,191,36,.05);">
-            <button type="button"
-                    id="legacyToggle"
-                    onclick="toggleLegacy()"
-                    style="width:100%; background:transparent; border:none; padding:0; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:.75rem;">
-                <span style="font-size:1.05rem; font-weight:600; color:#f5f5f7;">
-                    🗂️ Legacy Saves
-                    <span id="legacyCount" style="display:inline-block; margin-left:.4rem; padding:.05rem .5rem; background:rgba(167,139,250,.18); color:#c4b5fd; border-radius:999px; font-size:.7rem; font-weight:600;">0</span>
-                    <span style="display:inline-block; margin-left:.35rem; padding:.05rem .45rem; background:rgba(255,180,80,.16); color:#fbbf24; border-radius:6px; font-size:.62rem; font-weight:700; letter-spacing:.04em; vertical-align:middle;">v2 · READ-ONLY</span>
-                </span>
-                <span id="legacyChevron" style="color:rgba(255,255,255,.45); font-size:.9rem;">▴</span>
-            </button>
-            <div id="legacyBody" style="display:block; margin-top:.95rem;">
-                <p style="font-size:.74rem; color:rgba(255,255,255,.45); margin-bottom:.7rem;">
-                    Saves you opened on the previous savings contract
-                    (<code style="color:#a78bfa; font-size:.7rem;">{{ legacy_v2_contract }}</code>).
-                    These are <strong>withdraw-only</strong> — top-ups always go to your active slots above.
-                    Once all of these are withdrawn, this section disappears.
-                </p>
-                <div id="legacyAlert" class="alert"></div>
-                <div id="legacyList" class="dep-list">
-                    <div class="empty-state">Loading legacy saves…</div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- ── TAB: SPONSOR POOL ── -->
@@ -453,7 +403,7 @@
             <div class="bonus-box" style="margin-bottom:1.25rem;">
                 <div class="bonus-icon">🤝</div>
                 <div class="bonus-text">
-                    As a <strong>sponsor</strong>, your G$ goes directly into the community reward pool — used to pay per-duration bonuses (<strong>30 G$</strong> for 1 – 29-day testers, <strong>500 – 6,000 G$</strong> for 30 – 360-day mid-tier savers scaling linearly with lock days, <strong>20,000 G$</strong> for 300+ day loyalty saves with whale-size deposits). Your contribution is permanently recorded on-chain.
+                    As a <strong>sponsor</strong>, your G$ goes directly into the community reward pool — used to pay weekly/monthly bonuses (<strong>30 G$</strong> for the monthly tiers you see in the preview, with weekly rewards derived from the monthly amount). Your contribution is permanently recorded on-chain.
                 </div>
             </div>
 
@@ -501,11 +451,11 @@
             <ul class="steps">
                 <li class="step">
                     <div class="step-n">1</div>
-                    <div class="step-t"><strong>Lock G$, CELO, cUSD, or USDT</strong> for any number of days you choose between <strong>1 and 360</strong>. Your tokens go directly into a smart contract on Celo Mainnet — no preset durations, just type in what works for you.</div>
+                    <div class="step-t"><strong>Choose Weekly or Monthly</strong> for your lock period. Your tokens go directly into a smart contract on Celo Mainnet — no custom day input, just the plan that fits you.</div>
                 </li>
                 <li class="step">
                     <div class="step-n">2</div>
-                    <div class="step-t"><strong>Each (token · lockDays) is a slot.</strong> If you top up the same token + duration later, the new amount is added to the existing slot — the unlock date does <strong>not</strong> change. Different durations or different tokens open separate slots.</div>
+                    <div class="step-t"><strong>Each (token · period) is a slot.</strong> If you top up the same token + period later, the new amount is added to the existing slot — the unlock date does <strong>not</strong> change. Weekly and Monthly saves open separate slots.</div>
                 </li>
                 <li class="step">
                     <div class="step-n">3</div>
@@ -517,15 +467,15 @@
                 </li>
                 <li class="step">
                     <div class="step-n">★</div>
-                    <div class="step-t"><strong>Tester bonus (1–29 days):</strong> Lock any amount ≥ the per-token minimum (G$ ≥ 1,000 / CELO ≥ 1 / cUSD ≥ 1 / USDT ≥ 1) and earn a flat <strong>+30 G$</strong> on withdrawal — paid from the reward pool if funded.</div>
+                    <div class="step-t"><strong>Monthly tier preview:</strong> Reward estimates update live as you type. Monthly tiers are based on your deposit size, and weekly rewards are derived from the monthly tier.</div>
                 </li>
                 <li class="step">
                     <div class="step-n">★</div>
-                    <div class="step-t"><strong>Mid-tier bonus (30–360 days, linear):</strong> Deposit ≥ 100,000 G$ / 100 CELO / 100 cUSD / 100 USDT and earn <strong>⌊lockDays × 500 / 30⌋ G$</strong> on withdrawal — roughly <strong>16.67 G$ per day</strong>, scaling smoothly with your lock length. Examples: 30d → 500 G$, 60d → 1,000 G$, 90d → 1,500 G$, 180d → 3,000 G$, 360d → 6,000 G$.</div>
+                    <div class="step-t"><strong>Monthly reward tiers:</strong> 1,000–4,999 G$ → 50 G$; 5,000–9,999 G$ → 250 G$; 10,000–49,999 G$ → 500 G$; 50,000–99,999 G$ → 2,500 G$; 100,000–1,000,000 G$ → 10,000 G$.</div>
                 </li>
                 <li class="step">
                     <div class="step-n">★</div>
-                    <div class="step-t"><strong>Long-loyalty bonus (300–360 days):</strong> Lock for at least <strong>300 days</strong> with a deposit ≥ 1,000,000 G$ / 1,000 CELO / 1,000 cUSD / 1,000 USDT and earn a flat <strong>+20,000 G$</strong> on withdrawal — this replaces the mid-tier value at that size.</div>
+                    <div class="step-t"><strong>Weekly reward preview:</strong> Weekly rewards are derived from the monthly tier so the UI stays simple. The reward pool still funds payouts best-effort, and withdrawals remain available even when the pool is low.</div>
                 </li>
             </ul>
         </div>
@@ -533,15 +483,15 @@
         <div class="card">
             <div class="card-title">Tokens, Limits &amp; Bonuses</div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:.6rem; font-size:.85rem;">
-                <div style="color:rgba(255,255,255,.4);">Lock durations</div><div style="font-weight:600; color:#c4b5fd;">Any integer from 1 to 360 days (you choose)</div>
+                <div style="color:rgba(255,255,255,.4);">Lock periods</div><div style="font-weight:600; color:#c4b5fd;">Weekly (7 days) or Monthly (30 days)</div>
                 <div style="color:rgba(255,255,255,.4);">G$ deposit range</div><div style="font-weight:600; color:#c4b5fd;">1,000 – 10,000,000 G$</div>
                 <div style="color:rgba(255,255,255,.4);">CELO deposit range</div><div style="font-weight:600; color:#c4b5fd;">1 – 100,000 CELO</div>
                 <div style="color:rgba(255,255,255,.4);">cUSD deposit range</div><div style="font-weight:600; color:#c4b5fd;">1 – 1,000,000 cUSD</div>
                 <div style="color:rgba(255,255,255,.4);">USDT deposit range</div><div style="font-weight:600; color:#c4b5fd;">1 – 1,000,000 USDT <span style="opacity:.55; font-weight:400;">(6-decimal)</span></div>
                 <div style="color:rgba(255,255,255,.4);">Bonus currency</div><div style="font-weight:600; color:#c4b5fd;">Always paid in G$</div>
-                <div style="color:rgba(255,255,255,.4);">Tester 1–29d (amount ≥ per-token MIN)</div><div style="font-weight:600; color:#34d399;">+30 G$</div>
-                <div style="color:rgba(255,255,255,.4);">Mid-tier 30–360d (amount ≥ 100k G$ eq.)</div><div style="font-weight:600; color:#34d399;">⌊lockDays × 500 / 30⌋ G$ <span style="opacity:.55; font-weight:400;">(≈16.67 G$/day)</span></div>
-                <div style="color:rgba(255,255,255,.4);">Long-loyalty 300–360d (amount ≥ 1M G$ eq.)</div><div style="font-weight:600; color:#34d399;">+20,000 G$ <span style="opacity:.55; font-weight:400;">(replaces mid-tier)</span></div>
+                <div style="color:rgba(255,255,255,.4);">Monthly tier 1,000–4,999 G$</div><div style="font-weight:600; color:#34d399;">50 G$</div>
+                <div style="color:rgba(255,255,255,.4);">Monthly tier 5,000–9,999 G$</div><div style="font-weight:600; color:#34d399;">250 G$</div>
+                <div style="color:rgba(255,255,255,.4);">Monthly tier 10,000–49,999 G$</div><div style="font-weight:600; color:#34d399;">500 G$</div>
                 <div style="color:rgba(255,255,255,.4);">100k G$ equivalent</div><div style="font-weight:600; color:#c4b5fd;">G$ 100,000 / CELO 100 / cUSD 100 / USDT 100</div>
                 <div style="color:rgba(255,255,255,.4);">1M G$ equivalent</div><div style="font-weight:600; color:#c4b5fd;">G$ 1,000,000 / CELO 1,000 / cUSD 1,000 / USDT 1,000</div>
                 <div style="color:rgba(255,255,255,.4);">Early withdrawal</div><div style="font-weight:600; color:#f87171;">Not allowed</div>
@@ -574,7 +524,7 @@
 
             <div style="font-size:.82rem; color:rgba(255,255,255,.35); line-height:1.6;">
                 <strong style="color:rgba(255,255,255,.5);">Want to sponsor the reward pool?</strong><br>
-                Any wallet can call <code style="color:#a78bfa;">fundRewardPool(amount)</code> on the contract to add G$ for bonuses.
+                Any wallet can call <code style="color:#a78bfa;">fundRewardPool(amount)</code> on the contract to add G$ for bonuses. Rewards stay best-effort: users can still withdraw even if the pool is empty.
                 Sponsors are publicly visible on-chain. Contact us on Telegram or Discourse to be featured.
             </div>
         </div>
@@ -589,6 +539,7 @@
 <script>
     const WALLET = "{{ wallet }}";
     const SAVINGS_CONTRACT = "{{ savings_contract }}";
+    const LEGACY_V5_CONTRACT = "{{ legacy_v5_contract }}";
     const GD_CONTRACT   = "{{ gd_contract }}";
     const CELO_CONTRACT = "{{ celo_contract }}";
     const CUSD_CONTRACT = "{{ cusd_contract }}";
@@ -613,7 +564,7 @@
         throw new Error('Server signing is disabled. Please use your injected wallet / WalletConnect.');
     }
 
-    // ── v5 multi-token slot model (USDT-aware, custom 1–360 day lock) ──
+    // ── v5 multi-token slot model (USDT-aware, period-based lock UI) ──
     const SAVINGS_ABI = [
         "function depositSavings(address token, uint256 amount, uint256 lockDays) external",
         "function withdraw(address token, uint256 lockDays) external",
@@ -635,38 +586,12 @@
     // lower bound for the on-chain history reconstruction so we never miss a
     // Saved or Withdrawn event. Bumped to v5 deploy block after redeploy.
     const SAVINGS_DEPLOYMENT_BLOCK = 65917286;
-    // Block height where the legacy v2 contract was deployed on Celo
-    // Mainnet (verified via binary search on `eth_getCode`). Used as the
-    // lower bound when reading the legacy contract's `Withdrawn` events.
-    const LEGACY_DEPLOYMENT_BLOCK = 63927388;
-
     const ERC20_ABI = [
         "function balanceOf(address owner) view returns (uint256)",
         "function allowance(address owner, address spender) view returns (uint256)",
         "function approve(address spender, uint256 amount) returns (bool)",
     ];
 
-    // ── Legacy v2 contract (frozen, read + withdraw only) ──
-    const LEGACY_V2_CONTRACT = "{{ legacy_v2_contract }}";
-    const LEGACY_V2_ABI = [
-        "function getUserDepositIds(address user) view returns (uint256[])",
-        "function getDeposit(uint256 id) view returns (address,uint256,uint256,uint256,uint256,bool,bool,bool,bool,uint256)",
-        "function withdraw(uint256 depositId) external",
-        // Used to recover the on-chain tx hash for already-withdrawn legacy
-        // deposits so the UI can still show a CeloScan link for auditability,
-        // even on a fresh device with no local history.
-        "event Withdrawn(address indexed user, uint256 indexed depositId, uint256 amount, uint256 timestamp)",
-    ];
-
-    // ── Legacy v4 multi-token contract (frozen after v5 redeploy) ──
-    // Same slot model as v5, but with a fixed 13-step duration ladder and
-    // no USDT support. Read-only here: top-ups go to v5 active slots; v4
-    // slots can only be `withdraw(token, lockDays)`-ed once they unlock.
-    const LEGACY_V4_CONTRACT = "{{ legacy_v4_contract }}";
-    const LEGACY_V4_ABI = [
-        "function withdraw(address token, uint256 lockDays) external",
-        "function getUserActiveSlots(address user) view returns (address[] tokens, uint256[] lockDays_, uint256[] amounts, uint256[] unlocksAts, bool[] areUnlocked, bool[] bonusClaimed, uint256[] pendingBonuses)",
-    ];
 
     // Per-token configuration. USDT is 6-decimal on Celo (bridged Tether);
     // every other token is 18-decimal. Min/max are *human* units — the
@@ -678,10 +603,7 @@
         usdt: { key:'usdt', symbol:'USDT', address: USDT_CONTRACT, decimals: 6,  min: 1,    max: 1_000_000  },
     };
 
-    // Default duration: 60 days (sits comfortably inside the new mid-tier
-    // bonus band, 30–360 days). The custom number input takes precedence —
-    // this is just the starting value the page renders with.
-    let selectedDays  = 60;
+    // Default lock period is Monthly.
     let selectedToken = TOKENS.gd;
 
     // Cache of user's existing slots, keyed by `${tokenKey}|${lockDays}`.
@@ -704,10 +626,7 @@
     }
 
     // Return token metadata for a given on-chain address. Falls back to a
-    // minimal record when the deposit was made in a token we no longer
-    // surface in the UI (defensive — the contract only allows the four
-    // canonical tokens, but legacy v4 slots may surface in a slightly
-    // different order via getUserActiveSlots).
+    // minimal record when the address is not one of the supported tokens.
     function tokenMetaForAddress(tokenAddr) {
         const lc = String(tokenAddr || '').toLowerCase();
         for (const t of Object.values(TOKENS)) {
@@ -744,7 +663,7 @@
         return out;
     }
 
-    // Reconstruct full v4 savings history for a wallet directly from
+    // Reconstruct full savings history for a wallet directly from
     // Saved + Withdrawn events. Returns an array of normalized slot
     // records covering every cycle the wallet has ever opened (active
     // and already-withdrawn alike), so the UI no longer depends on
@@ -858,35 +777,6 @@
         return [...active, ...closed];
     }
 
-    // Look up tx hashes for a wallet's already-withdrawn legacy v2 deposits
-    // by replaying the legacy contract's `Withdrawn` event. Returns a map
-    // of depositId (number) -> tx hash. Best-effort: if the RPC errors out,
-    // the UI falls back to a generic CeloScan link to the legacy contract.
-    async function loadLegacyWithdrawnTxMap(walletAddress) {
-        if (!walletAddress || !LEGACY_V2_CONTRACT) return {};
-        try {
-            const provider = getReadProvider();
-            const contract = new ethers.Contract(LEGACY_V2_CONTRACT, LEGACY_V2_ABI, provider);
-            const latest = await provider.getBlockNumber();
-            const logs = await queryFilterChunked(
-                contract,
-                contract.filters.Withdrawn(walletAddress),
-                LEGACY_DEPLOYMENT_BLOCK,
-                latest,
-                1_000_000
-            );
-            const byId = {};
-            for (const log of logs) {
-                const id = Number(log.args?.depositId ?? log.args?.[1]);
-                if (Number.isFinite(id)) byId[id] = log.transactionHash;
-            }
-            return byId;
-        } catch (e) {
-            console.warn('legacy Withdrawn event scan failed:', e);
-            return {};
-        }
-    }
-
     // ── Tabs ──
     function switchTab(name) {
         document.querySelectorAll('.tab-btn').forEach((b,i) => {
@@ -917,7 +807,7 @@
         document.getElementById('approveBtnLabel').textContent =
             `Step 1 — Approve ${selectedToken.symbol} Spending`;
         document.getElementById('saveBtnLabel').textContent =
-            `Step 2 — Lock & Save ${selectedToken.symbol}`;
+            `Step 2 — Lock ${_selectedPeriod().label} ${selectedToken.symbol}`;
 
         // Reset approval state — different token means a new approval is needed.
         const approveBtn = document.getElementById('approveBtn');
@@ -926,61 +816,71 @@
         document.getElementById('saveBtn').disabled = true;
 
         updateSummary();
-        checkBonusEligibility();
+        updateRewardPreview();
         checkExistingSlot();
     }
 
-    // ── Duration picker (custom 1–360 day input + quick-pick chips) ──
-    // Source of truth is the `#saveDays` number input. Quick-pick chips
-    // just write into the input and re-fire the same handler so we have
-    // a single code path for clamping, summary refresh, and bonus eligibility.
-    function _clampLockDays(raw) {
-        let n = parseInt(raw, 10);
-        if (!Number.isFinite(n)) return MIN_LOCK_DAYS;
-        if (n < MIN_LOCK_DAYS) n = MIN_LOCK_DAYS;
-        if (n > MAX_LOCK_DAYS) n = MAX_LOCK_DAYS;
-        return n;
+    // ── Lock period picker (weekly / monthly) ──
+    const PERIODS = {
+        weekly:  { key: 'weekly',  label: 'Weekly',  days: 7 },
+        monthly: { key: 'monthly', label: 'Monthly', days: 30 },
+    };
+
+    let selectedPeriodKey = 'monthly';
+    let selectedDays = PERIODS[selectedPeriodKey].days;
+
+    function _selectedPeriod() {
+        return PERIODS[selectedPeriodKey] || PERIODS.monthly;
     }
 
-    function _syncQuickPickChips() {
-        const chips = document.querySelectorAll('#daysQuickPicks .dur-btn');
+    function _syncPeriodButtons() {
+        const chips = document.querySelectorAll('#periodGrid .dur-btn');
         chips.forEach(c => {
-            c.classList.toggle('selected', Number(c.dataset.days) === selectedDays);
+            c.classList.toggle('selected', c.dataset.period === selectedPeriodKey);
         });
     }
 
-    function onDaysChange(raw) {
-        // Allow the user to keep typing — only clamp if they leave an
-        // out-of-range value sitting in the input. We always store the
-        // canonical clamped value in `selectedDays`.
-        selectedDays = _clampLockDays(raw);
-        const input = document.getElementById('saveDays');
-        const cleaned = String(selectedDays);
-        if (raw !== '' && String(raw) !== cleaned && Number(raw) !== selectedDays) {
-            input.value = cleaned;
-        }
-        _syncQuickPickChips();
+    function selectPeriod(el) {
+        selectedPeriodKey = el.dataset.period === 'weekly' ? 'weekly' : 'monthly';
+        selectedDays = PERIODS[selectedPeriodKey].days;
+        _syncPeriodButtons();
         updateSummary();
-        checkBonusEligibility();
+        updateRewardPreview();
         checkExistingSlot();
     }
 
-    function selectQuickDays(el) {
-        const n = _clampLockDays(el.dataset.days);
-        document.getElementById('saveDays').value = String(n);
-        onDaysChange(n);
+    function _amountEquivalentInGd(amount) {
+        return selectedToken.key === 'gd' ? amount : amount * 1000;
+    }
+
+    function _monthlyRewardForAmount(amount) {
+        const eq = _amountEquivalentInGd(amount);
+        if (eq < 1000) return 0;
+        if (eq <= 4_999) return 50;
+        if (eq <= 9_999) return 250;
+        if (eq <= 49_999) return 500;
+        if (eq <= 99_999) return 2_500;
+        if (eq <= 1_000_000) return 10_000;
+        return 0;
+    }
+
+    function _periodRewardForAmount(amount) {
+        const monthlyReward = _monthlyRewardForAmount(amount);
+        if (selectedPeriodKey === 'weekly') {
+            return Math.floor(monthlyReward / 4);
+        }
+        return monthlyReward;
     }
 
     function updateSummary() {
         const amt = parseFloat(document.getElementById('saveAmount').value) || 0;
+        const period = _selectedPeriod();
         document.getElementById('summaryToken').textContent    = selectedToken.symbol;
         document.getElementById('summaryAmount').textContent   =
             amt > 0 ? `${amt.toLocaleString()} ${selectedToken.symbol}` : `—`;
         document.getElementById('summaryDuration').textContent =
-            selectedDays + ' day' + (selectedDays > 1 ? 's' : '');
+            `${period.label} (${period.days} days)`;
 
-        // If user already has a slot at this (token, lockDays), the unlock date
-        // for THIS deposit is the slot's existing unlocksAt — not today + lockDays.
         const slot = __mySlotsByKey[`${selectedToken.key}|${selectedDays}`];
         if (slot) {
             const d = new Date(slot.unlocks_at * 1000);
@@ -995,9 +895,59 @@
         }
     }
 
+    function toggleLegacyV5() {
+        const body = document.getElementById('legacyV5Body');
+        const chev = document.getElementById('legacyV5Chevron');
+        const open = body.style.display === 'block';
+        body.style.display = open ? 'none' : 'block';
+        chev.textContent = open ? '▾' : '▴';
+    }
+
+    async function loadLegacyV5Deposits() {
+        const card = document.getElementById('legacyV5Card');
+        const body = document.getElementById('legacyV5Body');
+        const chev = document.getElementById('legacyV5Chevron');
+        const list = document.getElementById('legacyV5List');
+        const countEl = document.getElementById('legacyV5Count');
+        if (!card || !body || !chev || !list || !countEl || !LEGACY_V5_CONTRACT) {
+            return;
+        }
+        try {
+            const data = await fetch('/savings/api/legacy-v5-deposits').then(r => r.json());
+            const deps = (data.deposits || []).map(d => ({
+                ...d,
+                withdraw_contract: LEGACY_V5_CONTRACT,
+            }));
+            if (deps.length === 0) {
+                card.style.display = 'none';
+                return;
+            }
+            const ready = deps.filter(d => d.is_unlocked);
+            countEl.textContent = ready.length > 0
+                ? `${ready.length} ready · ${deps.length} total`
+                : `${deps.length} locked`;
+            list.innerHTML = '';
+            const ordered = [...ready, ...deps.filter(d => !d.is_unlocked)];
+            for (const d of ordered) {
+                list.appendChild(buildDepCard(d));
+            }
+            card.style.display = 'block';
+            if (ready.length > 0) {
+                body.style.display = 'block';
+                chev.textContent = '▴';
+            } else {
+                body.style.display = 'none';
+                chev.textContent = '▾';
+            }
+        } catch (e) {
+            console.warn('Legacy v5 load failed', e);
+            card.style.display = 'none';
+        }
+    }
+
     function onAmountChange() {
         updateSummary();
-        checkBonusEligibility();
+        updateRewardPreview();
     }
 
     function checkExistingSlot() {
@@ -1007,7 +957,7 @@
         if (slot) {
             const d = new Date(slot.unlocks_at * 1000);
             text.innerHTML =
-                `You already have an active <strong>${selectedToken.symbol} · ${selectedDays}-day</strong> save ` +
+                `You already have an active <strong>${selectedToken.symbol} · ${_selectedPeriod().label}</strong> save ` +
                 `(${Number(slot.amount_h).toLocaleString()} ${selectedToken.symbol}).<br>` +
                 `<strong>This deposit will be added to it.</strong> The unlock date stays — <strong>${d.toDateString()}</strong>.`;
             notice.style.display = 'flex';
@@ -1017,66 +967,34 @@
         updateSummary();
     }
 
-    function checkBonusEligibility() {
+    function updateRewardPreview() {
         const amt = parseFloat(document.getElementById('saveAmount').value) || 0;
         const notice = document.getElementById('bonusNotice');
         const noticeText = document.getElementById('bonusNoticeText');
-        const sym = selectedToken.symbol;
+        const period = _selectedPeriod();
+        const monthlyReward = _monthlyRewardForAmount(amt);
+        const reward = _periodRewardForAmount(amt);
 
-        // Mirrors GDSavings v5 `_bonusForSlot`:
-        //   amt  < per-token MIN              → 0
-        //   1..29d                            → 30 G$        (tester)
-        //   amt  < per-token midTierMin (100k G$ equiv) → 0
-        //   ≥300d AND amt ≥ longTierMin (1M G$ equiv)  → 20,000 G$ (loyalty, replaces mid-tier)
-        //   30..360d                          → ⌊lockDays · 500 / 30⌋ G$ (mid-tier linear)
-        // Internal contract ratio: 1 G$ ≡ 0.001 CELO ≡ 0.001 cUSD ≡ 0.001 USDT.
-        //   midTierMin  = 100k G$ / 100 CELO / 100 cUSD / 100 USDT
-        //   longTierMin = 1M  G$ / 1k  CELO / 1k  cUSD / 1k  USDT
-        const midMin  = (selectedToken.key === 'gd') ? 100_000   : 100;
-        const longMin = (selectedToken.key === 'gd') ? 1_000_000 : 1_000;
-
-        // Below per-token minimum deposit → no bonus.
-        if (amt < selectedToken.min) {
+        if (!amt || amt < selectedToken.min) {
             notice.style.display = 'none';
             return;
         }
 
-        // 1..29-day tester tier — any deposit ≥ per-token MIN qualifies.
-        if (selectedDays >= 1 && selectedDays < 30) {
+        if (!monthlyReward) {
             noticeText.innerHTML =
-                `You qualify for the <strong>+30 G$ tester bonus</strong>! ` +
-                `Locking ≥${selectedToken.min.toLocaleString()} ${sym} for ${selectedDays} day` +
-                `${selectedDays > 1 ? 's' : ''} earns 30 G$ on withdrawal — ` +
-                `paid from the community G$ reward pool (if funded).`;
+                `No reward tier yet for <strong>${amt.toLocaleString()} ${selectedToken.symbol}</strong> on the ${period.label.toLowerCase()} plan. ` +
+                `Enter a tier-qualifying amount to preview rewards.`;
             notice.style.display = 'flex';
             return;
         }
 
-        // 30..360-day saves require per-token "100k G$ equivalent" to earn any bonus.
-        if (selectedDays >= 30 && selectedDays <= MAX_LOCK_DAYS && amt >= midMin) {
-            // Loyalty tier (≥300d, ≥1M G$ equiv) replaces the mid-tier value.
-            if (selectedDays >= 300 && amt >= longMin) {
-                noticeText.innerHTML =
-                    `You qualify for the <strong>+20,000 G$ loyalty bonus</strong>! ` +
-                    `Locking ≥${longMin.toLocaleString()} ${sym} for ${selectedDays} days earns 20,000 G$ ` +
-                    `on withdrawal — paid from the community reward pool (if funded).`;
-                notice.style.display = 'flex';
-                return;
-            }
-            // Mid-tier: integer-floor of (lockDays * 500 / 30). Matches the contract exactly.
-            const bonus = Math.floor((selectedDays * 500) / 30);
-            noticeText.innerHTML =
-                `You qualify for the <strong>+${bonus.toLocaleString()} G$ mid-tier bonus</strong>! ` +
-                `Locking ≥${midMin.toLocaleString()} ${sym} for ${selectedDays} days earns ` +
-                `${bonus.toLocaleString()} G$ on withdrawal (≈${(500 / 30).toFixed(2)} G$/day · linear) — ` +
-                `paid from the community reward pool (if funded).`;
-            notice.style.display = 'flex';
-            return;
-        }
-
-        notice.style.display = 'none';
+        noticeText.innerHTML =
+            `<strong>${period.label} preview:</strong> Estimated reward is <strong>${reward.toLocaleString()} G$</strong>` +
+            (selectedPeriodKey === 'weekly'
+                ? `, derived from a <strong>${monthlyReward.toLocaleString()} G$</strong> monthly reward.`
+                : ` for this amount.`);
+        notice.style.display = 'flex';
     }
-
     // ── Wallet helpers ──
     // Methods that must be served by the user's wallet (signer-bound).
     // Everything else (eth_blockNumber, eth_call, eth_estimateGas,
@@ -1558,7 +1476,7 @@
                     "function approve(address spender, uint256 amount) returns (bool)",
                     [SAVINGS_CONTRACT, amtWei]);
                 showAlert('saveAlert', 'success',
-                    `✅ Approved! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View ↗</a><br>Now click "Lock & Save ${sym}".`);
+                    `✅ Approved! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View ↗</a><br>Now click "Lock ${_selectedPeriod().label} ${sym}".`);
                 document.getElementById('saveBtn').disabled = false;
                 btn.innerHTML = '<i class="fas fa-check-circle"></i> Approved ✓';
                 return;
@@ -1570,7 +1488,7 @@
                     "function approve(address spender, uint256 amount) returns (bool)",
                     [SAVINGS_CONTRACT, amtWei]);
                 showAlert('saveAlert', 'success',
-                    `✅ Approved! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View ↗</a><br>Now click "Lock & Save ${sym}".`);
+                    `✅ Approved! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View ↗</a><br>Now click "Lock ${_selectedPeriod().label} ${sym}".`);
                 document.getElementById('saveBtn').disabled = false;
                 btn.innerHTML = '<i class="fas fa-check-circle"></i> Approved ✓';
                 return;
@@ -1585,7 +1503,7 @@
             const tx = await erc20.approve(SAVINGS_CONTRACT, amtWei);
             await tx.wait();
 
-            showAlert('saveAlert', 'success', `✅ Approved! Now click "Lock & Save ${sym}" to complete your save.`);
+            showAlert('saveAlert', 'success', `✅ Approved! Now click "Lock ${_selectedPeriod().label} ${sym}" to complete your save.`);
             document.getElementById('saveBtn').disabled = false;
             btn.innerHTML = '<i class="fas fa-check-circle"></i> Approved ✓';
         } catch (err) {
@@ -1614,6 +1532,7 @@
         const amtStr = document.getElementById('saveAmount').value.trim();
         const amt = parseFloat(amtStr);
         const sym = selectedToken.symbol;
+        const period = _selectedPeriod();
         if (!amtStr || isNaN(amt) || amt < selectedToken.min || amt > selectedToken.max) {
             showAlert('saveAlert', 'error',
                 `⚠️ Enter a valid amount (${selectedToken.min.toLocaleString()}–${selectedToken.max.toLocaleString()} ${sym}).`);
@@ -1641,7 +1560,7 @@
                     unlockDate.setDate(unlockDate.getDate() + selectedDays);
                 }
                 showAlert('saveAlert', 'success',
-                    `🎉 Saved ${parseFloat(amtStr).toLocaleString()} ${sym} for ${selectedDays} days` +
+                    `🎉 Saved ${parseFloat(amtStr).toLocaleString()} ${sym} for ${period.label}` +
                     (existingSlot ? ' (added to existing slot)' : '') + '!<br>' +
                     `Unlocks: <strong>${unlockDate.toDateString()}</strong><br>` +
                     `<a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
@@ -1652,7 +1571,7 @@
                 document.getElementById('approveBtn').innerHTML =
                     `<i class="fas fa-check-circle"></i> <span id="approveBtnLabel">Step 1 — Approve ${sym} Spending</span>`;
                 btn.disabled = true;
-                btn.innerHTML = `<i class="fas fa-lock"></i> <span id="saveBtnLabel">Step 2 — Lock & Save ${sym}</span>`;
+                btn.innerHTML = `<i class="fas fa-lock"></i> <span id="saveBtnLabel">Step 2 — Lock ${period.label} ${sym}</span>`;
                 loadStats();
                 refreshMySlots();
             };
@@ -1698,19 +1617,19 @@
                 showAlert('saveAlert', 'error', '❌ Save failed: ' + friendly);
             }
             btn.disabled = false;
-            btn.innerHTML = `<i class="fas fa-lock"></i> <span id="saveBtnLabel">Step 2 — Lock & Save ${sym}</span>`;
+            btn.innerHTML = `<i class="fas fa-lock"></i> <span id="saveBtnLabel">Step 2 — Lock ${period.label} ${sym}</span>`;
         }
     }
 
     // ── Withdraw ──
-    async function doWithdraw(tokenAddr, lockDays) {
+    async function doWithdraw(tokenAddr, lockDays, contractAddr = SAVINGS_CONTRACT) {
         try {
             const args = [tokenAddr, BigInt(lockDays)];
             const fn   = "function withdraw(address token, uint256 lockDays) external";
 
             if (window.useServerSigning) {
                 showAlert('depositsAlert', 'info', '<span class="spinner"></span> Signing withdrawal server-side…');
-                const txHash = await serverSignedTx(SAVINGS_CONTRACT, fn, args);
+                const txHash = await serverSignedTx(contractAddr, fn, args);
                 showAlert('depositsAlert', 'success',
                     `✅ Withdrawn! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
                 );
@@ -1720,7 +1639,7 @@
 
             if (_isMiniPay()) {
                 showAlert('depositsAlert', 'info', '<span class="spinner"></span> Confirm withdrawal in MiniPay…');
-                const txHash = await _miniPayTx(SAVINGS_CONTRACT, fn, args);
+                const txHash = await _miniPayTx(contractAddr, fn, args);
                 showAlert('depositsAlert', 'success',
                     `✅ Withdrawn successfully! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
                 );
@@ -1730,7 +1649,7 @@
 
             const signer = await getSigner();
             await ensureCeloNetwork();
-            const savings = new ethers.Contract(SAVINGS_CONTRACT, SAVINGS_ABI, signer);
+            const savings = new ethers.Contract(contractAddr, SAVINGS_ABI, signer);
 
             showAlert('depositsAlert', 'info', '<span class="spinner"></span> Confirm withdrawal in your wallet…');
             const tx = await savings.withdraw(tokenAddr, BigInt(lockDays));
@@ -1784,13 +1703,9 @@
     // withdraw transaction. No localStorage involved, so the same wallet
     // shows the same history on any browser or device.
     async function loadDeposits() {
-        // Kick off both legacy panel loads immediately, in parallel with the
-        // v5 fetch below. They must run regardless of v5 outcome — including
-        // when a wallet has no v5 saves yet, when /api/deposits errors, or
-        // when the v5 path early-returns — otherwise users with only legacy
-        // history can never see their old deposits in the UX.
-        loadLegacyDeposits();
-        loadLegacyV4Deposits();
+        // Load the current contract state immediately, in parallel with the
+        // history fetch below.
+        loadLegacyV5Deposits();
 
         const container = document.getElementById('depList');
         container.innerHTML = '<div class="empty-state">Loading…</div>';
@@ -2018,7 +1933,8 @@
 
         let withdrawBtn = '';
         if (d.is_unlocked) {
-            withdrawBtn = `<button class="btn btn-green" onclick="doWithdraw('${d.token}', ${d.lock_days})" style="font-size:.8rem; padding:.5rem 1rem;">Withdraw</button>`;
+            const withdrawContract = d.withdraw_contract || SAVINGS_CONTRACT;
+            withdrawBtn = `<button class="btn btn-green" onclick="doWithdraw('${d.token}', ${d.lock_days}, '${withdrawContract}')" style="font-size:.8rem; padding:.5rem 1rem;">Withdraw</button>`;
         }
 
         el.innerHTML = `
@@ -2036,303 +1952,6 @@
         return el;
     }
 
-    // ── Legacy v2 panel (frozen previous contract — read + withdraw only) ──
-    function toggleLegacy() {
-        const body = document.getElementById('legacyBody');
-        const chev = document.getElementById('legacyChevron');
-        const open = body.style.display === 'block';
-        body.style.display = open ? 'none' : 'block';
-        chev.textContent   = open ? '▾' : '▴';
-    }
-
-    async function loadLegacyDeposits() {
-        const card      = document.getElementById('legacyCard');
-        const body      = document.getElementById('legacyBody');
-        const chev      = document.getElementById('legacyChevron');
-        const list      = document.getElementById('legacyList');
-        const countEl   = document.getElementById('legacyCount');
-        try {
-            // In parallel: fetch the v2 deposit state from the backend AND
-            // recover withdraw tx hashes from the legacy contract's
-            // `Withdrawn` events so the UI can show CeloScan links for
-            // already-withdrawn legacy rows on any device.
-            const [data, legacyTxByDepositId] = await Promise.all([
-                fetch('/savings/api/legacy-deposits').then(r => r.json()),
-                loadLegacyWithdrawnTxMap(WALLET),
-            ]);
-            const deps = data.deposits || [];
-            // Hide the panel entirely for the 99% of users with no v2 history.
-            if (deps.length === 0) {
-                card.style.display = 'none';
-                return;
-            }
-            for (const d of deps) {
-                if (d.withdrawn && legacyTxByDepositId[d.id]) {
-                    d.withdraw_tx_hash = legacyTxByDepositId[d.id];
-                }
-            }
-            const pending = deps.filter(d => !d.withdrawn);
-            countEl.textContent = pending.length > 0
-                ? `${pending.length} pending`
-                : `${deps.length} (all withdrawn)`;
-            list.innerHTML = '';
-            // Pending first, withdrawn at the bottom.
-            for (const d of [...pending, ...deps.filter(d => d.withdrawn)]) {
-                list.appendChild(buildLegacyCard(d));
-            }
-            card.style.display = 'block';
-            // Auto-expand the body when there is at least one pending deposit
-            // so users with active legacy saves see them without an extra click.
-            // Collapse only when every legacy deposit has already been withdrawn.
-            if (pending.length > 0) {
-                body.style.display = 'block';
-                chev.textContent   = '\u25B4';
-            } else {
-                body.style.display = 'none';
-                chev.textContent   = '\u25BE';
-            }
-        } catch (e) {
-            console.warn('Legacy load failed', e);
-            card.style.display = 'none';
-        }
-    }
-
-    function buildLegacyCard(d) {
-        const el = document.createElement('div');
-        const ready = d.is_unlocked && !d.withdrawn;
-        el.className = 'dep-card' + (ready ? ' unlocked' : (d.withdrawn ? ' withdrawn' : ''));
-
-        const unlock = new Date(d.unlocks_at * 1000);
-
-        let statusBadge;
-        if (d.withdrawn) {
-            statusBadge = '<span class="dep-badge badge-done">✓ Withdrawn</span>';
-        } else if (d.is_unlocked) {
-            statusBadge = '<span class="dep-badge badge-ready">Ready to Withdraw</span>';
-        } else {
-            statusBadge = '<span class="dep-badge badge-locked">Locked</span>';
-        }
-
-        let bonusBadge = '';
-        if (!d.withdrawn && d.bonus_claimed) {
-            bonusBadge = '<span class="dep-badge badge-bonus">🎁 Bonus Claimed</span>';
-        } else if (!d.withdrawn && d.pending_bonus_gd > 0) {
-            bonusBadge = `<span class="dep-badge badge-bonus">🎁 +${fmtAmt(d.pending_bonus_gd, 'G$')} bonus on withdrawal</span>`;
-        }
-
-        const withdrawBtn = ready
-            ? `<button class="btn btn-green" onclick="doLegacyWithdraw(${d.id})" style="font-size:.8rem; padding:.5rem 1rem;">Withdraw (v2)</button>`
-            : '';
-
-        // CeloScan link for already-withdrawn rows. Prefer the actual tx hash
-        // recovered from the legacy `Withdrawn` event; fall back to the
-        // contract's address page so the audit trail is at least one click
-        // away even if the event scan didn't return.
-        let txRow = '';
-        if (d.withdrawn) {
-            const txLink = d.withdraw_tx_hash
-                ? `<a href="https://celoscan.io/tx/${d.withdraw_tx_hash}" target="_blank" rel="noopener" style="color:#86efac; font-weight:600;">View tx ↗</a>`
-                : `<a href="https://celoscan.io/address/${LEGACY_V2_CONTRACT}" target="_blank" rel="noopener" style="color:#86efac; font-weight:600;">View on CeloScan ↗</a>`;
-            txRow = `<div class="row">Tx: <span>${txLink}</span></div>`;
-        }
-
-        el.innerHTML = `
-            <div class="dep-amount">${fmtAmt(d.amount_gd, 'G$')}</div>
-            <div class="dep-meta">
-                <div class="row">Deposit ID: <span>#${d.id}</span></div>
-                <div class="row">Lock: <span>${d.lock_days} days</span></div>
-                <div class="row">Unlocks: <span>${unlock.toDateString()}</span></div>
-                ${txRow}
-            </div>
-            <div style="display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;">
-                ${statusBadge}${bonusBadge}
-            </div>
-            ${withdrawBtn ? `<div>${withdrawBtn}</div>` : ''}
-        `;
-        return el;
-    }
-
-    async function doLegacyWithdraw(depositId) {
-        try {
-            // Server-side signing was never wired up for v2; require the user's wallet.
-            if (window.useServerSigning) {
-                throw new Error('Legacy withdrawal must be signed with your own wallet.');
-            }
-
-            const fn   = "function withdraw(uint256 depositId) external";
-            const args = [BigInt(depositId)];
-
-            if (_isMiniPay()) {
-                showAlert('legacyAlert', 'info', '<span class="spinner"></span> Confirm legacy withdrawal in MiniPay…');
-                const txHash = await _miniPayTx(LEGACY_V2_CONTRACT, fn, args);
-                showAlert('legacyAlert', 'success',
-                    `✅ Legacy save withdrawn! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
-                );
-                loadLegacyDeposits();
-                return;
-            }
-
-            const signer = await getSigner();
-            await ensureCeloNetwork();
-            const legacy = new ethers.Contract(LEGACY_V2_CONTRACT, LEGACY_V2_ABI, signer);
-
-            showAlert('legacyAlert', 'info', '<span class="spinner"></span> Confirm legacy withdrawal in your wallet…');
-            const tx = await legacy.withdraw(BigInt(depositId));
-            showAlert('legacyAlert', 'info', '<span class="spinner"></span> Waiting for Celo confirmation…');
-            const receipt = await tx.wait();
-
-            showAlert('legacyAlert', 'success',
-                `✅ Legacy save withdrawn! <a href="https://celoscan.io/tx/${receipt.hash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
-            );
-            loadLegacyDeposits();
-        } catch (err) {
-            console.error(err);
-            if (err._miniPayDiag) {
-                const d = err._miniPayDiag;
-                showAlert('legacyAlert', 'error',
-                    `❌ MiniPay legacy withdrawal failed<br>` +
-                    `<small style="opacity:.75">Step: ${d.fn} → ${d.to.slice(0,10)}…</small>`);
-            } else {
-                const friendly = (window.GMTxError && GMTxError.format) ? GMTxError.format(err) : (err.reason || err.message || 'Unknown error');
-                showAlert('legacyAlert', 'error', '❌ Legacy withdrawal failed: ' + friendly);
-            }
-        }
-    }
-
-    // ── Legacy v4 panel (pre-v5 multi-token contract — read + withdraw only) ──
-    function toggleLegacyV4() {
-        const body = document.getElementById('legacyV4Body');
-        const chev = document.getElementById('legacyV4Chevron');
-        const open = body.style.display === 'block';
-        body.style.display = open ? 'none' : 'block';
-        chev.textContent   = open ? '▾' : '▴';
-    }
-
-    async function loadLegacyV4Deposits() {
-        const card    = document.getElementById('legacyV4Card');
-        const body    = document.getElementById('legacyV4Body');
-        const chev    = document.getElementById('legacyV4Chevron');
-        const list    = document.getElementById('legacyV4List');
-        const countEl = document.getElementById('legacyV4Count');
-        try {
-            const data = await fetch('/savings/api/legacy-v4-deposits').then(r => r.json());
-            const deps = data.deposits || [];
-            // Hide the panel entirely for wallets with no v4 history.
-            if (deps.length === 0) {
-                card.style.display = 'none';
-                return;
-            }
-            const ready = deps.filter(d => d.is_unlocked);
-            countEl.textContent = ready.length > 0
-                ? `${ready.length} ready · ${deps.length} total`
-                : `${deps.length} locked`;
-            list.innerHTML = '';
-            // Ready-to-withdraw first, still-locked below.
-            const ordered = [...ready, ...deps.filter(d => !d.is_unlocked)];
-            for (const d of ordered) {
-                list.appendChild(buildLegacyV4Card(d));
-            }
-            card.style.display = 'block';
-            // Auto-expand the body when at least one v4 slot is ready to withdraw.
-            if (ready.length > 0) {
-                body.style.display = 'block';
-                chev.textContent   = '▴';
-            } else {
-                body.style.display = 'none';
-                chev.textContent   = '▾';
-            }
-        } catch (e) {
-            console.warn('Legacy v4 load failed', e);
-            card.style.display = 'none';
-        }
-    }
-
-    function buildLegacyV4Card(d) {
-        const sym = d.token_symbol || '?';
-        const el = document.createElement('div');
-        const ready = Boolean(d.is_unlocked);
-        el.className = 'dep-card' + (ready ? ' unlocked' : '');
-
-        const unlock = new Date((d.unlocks_at || 0) * 1000);
-
-        let statusBadge;
-        if (ready) {
-            statusBadge = '<span class="dep-badge badge-ready">Ready to Withdraw</span>';
-        } else {
-            statusBadge = '<span class="dep-badge badge-locked">Locked</span>';
-        }
-
-        let bonusBadge = '';
-        if (d.bonus_claimed) {
-            bonusBadge = '<span class="dep-badge badge-bonus">🎁 Bonus Claimed</span>';
-        } else if (Number(d.pending_bonus_gd) > 0) {
-            bonusBadge = `<span class="dep-badge badge-bonus">🎁 +${fmtAmt(d.pending_bonus_gd, 'G$')} bonus on withdrawal</span>`;
-        }
-
-        const withdrawBtn = ready
-            ? `<button class="btn btn-green" onclick="doLegacyV4Withdraw('${d.token}', ${d.lock_days})" style="font-size:.8rem; padding:.5rem 1rem;">Withdraw (v4)</button>`
-            : '';
-
-        el.innerHTML = `
-            <div class="dep-amount">${fmtAmt(d.amount_h, sym)}</div>
-            <div class="dep-meta">
-                <div class="row">Token: <span>${sym}</span></div>
-                <div class="row">Lock: <span>${d.lock_days} days</span></div>
-                <div class="row">Unlocks: <span>${unlock.toDateString()}</span></div>
-            </div>
-            <div style="display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;">
-                ${statusBadge}${bonusBadge}
-            </div>
-            ${withdrawBtn ? `<div>${withdrawBtn}</div>` : ''}
-        `;
-        return el;
-    }
-
-    async function doLegacyV4Withdraw(tokenAddr, lockDays) {
-        try {
-            if (window.useServerSigning) {
-                throw new Error('Legacy v4 withdrawal must be signed with your own wallet.');
-            }
-
-            const fn   = "function withdraw(address token, uint256 lockDays) external";
-            const args = [tokenAddr, BigInt(lockDays)];
-
-            if (_isMiniPay()) {
-                showAlert('legacyV4Alert', 'info', '<span class="spinner"></span> Confirm v4 withdrawal in MiniPay…');
-                const txHash = await _miniPayTx(LEGACY_V4_CONTRACT, fn, args);
-                showAlert('legacyV4Alert', 'success',
-                    `✅ Legacy v4 save withdrawn! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
-                );
-                loadLegacyV4Deposits();
-                return;
-            }
-
-            const signer = await getSigner();
-            await ensureCeloNetwork();
-            const legacy = new ethers.Contract(LEGACY_V4_CONTRACT, LEGACY_V4_ABI, signer);
-
-            showAlert('legacyV4Alert', 'info', '<span class="spinner"></span> Confirm v4 withdrawal in your wallet…');
-            const tx = await legacy.withdraw(tokenAddr, BigInt(lockDays));
-            showAlert('legacyV4Alert', 'info', '<span class="spinner"></span> Waiting for Celo confirmation…');
-            const receipt = await tx.wait();
-
-            showAlert('legacyV4Alert', 'success',
-                `✅ Legacy v4 save withdrawn! <a href="https://celoscan.io/tx/${receipt.hash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
-            );
-            loadLegacyV4Deposits();
-        } catch (err) {
-            console.error(err);
-            if (err._miniPayDiag) {
-                const d = err._miniPayDiag;
-                showAlert('legacyV4Alert', 'error',
-                    `❌ MiniPay v4 withdrawal failed<br>` +
-                    `<small style="opacity:.75">Step: ${d.fn} → ${d.to.slice(0,10)}…</small>`);
-            } else {
-                const friendly = (window.GMTxError && GMTxError.format) ? GMTxError.format(err) : (err.reason || err.message || 'Unknown error');
-                showAlert('legacyV4Alert', 'error', '❌ Legacy v4 withdrawal failed: ' + friendly);
-            }
-        }
-    }
 
     // ── Utilities ──
     function fmtAmt(n, sym) {
@@ -2598,12 +2217,20 @@ window._wcGetClient = function() {
             }
         }).then(function(client) {
             window._wcSignClient = client;
-            var sessions = client.session.getAll();
-            if (sessions.length > 0 && !window._wcSession) {
-                window._wcSession = sessions[sessions.length - 1];
-                console.log('✅ WC session restored from storage');
-            }
-            return client;
+            return (async function () {
+                var sessions = [];
+                var start = Date.now();
+                while (Date.now() - start < 3000) {
+                    sessions = client.session.getAll();
+                    if (sessions.length > 0) break;
+                    await new Promise(function (resolve) { setTimeout(resolve, 200); });
+                }
+                if (sessions.length > 0 && !window._wcSession) {
+                    window._wcSession = sessions[sessions.length - 1];
+                    console.log('✅ WC session restored from storage');
+                }
+                return client;
+            })();
         });
     });
 };
