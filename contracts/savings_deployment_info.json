@@ -1,20 +1,21 @@
 {
   "contract_name": "GDSavings",
-  "version": "4",
-  "contract_address": "0x78d2a6Dd976337d3bEaFA0c30df6a0fDE949a618",
-  "tx_hash": "0x77fac11f6bfac2d51c6b6280e88561b2fd60fa7fac9d7543a243607cd8fc3950",
-  "deployer": "0xC91fed8C1C73CD1a35FaD073404bC4a57F5B06bE",
+  "version": "6",
+  "contract_address": "0x772feE25Fe03B1B18b7A916fEE237333Ec2f217e",
+  "tx_hash": "0x2e17c4bb6219d7f0a85c4d63aa8765a431bbe66e8c278056a12155fe783d38d1",
+  "deployer": "0x2D9644Fd40BABD64797884e0cb56F34cc063De71",
   "gooddollar_token": "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A",
   "celo_token": "0x471EcE3750Da237f93B8E339c536989b8978a438",
   "cusd_token": "0x765DE816845861e75A25fCA122bb6898B8B1282a",
+  "usdt_token": "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e",
   "chain_id": 42220,
   "network": "Celo Mainnet",
-  "block_number": 65917286,
-  "gas_used": 1898058,
+  "block_number": 69895720,
+  "gas_used": 2044225,
   "compiler_version": "v0.8.21+commit.d9974bed",
   "optimization": true,
   "optimization_runs": 200,
-  "notes": "Multi-token (G$, CELO, cUSD). Per-(user, token, lockDays) slot. Top-ups inherit the slot's unlocksAt. No early withdrawal. No owner, no pause. Reward pool is G$-only and trustless.",
+  "notes": "Multi-token (G$, CELO, cUSD, USDT). Per-(user, token, lockDays) slot. Lock period is Weekly (7d) or Monthly (30d). Top-ups inherit the slot's unlocksAt. No early withdrawal. No owner, no pause. Reward pool is G$-only and trustless.",
   "abi": [
     {
       "inputs": [
@@ -31,6 +32,11 @@
         {
           "internalType": "address",
           "name": "_cusd",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "_usdt",
           "type": "address"
         }
       ],
@@ -187,7 +193,7 @@
     },
     {
       "inputs": [],
-      "name": "BONUS_1DAY",
+      "name": "BONUS_10000_GD",
       "outputs": [
         {
           "internalType": "uint256",
@@ -200,7 +206,7 @@
     },
     {
       "inputs": [],
-      "name": "BONUS_1YEAR",
+      "name": "BONUS_2500_GD",
       "outputs": [
         {
           "internalType": "uint256",
@@ -213,7 +219,7 @@
     },
     {
       "inputs": [],
-      "name": "BONUS_PER_30D_STEP",
+      "name": "BONUS_250_GD",
       "outputs": [
         {
           "internalType": "uint256",
@@ -226,7 +232,7 @@
     },
     {
       "inputs": [],
-      "name": "LONG_TIER_MIN_CELO",
+      "name": "BONUS_500_GD",
       "outputs": [
         {
           "internalType": "uint256",
@@ -239,20 +245,7 @@
     },
     {
       "inputs": [],
-      "name": "LONG_TIER_MIN_CUSD",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "LONG_TIER_MIN_GD",
+      "name": "BONUS_50_GD",
       "outputs": [
         {
           "internalType": "uint256",
@@ -304,33 +297,7 @@
     },
     {
       "inputs": [],
-      "name": "MID_TIER_MIN_CELO",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "MID_TIER_MIN_CUSD",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "MID_TIER_MIN_GD",
+      "name": "MAX_DEPOSIT_USDT",
       "outputs": [
         {
           "internalType": "uint256",
@@ -370,6 +337,240 @@
     {
       "inputs": [],
       "name": "MIN_DEPOSIT_GD",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MIN_DEPOSIT_USDT",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_LOCK_DAYS",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER1_MAX_18D",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER1_MAX_6D",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER1_MAX_GD",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER2_MAX_18D",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER2_MAX_6D",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER2_MAX_GD",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER3_MAX_18D",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER3_MAX_6D",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER3_MAX_GD",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER4_MAX_18D",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER4_MAX_6D",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER4_MAX_GD",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER5_MIN_18D",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER5_MIN_6D",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MONTHLY_TIER5_MIN_GD",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "WEEKLY_LOCK_DAYS",
       "outputs": [
         {
           "internalType": "uint256",
@@ -505,6 +706,11 @@
         },
         {
           "internalType": "uint256",
+          "name": "totalLockedUsdt",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
           "name": "rewardPoolBalance",
           "type": "uint256"
         },
@@ -525,11 +731,34 @@
         },
         {
           "internalType": "uint256",
+          "name": "contractUsdtBalance",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
           "name": "slotsOpenedTotal",
           "type": "uint256"
         }
       ],
       "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getDurationRange",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "minDays",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maxDays",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "pure",
       "type": "function"
     },
     {
@@ -628,6 +857,11 @@
           "internalType": "address",
           "name": "cusdAddr",
           "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "usdtAddr",
+          "type": "address"
         }
       ],
       "stateMutability": "view",
@@ -708,19 +942,6 @@
           "internalType": "struct GDSavings.SlotRef[]",
           "name": "",
           "type": "tuple[]"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "getValidDurations",
-      "outputs": [
-        {
-          "internalType": "uint16[13]",
-          "name": "",
-          "type": "uint16[13]"
         }
       ],
       "stateMutability": "view",
@@ -810,6 +1031,19 @@
           "internalType": "uint256",
           "name": "",
           "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "usdt",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
         }
       ],
       "stateMutability": "view",
