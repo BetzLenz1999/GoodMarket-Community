@@ -13,6 +13,16 @@
 
   const CHAIN_ID_CELO_MAINNET = 42220;
   const CHAIN_ID_HEX = "0x" + CHAIN_ID_CELO_MAINNET.toString(16);
+  const DEFAULT_CONFIG = {
+    walletAddress: "",
+    loginMethod: "",
+    projectId: "",
+    dappName: "GoodMarket — P2P",
+    dappDescription: "Trustless peer-to-peer escrow trading on Celo",
+    assetVersion: "",
+    sidecarEnabled: true,
+  };
+  const _config = { ...DEFAULT_CONFIG };
 
   // Celo RPC fallback URLs for reliability
   const CELO_RPC_URLS = [
@@ -21,8 +31,21 @@
     "https://celo.publicnode.com"
   ];
 
+  function _normLogin(loginMethod) {
+    return String(loginMethod || "").trim().toLowerCase();
+  }
+
+  function _shouldPreferWalletConnect() {
+    return ["walletconnect", "manual", "manual_address"].includes(_normLogin(_config.loginMethod));
+  }
+
+  function configure(opts) {
+    if (!opts || typeof opts !== "object") return;
+    Object.assign(_config, opts);
+  }
+
   /** Return the injected provider (MetaMask / MiniPay / Valora) or null. */
-  function getProvider() {
+  function getInjectedProvider() {
     if (typeof window === "undefined") return null;
     if (window.ethereum && window.ethereum.providers && window.ethereum.providers.length) {
       // Prefer MiniPay if present so Celo dapp users get the integrated flow.
@@ -32,6 +55,16 @@
       return mm || window.ethereum.providers[0];
     }
     return window.ethereum || null;
+  }
+
+  async function getSigningProvider() {
+    if (_shouldPreferWalletConnect() && typeof GMWalletConnect !== "undefined") {
+      try {
+        const wcProvider = await GMWalletConnect.getProvider();
+        if (wcProvider) return wcProvider;
+      } catch (_) {}
+    }
+    return getInjectedProvider();
   }
 
   async function ensureCeloChain(provider) {
@@ -77,7 +110,7 @@
    * Returns the tx hash. Throws on user rejection / wallet error.
    */
   async function sendPreparedTx(prepared) {
-    const provider = getProvider();
+    const provider = await getSigningProvider();
     if (!provider) {
       throw new Error("No wallet detected. Open in MiniPay, MetaMask, or Valora.");
     }
@@ -111,7 +144,7 @@
    * don't queue the second tx if the first one reverts.
    */
   async function waitForReceipt(txHash, opts) {
-    const provider = getProvider();
+    const provider = await getSigningProvider();
     if (!provider) throw new Error("No wallet detected.");
     const intervalMs = (opts && opts.intervalMs) || 3000;
     const timeoutMs = (opts && opts.timeoutMs) || 120000;
@@ -341,6 +374,7 @@
   function getContractInfo() { return jsonGet("/p2p/api/contract"); }
 
   window.P2PEscrow = {
+    configure,
     sendPreparedTx,
     waitForReceipt,
     openAd,
