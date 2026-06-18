@@ -1605,7 +1605,7 @@ document.addEventListener('DOMContentLoaded', function() {
     </script>
 
 
-    <!-- Background Music Player -->
+    <!-- Background Music Player with Mute/Unmute -->
     <style>
         @keyframes musicPulse {
             0%, 100% { box-shadow: 0 4px 16px rgba(124,58,237,0.45); transform: scale(1); }
@@ -1627,12 +1627,8 @@ document.addEventListener('DOMContentLoaded', function() {
         </button>
     </div>
 
-    <iframe id="ytBgMusic"
-        src=""
-        allow="autoplay"
-        style="display:none; width:0; height:0; border:none; position:absolute;"
-        title="Background Music">
-    </iframe>
+    <!-- Load YouTube IFrame API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
 
     <script>
         function updateGoodMarketMilestoneDateRange() {
@@ -1653,24 +1649,51 @@ document.addEventListener('DOMContentLoaded', function() {
 
         updateGoodMarketMilestoneDateRange();
 
-        var musicPlaying = false;
+        var ytPlayer = null;
         var musicStarted = false;
-        var MUSIC_SRC = 'https://www.youtube.com/embed/H4kVafIdANI?autoplay=1&loop=1&playlist=H4kVafIdANI&controls=0&mute=0&enablejsapi=1';
+        var musicMuted = true; // Start muted (for autoplay compliance)
+
+        function onYouTubeIframeAPIReady() {
+            ytPlayer = new YT.Player('ytBgMusic', {
+                videoId: 'H4kVafIdANI',
+                playerVars: {
+                    autoplay: 1,
+                    loop: 1,
+                    playlist: 'H4kVafIdANI',
+                    controls: 0,
+                    mute: 1,
+                    enablejsapi: 1,
+                    rel: 0,
+                    modestbranding: 1
+                },
+                events: {
+                    onReady: function(event) {
+                        // Player ready but muted by default
+                    }
+                }
+            });
+        }
 
         function startMusic() {
             if (musicStarted) return;
-            var iframe = document.getElementById('ytBgMusic');
             var btn = document.getElementById('musicToggleBtn');
             var label = document.getElementById('musicLabel');
             var hint = document.getElementById('musicHint');
-            iframe.src = MUSIC_SRC;
+            var musicPlayer = document.getElementById('musicPlayer');
+
+            if (ytPlayer && ytPlayer.mute) {
+                ytPlayer.mute();
+                musicMuted = true;
+            }
+
             musicStarted = true;
-            musicPlaying = true;
             btn.classList.remove('waiting');
-            btn.innerHTML = '⏸';
+            btn.innerHTML = '🔇';
             btn.style.boxShadow = '0 4px 20px rgba(124,58,237,0.7)';
+            musicPlayer.style.display = 'flex';
             label.style.display = 'block';
             hint.style.display = 'none';
+
             document.removeEventListener('scroll', startMusic);
             document.removeEventListener('click', onFirstInteraction);
             document.removeEventListener('touchstart', startMusic);
@@ -1683,31 +1706,23 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         function toggleMusic() {
-            var iframe = document.getElementById('ytBgMusic');
             var btn = document.getElementById('musicToggleBtn');
-            var label = document.getElementById('musicLabel');
-            var hint = document.getElementById('musicHint');
 
             if (!musicStarted) {
                 startMusic();
                 return;
             }
 
-            if (musicPlaying) {
-                iframe.src = '';
-                musicStarted = false;
-                musicPlaying = false;
-                btn.classList.add('waiting');
-                btn.innerHTML = '🎵';
-                btn.style.boxShadow = '';
-                label.style.display = 'none';
-                hint.style.display = 'block';
-                document.addEventListener('scroll', startMusic, { once: true });
-                document.addEventListener('click', onFirstInteraction);
-                document.addEventListener('touchstart', startMusic, { once: true });
-                document.addEventListener('keydown', startMusic, { once: true });
+            if (!ytPlayer) return;
+
+            if (musicMuted) {
+                ytPlayer.unMute();
+                musicMuted = false;
+                btn.innerHTML = '🔊';
             } else {
-                startMusic();
+                ytPlayer.mute();
+                musicMuted = true;
+                btn.innerHTML = '🔇';
             }
         }
 
@@ -1723,6 +1738,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!this.classList.contains('waiting')) this.style.transform = 'scale(1)';
         });
     </script>
+
+    <div id="ytBgMusic" style="display:none;"></div>
     <script src="{{ url_for('static', filename='js/minipay-nav.js') }}"></script>
 </body>
 </html>
