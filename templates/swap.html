@@ -1743,6 +1743,12 @@
             return window.ethereum || providers[0];
         }
         async function _awaitEthProvider(timeoutMs) {
+            if (typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred()) {
+                try {
+                    const wcProvider = await GMWalletConnect.getProvider();
+                    if (wcProvider) return wcProvider;
+                } catch (_) {}
+            }
             const budget = typeof timeoutMs === 'number'
                 ? timeoutMs
                 : (_isTrustWalletMobileContext() ? 4200 : (_isLikelyMobileWalletContext() ? 2200 : 800));
@@ -1754,12 +1760,6 @@
                 await _delay(120);
                 p = _getEthProvider();
                 if (p) return p;
-            }
-            // No injected provider found - try WalletConnect bridge as fallback
-            if (typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred()) {
-                try {
-                    return await GMWalletConnect.getProvider();
-                } catch (_) { /* fall through to null */ }
             }
             return null;
         }
