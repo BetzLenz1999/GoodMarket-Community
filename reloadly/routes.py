@@ -308,6 +308,53 @@ def api_prepare_order():
         return jsonify({"success": False, "error": sanitize_error(e)}), 500
 
 
+def _fulfill_reloadly_order(order_id: str, wallet: str, order: dict) -> dict:
+    payload = order.get("order_payload", {})
+    order_type = order["order_type"]
+    reloadly_result = None
+
+    if order_type == "topup":
+        reloadly_result = reloadly_client.send_topup(
+            operator_id=payload["operator_id"],
+            amount=payload["amount"],
+            phone_number=payload["phone"],
+            country_code=payload["country"],
+            custom_identifier=order_id
+        )
+    elif order_type == "giftcard":
+        reloadly_result = reloadly_client.order_giftcard(
+            product_id=payload["product_id"],
+            quantity=payload.get("quantity", 1),
+            unit_price=payload["unit_price"],
+            custom_identifier=order_id
+        )
+    elif order_type == "utility":
+        reloadly_result = reloadly_client.pay_utility(
+            biller_id=payload["biller_id"],
+            amount=payload["amount"],
+            subscriber_id=payload["subscriber_id"],
+            custom_identifier=order_id
+        )
+    else:
+        raise Exception(f"Unsupported order type: {order_type}")
+
+    if reloadly_result:
+        update_order_record(order_id, {
+            "status": "completed",
+            "reloadly_transaction_id": str(reloadly_result.get("transactionId") or reloadly_result.get("id") or ""),
+            "reloadly_response": reloadly_result,
+            "completed_at": datetime.utcnow().isoformat()
+        })
+        return {
+            "success": True,
+            "order_id": order_id,
+            "status": "completed",
+            "result": reloadly_result
+        }
+
+    raise Exception("No response from Reloadly")
+
+
 @reloadly_bp.route("/api/order/confirm", methods=["POST"])
 def api_confirm_order():
     """
@@ -353,48 +400,8 @@ def api_confirm_order():
     update_order_record(order_id, {"status": "processing"})
 
     try:
-        payload = order.get("order_payload", {})
-        order_type = order["order_type"]
-        reloadly_result = None
-
-        if order_type == "topup":
-            reloadly_result = reloadly_client.send_topup(
-                operator_id=payload["operator_id"],
-                amount=payload["amount"],
-                phone_number=payload["phone"],
-                country_code=payload["country"],
-                custom_identifier=order_id
-            )
-        elif order_type == "giftcard":
-            reloadly_result = reloadly_client.order_giftcard(
-                product_id=payload["product_id"],
-                quantity=payload.get("quantity", 1),
-                unit_price=payload["unit_price"],
-                custom_identifier=order_id
-            )
-        elif order_type == "utility":
-            reloadly_result = reloadly_client.pay_utility(
-                biller_id=payload["biller_id"],
-                amount=payload["amount"],
-                subscriber_id=payload["subscriber_id"],
-                custom_identifier=order_id
-            )
-
-        if reloadly_result:
-            update_order_record(order_id, {
-                "status": "completed",
-                "reloadly_transaction_id": str(reloadly_result.get("transactionId") or reloadly_result.get("id") or ""),
-                "reloadly_response": reloadly_result,
-                "completed_at": datetime.utcnow().isoformat()
-            })
-            return jsonify({
-                "success": True,
-                "order_id": order_id,
-                "status": "completed",
-                "result": reloadly_result
-            })
-        else:
-            raise Exception("No response from Reloadly")
+        result = _fulfill_reloadly_order(order_id, wallet, order)
+        return jsonify(result)
 
     except Exception as e:
         logger.error(f"❌ Reloadly fulfillment failed for order {order_id}: {e}")
@@ -448,18 +455,20 @@ def api_detect_payment():
     if order["wallet_address"].lower() != wallet.lower():
         return jsonify({"success": False, "error": "Unauthorized"}), 403
 
+    current_status = order["status"]
+
     # If already processed, return current status
-    if order["status"] not in ("pending_payment", "verifying"):
+    if current_status not in ("pending_payment", "verifying"):
         return jsonify({
             "success": True,
             "found": True,
             "already_processed": True,
-            "status": order["status"],
+            "status": current_status,
             "order_id": order_id
         })
 
     # Mark as verifying to prevent duplicate processing
-    if order["status"] == "pending_payment":
+    if current_status == "pending_payment":
         update_order_record(order_id, {"status": "verifying"})
 
     # If a specific tx_hash was provided, try verifying it directly first
@@ -495,7 +504,10 @@ def api_detect_payment():
         return jsonify({
             "success": True,
             "found": False,
-            "message": detect.get("error", "Payment not detected yet — still watching blockchain...")
+            "message": detect.get(
+                "error",
+                "Payment not detected yet — still watching blockchain..."
+            )
         })
 
     # Payment found! Save tx_hash and process
@@ -503,49 +515,10 @@ def api_detect_payment():
     update_order_record(order_id, {"tx_hash": tx_hash, "status": "processing"})
 
     try:
-        payload = order.get("order_payload", {})
-        order_type = order["order_type"]
-        reloadly_result = None
-
-        if order_type == "topup":
-            reloadly_result = reloadly_client.send_topup(
-                operator_id=payload["operator_id"],
-                amount=payload["amount"],
-                phone_number=payload["phone"],
-                country_code=payload["country"],
-                custom_identifier=order_id
-            )
-        elif order_type == "giftcard":
-            reloadly_result = reloadly_client.order_giftcard(
-                product_id=payload["product_id"],
-                quantity=payload.get("quantity", 1),
-                unit_price=payload["unit_price"],
-                custom_identifier=order_id
-            )
-        elif order_type == "utility":
-            reloadly_result = reloadly_client.pay_utility(
-                biller_id=payload["biller_id"],
-                amount=payload["amount"],
-                subscriber_id=payload["subscriber_id"],
-                custom_identifier=order_id
-            )
-
-        if reloadly_result:
-            update_order_record(order_id, {
-                "status": "completed",
-                "reloadly_transaction_id": str(reloadly_result.get("transactionId") or reloadly_result.get("id") or ""),
-                "reloadly_response": reloadly_result,
-                "completed_at": datetime.utcnow().isoformat()
-            })
-            return jsonify({
-                "success": True,
-                "found": True,
-                "status": "completed",
-                "tx_hash": tx_hash,
-                "order_id": order_id
-            })
-        else:
-            raise Exception("No response from Reloadly")
+        result = _fulfill_reloadly_order(order_id, wallet, order)
+        result["found"] = True
+        result["tx_hash"] = tx_hash
+        return jsonify(result)
 
     except Exception as e:
         logger.error(f"❌ Auto-detect Reloadly fulfillment failed for {order_id}: {e}")
