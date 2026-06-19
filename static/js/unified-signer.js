@@ -1,14 +1,37 @@
 /**
  * GoodMarket unified signer/provider resolution.
  * ---------------------------------------------------------------------------
- * Shared helper that prefers the injected wallet provider when present
- * (MiniPay, Trust Wallet, MetaMask, EIP-6963 announcements), then falls back
- * to the WalletConnect bridge when the session is WalletConnect-backed.
+ * Shared helper that keeps the signer source aligned with the login method:
+ * WalletConnect-backed logins use the WC bridge, while injected-wallet logins
+ * use MiniPay / Trust Wallet / MetaMask / EIP-6963 providers.
  */
 (function (global) {
     "use strict";
 
     if (global.GMUnifiedSigner) return;
+
+    var _config = {
+        loginMethod: "",
+        walletAddress: ""
+    };
+
+    function _normLogin(loginMethod) {
+        return String(loginMethod || "").trim().toLowerCase();
+    }
+
+    function _shouldPreferWalletConnect() {
+        return ["walletconnect", "manual", "manual_address"].includes(_normLogin(_config.loginMethod));
+    }
+
+    function configure(opts) {
+        if (!opts || typeof opts !== "object") return;
+        if (Object.prototype.hasOwnProperty.call(opts, "loginMethod")) {
+            _config.loginMethod = opts.loginMethod || "";
+        }
+        if (Object.prototype.hasOwnProperty.call(opts, "walletAddress")) {
+            _config.walletAddress = opts.walletAddress || "";
+        }
+    }
 
     function _dispatchProviderRequest() {
         try {
@@ -124,22 +147,32 @@
         return null;
     }
 
+    async function getWalletConnectProvider() {
+        if (!global.GMWalletConnect || typeof global.GMWalletConnect.isPreferred !== "function") return null;
+        if (!global.GMWalletConnect.isPreferred()) return null;
+        try {
+            return await global.GMWalletConnect.getProvider();
+        } catch (_) {
+            return null;
+        }
+    }
+
     async function getSigningProvider(timeoutMs) {
+        if (_shouldPreferWalletConnect()) {
+            return getWalletConnectProvider();
+        }
+
         var injected = await awaitInjectedProvider(timeoutMs);
         if (injected) return injected;
-        if (global.GMWalletConnect && typeof global.GMWalletConnect.isPreferred === "function" && global.GMWalletConnect.isPreferred()) {
-            try {
-                return await global.GMWalletConnect.getProvider();
-            } catch (_) {
-                return null;
-            }
-        }
-        return null;
+
+        return getWalletConnectProvider();
     }
 
     global.GMUnifiedSigner = {
+        configure: configure,
         getInjectedProvider: getInjectedProvider,
         awaitInjectedProvider: awaitInjectedProvider,
-        getSigningProvider: getSigningProvider
+        getSigningProvider: getSigningProvider,
+        getWalletConnectProvider: getWalletConnectProvider
     };
 })(typeof window !== "undefined" ? window : this);
