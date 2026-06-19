@@ -2065,28 +2065,89 @@
                 });
                 try { window._wcSignClient = _wcSignClient; } catch (_) {}
             }
-            // Derive the correct eip155 chain string for a WalletConnect
-            // client.request() call. Priority: (1) chainId in tx params,
-            // (2) first chain approved in the session namespaces, (3) Celo.
-            function _wcEip155Chain(session, method, params) {
+            
+            // Check localStorage FIRST (fast path) - available immediately
+            var storedTopic = localStorage.getItem('wc_session_topic');
+            var storedAddress = localStorage.getItem('wc_session_address');
+            var storedSessionData = localStorage.getItem('wc_session_data');
+            var storedTimestamp = parseInt(localStorage.getItem('wc_session_timestamp') || '0', 10);
+            
+            var MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+            var sessionAge = storedTimestamp ? (Date.now() - storedTimestamp) : Infinity;
+            var sessionTooOld = sessionAge > MAX_SESSION_AGE_MS;
+            
+            if (storedTopic && storedAddress && !sessionTooOld && storedSessionData) {
                 try {
-                    if (method === 'eth_sendTransaction' && Array.isArray(params) && params[0] && params[0].chainId) {
-                        var txChain = parseInt(String(params[0].chainId), 16);
-                        if (!isNaN(txChain) && txChain > 0) return 'eip155:' + txChain;
+                    var parsedSession = JSON.parse(storedSessionData);
+                    var parsedExpiry = parsedSession && parsedSession.expiry;
+                    var nowSec = Math.floor(Date.now() / 1000);
+                    if (parsedSession && parsedSession.topic && (!parsedExpiry || parsedExpiry > nowSec)) {
+                        // Check if SDK already has this session
+                        var sdkSessions = {};
+                        try {
+                            var activeSessions = _wcSignClient.getActiveSessions();
+                            if (activeSessions && typeof activeSessions === 'object') {
+                                Object.keys(activeSessions).forEach(function(k) { sdkSessions[k] = activeSessions[k]; });
+                            }
+                        } catch (_) {}
+                        if (Object.keys(sdkSessions).length === 0) {
+                            try {
+                                var allSessions = _wcSignClient.session.getAll();
+                                if (allSessions && allSessions.length) {
+                                    allSessions.forEach(function(s) { if (s && s.topic) sdkSessions[s.topic] = s; });
+                                }
+                            } catch (_) {}
+                        }
+                        
+                        // If SDK has the session, use it
+                        if (sdkSessions[storedTopic]) {
+                            _wcBrowserSession = sdkSessions[storedTopic];
+                            _wcMode = "browser";
+                            window._wcSession = _wcBrowserSession;
+                            _wcAddress = storedAddress;
+                            console.log('[swap] WC session restored from SDK storage:', storedTopic);
+                            return _wcSignClient;
+                        }
+                        
+                        // Try to restore from localStorage
+                        if (parsedSession.topic === storedTopic) {
+                            // Subscribe to relay first
+                            try {
+                                if (_wcSignClient.core && _wcSignClient.core.relayer && typeof _wcSignClient.core.relayer.subscribe === 'function') {
+                                    _wcSignClient.core.relayer.subscribe(storedTopic).catch(function(_){});
+                                }
+                            } catch (_) {}
+                            
+                            // Inject session
+                            try {
+                                if (_wcSignClient.session && typeof _wcSignClient.session.set === 'function') {
+                                    _wcSignClient.session.set(parsedSession.topic, parsedSession);
+                                }
+                            } catch (_) {}
+                            
+                            _wcBrowserSession = parsedSession;
+                            _wcMode = "browser";
+                            window._wcSession = _wcBrowserSession;
+                            _wcAddress = storedAddress;
+                            console.log('[swap] WC session restored from localStorage:', storedTopic);
+                            return _wcSignClient;
+                        }
                     }
-                    var ns = session && (session.namespaces || {});
-                    var chains = (ns.eip155 && ns.eip155.chains) || [];
-                    if (!chains.length && ns.eip155 && ns.eip155.accounts && ns.eip155.accounts.length) {
-                        var parts = String(ns.eip155.accounts[0]).split(':');
-                        if (parts.length >= 2) return parts[0] + ':' + parts[1];
-                    }
-                    if (chains.length) return chains[0];
-                } catch (_) {}
-                return 'eip155:42220';
+                } catch (parseErr) { console.warn('[swap] localStorage parse error:', parseErr); }
             }
-            // Restore an existing session from localStorage so users that just
-            // logged in via WalletConnect don't get a new QR every time they
-            // open /swap. This mirrors what savings.html / wc-bridge.js do.
+            
+            // Clean up stale localStorage
+            if (storedTopic && (sessionTooOld || !storedSessionData)) {
+                try {
+                    localStorage.removeItem('wc_session_topic');
+                    localStorage.removeItem('wc_session_address');
+                    localStorage.removeItem('wc_session_data');
+                    localStorage.removeItem('wc_session_timestamp');
+                    localStorage.removeItem('wc_session_chains');
+                } catch (_) {}
+            }
+            
+            // Restore an existing session from SDK storage as fallback
             try {
                 if (!_wcBrowserSession && _wcSignClient.session && _wcSignClient.session.getAll) {
                     const sessions = _wcSignClient.session.getAll();
@@ -2106,10 +2167,31 @@
                             }
                             return false;
                         });
+                        console.log('[swap] WC session restored from SDK storage');
                     }
                 }
             } catch (_) { /* no-op */ }
             return _wcSignClient;
+        }
+        
+        // Derive the correct eip155 chain string for a WalletConnect
+        // client.request() call. Priority: (1) chainId in tx params,
+        // (2) first chain approved in the session namespaces, (3) Celo.
+        function _wcEip155Chain(session, method, params) {
+            try {
+                if (method === 'eth_sendTransaction' && Array.isArray(params) && params[0] && params[0].chainId) {
+                    var txChain = parseInt(String(params[0].chainId), 16);
+                    if (!isNaN(txChain) && txChain > 0) return 'eip155:' + txChain;
+                }
+                var ns = session && (session.namespaces || {});
+                var chains = (ns.eip155 && ns.eip155.chains) || [];
+                if (!chains.length && ns.eip155 && ns.eip155.accounts && ns.eip155.accounts.length) {
+                    var parts = String(ns.eip155.accounts[0]).split(':');
+                    if (parts.length >= 2) return parts[0] + ':' + parts[1];
+                }
+                if (chains.length) return chains[0];
+            } catch (_) {}
+            return 'eip155:42220';
         }
 
         // Warm up the WalletConnect SignClient on page load so any
