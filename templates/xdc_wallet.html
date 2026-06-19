@@ -358,7 +358,6 @@
     </style>
     <!-- WalletConnect bridge for users without injected wallet -->
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/unified-signer.js', v=ASSET_VERSION) }}"></script>
     <script>
         if (typeof GMWalletConnect !== "undefined") {
             GMWalletConnect.configure({
@@ -762,13 +761,27 @@
         }
 
         function _getEthProvider() {
-            const injected = typeof GMUnifiedSigner !== "undefined"
-                ? GMUnifiedSigner.getInjectedProvider()
-                : null;
-            if (injected) return injected;
+            // First, check for injected wallets (MetaMask, Trust Wallet, MiniPay, etc.)
+            if (window.ethereum) {
+                if (window.ethereum.providers && window.ethereum.providers.length) {
+                    // Mobile dApp browsers often inject multiple providers.
+                    // Prefer MiniPay / Trust Wallet when present, then fallback to MetaMask.
+                    const miniPay = window.ethereum.providers.find(p => p && p.isMiniPay);
+                    if (miniPay) return miniPay;
+                    const trust = window.ethereum.providers.find(p => p && p.isTrust);
+                    if (trust) return trust;
+                    const mm = window.ethereum.providers.find(p => p && p.isMetaMask && !p.isBraveWallet);
+                    if (mm) return mm;
+                    return window.ethereum.providers[0];
+                }
+                return window.ethereum;
+            }
+            
+            // Fallback to WalletConnect if no injected wallet is detected
             if (typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred && GMWalletConnect.isPreferred()) {
                 return GMWalletConnect.getProvider();
             }
+            
             return null;
         }
 
