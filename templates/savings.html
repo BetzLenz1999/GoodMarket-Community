@@ -2256,12 +2256,15 @@ window._wcGetClient = function() {
                             
                             // Try to restore from localStorage
                             if (parsedSession.topic === storedTopic) {
-                                // Subscribe to relay first
+                                // Subscribe to relay first - must await this!
                                 try {
                                     if (client.core && client.core.relayer && typeof client.core.relayer.subscribe === 'function') {
-                                        client.core.relayer.subscribe(storedTopic).catch(function(_){});
+                                        await client.core.relayer.subscribe(storedTopic);
+                                        console.log('[savings] Relay subscription established');
                                     }
-                                } catch (_) {}
+                                } catch (err) {
+                                    console.warn('[savings] Relay subscribe error:', err && err.message);
+                                }
                                 
                                 // Inject session
                                 try {
