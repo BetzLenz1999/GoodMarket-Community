@@ -648,6 +648,25 @@ let _wcSignClient = null;
 let _wcBrowserSession = null;
 let _wcSdkLoading = null;
 
+function _wcExtendIfExpiring(client, topic, session) {
+    if (!client || !topic || !session || !session.expiry) return;
+    var secsLeft = session.expiry - Math.floor(Date.now() / 1000);
+    if (secsLeft <= 0 || secsLeft > 2 * 24 * 3600) return;
+    console.log('[WC] Session expires in', Math.round(secsLeft / 3600), 'h — requesting extension...');
+    client.extend({ topic: topic }).then(function() {
+        console.log('[WC] Session extended successfully');
+        try { localStorage.setItem('wc_session_timestamp', Date.now().toString()); } catch(_) {}
+        try {
+            var active = client.getActiveSessions ? client.getActiveSessions() : {};
+            var updated = active[topic];
+            if (!updated && client.session && client.session.getAll) {
+                updated = client.session.getAll().find(function(x) { return x.topic === topic; });
+            }
+            if (updated) localStorage.setItem('wc_session_data', JSON.stringify(updated));
+        } catch(_) {}
+    }).catch(function(e) { console.warn('[WC] Extend failed:', e && e.message); });
+}
+
 // ─── Utils ────────────────────────────────────────────────────────────────────
 function showToast(msg, type = 'success') {
     const t = document.createElement('div');
@@ -1109,7 +1128,9 @@ async function _wcGetClient() {
                 if (sdkSessions[storedTopic]) {
                     _wcAddress = storedAddress;
                     _wcMode = "browser";
+                    _wcBrowserSession = sdkSessions[storedTopic];
                     console.log('[reloadly] WC session restored from SDK storage:', storedTopic);
+                    _wcExtendIfExpiring(_wcSignClient, storedTopic, _wcBrowserSession);
                     return _wcSignClient;
                 }
                 
@@ -1131,7 +1152,9 @@ async function _wcGetClient() {
                     
                     _wcAddress = storedAddress;
                     _wcMode = "browser";
+                    _wcBrowserSession = parsedSession;
                     console.log('[reloadly] WC session restored from localStorage:', storedTopic);
+                    _wcExtendIfExpiring(_wcSignClient, storedTopic, _wcBrowserSession);
                     return _wcSignClient;
                 }
             }
@@ -1188,6 +1211,8 @@ async function wcConnectForReloadly() {
     }
 
     const client = await _wcGetClient();
+    // If _wcGetClient() already restored an existing session, don't create a new connection
+    if (_wcBrowserSession && _wcAddress) return _wcAddress;
     const result = await client.connect({
         requiredNamespaces: {},
         optionalNamespaces: {
