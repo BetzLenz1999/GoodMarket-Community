@@ -2082,38 +2082,62 @@
             this._sc = wcClient;
             this._session = wcSession;
             this._account = account;
+            console.log('[WCClaimShim] Initialized with:', {
+                hasClient: !!wcClient,
+                hasSession: !!wcSession,
+                sessionTopic: wcSession?.topic,
+                account: account
+            });
         }
         // Ethers.js BrowserProvider compatibility
         async getAddress() {
             return this._account;
         }
         async request({ method, params }) {
-            if (method === 'eth_accounts' || method === 'eth_requestAccounts') return [this._account];
-            if (method === 'eth_chainId') return '0xa4ec';
+            console.log('[WCClaimShim] request:', method, params);
+            
+            if (method === 'eth_accounts' || method === 'eth_requestAccounts') {
+                return [this._account];
+            }
+            if (method === 'eth_chainId') {
+                console.log('[WCClaimShim] eth_chainId returning: 0xa4ec');
+                return '0xa4ec';
+            }
             if (method === 'net_version') return '42220';
+            
             // Sessions are scoped to Celo — chain switch / add are no-ops
             if (method === 'wallet_switchEthereumChain' || method === 'wallet_addEthereumChain') {
+                console.log('[WCClaimShim] Chain switch - no-op for WC session');
                 return null;
             }
+            
             if (_WC_WALLET_SCOPED_METHODS.has(method)) {
+                var wcChain = _wcEip155Chain(this._session, method, params || []);
+                console.log('[WCClaimShim] WC scoped method:', method, '-> chain:', wcChain);
+                
                 try {
+                    _wcWakeWalletApp(this._session);
                     var reqPromise = this._sc.request({
                         topic: this._session.topic,
-                        chainId: _wcEip155Chain(this._session, method, params || []),
+                        chainId: wcChain,
                         request: { method, params: params || [] }
                     });
-                    _wcWakeWalletApp(this._session);
-                    return await reqPromise;
+                    var result = await reqPromise;
+                    console.log('[WCClaimShim] WC request success:', method, '->', result ? result.slice(0, 20) + '...' : 'null');
+                    return result;
                 } catch (wcErr) {
                     var code = (wcErr && typeof wcErr.code === 'number') ? wcErr.code : -32603;
                     var msg = (wcErr && wcErr.message) ? String(wcErr.message) : 'WalletConnect request failed';
+                    console.error('[WCClaimShim] WC request error:', method, '->', msg, 'code:', code, wcErr);
                     var err = new Error(msg);
                     err.code = code;
                     if (wcErr && wcErr.data !== undefined) err.data = wcErr.data;
                     throw err;
                 }
             }
+            
             // Read-only RPC via Celo RPC
+            console.log('[WCClaimShim] RPC call (readonly):', method);
             return _wcCeloJsonRpc(method, params || []);
         }
     }
@@ -2123,18 +2147,39 @@
         if (window.useServerSigning) {
             throw new Error('This account uses server-side signing. Please continue with automatic server signing.');
         }
+        
         // If user logged in via WalletConnect, restore and use WC session as signer
         const wcTopic = localStorage.getItem('wc_session_topic');
         const wcTimestamp = parseInt(localStorage.getItem('wc_session_timestamp') || '0', 10);
         const wcAge = Date.now() - wcTimestamp;
         const wcSessionValid = wcTopic && wcAge < 7 * 24 * 60 * 60 * 1000;
+        
+        console.log('[getClaimSigner] Checking WC session:', {
+            hasLocalStorage: !!wcTopic,
+            wcAgeMinutes: Math.round(wcAge / 60000),
+            wcSessionValid,
+            hasWcSignClient: !!window._wcSignClient,
+            hasWcSession: !!window._wcSession
+        });
+        
         if (wcSessionValid) {
-            await window._wcGetClient().catch(function() {});
+            try {
+                await window._wcGetClient();
+            } catch (wcErr) {
+                console.warn('[getClaimSigner] WC client init failed:', wcErr);
+            }
+            
             if (window._wcSignClient && window._wcSession) {
+                console.log('[getClaimSigner] Using WCClaimShim for Celo claim');
                 const shim = new WCClaimShim(window._wcSignClient, window._wcSession, WALLET);
                 return shim;
+            } else {
+                console.warn('[getClaimSigner] WC client or session not available after init');
             }
+        } else {
+            console.log('[getClaimSigner] WC session invalid or expired, falling back to injected');
         }
+        
         // Fall back to injected provider
         const ep = await _vAwaitEthProvider();
         if (ep) {
@@ -2148,11 +2193,17 @@
                     ' and try again.'
                 );
             }
+            console.log('[getClaimSigner] Using injected provider:', ep.isMetaMask ? 'MetaMask' : ep.isTrust ? 'Trust Wallet' : 'Other');
             return ep;
         }
+        
         // Try WC without localStorage check
         const wcProvider = await _walletGetWcProviderIfPreferred();
-        if (wcProvider) return wcProvider;
+        if (wcProvider) {
+            console.log('[getClaimSigner] Using WC provider from bridge');
+            return wcProvider;
+        }
+        
         throw new Error('No wallet connected. Install MetaMask or reconnect via WalletConnect.');
     }
 
@@ -3770,10 +3821,16 @@
             // For WCClaimShim (WalletConnect users), chain switch is handled internally
             // and returns null. For injected providers, do the normal chain switch.
             const isWcShim = provider instanceof WCClaimShim;
+            console.log('[claimCeloInjected] Starting claim:', {
+                isWcShim,
+                from,
+                providerType: isWcShim ? 'WCClaimShim' : (provider.isMetaMask ? 'MetaMask' : provider.isTrust ? 'Trust' : 'Other')
+            });
             
             if (!isWcShim) {
                 const currentChain = await provider.request({ method: 'eth_chainId' });
                 const normalizedCurrentChain = _normalizeChainIdHex(currentChain);
+                console.log('[claimCeloInjected] Current chain:', normalizedCurrentChain, 'Required:', CELO_CHAIN_ID_HEX);
                 if (normalizedCurrentChain !== CELO_CHAIN_ID_HEX) {
                     try {
                         await provider.request({
@@ -3806,6 +3863,8 @@
                         }
                     }
                 }
+            } else {
+                console.log('[claimCeloInjected] Using WCClaimShim - skipping chain switch (WC session handles Celo)');
             }
 
             // Same defensive shape as XDC: omit non-standard `chainId`
@@ -3817,9 +3876,15 @@
             });
 
             try {
-                return await sendCeloTx();
+                console.log('[claimCeloInjected] Sending Celo claim transaction...');
+                const txHash = await sendCeloTx();
+                console.log('[claimCeloInjected] Transaction sent successfully:', txHash);
+                return txHash;
             } catch (sendErr) {
+                console.error('[claimCeloInjected] Transaction error:', sendErr);
+                
                 if (_isUserRejectedError(sendErr)) throw sendErr;
+                
                 // Handle Celo RPC errors that WalletConnect users commonly hit.
                 // Prompt to update RPC and retry once (only for injected providers).
                 if (!isWcShim && _isCeloRpcUnreachableError(sendErr)) {
@@ -3832,6 +3897,21 @@
                         throw sendErr;
                     }
                 }
+                
+                // For WalletConnect users, provide more helpful error messages
+                if (isWcShim) {
+                    const errMsg = String((sendErr && (sendErr.message || sendErr.shortMessage)) || '').toLowerCase();
+                    if (errMsg.includes('rejected') || errMsg.includes('denied')) {
+                        throw sendErr;
+                    }
+                    if (errMsg.includes('chain') || errMsg.includes('network') || errMsg.includes('unsupported')) {
+                        throw new Error('WalletConnect: Your wallet may not be connected to Celo network. Please switch to Celo in your wallet and try again. ' + (sendErr.message || ''));
+                    }
+                    if (errMsg.includes('session') || errMsg.includes('expired') || errMsg.includes('disconnected')) {
+                        throw new Error('WalletConnect session issue. Please reconnect your wallet and try again. ' + (sendErr.message || ''));
+                    }
+                }
+                
                 if (!_isRpcHtmlError(sendErr)) throw sendErr;
                 // Transient public-RPC HTML/parse error — wait a moment and
                 // try once more before giving up.
@@ -4650,6 +4730,9 @@
             // configured (typically forno.celo.org). When rate-limited /
             // behind Cloudflare it can return HTML, which surfaces as
             // "Unexpected token '<'". Retry once on transient parser errors.
+            const isWcShim = provider instanceof WCClaimShim;
+            console.log('[getProviderGasSnapshot] Provider type:', isWcShim ? 'WCClaimShim' : typeof provider);
+            
             const snapshot = async () => {
                 const balanceHex = await provider.request({
                     method: 'eth_getBalance',
@@ -5277,7 +5360,14 @@
 
                 // Use getClaimSigner which prioritizes WC session like savings/swap
                 // This ensures WC users use their existing session instead of injected provider
+                console.log('[ensureInjectedWalletClaim] Getting signer for claim...');
                 const signer = await getClaimSigner();
+                console.log('[ensureInjectedWalletClaim] Got signer:', {
+                    type: signer instanceof WCClaimShim ? 'WCClaimShim' : 'Injected',
+                    hasRequest: typeof signer.request === 'function',
+                    hasGetAddress: typeof signer.getAddress === 'function',
+                    signerKeys: Object.keys(signer)
+                });
                 
                 // Get the 'from' address from the signer
                 let from;
@@ -5290,6 +5380,8 @@
                     from = signer._account || signer.from || '';
                 }
                 
+                console.log('[ensureInjectedWalletClaim] From address:', from);
+                
                 if (!from || from.toLowerCase() !== WALLET.toLowerCase()) {
                     throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
                 }
@@ -5297,6 +5389,9 @@
                 // Update provider reference to use the signer for the claim transaction
                 // This ensures WC users use the WCClaimShim for signing
                 provider = signer;
+                
+                // Log the provider type for debugging
+                console.log('[ensureInjectedWalletClaim] Final provider type:', provider instanceof WCClaimShim ? 'WCClaimShim' : 'Injected');
 
                 // Preflight one more time right before sending tx because gas price can spike.
                 // MiniPay already ran its CELO/cUSD helper and pays tx gas with stablecoins.
@@ -5416,7 +5511,17 @@
 
                 appendStatusLine('ℹ️ Other network claims will appear here after Celo confirms — no automatic Fuse/XDC prompt.', 'var(--text-dim)');
             } catch (err) {
-                console.warn('[claim] Celo claim error:', err);
+                console.error('[claim] Celo claim error:', err);
+                
+                // Log WC session status for debugging
+                const wcTopic = localStorage.getItem('wc_session_topic');
+                console.log('[claim] WC Session Debug:', {
+                    localStorageTopic: wcTopic,
+                    hasWcSignClient: !!window._wcSignClient,
+                    hasWcSession: !!window._wcSession,
+                    providerType: provider instanceof WCClaimShim ? 'WCClaimShim' : typeof provider
+                });
+                
                 const raw = (err && (err.shortMessage || err.message)) || 'Claim failed';
                 const userRejected = _isUserRejectedError(err) || (raw || '').toLowerCase().includes('user rejected');
                 const wrongWallet = (raw || '').toLowerCase().includes('wrong wallet');
@@ -5429,6 +5534,11 @@
                     msg = GMTxError.format(err);
                 } else {
                     msg = raw;
+                }
+
+                // Add hint for WalletConnect users
+                if (provider instanceof WCClaimShim && !userRejected) {
+                    appendStatusLine('💡 WalletConnect: If this keeps failing, try reconnecting your wallet.', 'var(--text-dim)');
                 }
 
                 // Show the CELO failure reason without auto-prompting another network;
