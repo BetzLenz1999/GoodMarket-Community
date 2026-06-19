@@ -1071,6 +1071,85 @@ async function _wcGetClient() {
             icons: [window.location.origin + '/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}']
         }
     });
+    
+    // Check localStorage FIRST (fast path) - available immediately
+    var storedTopic = localStorage.getItem('wc_session_topic');
+    var storedAddress = localStorage.getItem('wc_session_address');
+    var storedSessionData = localStorage.getItem('wc_session_data');
+    var storedTimestamp = parseInt(localStorage.getItem('wc_session_timestamp') || '0', 10);
+    
+    var MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+    var sessionAge = storedTimestamp ? (Date.now() - storedTimestamp) : Infinity;
+    var sessionTooOld = sessionAge > MAX_SESSION_AGE_MS;
+    
+    if (storedTopic && storedAddress && !sessionTooOld && storedSessionData) {
+        try {
+            var parsedSession = JSON.parse(storedSessionData);
+            var parsedExpiry = parsedSession && parsedSession.expiry;
+            var nowSec = Math.floor(Date.now() / 1000);
+            if (parsedSession && parsedSession.topic && (!parsedExpiry || parsedExpiry > nowSec)) {
+                // Check if SDK already has this session
+                var sdkSessions = {};
+                try {
+                    var activeSessions = _wcSignClient.getActiveSessions();
+                    if (activeSessions && typeof activeSessions === 'object') {
+                        Object.keys(activeSessions).forEach(function(k) { sdkSessions[k] = activeSessions[k]; });
+                    }
+                } catch (_) {}
+                if (Object.keys(sdkSessions).length === 0) {
+                    try {
+                        var allSessions = _wcSignClient.session.getAll();
+                        if (allSessions && allSessions.length) {
+                            allSessions.forEach(function(s) { if (s && s.topic) sdkSessions[s.topic] = s; });
+                        }
+                    } catch (_) {}
+                }
+                
+                // If SDK has the session, use it
+                if (sdkSessions[storedTopic]) {
+                    _wcAddress = storedAddress;
+                    _wcMode = "browser";
+                    console.log('[reloadly] WC session restored from SDK storage:', storedTopic);
+                    return _wcSignClient;
+                }
+                
+                // Try to restore from localStorage
+                if (parsedSession.topic === storedTopic) {
+                    // Subscribe to relay first
+                    try {
+                        if (_wcSignClient.core && _wcSignClient.core.relayer && typeof _wcSignClient.core.relayer.subscribe === 'function') {
+                            _wcSignClient.core.relayer.subscribe(storedTopic).catch(function(_){});
+                        }
+                    } catch (_) {}
+                    
+                    // Inject session
+                    try {
+                        if (_wcSignClient.session && typeof _wcSignClient.session.set === 'function') {
+                            _wcSignClient.session.set(parsedSession.topic, parsedSession);
+                        }
+                    } catch (_) {}
+                    
+                    _wcAddress = storedAddress;
+                    _wcMode = "browser";
+                    console.log('[reloadly] WC session restored from localStorage:', storedTopic);
+                    return _wcSignClient;
+                }
+            }
+        } catch (parseErr) { console.warn('[reloadly] localStorage parse error:', parseErr); }
+    }
+    
+    // Clean up stale localStorage
+    if (storedTopic && (sessionTooOld || !storedSessionData)) {
+        try {
+            localStorage.removeItem('wc_session_topic');
+            localStorage.removeItem('wc_session_address');
+            localStorage.removeItem('wc_session_data');
+            localStorage.removeItem('wc_session_timestamp');
+            localStorage.removeItem('wc_session_chains');
+        } catch (_) {}
+    }
+    
+    console.log('[reloadly] No existing WC session found, will require new connection');
     return _wcSignClient;
 }
 
