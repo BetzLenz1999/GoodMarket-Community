@@ -127,6 +127,25 @@
         sdkLoading: null,
     };
 
+    function _wcExtendIfExpiring(client, topic, session) {
+        if (!client || !topic || !session || !session.expiry) return;
+        var secsLeft = session.expiry - Math.floor(Date.now() / 1000);
+        if (secsLeft <= 0 || secsLeft > 2 * 24 * 3600) return;
+        try { _config.log('[wc-bridge] Session expires in', Math.round(secsLeft / 3600), 'h — requesting extension...'); } catch (_) {}
+        client.extend({ topic: topic }).then(function() {
+            try { _config.log('[wc-bridge] Session extended successfully'); } catch (_) {}
+            try { localStorage.setItem('wc_session_timestamp', Date.now().toString()); } catch (_) {}
+            try {
+                var active = client.getActiveSessions ? client.getActiveSessions() : {};
+                var updated = active[topic];
+                if (!updated && client.session && client.session.getAll) {
+                    updated = client.session.getAll().find(function(x) { return x.topic === topic; });
+                }
+                if (updated) localStorage.setItem('wc_session_data', JSON.stringify(updated));
+            } catch (_) {}
+        }).catch(function(e) { try { _config.log('[wc-bridge] Extend failed:', e && e.message); } catch (_) {} });
+    }
+
     function _normLogin(method) {
         return String(method == null ? "" : method).toLowerCase();
     }
@@ -387,6 +406,7 @@
                                 _state.address = storedAddress;
                                 _state.mode = "browser";
                                 try { _config.log("[wc-bridge] Using SDK session (relay connected):", storedTopic); } catch (_) {}
+                                _wcExtendIfExpiring(client, storedTopic, _state.browserSession);
                                 return client;
                             }
 
@@ -443,6 +463,7 @@
                                 _state.address = storedAddress;
                                 _state.mode = "browser";
                                 try { _config.log("[wc-bridge] Restored WC session from localStorage:", storedTopic); } catch (_) {}
+                                _wcExtendIfExpiring(client, storedTopic, _state.browserSession);
                                 return client;
                             }
                         }
