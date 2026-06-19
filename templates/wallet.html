@@ -5171,8 +5171,22 @@
 
 
         async function getClaimProviderAndFrom() {
+            // For WalletConnect users, use the existing WC session directly to avoid
+            // injected provider conflicts. This matches the behavior in savings/swap/reloadly
+            // where the WC session is prioritized.
+            const wcPreferred = typeof GMWalletConnect !== 'undefined' && GMWalletConnect.isPreferred();
+            if (wcPreferred) {
+                const wcProvider = await _walletGetWcProviderIfPreferred();
+                if (wcProvider) {
+                    const accounts = await wcProvider.request({ method: 'eth_requestAccounts' });
+                    if (accounts && accounts.length > 0) {
+                        return { provider: wcProvider, from: accounts[0] };
+                    }
+                }
+            }
+
+            // Fall back to injected provider (MetaMask, Trust Wallet, MiniPay)
             let provider = await _vAwaitEthProvider();
-            if (!provider) provider = await _walletGetWcProviderIfPreferred();
             if (!provider) throw new Error('No wallet detected. Please open this page in MetaMask, Trust Wallet, MiniPay, or reconnect using WalletConnect to sign transactions.');
             const accounts = await provider.request({ method: 'eth_requestAccounts' });
             if (!accounts || !accounts.length) throw new Error('No wallet account available.');
