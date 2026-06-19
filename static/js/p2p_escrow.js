@@ -46,6 +46,9 @@
 
   /** Return the injected provider (MetaMask / MiniPay / Valora) or null. */
   function getInjectedProvider() {
+    if (typeof GMUnifiedSigner !== "undefined") {
+      return GMUnifiedSigner.getInjectedProvider();
+    }
     if (typeof window === "undefined") return null;
     if (window.ethereum && window.ethereum.providers && window.ethereum.providers.length) {
       // Prefer MiniPay if present so Celo dapp users get the integrated flow.
@@ -58,13 +61,18 @@
   }
 
   async function getSigningProvider() {
+    if (typeof GMUnifiedSigner !== "undefined") {
+      return GMUnifiedSigner.getSigningProvider();
+    }
+    const injected = getInjectedProvider();
+    if (injected) return injected;
     if (_shouldPreferWalletConnect() && typeof GMWalletConnect !== "undefined") {
       try {
         const wcProvider = await GMWalletConnect.getProvider();
         if (wcProvider) return wcProvider;
       } catch (_) {}
     }
-    return getInjectedProvider();
+    return null;
   }
 
   async function ensureCeloChain(provider) {
