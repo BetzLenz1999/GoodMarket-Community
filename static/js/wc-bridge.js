@@ -338,84 +338,146 @@
         }).then(function (client) {
             _state.signClient = client;
 
-            // ── Step 1: Poll IndexedDB-backed sessions (primary source) ─────────
-            // We must NOT call getActiveSessions() immediately after init() — the
-            // WalletConnect SDK reads from IndexedDB asynchronously. Polling for
-            // up to 3 s gives it enough time on low-end Android devices.
+            // ── Step 0: Check localStorage FIRST (fast path) ────────────────────
+            // localStorage is written synchronously by homepage at login, so it's
+            // available immediately. This avoids waiting for IndexedDB which may
+            // not have persisted yet on low-end devices.
+            try {
+                var storedTopic = localStorage.getItem('wc_session_topic');
+                var storedAddress = localStorage.getItem('wc_session_address');
+                var storedSessionData = localStorage.getItem('wc_session_data');
+                var storedTimestamp = parseInt(localStorage.getItem('wc_session_timestamp') || '0', 10);
+
+                var MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+                var sessionAge = storedTimestamp ? (Date.now() - storedTimestamp) : Infinity;
+                var sessionTooOld = sessionAge > MAX_SESSION_AGE_MS;
+
+                if (storedTopic && storedAddress && !sessionTooOld && storedSessionData) {
+                    try {
+                        var parsedSession = JSON.parse(storedSessionData);
+                        var parsedExpiry = parsedSession && parsedSession.expiry;
+                        var nowSec = Math.floor(Date.now() / 1000);
+                        if (parsedSession && parsedSession.topic && (!parsedExpiry || parsedExpiry > nowSec)) {
+                            // Check if SDK already has this session loaded from IndexedDB.
+                            // getActiveSessions() is the public API; session.getAll() is internal.
+                            var sdkSessions = {};
+                            try {
+                                var activeSessions = client.getActiveSessions();
+                                if (activeSessions && typeof activeSessions === 'object') {
+                                    Object.keys(activeSessions).forEach(function(k) {
+                                        sdkSessions[k] = activeSessions[k];
+                                    });
+                                }
+                            } catch (_) { /* SDK API may not be ready yet */ }
+                            // Fallback to internal API if needed
+                            if (Object.keys(sdkSessions).length === 0) {
+                                try {
+                                    if (client.session && typeof client.session.getAll === 'function') {
+                                        var allSessions = client.session.getAll();
+                                        if (allSessions && allSessions.length) {
+                                            allSessions.forEach(function(s) { if (s && s.topic) sdkSessions[s.topic] = s; });
+                                        }
+                                    }
+                                } catch (_) { /* ignore */ }
+                            }
+
+                            // If SDK has the session, use it (best case - relay is connected)
+                            if (sdkSessions[storedTopic]) {
+                                _state.browserSession = sdkSessions[storedTopic];
+                                _state.address = storedAddress;
+                                _state.mode = "browser";
+                                try { _config.log("[wc-bridge] Using SDK session (relay connected):", storedTopic); } catch (_) {}
+                                return client;
+                            }
+
+                            // If SDK doesn't have the session yet, try to restore from localStorage.
+                            // We need to: 1) Set the session in the internal store, 2) Subscribe to relay.
+                            if (parsedSession.topic === storedTopic) {
+                                // First, subscribe to the relay topic - this establishes the WebSocket
+                                // connection needed for requests. This is critical and must happen first.
+                                var subscribed = false;
+                                try {
+                                    if (client.core && client.core.relayer) {
+                                        var relayer = client.core.relayer;
+                                        // Check if there's a transport we can use
+                                        if (typeof relayer.subscribe === 'function') {
+                                            // Close any existing subscription for this topic first
+                                            try { relayer.unsubscribe && relayer.unsubscribe(storedTopic); } catch (_) { /* ignore */ }
+                                            // Subscribe to the topic - this re-establishes the relay connection
+                                            relayer.subscribe(storedTopic).then(function() {
+                                                subscribed = true;
+                                                try { _config.log("[wc-bridge] Relay subscription established:", storedTopic); } catch (_) {}
+                                            }).catch(function(err) {
+                                                try { _config.log("[wc-bridge] Relay subscribe failed:", err && err.message); } catch (_) {}
+                                            });
+                                        }
+                                        // Also try legacy API if available
+                                        else if (typeof relayer.transportSubscribe === 'function') {
+                                            relayer.transportSubscribe(storedTopic).then(function() {
+                                                subscribed = true;
+                                            }).catch(function(_){});
+                                        }
+                                    }
+                                } catch (_) { /* ignore */ }
+
+                                // Second, inject the session into the client's session store
+                                try {
+                                    if (client.session) {
+                                        // Try various internal APIs that might work
+                                        if (typeof client.session.set === 'function') {
+                                            client.session.set(parsedSession.topic, parsedSession);
+                                        }
+                                        // Some SDK versions use a different method
+                                        if (typeof client.session.setSession === 'function') {
+                                            client.session.setSession(parsedSession);
+                                        }
+                                        // Another possible API
+                                        if (typeof client.session.persist === 'function') {
+                                            client.session.persist(parsedSession.topic, parsedSession);
+                                        }
+                                    }
+                                } catch (_) { /* internal API may not exist in this version */ }
+
+                                // Mark as restored - the actual relay connection is async
+                                _state.browserSession = parsedSession;
+                                _state.address = storedAddress;
+                                _state.mode = "browser";
+                                try { _config.log("[wc-bridge] Restored WC session from localStorage:", storedTopic); } catch (_) {}
+                                return client;
+                            }
+                        }
+                    } catch (parseErr) { 
+                        try { _config.log("[wc-bridge] localStorage parse error:", parseErr && parseErr.message); } catch (_) {} 
+                    }
+                }
+
+                // Clean up stale localStorage
+                if (storedTopic && (sessionTooOld || !storedSessionData)) {
+                    try {
+                        localStorage.removeItem('wc_session_topic');
+                        localStorage.removeItem('wc_session_address');
+                        localStorage.removeItem('wc_session_data');
+                        localStorage.removeItem('wc_session_timestamp');
+                        localStorage.removeItem('wc_session_chains');
+                    } catch (_) {}
+                }
+            } catch (lsErr) { 
+                try { _config.log("[wc-bridge] localStorage access error:", lsErr && lsErr.message); } catch (_) {} 
+            }
+
+            // ── Step 1: Poll IndexedDB-backed sessions (SDK storage) ─────────
+            // Poll for up to 3 s - the SDK reads from IndexedDB asynchronously.
             return _pollForSessions(client, 3000, 300).then(function (liveSession) {
                 if (liveSession) {
                     _state.browserSession = liveSession;
                     _state.address = _addrFromSession(liveSession);
+                    _state.mode = "browser";
                     try { _config.log("[wc-bridge] Restored live WC session from SDK storage:", liveSession.topic); } catch (_) {}
                     return client;
                 }
 
-                // ── Step 2: localStorage backup (written by homepage at login) ──
-                // Only used when the SDK's own IndexedDB has no live session —
-                // e.g. after a hard refresh that cleared IndexedDB, or on a device
-                // where IndexedDB is sandboxed per-tab.
-                // IMPORTANT: we do NOT call client.session.set() here. That internal
-                // API injects session metadata into the client's in-memory map but
-                // does NOT re-establish the relay WebSocket subscription, so
-                // client.request({ topic }) would silently time-out. Instead we
-                // store the session metadata on _state so that bridgeRequest() can
-                // attempt the relay call and surface a clear "session expired" error
-                // if the relay rejects the topic.
-                try {
-                    var storedTopic = localStorage.getItem('wc_session_topic');
-                    var storedAddress = localStorage.getItem('wc_session_address');
-                    var storedSessionData = localStorage.getItem('wc_session_data');
-                    var storedTimestamp = parseInt(localStorage.getItem('wc_session_timestamp') || '0', 10);
-
-                    var MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-                    var sessionAge = storedTimestamp ? (Date.now() - storedTimestamp) : Infinity;
-                    var sessionTooOld = sessionAge > MAX_SESSION_AGE_MS;
-
-                    if (storedTopic && storedAddress && !sessionTooOld && storedSessionData) {
-                        try {
-                            var parsedSession = JSON.parse(storedSessionData);
-                            var parsedExpiry = parsedSession && parsedSession.expiry;
-                            var nowSec = Math.floor(Date.now() / 1000);
-                            if (parsedSession && parsedSession.topic && (!parsedExpiry || parsedExpiry > nowSec)) {
-                                // Attempt to register the session into the client's internal
-                                // session store AND subscribe to the topic on the relay. The
-                                // SDK exposes client.core.relayer.subscribe(topic) for this
-                                // purpose; fall back silently if the API is not available.
-                                try {
-                                    if (client.session && typeof client.session.set === 'function') {
-                                        client.session.set(parsedSession.topic, parsedSession);
-                                    }
-                                } catch (_) { /* internal API — ignore */ }
-                                try {
-                                    if (client.core && client.core.relayer &&
-                                        typeof client.core.relayer.subscribe === 'function') {
-                                        client.core.relayer.subscribe(parsedSession.topic);
-                                    }
-                                } catch (_) { /* optional — ignore */ }
-
-                                // Session restored from localStorage.
-                                // The relay subscription is async; if it fails, the first
-                                // actual request will fail with "session expired" and the
-                                // user can re-login. This is better than incorrectly
-                                // clearing valid localStorage data.
-                                _state.browserSession = parsedSession;
-                                _state.address = storedAddress;
-                                try { _config.log("[wc-bridge] Restored WC session from localStorage backup:", storedTopic); } catch (_) {}
-                            }
-                        } catch (parseErr) { /* ignore */ }
-                    }
-
-                    if (storedTopic && (sessionTooOld || !storedSessionData)) {
-                        try {
-                            localStorage.removeItem('wc_session_topic');
-                            localStorage.removeItem('wc_session_address');
-                            localStorage.removeItem('wc_session_data');
-                            localStorage.removeItem('wc_session_timestamp');
-                            localStorage.removeItem('wc_session_chains');
-                        } catch (_) {}
-                    }
-                } catch (lsErr) { /* ignore — Safari private mode etc. */ }
-
+                // No session found anywhere - this is expected for new users
+                try { _config.log("[wc-bridge] No WalletConnect session found in SDK or localStorage"); } catch (_) {}
                 return client;
             });
         });
@@ -915,35 +977,106 @@
                         throw _wcRpcError("Signature request failed: " + (err && err.message), err && err.message);
                     });
                 }
-                // Fall through to the in-browser SignClient session.
-                // _wcGetClient() already runs the full session-restore logic
-                // (IndexedDB poll → localStorage backup), so by the time we
-                // reach this block _state.browserSession should already be
-                // populated if a valid session exists.
+                
+                // Browser SDK path for wallet-scoped methods (eth_sendTransaction, personal_sign, etc.)
+                // First, ensure we have a client initialized
                 return _wcGetClient().then(function (client) {
-                    // If session was not restored during _wcGetClient (possible
-                    // if configure() was called after the first _wcGetClient run),
-                    // do one last poll against the live SignClient session map.
+                    // If no browser session yet, try to restore from SDK or localStorage
                     if (!_state.browserSession) {
-                        return _pollForSessions(client, 2000, 300).then(function (liveSession) {
-                            if (liveSession) {
-                                _state.browserSession = liveSession;
-                                _state.address = _addrFromSession(liveSession);
+                        // First, check if SDK has the session in its internal map
+                        var sdkSession = null;
+                        try {
+                            if (client.session && typeof client.session.getAll === 'function') {
+                                var sessions = client.session.getAll();
+                                if (sessions && sessions.length) {
+                                    // Find the session matching our stored address
+                                    var wantedAddr = String(_config.walletAddress || "").toLowerCase();
+                                    for (var i = 0; i < sessions.length; i++) {
+                                        var s = sessions[i];
+                                        var ns = s && (s.namespaces || {});
+                                        var matched = Object.keys(ns).some(function (k) {
+                                            return ((ns[k] && ns[k].accounts) || []).some(function (a) {
+                                                return String(a).split(":").pop().toLowerCase() === wantedAddr;
+                                            });
+                                        });
+                                        if (matched) {
+                                            sdkSession = s;
+                                            break;
+                                        }
+                                    }
+                                    // Fallback to first session if no address match
+                                    if (!sdkSession) sdkSession = sessions[sessions.length - 1];
+                                }
                             }
-                            return client;
-                        });
+                        } catch (_) { /* ignore */ }
+                        
+                        if (sdkSession) {
+                            _state.browserSession = sdkSession;
+                            _state.address = _addrFromSession(sdkSession);
+                            _state.mode = "browser";
+                            try { _config.log("[wc-bridge] Found session in SDK:", sdkSession.topic); } catch (_) {}
+                        }
                     }
-                    return client;
-                }).then(function (client) {
-                    // If we have a session, use it
+                    
+                    // If we have a browser session, make the request
                     if (_state.browserSession) {
                         return _doWcRequest(client, method, p).catch(function (wcErr) {
                             var errMsg = (wcErr && wcErr.message) ? String(wcErr.message) : "";
-                            // Session was rejected or expired by the relay — clear it so
-                            // the next action triggers a fresh re-authenticate flow rather
-                            // than looping on the same dead session.
+                            var errCode = (wcErr && typeof wcErr.code === "number") ? wcErr.code : -32603;
+                            
+                            // Session expired or invalid - try one more time to restore
                             if (/unknown connector|session.*not found|no matching key|expired/i.test(errMsg)) {
                                 _state.browserSession = null;
+                                _state.mode = null;
+                                
+                                // Try restoring from localStorage one more time
+                                try {
+                                    var storedTopic = localStorage.getItem('wc_session_topic');
+                                    var storedSessionData = localStorage.getItem('wc_session_data');
+                                    if (storedTopic && storedSessionData) {
+                                        var parsedSession = JSON.parse(storedSessionData);
+                                        if (parsedSession && parsedSession.topic === storedTopic) {
+                                            // Try to re-subscribe to the relay
+                                            try {
+                                                if (client.core && client.core.relayer && typeof client.core.relayer.subscribe === 'function') {
+                                                    client.core.relayer.subscribe(storedTopic).catch(function(_){});
+                                                }
+                                            } catch (_) {}
+                                            
+                                            // Try to inject session
+                                            try {
+                                                if (client.session && typeof client.session.set === 'function') {
+                                                    client.session.set(parsedSession.topic, parsedSession);
+                                                }
+                                            } catch (_) {}
+                                            
+                                            _state.browserSession = parsedSession;
+                                            _state.address = localStorage.getItem('wc_session_address');
+                                            _state.mode = "browser";
+                                            
+                                            // Wait a moment for relay to connect, then retry
+                                            return _delay(500).then(function() {
+                                                return _doWcRequest(client, method, p);
+                                            }).catch(function(retryErr) {
+                                                // Retry also failed - clear everything
+                                                _state.browserSession = null;
+                                                try {
+                                                    localStorage.removeItem('wc_session_topic');
+                                                    localStorage.removeItem('wc_session_address');
+                                                    localStorage.removeItem('wc_session_data');
+                                                    localStorage.removeItem('wc_session_timestamp');
+                                                    localStorage.removeItem('wc_session_chains');
+                                                } catch (_) {}
+                                                throw _wcRpcError(
+                                                    "Your WalletConnect session has expired. Please log out and log in again to reconnect your wallet.",
+                                                    null, -32603
+                                                );
+                                            });
+                                        }
+                                    }
+                                } catch (_) {}
+                                
+                                // Clean up stale localStorage
                                 try {
                                     localStorage.removeItem('wc_session_topic');
                                     localStorage.removeItem('wc_session_address');
@@ -951,26 +1084,33 @@
                                     localStorage.removeItem('wc_session_timestamp');
                                     localStorage.removeItem('wc_session_chains');
                                 } catch (_) {}
+                                
                                 throw _wcRpcError(
                                     "Your WalletConnect session has expired. Please log out and log in again to reconnect your wallet.",
                                     null, -32603
                                 );
                             }
-                            var code = (wcErr && typeof wcErr.code === "number") ? wcErr.code : -32603;
-                            throw _wcRpcError(errMsg || "WalletConnect request failed", errMsg, code);
+                            
+                            throw _wcRpcError(errMsg || "WalletConnect request failed", errMsg, errCode);
                         });
                     }
                     
-                    // No session available - fail gracefully without showing QR
-                    // Transaction signing should never require user to scan new QR.
-                    // Clear any stale localStorage so re-login starts clean.
+                    // No session available - fail gracefully without showing QR.
+                    // Transaction signing should NEVER require user to scan new QR.
+                    // If localStorage has a session but we couldn't restore it, 
+                    // provide a helpful message instead of confusing QR code.
+                    var hasLocalStorageSession = false;
                     try {
-                        localStorage.removeItem('wc_session_topic');
-                        localStorage.removeItem('wc_session_address');
-                        localStorage.removeItem('wc_session_data');
-                        localStorage.removeItem('wc_session_timestamp');
-                        localStorage.removeItem('wc_session_chains');
+                        hasLocalStorageSession = !!(localStorage.getItem('wc_session_topic') && localStorage.getItem('wc_session_data'));
                     } catch (_) {}
+                    
+                    if (hasLocalStorageSession) {
+                        throw _wcRpcError(
+                            "Unable to restore WalletConnect session. Please refresh the page and try again, or log out and log in again.",
+                            null, -32603
+                        );
+                    }
+                    
                     throw _wcRpcError("No active WalletConnect session. Please log out and log in again to reconnect your wallet.", null, -32603);
                 });
             });
