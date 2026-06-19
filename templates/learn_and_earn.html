@@ -1957,6 +1957,7 @@
          users that logged in via WalletConnect (no `window.ethereum`). -->
     <script src="{{ url_for('static', filename='js/tx-error.js', v=ASSET_VERSION) }}"></script>
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/unified-signer.js', v=ASSET_VERSION) }}"></script>
     <script>
         if (typeof GMWalletConnect !== "undefined") {
             GMWalletConnect.configure({
@@ -1970,13 +1971,9 @@
             });
         }
         function _learnGetWcProviderIfPreferred() {
-            try {
-                if (typeof GMWalletConnect === "undefined") return null;
-                if (!GMWalletConnect.isPreferred()) return null;
-                return GMWalletConnect.getProvider();
-            } catch (_) {
-                return null;
-            }
+            return typeof GMUnifiedSigner !== "undefined"
+                ? GMUnifiedSigner.getSigningProvider(0)
+                : null;
         }
     </script>
 
@@ -3461,38 +3458,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         function _vGetEthProvider() {
-            try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
-            var candidates = _vCollectInjectedProviders();
-            if (!candidates.length) return null;
-
-            var trust = candidates.find(function(p) { return p && (p.isTrust || p.isTrustWallet); });
-            if (trust) return trust;
-
-            var miniPay = candidates.find(function(p) { return p && p.isMiniPay; });
-            if (miniPay) return miniPay;
-
-            var metamask = candidates.find(function(p) { return p && p.isMetaMask && !p.isBraveWallet; });
-            if (metamask) return metamask;
-
-            if (window.ethereum && Array.isArray(window.ethereum.providers) && window.ethereum.providers.length) {
-                return window.ethereum.providers[0];
-            }
-            if (window.ethereum && typeof window.ethereum.request === 'function') return window.ethereum;
-            return candidates[0];
+            return typeof GMUnifiedSigner !== "undefined"
+                ? GMUnifiedSigner.getInjectedProvider()
+                : null;
         }
 
         async function _vAwaitEthProvider(timeoutMs) {
-            var budget = typeof timeoutMs === 'number' ? timeoutMs : 900;
-            var started = Date.now();
-            var p = _vGetEthProvider();
-            if (p) return p;
-            while (Date.now() - started < budget) {
-                try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
-                await new Promise(function(resolve) { setTimeout(resolve, 120); });
-                p = _vGetEthProvider();
-                if (p) return p;
-            }
-            return null;
+            return typeof GMUnifiedSigner !== "undefined"
+                ? GMUnifiedSigner.getSigningProvider(timeoutMs)
+                : null;
         }
 
         function openCollaborationWizard() {
