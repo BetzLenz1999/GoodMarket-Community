@@ -52,7 +52,8 @@ CELO_RPC_URLS = tuple(
 CHAIN_ID = int(os.getenv('CHAIN_ID', 42220))
 SAVINGS_CONTRACT_ADDRESS = os.getenv('SAVINGS_CONTRACT_ADDRESS', '')
 LEGACY_V5_CONTRACT_ADDRESS = os.getenv('LEGACY_V5_CONTRACT_ADDRESS', '')
-SAVINGS_DEPLOYMENT_BLOCK = int(os.getenv('SAVINGS_DEPLOYMENT_BLOCK', '65917286'))
+V5_DEPLOYMENT_BLOCK = int(os.getenv('V5_DEPLOYMENT_BLOCK', '1'))  # Start from block 1 if not set
+SAVINGS_DEPLOYMENT_BLOCK = int(os.getenv('SAVINGS_DEPLOYMENT_BLOCK', '1'))
 GD_TOKEN_ADDRESS = os.getenv('GOODDOLLAR_CONTRACT_ADDRESS', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
 CELO_TOKEN_ADDRESS = os.getenv('CELO_TOKEN_ADDRESS', '0x471EcE3750Da237f93B8E339c536989b8978a438')
 CUSD_TOKEN_ADDRESS = os.getenv('CUSD_TOKEN_ADDRESS', '0x765DE816845861e75A25fCA122bb6898B8B1282a')
@@ -507,6 +508,31 @@ def get_user_deposits_at(wallet_address, contract_address, w3=None):
 def get_user_legacy_v5_deposits(wallet_address):
     """Return active slots from the frozen v5 contract."""
     return get_user_deposits_at(wallet_address, LEGACY_V5_CONTRACT_ADDRESS)
+
+
+def _get_history_at(wallet_address, contract_address, from_block, w3=None):
+    """Internal helper to fetch savings history for a specific contract."""
+    if not contract_address:
+        return []
+    try:
+        if w3 is None:
+            w3 = get_w3()
+        contract = get_savings_contract_at(w3, contract_address)
+        addr = Web3.to_checksum_address(wallet_address)
+        latest = int(w3.eth.block_number)
+        saved = _chunked_event_logs(contract.events.Saved(), addr, from_block, latest)
+        withdrawn = _chunked_event_logs(contract.events.Withdrawn(), addr, from_block, latest)
+        return _merge_history(saved, withdrawn)
+    except Exception as e:
+        logger.error(f"_get_history_at({contract_address}) error: {e}")
+        return []
+
+
+def get_user_legacy_v5_history(wallet_address):
+    """Return active + withdrawn savings cycles from the frozen v5 contract."""
+    if not wallet_address:
+        return []
+    return _get_history_at(wallet_address, LEGACY_V5_CONTRACT_ADDRESS, V5_DEPLOYMENT_BLOCK)
 
 
 def _history_cache_get(wallet_address):
