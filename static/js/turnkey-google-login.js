@@ -1,5 +1,5 @@
 
-import { OtpType, TurnkeyClient } from '@turnkey/core';
+import { OtpType, TurnkeyClient } from 'https://esm.sh/@turnkey/core';
 
 /**
  * turnkey-google-login.js
