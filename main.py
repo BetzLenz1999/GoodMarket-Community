@@ -2024,6 +2024,170 @@ def turnkey_auth_session():
         return jsonify({'success': False, 'error': 'Session binding failed'}), 500
 
 
+@app.route('/api/turnkey/email-otp-init', methods=['POST'])
+def turnkey_email_otp_init():
+    """Step 1: Send a 6-digit OTP to the user's email via Supabase Auth."""
+    try:
+        data = request.get_json(silent=True) or {}
+        email = (data.get('email') or '').strip().lower()
+        if not email:
+            return jsonify({'success': False, 'error': 'Missing email'}), 400
+
+        from turnkey_service import send_supabase_otp
+        send_supabase_otp(email)
+
+        session['_email_otp_contact'] = email
+        return jsonify({'success': True, 'message': 'Code sent to your email.'})
+
+    except RuntimeError as e:
+        msg = str(e)
+        logger.error(f"❌ email-otp-init error: {msg}")
+        if 'SUPABASE_KEY' in msg or 'not configured' in msg:
+            msg = 'Email login is not yet configured on this server. Please use Google sign-in.'
+        return jsonify({'success': False, 'error': msg}), 503
+    except Exception as e:
+        logger.error(f"❌ email-otp-init error: {e}")
+        return jsonify({'success': False, 'error': 'Could not send code. Please try again.'}), 500
+
+
+@app.route('/api/turnkey/email-otp-verify', methods=['POST'])
+def turnkey_email_otp_verify():
+    """Step 2 of email OTP login: verify code, find/create wallet, set Flask session."""
+    try:
+        data = request.get_json(silent=True) or {}
+        email = (data.get('email') or '').strip().lower()
+        otp_code = (data.get('otp_code') or '').strip()
+        user_name = (data.get('user_name') or email or '').strip()
+        referral_code = (data.get('referral_code') or '').strip()
+
+        if not email or not otp_code:
+            return jsonify({'success': False, 'error': 'Missing email or code'}), 400
+
+        otp_contact = session.get('_email_otp_contact', '')
+        if not otp_contact:
+            return jsonify({'success': False, 'error': 'No active OTP session. Please request a new code.'}), 400
+        if otp_contact != email:
+            return jsonify({'success': False, 'error': 'Email does not match the one that received the code.'}), 400
+
+        from turnkey_service import verify_supabase_otp, create_sub_org_for_email
+        verify_supabase_otp(email, otp_code)
+
+        session.pop('_email_otp_contact', None)
+
+        import hashlib
+        email_hash = hashlib.sha256(email.encode()).hexdigest()
+
+        wallet_address = None
+        sub_org_id = None
+        is_new_user = True
+
+        try:
+            from supabase_client import get_supabase_client, safe_supabase_operation
+            sb = get_supabase_client()
+            if sb:
+                existing = safe_supabase_operation(
+                    lambda: sb.table('email_wallet_links')
+                        .select('wallet_address')
+                        .eq('email_hash', email_hash)
+                        .limit(1)
+                        .execute(),
+                    operation_name="email wallet lookup"
+                )
+                if existing and existing.data:
+                    wallet_address = existing.data[0].get('wallet_address')
+                    is_new_user = False
+                    logger.info(f"👤 Returning email user: {email[:6]}… → {wallet_address[:10]}...")
+        except Exception as db_err:
+            logger.warning(f"⚠️ email_wallet_links lookup failed: {db_err}")
+
+        if not wallet_address:
+            try:
+                result = create_sub_org_for_email(email=email, user_name=user_name)
+                wallet_address = result['wallet_address']
+                sub_org_id = result['sub_org_id']
+                logger.info(f"🆕 Email wallet created: {email[:6]}… → {wallet_address}")
+
+                try:
+                    from supabase_client import get_supabase_admin_client, safe_supabase_operation
+                    sb_admin = get_supabase_admin_client()
+                    if sb_admin:
+                        safe_supabase_operation(
+                            lambda: sb_admin.table('email_wallet_links').insert({
+                                'email_hash': email_hash,
+                                'wallet_address': wallet_address,
+                                'login_method': 'turnkey_email',
+                            }).execute(),
+                            operation_name="email wallet insert"
+                        )
+                except Exception as ins_err:
+                    logger.warning(f"⚠️ Could not save to email_wallet_links: {ins_err}")
+
+            except Exception as tk_err:
+                logger.error(f"❌ Turnkey email wallet creation failed: {tk_err}")
+                return jsonify({'success': False, 'error': 'Wallet creation failed. Please try again.'}), 500
+
+        try:
+            wallet_address = Web3.to_checksum_address(wallet_address)
+        except Exception:
+            pass
+
+        session.permanent = True
+        session['wallet'] = wallet_address
+        session['wallet_address'] = wallet_address
+        session['verified'] = True
+        session['ubi_verified'] = True
+        session['login_method'] = 'turnkey_email'
+        session['turnkey_organization_id'] = sub_org_id
+        session['turnkey_email'] = email
+        session['verification_time'] = datetime.now().isoformat()
+
+        analytics.track_verification_attempt(wallet_address, True)
+
+        referral_warning = None
+        if referral_code and is_new_user:
+            try:
+                from referral_program.referral_service import referral_service as ref_svc
+                validation = ref_svc.validate_referral_code(referral_code.upper())
+                if validation.get('valid'):
+                    referrer_wallet = validation.get('referrer_wallet')
+                    record_result = ref_svc.record_referral(referral_code.upper(), wallet_address)
+                    if record_result.get('success'):
+                        try:
+                            from supabase_client import supabase_logger as _sb_log
+                            if _sb_log:
+                                _sb_log.save_referrer_wallet(wallet_address, referrer_wallet, referral_code.upper())
+                        except Exception:
+                            pass
+                else:
+                    code_len = len(referral_code)
+                    if code_len < 8:
+                        referral_warning = f'Referral code "{referral_code.upper()}" looks incomplete ({code_len}/8 characters).'
+                    else:
+                        referral_warning = f'Referral code "{referral_code.upper()}" was not recognized.'
+            except Exception as ref_err:
+                logger.warning(f"⚠️ Referral processing error (email OTP): {ref_err}")
+
+        response_data = {
+            'success': True,
+            'message': 'Email login successful!',
+            'wallet': wallet_address,
+            'redirect_to': '/wallet',
+        }
+        if referral_warning:
+            response_data['referral_warning'] = referral_warning
+        return jsonify(response_data)
+
+    except ValueError as ve:
+        msg = str(ve)
+        logger.warning(f"⚠️ email-otp-verify invalid code: {msg}")
+        if 'invalid' in msg.lower() or 'otp' in msg.lower():
+            return jsonify({'success': False, 'error': 'Incorrect code. Please check your email and try again.'}), 401
+        return jsonify({'success': False, 'error': msg}), 400
+    except Exception as e:
+        logger.error(f"❌ email-otp-verify error: {e}")
+        return jsonify({'success': False, 'error': 'Verification failed. Please try again.'}), 500
+
+
 @app.route('/api/turnkey/auth-proxy/<path:subpath>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
 def turnkey_auth_proxy(subpath):
     """Proxy Turnkey Auth Proxy requests to avoid browser CORS issues."""
