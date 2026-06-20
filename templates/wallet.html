@@ -1999,6 +1999,8 @@
         'eth_signTypedData',
         'eth_signTypedData_v3',
         'eth_signTypedData_v4',
+        'wallet_addEthereumChain',
+        'wallet_switchEthereumChain',
     ]);
 
     // RPC call with fallback - tries each URL until one succeeds
@@ -2105,12 +2107,6 @@
                 return '0xa4ec';
             }
             if (method === 'net_version') return '42220';
-            
-            // Sessions are scoped to Celo — chain switch / add are no-ops
-            if (method === 'wallet_switchEthereumChain' || method === 'wallet_addEthereumChain') {
-                console.log('[WCClaimShim] Chain switch - no-op for WC session');
-                return null;
-            }
             
             if (_WC_WALLET_SCOPED_METHODS.has(method)) {
                 var wcChain = _wcEip155Chain(this._session, method, params || []);
