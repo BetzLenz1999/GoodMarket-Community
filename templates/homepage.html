@@ -2181,9 +2181,21 @@
                     {% endif %}
                 </div>
 
+<<<<<<< HEAD
                 <div id="turnkeyEmailStatus" class="status-message" style="display:none;"></div>
                 <div id="turnkeyVerifyWrap" style="display:none;margin-top:1rem;">
                     <button type="button" id="turnkeyVerifyBtn" class="wallet-btn primary" onclick="TurnkeyAuthFlow.completeEmailOtp()" style="width:100%;padding:0.75rem;font-size:0.95rem;font-weight:700;border-radius:12px;border:none;background:linear-gradient(135deg,#7c3aed,#6366f1);color:#fff;cursor:pointer;">✅ Verify &amp; Login</button>
+=======
+                <div id="turnkeyEmailStatus" class="status-message"></div>
+                <div id="turnkeyVerifySection" style="display:none;margin-top:1rem;">
+                    <div style="background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(16,185,129,0.05));border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:0.85rem;margin-bottom:0.85rem;">
+                        <div style="color:#10b981;font-size:0.8rem;font-weight:600;margin-bottom:0.35rem;">✓ Code sent to your email!</div>
+                        <div style="color:#9ca3af;font-size:0.75rem;line-height:1.5;">Check your inbox and spam folder. Enter the 6-digit code above.</div>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;">
+                        <button type="button" class="wallet-btn secondary" onclick="TurnkeyAuthFlow.completeEmailOtp()" style="min-width:140px;">Verify Code</button>
+                    </div>
+>>>>>>> 0716672076243305e05d91d364178e7521633cc7
                 </div>
                 <div id="turnkeyGoogleStatus" class="status-message" style="display:none;"></div>
             </div>
@@ -4237,7 +4249,7 @@
         window.__TURNKEY_AUTH_PROXY_CONFIG_ID = "{{ turnkey_auth_proxy_config_id }}";
         window.__TURNKEY_ORGANIZATION_ID = "{{ turnkey_organization_id }}";
     </script>
-    <script src="{{ url_for('static', filename='js/turnkey-google-login.js') }}?v={{ ASSET_VERSION }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/turnkey-google-login.js') }}?v={{ ASSET_VERSION }}"></script>
     {% endif %}
 </body>
 </html>
