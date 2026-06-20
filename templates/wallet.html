@@ -5317,6 +5317,13 @@
                 // backend's own Celo RPC, so they work regardless of which
                 // provider the user signed in with.
                 const isMiniPayClaim = _isMiniPay();
+                // Set to true whenever the backend faucet API is consulted for this
+                // attempt. The final wallet-side gas snapshot is skipped in that case
+                // because the frontend floor (0.15 CELO) is higher than the backend
+                // floor (0.1 CELO) — that mismatch causes a false "not ready" reading
+                // that triggers a needless 15-second propagation retry loop and leaves
+                // the UI stuck at "Checking wallet gas…" for WalletConnect users.
+                let gasCheckedByBackend = false;
 
                 if (isMiniPayClaim) {
                     // Defensive re-check for MiniPay before wallet approval:
@@ -5353,6 +5360,7 @@
                     // path falls back to when its local snapshot is short.
                     setStatus('Checking wallet gas…', 'var(--text-dim)');
                     await ensureGasReadyBeforeClaim();
+                    gasCheckedByBackend = true;
                 } else {
                     // Secondary MiniPay check: even if _isMiniPay() returned false earlier
                     // (due to late provider injection), re-check now that we have a provider.
@@ -5382,6 +5390,7 @@
                         if (!gasSnap.gasReady) {
                             setStatus('Checking wallet gas…', 'var(--text-dim)');
                             await ensureGasReadyBeforeClaim();
+                            gasCheckedByBackend = true;
                         } else {
                             setClaimGasUiState('gas_ready');
                         }
@@ -5427,12 +5436,15 @@
 
                 // Preflight one more time right before sending tx because gas price can spike.
                 // MiniPay already ran its CELO/cUSD helper and pays tx gas with stablecoins.
-                // WalletConnect bridge users skip this wallet-side snapshot: the backend faucet
-                // preflight above already confirmed gas using its own reliable Celo RPC.  The
-                // frontend floor (0.15 CELO) is intentionally higher than the backend floor
-                // (0.1 CELO), so the snapshot would falsely report "not ready" for wallets with
-                // 0.10–0.15 CELO, triggering a 15+ second retry loop that looks like a hang.
-                if (!isMiniPayClaim && !usingWcBridge) {
+                // Skip when the backend faucet was already consulted (gasCheckedByBackend): the
+                // frontend floor (0.15 CELO) is higher than the backend floor (0.1 CELO), so
+                // re-reading from the provider would falsely report "not ready" for wallets with
+                // 0.10–0.15 CELO and trigger a needless 15-second retry loop — the visible
+                // "stuck at Checking wallet gas…" symptom for WalletConnect desktop users.
+                // This covers BOTH the usingWcBridge path (no MetaMask) AND the injected-
+                // MetaMask-as-initial-provider path (MetaMask on wrong network → 0 CELO read
+                // → backend faucet called → signer reassigned to WCClaimShim).
+                if (!isMiniPayClaim && !gasCheckedByBackend) {
                     let finalGasSnap = await getProviderGasSnapshot(provider);
                     if (!finalGasSnap.gasReady) {
                         setStatus('Gas changed while preparing tx. Retrying faucet top-up…', 'var(--text-dim)');
