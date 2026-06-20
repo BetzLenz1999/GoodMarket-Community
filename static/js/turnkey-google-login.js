@@ -73,9 +73,12 @@
   /* ── Turnkey Auth Proxy: direct fetch (no SDK) ── */
 
   function _proxyPost(subpath, body) {
+    var headers = { 'Content-Type': 'application/json' };
+    var configId = window.__TURNKEY_AUTH_PROXY_CONFIG_ID || '';
+    if (configId) headers['X-Auth-Proxy-Config-ID'] = configId;
     return fetch('/api/turnkey/auth-proxy/' + subpath, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: JSON.stringify(body),
     }).then(function (resp) {
       return resp.json().then(function (data) {
