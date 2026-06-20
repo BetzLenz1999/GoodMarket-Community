@@ -1339,8 +1339,9 @@
     function _guardCheck() {
         if (_guardTimer) { clearTimeout(_guardTimer); _guardTimer = null; }
 
-        // Only run for WalletConnect login method
-        if (!_shouldPrefer()) return;
+        // Only run for strictly WalletConnect sessions — NOT for injected,
+        // manual, or manual_address logins, even if they share the wc-bridge.js file.
+        if (_normLogin(_config.loginMethod) !== 'walletconnect') return;
 
         // Wait until DOM is ready
         if (!document.body) {
@@ -1404,11 +1405,11 @@
         setTimeout(_guardCheck, 1500);
     }
 
-    // Auto-start when configure() is called for WalletConnect users
+    // Auto-start when configure() is called — strictly WalletConnect only
     var _origConfigure = configure;
     configure = function (opts) {
         _origConfigure(opts);
-        if (_shouldPrefer()) _startExpiryGuard();
+        if (_normLogin(_config.loginMethod) === 'walletconnect') _startExpiryGuard();
     };
 
     global.GMWalletConnect = {
