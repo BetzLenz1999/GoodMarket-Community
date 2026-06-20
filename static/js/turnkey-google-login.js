@@ -1,3 +1,4 @@
+
 import { OtpType, TurnkeyClient } from '@turnkey/core';
 
 /**
@@ -59,6 +60,11 @@ import { OtpType, TurnkeyClient } from '@turnkey/core';
     if (el) el.style.display = show ? 'block' : 'none';
   }
 
+  function showVerifySection(show) {
+    var el = document.getElementById('turnkeyVerifySection');
+    if (el) el.style.display = show ? 'block' : 'none';
+  }
+
   function getEmailValue() {
     var el = document.getElementById('turnkeyEmailAddress');
     return el ? el.value.trim() : '';
@@ -82,7 +88,7 @@ import { OtpType, TurnkeyClient } from '@turnkey/core';
     var orgId = window.__TURNKEY_ORGANIZATION_ID || '';
     var configId = window.__TURNKEY_AUTH_PROXY_CONFIG_ID || '';
     if (!orgId || !configId) {
-      return Promise.reject(new Error('Turnkey auth proxy is not configured'));
+      return Promise.reject(new Error('Email login is not configured on this server. Please use Google login instead.'));
     }
 
     _turnkeyClient = new TurnkeyClient({
@@ -92,6 +98,14 @@ import { OtpType, TurnkeyClient } from '@turnkey/core';
     });
     return _turnkeyClient.init().then(function () {
       return _turnkeyClient;
+    }).catch(function (err) {
+      // Clear cached client on init failure so retry can re-initialize
+      _turnkeyClient = null;
+      var msg = err.message || '';
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+        throw new Error('Cannot connect to email service. Please check your connection or use Google login.');
+      }
+      throw new Error('Email service initialization failed. Please try again or use Google login.');
     });
   }
 
@@ -233,6 +247,8 @@ import { OtpType, TurnkeyClient } from '@turnkey/core';
     }
 
     showStatus('email', '⏳ Sending a code to your email…', 'info');
+    // Hide verify section while sending
+    showVerifySection(false);
     return getClient().then(function (client) {
       return client.initOtp({
         otpType: OtpType.Email,
@@ -241,13 +257,23 @@ import { OtpType, TurnkeyClient } from '@turnkey/core';
         _emailOtpId = otpId;
         _emailContact = email;
         showOtpWrap(true);
-        showStatus('email', '✅ Code sent. Enter the 6-digit code to continue.', 'success');
+        showVerifySection(true);
+        showStatus('email', '✅ Code sent! Check your email (and spam folder).', 'success');
         var codeInput = document.getElementById('turnkeyEmailOtpCode');
         if (codeInput) codeInput.focus();
         return true;
       });
     }).catch(function (err) {
-      showStatus('email', '❌ ' + (err.message || 'Could not send code'), 'error');
+      showOtpWrap(false);
+      showVerifySection(false);
+      var errMsg = err.message || 'Could not send code';
+      // Provide more helpful error messages
+      if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
+        errMsg = 'Network error. Please check your connection and try again.';
+      } else if (errMsg.includes('auth proxy')) {
+        errMsg = 'Email service temporarily unavailable. Please try again or use Google login.';
+      }
+      showStatus('email', '❌ ' + errMsg, 'error');
       return false;
     });
   }
@@ -291,6 +317,26 @@ import { OtpType, TurnkeyClient } from '@turnkey/core';
     var email = getEmailValue();
     if (email && !window.__turnkeyEmailOtpVisible) {
       showOtpWrap(false);
+      showVerifySection(false);
+    }
+  }
+
+  // Reset OTP state when email changes (in case user made a typo)
+  function setupEmailChangeListener() {
+    var emailInput = document.getElementById('turnkeyEmailAddress');
+    if (emailInput && !emailInput.dataset.otpResetAttached) {
+      emailInput.dataset.otpResetAttached = 'true';
+      emailInput.addEventListener('input', function() {
+        // If email changed from the one that received OTP, reset state
+        var currentEmail = getEmailValue();
+        if (_emailContact && currentEmail !== _emailContact) {
+          _emailOtpId = '';
+          _emailContact = '';
+          showOtpWrap(false);
+          showVerifySection(false);
+          showStatus('email', '', '');
+        }
+      });
     }
   }
 
@@ -299,7 +345,10 @@ import { OtpType, TurnkeyClient } from '@turnkey/core';
   };
 
   window.TurnkeyAuthFlow = {
-    prepare: prepare,
+    prepare: function() {
+      prepare();
+      setupEmailChangeListener();
+    },
     initGoogleButton: initGoogleButton,
     sendEmailOtp: sendEmailOtp,
     completeEmailOtp: completeEmailOtp,
