@@ -2124,7 +2124,14 @@
                     return result;
                 } catch (wcErr) {
                     var code = (wcErr && typeof wcErr.code === 'number') ? wcErr.code : -32603;
-                    var msg = (wcErr && wcErr.message) ? String(wcErr.message) : 'WalletConnect request failed';
+                    // WalletConnect v2 often wraps the real wallet error inside
+                    // wcErr.data.message (e.g. "Invalid RPC URL: …" from the
+                    // wallet's broadcaster is nested under an "Internal JSON-RPC
+                    // error" envelope). Prefer the nested message so that
+                    // _isCeloRpcUnreachableError can detect the real cause.
+                    var outerMsg = (wcErr && wcErr.message) ? String(wcErr.message) : '';
+                    var dataMsg = (wcErr && wcErr.data && wcErr.data.message) ? String(wcErr.data.message) : '';
+                    var msg = dataMsg || outerMsg || 'WalletConnect request failed';
                     console.error('[WCClaimShim] WC request error:', method, '->', msg, 'code:', code, wcErr);
                     var err = new Error(msg);
                     err.code = code;
@@ -2145,13 +2152,21 @@
             throw new Error('This account uses server-side signing. Please continue with automatic server signing.');
         }
         
-        // If user logged in via WalletConnect, restore and use WC session as signer
+        // Only use the WalletConnect session when the user actually logged in via
+        // WalletConnect. If they logged in with an injected wallet (Trust Wallet,
+        // MetaMask, MiniPay) we must NOT route through a stale WC session stored in
+        // localStorage — doing so silently sends the transaction to the WC relay and
+        // no popup ever appears in the wallet app.
+        const loginedViaWc = (LOGIN_METHOD || '').toLowerCase() === 'walletconnect';
+        
         const wcTopic = localStorage.getItem('wc_session_topic');
         const wcTimestamp = parseInt(localStorage.getItem('wc_session_timestamp') || '0', 10);
         const wcAge = Date.now() - wcTimestamp;
         const wcSessionValid = wcTopic && wcAge < 7 * 24 * 60 * 60 * 1000;
         
         console.log('[getClaimSigner] Checking WC session:', {
+            loginMethod: LOGIN_METHOD,
+            loginedViaWc,
             hasLocalStorage: !!wcTopic,
             wcAgeMinutes: Math.round(wcAge / 60000),
             wcSessionValid,
@@ -2159,7 +2174,7 @@
             hasWcSession: !!window._wcSession
         });
         
-        if (wcSessionValid) {
+        if (loginedViaWc && wcSessionValid) {
             try {
                 await window._wcGetClient();
             } catch (wcErr) {
@@ -2173,6 +2188,8 @@
             } else {
                 console.warn('[getClaimSigner] WC client or session not available after init');
             }
+        } else if (!loginedViaWc) {
+            console.log('[getClaimSigner] Login method is', LOGIN_METHOD, '— skipping WC, using injected provider');
         } else {
             console.log('[getClaimSigner] WC session invalid or expired, falling back to injected');
         }
@@ -3906,11 +3923,10 @@
                         // If the wallet rejected the chain update, surface a clear message
                         if (isWcShim) {
                             throw new Error(
-                                '❌ Celo claim failed: your wallet has an invalid RPC URL for the Celo network ' +
-                                '(e.g. a session-based URL from txnodes.com). ' +
-                                'Please open your wallet app, go to Settings → Networks → Celo, ' +
-                                'and change the RPC URL to https://forno.celo.org or https://rpc.ankr.com/celo, ' +
-                                'then try claiming again.'
+                                'Your wallet has an invalid Celo RPC URL ' +
+                                '(e.g. a session-based URL from twnodes.com or txnodes.com that has expired). ' +
+                                'Open your wallet app → Settings → Networks → Celo and set the RPC URL to ' +
+                                'https://forno.celo.org or https://rpc.ankr.com/celo, then try again.'
                             );
                         }
                         throw sendErr;
@@ -5546,6 +5562,11 @@
                     msg = 'Transaction cancelled.';
                 } else if (_isRpcHtmlError(err)) {
                     msg = 'Celo network is temporarily busy (RPC returned a non-JSON response). Please retry your claim in 30–60 seconds.';
+                } else if (/invalid rpc url|twnodes|txnodes/i.test(raw)) {
+                    // Wallet has a bad/expired Celo RPC URL (common with twnodes.com session URLs).
+                    msg = 'Your wallet has an expired or invalid Celo RPC URL. ' +
+                          'Open your wallet → Settings → Networks → Celo and set the RPC to ' +
+                          'https://forno.celo.org or https://rpc.ankr.com/celo, then retry.';
                 } else if (window.GMTxError && GMTxError.format) {
                     msg = GMTxError.format(err);
                 } else {
