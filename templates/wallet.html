@@ -2516,19 +2516,31 @@
     window._wcGetClient = function() {
         if (window._wcSignClient) return Promise.resolve(window._wcSignClient);
         
+        // Pick the SignClient constructor from whichever namespace the SDK UMD bundle used.
+        // The @walletconnect/sign-client CDN bundle sets window["@walletconnect/sign-client"],
+        // NOT window.WalletConnectSDK — so we check the correct key first.
+        function _pickSignClient() {
+            var ns1 = window["@walletconnect/sign-client"];
+            if (ns1 && ns1.SignClient) return ns1.SignClient;
+            var ns2 = window.WalletConnectSDK;
+            if (ns2 && ns2.SignClient) return ns2.SignClient;
+            return null;
+        }
+
         // Load the WC SDK
         return new Promise(function(resolve, reject) {
-            if (typeof window.WalletConnectSDK === 'undefined') {
+            if (_pickSignClient()) {
+                resolve();
+            } else {
                 var script = document.createElement('script');
                 script.src = 'https://cdn.jsdelivr.net/npm/@walletconnect/sign-client@2.17.0/dist/index.umd.js';
                 script.onload = function() { resolve(); };
                 script.onerror = function() { reject(new Error('Failed to load WalletConnect SDK')); };
                 document.head.appendChild(script);
-            } else {
-                resolve();
             }
         }).then(function() {
-            var SignClient = window.WalletConnectSDK.SignClient;
+            var SignClient = _pickSignClient();
+            if (!SignClient) throw new Error('WalletConnect SDK failed to load — SignClient not found');
             return SignClient.init({
                 projectId: "{{ walletconnect_project_id|default('', true) }}",
                 metadata: {
