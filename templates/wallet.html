@@ -5427,7 +5427,12 @@
 
                 // Preflight one more time right before sending tx because gas price can spike.
                 // MiniPay already ran its CELO/cUSD helper and pays tx gas with stablecoins.
-                if (!isMiniPayClaim) {
+                // WalletConnect bridge users skip this wallet-side snapshot: the backend faucet
+                // preflight above already confirmed gas using its own reliable Celo RPC.  The
+                // frontend floor (0.15 CELO) is intentionally higher than the backend floor
+                // (0.1 CELO), so the snapshot would falsely report "not ready" for wallets with
+                // 0.10–0.15 CELO, triggering a 15+ second retry loop that looks like a hang.
+                if (!isMiniPayClaim && !usingWcBridge) {
                     let finalGasSnap = await getProviderGasSnapshot(provider);
                     if (!finalGasSnap.gasReady) {
                         setStatus('Gas changed while preparing tx. Retrying faucet top-up…', 'var(--text-dim)');
