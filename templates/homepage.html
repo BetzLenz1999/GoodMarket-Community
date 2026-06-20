@@ -2181,11 +2181,6 @@
                     {% endif %}
                 </div>
 
-<<<<<<< HEAD
-                <div id="turnkeyEmailStatus" class="status-message" style="display:none;"></div>
-                <div id="turnkeyVerifyWrap" style="display:none;margin-top:1rem;">
-                    <button type="button" id="turnkeyVerifyBtn" class="wallet-btn primary" onclick="TurnkeyAuthFlow.completeEmailOtp()" style="width:100%;padding:0.75rem;font-size:0.95rem;font-weight:700;border-radius:12px;border:none;background:linear-gradient(135deg,#7c3aed,#6366f1);color:#fff;cursor:pointer;">✅ Verify &amp; Login</button>
-=======
                 <div id="turnkeyEmailStatus" class="status-message"></div>
                 <div id="turnkeyVerifySection" style="display:none;margin-top:1rem;">
                     <div style="background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(16,185,129,0.05));border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:0.85rem;margin-bottom:0.85rem;">
@@ -2195,7 +2190,6 @@
                     <div style="display:flex;justify-content:flex-end;">
                         <button type="button" class="wallet-btn secondary" onclick="TurnkeyAuthFlow.completeEmailOtp()" style="min-width:140px;">Verify Code</button>
                     </div>
->>>>>>> 0716672076243305e05d91d364178e7521633cc7
                 </div>
                 <div id="turnkeyGoogleStatus" class="status-message" style="display:none;"></div>
             </div>
@@ -3863,6 +3857,21 @@
 
         window.addEventListener('load', loadHomepageVideos);
 
+        // Explicitly expose onclick-called functions on window so they are
+        // always reachable even if the script block loads after the first
+        // user interaction (race condition on slow connections).
+        window.openWalletModal         = openWalletModal;
+        window.closeWalletModal        = closeWalletModal;
+        window.showWalletOptions       = showWalletOptions;
+        window.showCreateWalletOptions = showCreateWalletOptions;
+        window.showWalletConnectOptions= showWalletConnectOptions;
+        window.connectInjectedWallet   = connectInjectedWallet;
+        window.connectWalletConnect    = connectWalletConnect;
+        window.showSection             = showSection;
+        window.carouselGoTo            = carouselGoTo;
+        window.carouselMove            = carouselMove;
+        window.toggleMainMenu          = toggleMainMenu;
+
         </script>
 
 
@@ -3980,6 +3989,7 @@
         document.getElementById('musicToggleBtn').addEventListener('mouseleave', function() {
             if (!this.classList.contains('waiting')) this.style.transform = 'scale(1)';
         });
+        window.toggleMusic = toggleMusic;
     </script>
 
     <div id="ytBgMusic" style="display:none;"></div>
