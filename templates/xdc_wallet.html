@@ -760,8 +760,17 @@
             return 'wallet';
         }
 
-        function _getEthProvider() {
-            // First, check for injected wallets (MetaMask, Trust Wallet, MiniPay, etc.)
+        async function _getEthProvider() {
+            const _isWcLogin = ['walletconnect', 'manual', 'manual_address'].includes(LOGIN_METHOD);
+
+            // WalletConnect users: always prefer the WC provider so the correct
+            // wallet signs — not a random injected extension in the browser.
+            if (_isWcLogin && typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred && GMWalletConnect.isPreferred()) {
+                const wcProvider = await GMWalletConnect.getProvider();
+                if (wcProvider) return wcProvider;
+            }
+
+            // Injected wallet (MiniPay, Trust Wallet, MetaMask, etc.)
             if (window.ethereum) {
                 if (window.ethereum.providers && window.ethereum.providers.length) {
                     // Mobile dApp browsers often inject multiple providers.
@@ -776,12 +785,12 @@
                 }
                 return window.ethereum;
             }
-            
-            // Fallback to WalletConnect if no injected wallet is detected
+
+            // Final fallback: WalletConnect for non-WC logins with no injected wallet
             if (typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred && GMWalletConnect.isPreferred()) {
-                return GMWalletConnect.getProvider();
+                return await GMWalletConnect.getProvider();
             }
-            
+
             return null;
         }
 
@@ -1010,7 +1019,7 @@
 
         async function _xswapReadProvider() {
             if (!useServerSigning) {
-                const ep = _getEthProvider();
+                const ep = await _getEthProvider();
                 if (ep) return new ethers.BrowserProvider(ep);
             }
             return new ethers.JsonRpcProvider('https://earpc.xinfin.network');
@@ -1142,7 +1151,7 @@
                 return d.tx_hash;
             }
 
-            const ep = _getEthProvider();
+            const ep = await _getEthProvider();
             if (!ep) throw new Error('No Web3 wallet found.');
             const switched = await ensureXDCNetwork(ep);
             if (!switched) throw new Error('Could not switch to XDC network.');
@@ -1468,7 +1477,7 @@
                 }
 
                 if (!useServerSigning) {
-                    const ep = _getEthProvider();
+                    const ep = await _getEthProvider();
                     if (!ep) throw new Error('No Web3 wallet found.');
                     const switched = await ensureXDCNetwork(ep);
                     if (!switched) throw new Error('Could not switch to XDC network.');
@@ -1808,7 +1817,7 @@
 
         async function autoSwitchToXDCIfOnCelo() {
             if (useServerSigning) return;
-            const ep = _getEthProvider();
+            const ep = await _getEthProvider();
             if (!ep) return;
             try {
                 const chainId = await ep.request({ method: 'eth_chainId' });
@@ -1853,7 +1862,7 @@
                 return;
             }
 
-            const ep = _getEthProvider();
+            const ep = await _getEthProvider();
             if (!ep) {
                 document.getElementById('noWalletWarn').style.display = 'block';
                 showAlert(alertId, 'alert-error', '❌ No Web3 wallet detected. Install MetaMask and add the XDC Network.');
@@ -2091,7 +2100,7 @@
             }
 
             // ── Browser wallet (MetaMask) flow ──
-            const ep = _getEthProvider();
+            const ep = await _getEthProvider();
             if (!ep) {
                 noWallet.style.display = 'block';
                 setAlert('alert-error', '❌ No Web3 wallet detected. Please open this page in a Web3-compatible browser.');
@@ -2436,7 +2445,7 @@
                 return;
             }
 
-            const ep = _getEthProvider();
+            const ep = await _getEthProvider();
             if (!ep) {
                 status.textContent = '⚠️ No Web3 wallet detected. Please open this page in a Web3-compatible browser.';
                 btn.disabled = false;
