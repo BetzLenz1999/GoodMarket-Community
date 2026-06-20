@@ -81,9 +81,18 @@
       headers: headers,
       body: JSON.stringify(body),
     }).then(function (resp) {
+      var contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        // Non-JSON response (HTML error page, wrong server, etc.)
+        throw new Error('Server error (' + resp.status + '). Please try again or use Google sign-in.');
+      }
       return resp.json().then(function (data) {
         if (!resp.ok) {
           var msg = data.error || data.message || ('Request failed (' + resp.status + ')');
+          // Translate Turnkey "Not Found" into something actionable
+          if (msg === 'Not Found' || resp.status === 404) {
+            msg = 'Email login is unavailable right now. Please use Google sign-in instead.';
+          }
           throw new Error(msg);
         }
         return data;
@@ -122,7 +131,7 @@
     });
   }
 
-  /* ── Email OTP flow ── */
+  /* ── Email OTP flow (uses /api/turnkey/email-otp-* — no auth proxy needed) ── */
 
   function sendEmailOtp() {
     var email = getEmailValue();
@@ -131,22 +140,19 @@
       return Promise.resolve(false);
     }
 
-    var orgId = window.__TURNKEY_ORGANIZATION_ID || '';
-    if (!orgId) {
-      showStatus('email', '❌ Email login is not configured on this server. Please use Google login.', 'error');
-      return Promise.resolve(false);
-    }
-
     showStatus('email', '⏳ Sending a code to your email…', 'info');
     showVerifySection(false);
 
-    return _proxyPost('api/v1/otp/init', {
-      otpType: 'OTP_TYPE_EMAIL',
-      contact: email,
-      organizationId: orgId,
-    }).then(function (data) {
-      _emailOtpId = data.otpId || '';
-      if (!_emailOtpId) throw new Error('No OTP ID returned from server');
+    return fetch('/api/turnkey/email-otp-init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email }),
+    }).then(function (resp) {
+      return resp.json().then(function (data) { return { ok: resp.ok, data: data }; });
+    }).then(function (result) {
+      if (!result.ok || !result.data.success) {
+        throw new Error(result.data.error || 'Could not send code');
+      }
       _emailContact = email;
       showOtpWrap(true);
       showVerifySection(true);
@@ -185,39 +191,30 @@
       return Promise.resolve(false);
     }
 
-    var orgId = window.__TURNKEY_ORGANIZATION_ID || '';
     showStatus('email', '⏳ Verifying your code…', 'info');
 
-    return _proxyPost('api/v1/otp/complete', {
-      otpId: _emailOtpId,
-      otpCode: otpCode,
-      otpType: 'OTP_TYPE_EMAIL',
-      contact: email,
-      organizationId: orgId,
-      createSubOrgParams: {
-        subOrgName: name ? ('GoodMarket \u2013 ' + name) : ('GoodMarket \u2013 ' + email),
-        rootUsers: [{
-          userName: name || email,
-          userEmail: email,
-          apiKeys: [],
-          authenticators: [],
-          oauthProviders: [],
-        }],
-        rootQuorumThreshold: 1,
-        wallet: {
-          walletName: 'Default Wallet',
-          accounts: [{
-            curve: 'CURVE_SECP256K1',
-            pathFormat: 'PATH_FORMAT_BIP32',
-            path: "m/44'/60'/0'/0/0",
-            addressFormat: 'ADDRESS_FORMAT_ETHEREUM',
-          }],
-        },
-      },
-    }).then(function (data) {
-      var sessionToken = data.session || data.sessionToken || data.token || '';
-      if (!sessionToken) throw new Error('No session token in response');
-      return finalizeSession('email', sessionToken, 'turnkey_email', email, name);
+    return fetch('/api/turnkey/email-otp-verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email,
+        otp_code: otpCode,
+        user_name: name || '',
+        referral_code: getReferralCode(),
+      }),
+    }).then(function (resp) {
+      return resp.json().then(function (data) { return { ok: resp.ok, data: data }; });
+    }).then(function (result) {
+      if (!result.ok || !result.data.success) {
+        throw new Error(result.data.error || 'Verification failed');
+      }
+      var warning = result.data.referral_warning;
+      showStatus('email',
+        warning ? ('✅ Wallet ready! ⚠️ ' + warning + ' Redirecting…') : '✅ Wallet ready! Redirecting…',
+        warning ? 'warning' : 'success'
+      );
+      setTimeout(function () { window.location.href = '/wallet'; }, warning ? 2400 : 900);
+      return true;
     }).catch(function (err) {
       showStatus('email', '❌ ' + (err.message || 'Could not verify code'), 'error');
       return false;
