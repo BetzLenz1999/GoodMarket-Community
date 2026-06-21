@@ -1178,12 +1178,15 @@
 
     function _wcWakeWalletApp(session) {
         try {
-            if (!session || !_wcIsMobileBrowser()) return;
+            if (!session) return;
             var meta = session.peer && session.peer.metadata;
             var redirect = meta && meta.redirect;
             if (!redirect) return;
             var href = redirect.native || redirect.universal;
             if (!href) return;
+            // NOTE: Removed mobile-only check - we now try to wake wallet on ALL
+            // platforms to prevent timeout errors when the wallet app is installed
+            // but the browser doesn't auto-focus the wallet's notification/prompt.
             var link = document.createElement('a');
             link.href = href;
             link.style.display = 'none';
