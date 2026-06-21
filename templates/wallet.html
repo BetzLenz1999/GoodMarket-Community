@@ -5296,19 +5296,6 @@
             if (!provider) {
                 provider = await _walletGetWcProviderIfPreferred();
                 usingWcBridge = !!provider;
-            } else if (typeof GMWalletConnect !== 'undefined' && GMWalletConnect.isPreferred()) {
-                // User logged in via WalletConnect but an injected wallet (e.g. MetaMask
-                // browser extension) was also detected. MetaMask is on a different network
-                // (Ethereum, not Celo) and may be locked — its eth_getBalance call will
-                // either return 0 or hang forever, leaving the UI stuck at "Checking
-                // wallet gas…". Override: use the WC bridge so the gas check goes through
-                // the backend faucet API instead of the injected wallet's broken RPC.
-                const wcProvider = await _walletGetWcProviderIfPreferred();
-                if (wcProvider) {
-                    console.log('[claim] WC login + injected wallet found — overriding with WC bridge for gas check');
-                    provider = wcProvider;
-                    usingWcBridge = true;
-                }
             }
             if (!provider) {
                 setStatus('⚠️ No wallet detected. Please open this page in MetaMask, Trust Wallet, MiniPay, or reconnect using WalletConnect to sign transactions.', '#fbbf24');
