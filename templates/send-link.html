@@ -208,7 +208,13 @@
         const WC_PROJECT_ID = "{{ walletconnect_project_id }}";
         // Pure self-custody mode: never use server-side signing.
         const IS_SERVER_SIGNING = ['turnkey_google', 'turnkey_email'].includes((LOGIN_METHOD || '').toLowerCase());
-        const PREFER_WC_SIGNING = ["walletconnect", "manual", "manual_address"].includes((LOGIN_METHOD || "").toLowerCase());
+        // Robust WalletConnect detection: LOGIN_METHOD is primary, but sessions
+        // created before login_method was persisted report "injected" for
+        // WalletConnect users too. prefersWcSigning() recovers those via a saved
+        // WC session for this wallet so they never sign with injected MetaMask.
+        const PREFER_WC_SIGNING = (typeof GMWalletConnect !== "undefined" && typeof GMWalletConnect.prefersWcSigning === "function")
+            ? GMWalletConnect.prefersWcSigning()
+            : ["walletconnect", "manual", "manual_address"].includes((LOGIN_METHOD || "").toLowerCase());
 
         // Handles multi-wallet injections: prefer MiniPay in MiniPay dApp browser,
         // then Trust Wallet, then MetaMask (excluding Brave), then first provider.
