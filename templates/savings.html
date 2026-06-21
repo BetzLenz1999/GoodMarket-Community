@@ -572,6 +572,13 @@
     const LOGIN_METHOD = "{{ login_method }}";
     // Pure self-custody mode: never use server-side signing.
     window.useServerSigning = ['turnkey_google', 'turnkey_email'].includes((LOGIN_METHOD || '').toLowerCase());
+    // Robust WalletConnect detection: LOGIN_METHOD is primary, but sessions
+    // created before login_method was persisted report "injected" for
+    // WalletConnect users too. prefersWcSigning() recovers those via a saved
+    // WC session for this wallet so they never sign with injected MetaMask.
+    const PREFER_WC_SIGNING = (typeof GMWalletConnect !== 'undefined' && typeof GMWalletConnect.prefersWcSigning === 'function')
+        ? GMWalletConnect.prefersWcSigning()
+        : ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
 
     // v5 dynamic lock-duration bounds. Kept here so all client-side
     // validation (input clamp, summary, bonus preview) shares one source.
@@ -1304,8 +1311,9 @@
         // (e.g. a desktop MetaMask extension): its account differs from the logged-in
         // GoodMarket wallet, so signing fails with "Wrong wallet connected". Block
         // injected discovery so all flows route through the WalletConnect signer.
-        // LOGIN_METHOD is Jinja-rendered and reliable.
-        if (['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase())) return null;
+        // PREFER_WC_SIGNING also recovers pre-existing WC sessions mislabeled
+        // as "injected".
+        if (PREFER_WC_SIGNING) return null;
         try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
         const providers = _collectSavingsProviders();
         if (!providers.length) return null;
