@@ -142,6 +142,14 @@
             });
         }
 
+        // Robust WalletConnect detection: LOGIN_METHOD is primary, but sessions
+        // created before login_method was persisted report "injected" for
+        // WalletConnect users too. prefersWcSigning() recovers those via a saved
+        // WC session for this wallet so they never sign with injected MetaMask.
+        const PREFER_WC_SIGNING = (typeof GMWalletConnect !== "undefined" && typeof GMWalletConnect.prefersWcSigning === "function")
+            ? GMWalletConnect.prefersWcSigning()
+            : ["walletconnect", "manual", "manual_address"].includes((LOGIN_METHOD || "").toLowerCase());
+
         (function initEip6963Discovery() {
             try {
                 window.addEventListener("eip6963:announceProvider", (event) => {
@@ -273,8 +281,9 @@
             // (e.g. a desktop MetaMask extension): its account differs from the
             // logged-in GoodMarket wallet, so signing fails with "Wrong wallet
             // connected" / "Invalid URL". Block injected discovery so the claim
-            // routes through the WalletConnect signer. LOGIN_METHOD is Jinja-rendered.
-            if (["walletconnect", "manual", "manual_address"].includes((LOGIN_METHOD || "").toLowerCase())) return null;
+            // routes through the WalletConnect signer. PREFER_WC_SIGNING also
+            // recovers pre-existing WC sessions mislabeled as "injected".
+            if (PREFER_WC_SIGNING) return null;
             try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (_) {}
             const candidates = _collectInjectedProviders();
             if (!candidates.length) return null;
