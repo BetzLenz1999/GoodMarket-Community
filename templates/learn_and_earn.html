@@ -3461,6 +3461,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         function _vGetEthProvider() {
+            // WalletConnect / manual-address logins must NEVER use an injected wallet
+            // (e.g. a desktop MetaMask extension): its account differs from the
+            // logged-in GoodMarket wallet, so signing fails with "Wrong wallet
+            // connected". Block injected discovery so all flows route through the
+            // WalletConnect signer. login_method is Jinja-rendered and reliable.
+            var _gmLogin = '{{ login_method }}'.toLowerCase();
+            if (['walletconnect', 'manual', 'manual_address'].indexOf(_gmLogin) !== -1) return null;
             try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
             var candidates = _vCollectInjectedProviders();
             if (!candidates.length) return null;
@@ -5029,8 +5036,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const sellerWallet = _buySellerWallet;
             if (!tokenId || price <= 0 || !sellerWallet) return;
 
+            // WalletConnect / manual-address logins must route through the WC QR /
+            // session flow below, NOT the injected window.ethereum branch — even when
+            // a desktop MetaMask extension is present (its account differs from the
+            // logged-in GoodMarket wallet and would trigger "Wrong wallet connected").
+            const _buyIsWcLogin = ['walletconnect', 'manual', 'manual_address'].includes((BUY_LOGIN_METHOD || '').toLowerCase());
+
             // ── DApp browser detected → direct ethereum flow ──────────────────
-            if (window.ethereum) {
+            if (window.ethereum && !_buyIsWcLogin) {
                 _buyModalShowStep('processing');
                 const procTitle = document.getElementById('nft-buy-processing-title');
                 const procMsg   = document.getElementById('nft-buy-processing-msg');
