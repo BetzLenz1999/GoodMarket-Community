@@ -763,15 +763,23 @@
         async function _getEthProvider() {
             const _isWcLogin = ['walletconnect', 'manual', 'manual_address'].includes(LOGIN_METHOD);
 
-            // WalletConnect users: always prefer the WC provider so the correct
-            // wallet signs — not a random injected extension in the browser.
-            if (_isWcLogin && typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred && GMWalletConnect.isPreferred()) {
-                const wcProvider = await GMWalletConnect.getProvider();
-                if (wcProvider) return wcProvider;
+            // WalletConnect users: always prefer the WC provider.
+            // We use LOGIN_METHOD (Jinja2-rendered, always reliable) rather than
+            // GMWalletConnect.isPreferred() which reads _config.loginMethod and
+            // can return false if configure() hadn't fired yet — causing MetaMask
+            // to be picked instead, which has a different account and triggers
+            // "Wrong wallet connected" on every signing action.
+            if (_isWcLogin && typeof GMWalletConnect !== "undefined" && GMWalletConnect.getProvider) {
+                try {
+                    const wcProvider = GMWalletConnect.getProvider();
+                    if (wcProvider) return wcProvider;
+                } catch (_) {}
             }
 
             // Injected wallet (MiniPay, Trust Wallet, MetaMask, etc.)
-            if (window.ethereum) {
+            // Blocked entirely for WC-login users: even if MetaMask is present it
+            // is on a different account/network and must not be used for signing.
+            if (!_isWcLogin && window.ethereum) {
                 if (window.ethereum.providers && window.ethereum.providers.length) {
                     // Mobile dApp browsers often inject multiple providers.
                     // Prefer MiniPay / Trust Wallet when present, then fallback to MetaMask.
@@ -787,8 +795,8 @@
             }
 
             // Final fallback: WalletConnect for non-WC logins with no injected wallet
-            if (typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred && GMWalletConnect.isPreferred()) {
-                return await GMWalletConnect.getProvider();
+            if (!_isWcLogin && typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred && GMWalletConnect.isPreferred()) {
+                return GMWalletConnect.getProvider();
             }
 
             return null;
@@ -1018,9 +1026,17 @@
         }
 
         async function _xswapReadProvider() {
+            // Read-only XDC calls (allowance, balanceOf, getAmountsOut …) must go to
+            // an XDC JSON-RPC endpoint directly.  Wrapping the WalletConnect bridge in
+            // ethers.BrowserProvider is wrong because the bridge routes non-signing
+            // calls to the Celo RPC — XDC contracts do not exist there and every
+            // eth_call would fail or return empty bytes.  Only injected wallets that
+            // already have XDC configured (MetaMask, Trust Wallet) can serve as a
+            // browser provider; for all other cases use the public XDC endpoint.
             if (!useServerSigning) {
                 const ep = await _getEthProvider();
-                if (ep) return new ethers.BrowserProvider(ep);
+                const isInjected = ep && !ep.isWalletConnect && !ep.isGoodMarketWcBridge;
+                if (isInjected) return new ethers.BrowserProvider(ep);
             }
             return new ethers.JsonRpcProvider('https://earpc.xinfin.network');
         }
