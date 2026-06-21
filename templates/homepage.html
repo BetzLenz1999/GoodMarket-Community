@@ -3100,6 +3100,14 @@
                 showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve the login message in your wallet.', 'info');
                 const signature = await provider.request({ method: 'personal_sign', params: [messageHex, wallet] });
                 const verifyData = await postVerifyIdentity(wallet, signature, message, getPendingReferralCode(), 'injected');
+                // Drop any WalletConnect session left over from an earlier sign-in
+                // so feature pages don't misclassify this injected login as
+                // WalletConnect (which would force a QR prompt instead of MetaMask).
+                try {
+                    if (typeof GMWalletConnect !== 'undefined' && GMWalletConnect.clearStoredSession) {
+                        GMWalletConnect.clearStoredSession();
+                    }
+                } catch (_) {}
                 const okMsg = (verifyData && verifyData.referral_warning)
                     ? ('✅ Signature verified. ⚠️ ' + verifyData.referral_warning + ' Redirecting...')
                     : '✅ Signature verified. Redirecting...';
