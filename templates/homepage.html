@@ -2997,7 +2997,7 @@
                 .join('');
         }
 
-        async function postVerifyIdentity(walletAddress, signature, message, referralCode = '') {
+        async function postVerifyIdentity(walletAddress, signature, message, referralCode = '', loginMethod = 'injected') {
             const resp = await fetch('/verify-identity', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -3005,7 +3005,13 @@
                     wallet_address: walletAddress,
                     signature,
                     message,
-                    referral_code: referralCode || ''
+                    referral_code: referralCode || '',
+                    // Persist HOW the user logged in so every feature page picks the
+                    // matching signer: WalletConnect logins must never fall back to an
+                    // injected desktop wallet (e.g. MetaMask) whose account differs
+                    // from the GoodMarket wallet, which surfaces as "Wrong wallet
+                    // connected" on Claim / Swap / Reloadly / Send.
+                    login_method: loginMethod
                 })
             });
             const data = await resp.json();
@@ -3093,7 +3099,7 @@
                 const messageHex = utf8ToHex(message);
                 showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve the login message in your wallet.', 'info');
                 const signature = await provider.request({ method: 'personal_sign', params: [messageHex, wallet] });
-                const verifyData = await postVerifyIdentity(wallet, signature, message, getPendingReferralCode());
+                const verifyData = await postVerifyIdentity(wallet, signature, message, getPendingReferralCode(), 'injected');
                 const okMsg = (verifyData && verifyData.referral_warning)
                     ? ('✅ Signature verified. ⚠️ ' + verifyData.referral_warning + ' Redirecting...')
                     : '✅ Signature verified. Redirecting...';
@@ -3417,7 +3423,7 @@
                         if (!signResp.ok || !signData.signature) {
                             throw new Error(signData.error || 'WalletConnect signature failed');
                         }
-                        const wcVerifyData = await postVerifyIdentity(stData.address, signData.signature, message, getPendingReferralCode());
+                        const wcVerifyData = await postVerifyIdentity(stData.address, signData.signature, message, getPendingReferralCode(), 'walletconnect');
                         const wcOkMsg = (wcVerifyData && wcVerifyData.referral_warning)
                             ? ('✅ Wallet connected via WalletConnect. ⚠️ ' + wcVerifyData.referral_warning + ' Redirecting...')
                             : '✅ Wallet connected via WalletConnect. Redirecting...';
@@ -3555,7 +3561,7 @@
                 // session approval that just completed.
                 _wcWakeWalletApp(session);
                 const signature = await sigReqPromise;
-                const wcFbVerifyData = await postVerifyIdentity(address, signature, message, getPendingReferralCode());
+                const wcFbVerifyData = await postVerifyIdentity(address, signature, message, getPendingReferralCode(), 'walletconnect');
                 
                 // Show success immediately — the session is already in localStorage.
                 // The 2.5 s wait below is only to let IndexedDB flush; any IDB
