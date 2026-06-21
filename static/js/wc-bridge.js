@@ -154,6 +154,60 @@
         return ["walletconnect", "manual", "manual_address"].indexOf(_normLogin(_config.loginMethod)) >= 0;
     }
 
+    // Is there a valid, persisted WalletConnect session for `walletAddr`
+    // (defaults to the configured GoodMarket wallet)? The homepage writes
+    // wc_session_* to localStorage on every WalletConnect login.
+    function _hasStoredWcSessionFor(walletAddr) {
+        try {
+            var topic = localStorage.getItem("wc_session_topic");
+            var data = localStorage.getItem("wc_session_data");
+            if (!topic || !data) return false;
+            var ts = parseInt(localStorage.getItem("wc_session_timestamp") || "0", 10);
+            if (ts && (Date.now() - ts) > 7 * 24 * 60 * 60 * 1000) return false;
+            try {
+                var parsed = JSON.parse(data);
+                var exp = parsed && parsed.expiry;
+                if (exp && exp <= Math.floor(Date.now() / 1000)) return false;
+            } catch (_) { /* tolerate a malformed session blob */ }
+            var want = String(walletAddr || _config.walletAddress || "").toLowerCase();
+            var have = String(localStorage.getItem("wc_session_address") || "").toLowerCase();
+            if (want && have && want !== have) return false;
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Robust "should this user sign via WalletConnect?" check.
+    //
+    // `login_method` is the primary signal, but sessions created BEFORE it was
+    // persisted server-side report "injected" for everyone (the old backend
+    // default). Those WalletConnect users would otherwise sign with a desktop
+    // MetaMask extension on a different account → "Wrong wallet connected". So
+    // we also treat a valid, persisted WalletConnect session for the logged-in
+    // wallet as proof of a WalletConnect login. We never override an explicit
+    // Turnkey (server-signing) login, and a genuine injected-only user has no
+    // such WC session, so their flow is unchanged.
+    function _prefersWcSigning() {
+        var m = _normLogin(_config.loginMethod);
+        if (["walletconnect", "manual", "manual_address"].indexOf(m) >= 0) return true;
+        if (m.indexOf("turnkey") === 0) return false;
+        return _hasStoredWcSessionFor(_config.walletAddress);
+    }
+
+    // Remove any persisted WalletConnect session. The homepage calls this right
+    // after a successful INJECTED login so a leftover WC session from an earlier
+    // sign-in can't later mis-route an injected user through WalletConnect.
+    function _clearStoredSession() {
+        try {
+            ["wc_session_topic", "wc_session_address", "wc_session_data",
+             "wc_session_timestamp", "wc_session_chains"].forEach(function (k) {
+                localStorage.removeItem(k);
+            });
+        } catch (_) {}
+        reset();
+    }
+
     function configure(opts) {
         if (!opts) return;
         for (var k in opts) {
@@ -1414,7 +1468,12 @@
 
     global.GMWalletConnect = {
         configure: configure,
-        isPreferred: _shouldPrefer,
+        // isPreferred now also recovers pre-existing WalletConnect sessions that
+        // were mislabeled as "injected" before login_method was persisted.
+        isPreferred: _prefersWcSigning,
+        prefersWcSigning: _prefersWcSigning,
+        hasStoredSession: _hasStoredWcSessionFor,
+        clearStoredSession: _clearStoredSession,
         connect: connect,
         bridgeRequest: bridgeRequest,
         getProvider: getProvider,
