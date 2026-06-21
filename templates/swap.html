@@ -1623,7 +1623,13 @@
         window.useServerSigning = ['turnkey_google', 'turnkey_email'].includes((LOGIN_METHOD || '').toLowerCase());
         window.GMSquidBootstrap = { ...SQUID_CONFIG, walletAddress: WALLET_ADDRESS, loginMethod: LOGIN_METHOD };
         const WC_PROJECT_ID = '{{ walletconnect_project_id }}';
-        const PREFER_WC_SIGNING = ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
+        // Robust WalletConnect detection: LOGIN_METHOD is primary, but sessions
+        // created before login_method was persisted report "injected" for
+        // WalletConnect users too. prefersWcSigning() recovers those via a saved
+        // WC session for this wallet so they never sign with injected MetaMask.
+        const PREFER_WC_SIGNING = (typeof GMWalletConnect !== 'undefined' && typeof GMWalletConnect.prefersWcSigning === 'function')
+            ? GMWalletConnect.prefersWcSigning()
+            : ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
         const CELO_RPC       = "https://forno.celo.org";
         let _wcSessionId = null;
         let _wcAddress = null;
