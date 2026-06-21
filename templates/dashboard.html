@@ -4234,7 +4234,11 @@
     <script>
         (function() {
             var voucherCheckInterval = null;
-            const LOGIN_METHOD = "{{ login_method | default('walletconnect') }}";
+            // Do NOT default to 'walletconnect': an injected (or empty) login
+            // would otherwise be treated as a WalletConnect session and trip the
+            // WC expiry guard, auto-logging the user out for a "missing" WC
+            // session they never had. Keep it empty so non-WC users are unaffected.
+            const LOGIN_METHOD = "{{ login_method | default('', true) }}";
             const SESSION_WALLET = "{{ wallet | default('') }}";
 
             if (typeof GMWalletConnect !== "undefined") {
