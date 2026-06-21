@@ -1969,6 +1969,19 @@
         });
     }
 
+    // Robust WalletConnect detection (hoisted so the early provider/signer
+    // helpers below can use it). LOGIN_METHOD is primary, but sessions created
+    // before login_method was persisted report "injected" for WalletConnect
+    // users too; prefersWcSigning() recovers those via a saved WC session for
+    // this wallet so they never sign with an injected MetaMask on a different
+    // account ("Wrong wallet connected").
+    function _gmPreferWc() {
+        if (typeof GMWalletConnect !== 'undefined' && typeof GMWalletConnect.prefersWcSigning === 'function') {
+            return GMWalletConnect.prefersWcSigning();
+        }
+        return ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
+    }
+
     // Returns an EIP-1193-shaped provider for WC users when no injected
     // provider is available. `null` if the user can't / shouldn't use
     // WalletConnect (e.g. server-side signing, or a regular browser without
@@ -2157,7 +2170,11 @@
         // MetaMask, MiniPay) we must NOT route through a stale WC session stored in
         // localStorage — doing so silently sends the transaction to the WC relay and
         // no popup ever appears in the wallet app.
-        const loginedViaWc = (LOGIN_METHOD || '').toLowerCase() === 'walletconnect';
+        // _gmPreferWc() is true for WalletConnect/manual logins AND for
+        // pre-existing WC sessions that were mislabeled "injected" before
+        // login_method was persisted — so those users still route through the
+        // WC session instead of an injected MetaMask on a different account.
+        const loginedViaWc = _gmPreferWc();
         
         const wcTopic = localStorage.getItem('wc_session_topic');
         const wcTimestamp = parseInt(localStorage.getItem('wc_session_timestamp') || '0', 10);
@@ -2396,8 +2413,9 @@
         // (e.g. a desktop MetaMask extension): its account differs from the logged-in
         // GoodMarket wallet, so UBI claim / send / FV signing fail with "Wrong wallet
         // connected" / "Invalid URL". Block injected discovery so all flows route
-        // through the WalletConnect signer. LOGIN_METHOD is Jinja-rendered.
-        if (['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase())) return null;
+        // through the WalletConnect signer. _gmPreferWc() also recovers
+        // pre-existing WC sessions mislabeled as "injected".
+        if (_gmPreferWc()) return null;
 
         // Re-dispatch EIP-6963 discovery on every call — Trust Wallet mobile
         // and some MetaMask Mobile builds announce only after the dApp asks,
@@ -5910,7 +5928,13 @@
     })();
 
     // ── FV Link Generator (mirrors ClaimSDK.generateFVLink from @gooddollar/web3sdk-v2) ─────
-    const PREFER_WC_SIGNING = ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
+    // Robust WalletConnect detection: LOGIN_METHOD is primary, but sessions
+    // created before login_method was persisted report "injected" for
+    // WalletConnect users too. prefersWcSigning() recovers those via a saved
+    // WC session for this wallet so they never sign with injected MetaMask.
+    const PREFER_WC_SIGNING = (typeof GMWalletConnect !== 'undefined' && typeof GMWalletConnect.prefersWcSigning === 'function')
+        ? GMWalletConnect.prefersWcSigning()
+        : ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
     window._fvGenerateLink = null;
     (function() {
         if (typeof LZString === 'undefined') return;
