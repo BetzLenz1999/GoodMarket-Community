@@ -2392,6 +2392,13 @@
     }
 
     function _getEthProvider() {
+        // WalletConnect / manual-address logins must NEVER use an injected wallet
+        // (e.g. a desktop MetaMask extension): its account differs from the logged-in
+        // GoodMarket wallet, so UBI claim / send / FV signing fail with "Wrong wallet
+        // connected" / "Invalid URL". Block injected discovery so all flows route
+        // through the WalletConnect signer. LOGIN_METHOD is Jinja-rendered.
+        if (['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase())) return null;
+
         // Re-dispatch EIP-6963 discovery on every call — Trust Wallet mobile
         // and some MetaMask Mobile builds announce only after the dApp asks,
         // and idempotent re-dispatch costs nothing for wallets that don't.
@@ -5296,6 +5303,19 @@
             if (!provider) {
                 provider = await _walletGetWcProviderIfPreferred();
                 usingWcBridge = !!provider;
+            } else if (typeof GMWalletConnect !== 'undefined' && GMWalletConnect.isPreferred()) {
+                // User logged in via WalletConnect but an injected wallet (e.g. MetaMask
+                // browser extension) was also detected. MetaMask is on a different network
+                // (Ethereum, not Celo) and may be locked — its eth_getBalance call will
+                // either return 0 or hang forever, leaving the UI stuck at "Checking
+                // wallet gas…". Override: use the WC bridge so the gas check goes through
+                // the backend faucet API instead of the injected wallet's broken RPC.
+                const wcProvider = await _walletGetWcProviderIfPreferred();
+                if (wcProvider) {
+                    console.log('[claim] WC login + injected wallet found — overriding with WC bridge for gas check');
+                    provider = wcProvider;
+                    usingWcBridge = true;
+                }
             }
             if (!provider) {
                 setStatus('⚠️ No wallet detected. Please open this page in MetaMask, Trust Wallet, MiniPay, or reconnect using WalletConnect to sign transactions.', '#fbbf24');
