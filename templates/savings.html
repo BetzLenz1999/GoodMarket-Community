@@ -1300,6 +1300,12 @@
     // Handles multi-wallet injections: prefer MiniPay in MiniPay dApp browser,
     // then Trust Wallet in Trust mobile, then MetaMask (excluding Brave).
     function _getEthProvider() {
+        // WalletConnect / manual-address logins must NEVER use an injected wallet
+        // (e.g. a desktop MetaMask extension): its account differs from the logged-in
+        // GoodMarket wallet, so signing fails with "Wrong wallet connected". Block
+        // injected discovery so all flows route through the WalletConnect signer.
+        // LOGIN_METHOD is Jinja-rendered and reliable.
+        if (['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase())) return null;
         try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
         const providers = _collectSavingsProviders();
         if (!providers.length) return null;
