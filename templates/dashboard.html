@@ -4302,9 +4302,11 @@
                 // wallet (e.g. a desktop MetaMask extension): its account differs
                 // from the logged-in GoodMarket wallet, so the voucher claim fails
                 // with "Wrong wallet connected". Block injected discovery so the
-                // claim routes through the WalletConnect signer. LOGIN_METHOD is
-                // Jinja-rendered and reliable.
-                if (['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase())) return null;
+                // claim routes through the WalletConnect signer. The robust check
+                // also recovers pre-existing WC sessions mislabeled as "injected".
+                if (typeof GMWalletConnect !== 'undefined' && typeof GMWalletConnect.prefersWcSigning === 'function'
+                        ? GMWalletConnect.prefersWcSigning()
+                        : ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase())) return null;
                 if (!window.ethereum) return null;
                 if (window.ethereum.providers && window.ethereum.providers.length) {
                     var miniPay = window.ethereum.providers.find(function(p) { return p && p.isMiniPay; });
