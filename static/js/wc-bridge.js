@@ -200,7 +200,7 @@
 
     function _wakeWalletAppFor(session) {
         try {
-            if (!session || !_isMobileBrowserContext()) return;
+            if (!session) return;
             var meta = session.peer && session.peer.metadata;
             var redirect = meta && meta.redirect;
             if (!redirect) return;
@@ -213,6 +213,9 @@
             // uses internally; `window.location.href = …` is less reliable
             // because some browsers block custom-scheme navigation when no
             // user-gesture is in scope by the time the deep-link fires.
+            // NOTE: Removed mobile-only check - we now try to wake wallet on ALL
+            // platforms to prevent timeout errors when the wallet app is installed
+            // but the browser doesn't auto-focus the wallet's notification/prompt.
             try {
                 var link = document.createElement("a");
                 link.href = href;
