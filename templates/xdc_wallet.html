@@ -761,7 +761,9 @@
         }
 
         async function _getEthProvider() {
-            const _isWcLogin = ['walletconnect', 'manual', 'manual_address'].includes(LOGIN_METHOD);
+            const _isWcLogin = (typeof GMWalletConnect !== 'undefined' && typeof GMWalletConnect.prefersWcSigning === 'function')
+                ? GMWalletConnect.prefersWcSigning()
+                : ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
 
             // WalletConnect users: always prefer the WC provider.
             // We use LOGIN_METHOD (Jinja2-rendered, always reliable) rather than
