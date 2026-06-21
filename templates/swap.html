@@ -1735,6 +1735,12 @@
         // Handles EIP-5749 multi-wallet: prefer Trust Wallet in Trust mobile;
         // otherwise preserve MetaMask-first behavior.
         function _getEthProvider() {
+            // WalletConnect / manual-address logins must NEVER use an injected wallet
+            // (e.g. a desktop MetaMask extension): its account differs from the
+            // logged-in GoodMarket wallet, so signing fails with "Wrong wallet
+            // connected". Block injected discovery so all flows route through the
+            // WalletConnect signer. LOGIN_METHOD is Jinja-rendered and reliable.
+            if (PREFER_WC_SIGNING) return null;
             try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
             const providers = _collectSwapProviders();
             if (!providers.length) return null;
