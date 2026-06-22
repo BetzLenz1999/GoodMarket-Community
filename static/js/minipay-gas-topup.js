@@ -58,7 +58,7 @@
     // the wallet hovers around ~$0.01-$0.015 stablecoin gas. Require a safer
     // minimum so the pre-check triggers faucet before wallet approval.
     const STABLECOIN_GAS_MIN_USD = 0.015;
-    const CUSD_FAUCET_DISPLAY_AMOUNT = '0.017';
+    const CUSD_FAUCET_DISPLAY_AMOUNT = '0.016';
     // Match the backend FAUCET_MIN_CELO default. MiniPay still pays claim gas
     // in stablecoins, so the CELO faucet is a best-effort recovery path for
     // wallets below this floor; it must not block the cUSD gas budget.
@@ -71,6 +71,13 @@
     // Stablecoin "dust" threshold below which we treat the user as having
     // effectively zero stablecoin gas budget. Approx $0.005.
     const STABLECOIN_DUST_USD = 0.005;
+
+    // GoodDapp-style direct-claim threshold: if the user holds at least this
+    // much stablecoin, attempt the claim tx directly without the faucet
+    // pre-flight. A single claim() costs ~0.001-0.003 cUSD in gas on Celo,
+    // so 0.001 USD is the minimum we need to even try. This mirrors GoodDapp
+    // behavior where users with as little as 0.002 cUSD can claim successfully.
+    const STABLECOIN_DIRECT_CLAIM_MIN_USD = 0.001;
 
     // ─── ethers.js dynamic loader (idempotent) ────────────────────────────
     let _ethersPromise = null;
@@ -201,6 +208,16 @@
         return perToken.cusd >= STABLECOIN_GAS_MIN_USD
             || perToken.usdt >= STABLECOIN_GAS_MIN_USD
             || perToken.usdc >= STABLECOIN_GAS_MIN_USD;
+    }
+
+    // GoodDapp-style check: does the user have ANY stablecoin at all
+    // (above dust)? If yes, MiniPay can attempt the tx directly — Celo's
+    // fee abstraction only needs a tiny amount for a single claim() call.
+    function hasAnyStablecoinForDirectClaim(balances) {
+        const perToken = _stablecoinBalancesUsd(balances);
+        return perToken.cusd >= STABLECOIN_DIRECT_CLAIM_MIN_USD
+            || perToken.usdt >= STABLECOIN_DIRECT_CLAIM_MIN_USD
+            || perToken.usdc >= STABLECOIN_DIRECT_CLAIM_MIN_USD;
     }
 
     function getAutoSwapAmountWei(balances) {
@@ -1003,6 +1020,7 @@
         getBalances: getBalances,
         needsTopUpFromBalances: needsTopUpFromBalances,
         hasStablecoinGasBalance: hasStablecoinGasBalance,
+        hasAnyStablecoinForDirectClaim: hasAnyStablecoinForDirectClaim,
         isBelowCeloFaucetFloor: isBelowCeloFaucetFloor,
         ensureToppedUp: ensureToppedUp,
         runWithGasTopUp: runWithGasTopUp,
@@ -1013,6 +1031,7 @@
             CELO_RESERVE_AFTER_TOPUP_STR: CELO_RESERVE_AFTER_TOPUP_STR,
             CELO_FAUCET_TRIGGER_BELOW_STR: CELO_FAUCET_TRIGGER_BELOW_STR,
             STABLECOIN_GAS_MIN_USD: STABLECOIN_GAS_MIN_USD,
+            STABLECOIN_DIRECT_CLAIM_MIN_USD: STABLECOIN_DIRECT_CLAIM_MIN_USD,
             CUSD_FAUCET_PROGRAM_LABEL: CUSD_FAUCET_PROGRAM_LABEL,
         },
     };
