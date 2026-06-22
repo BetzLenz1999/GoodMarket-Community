@@ -1776,7 +1776,7 @@ def overview():
     return render_template("overview.html",
                          wallet=wallet if wallet and verified else None,
                          data=stats,
-                         login_method=session.get("login_method", "walletconnect"))
+                         login_method=session.get("login_method", ""))
 
 @routes.route("/dashboard")
 def dashboard():
@@ -5435,7 +5435,7 @@ def learn_earn_page():
 
     return render_template("learn_and_earn.html",
                          wallet=wallet,
-                         login_method=session.get("login_method", "walletconnect"),
+                         login_method=session.get("login_method", ""),
                          walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
                          walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
                          is_admin_user=is_admin_user)
@@ -6519,6 +6519,12 @@ def wallet_page():
     if not wallet or not session.get("verified"):
         return redirect(url_for("routes.index"))
     buy_eth_visible = True
+    is_admin_user = False
+    try:
+        from supabase_client import is_admin as check_is_admin
+        is_admin_user = check_is_admin(wallet)
+    except Exception:
+        pass
     try:
         supabase = get_supabase_client()
         if supabase:
@@ -6541,10 +6547,11 @@ def wallet_page():
     return render_template(
         "wallet.html",
         wallet=wallet,
-        login_method=session.get("login_method", "walletconnect"),
+        login_method=session.get("login_method", ""),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         buy_eth_visible=buy_eth_visible,
+        is_admin_user=is_admin_user,
     )
 
 
@@ -6681,7 +6688,7 @@ def swap_page():
     return render_template(
         "swap.html",
         wallet=wallet,
-        login_method=session.get("login_method", "walletconnect"),
+        login_method=session.get("login_method", ""),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         reserve_swap_visible=reserve_visible,
@@ -6875,7 +6882,7 @@ def send_link_page():
     return render_template(
         "send-link.html",
         wallet=wallet,
-        login_method=session.get("login_method", "walletconnect"),
+        login_method=session.get("login_method", ""),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
     )
@@ -6886,7 +6893,7 @@ def claim_page():
     """Claim page for one-time payment links — no login required"""
     return render_template(
         "claim.html",
-        login_method=session.get("login_method", "walletconnect"),
+        login_method=session.get("login_method", ""),
         wallet=session.get("wallet", ""),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
