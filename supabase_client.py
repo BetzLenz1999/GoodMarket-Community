@@ -1291,12 +1291,32 @@ class SupabaseLogger:
                     .execute()
                 gm_total_claims = total_claims_resp.count if hasattr(total_claims_resp, 'count') else 0
 
-                unique_claimers_resp = gm_client.table("goodmarket_claim_facts")\
-                    .select("wallet_address")\
-                    .eq("status", "confirmed")\
-                    .execute()
-                if unique_claimers_resp.data:
-                    gm_unique_claimers = len({(r.get("wallet_address") or "").lower() for r in unique_claimers_resp.data if r.get("wallet_address")})
+                unique_wallets = set()
+
+                def _collect_wallets(table_name, filters):
+                    page_size = 1000
+                    offset = 0
+                    while True:
+                        query = gm_client.table(table_name).select("wallet_address")
+                        for column, value in filters:
+                            query = query.eq(column, value)
+                        resp = query.range(offset, offset + page_size - 1).execute()
+                        rows = resp.data or []
+                        if not rows:
+                            break
+                        for row in rows:
+                            wallet_address = (row.get("wallet_address") or "").strip().lower()
+                            if wallet_address:
+                                unique_wallets.add(wallet_address)
+                        if len(rows) < page_size:
+                            break
+                        offset += page_size
+
+                _collect_wallets("goodmarket_claim_facts", [("status", "submitted")])
+                _collect_wallets("goodmarket_claim_facts", [("status", "confirmed")])
+                _collect_wallets("goodmarket_claim_facts", [("status", "unknown")])
+                _collect_wallets("user_data", [("verified_after_goodmarket", True)])
+                gm_unique_claimers = len(unique_wallets)
             except Exception as gm_err:
                 logger.warning(f"⚠️ GoodMarket claim metrics unavailable: {gm_err}")
 
