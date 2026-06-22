@@ -6512,6 +6512,15 @@ def fv_status():
         }), 500
 
 
+@routes.route("/daily-task")
+def daily_task_page():
+    """Daily Task page - standalone page for completing daily tasks"""
+    wallet = session.get("wallet")
+    if not wallet or not session.get("verified"):
+        return redirect(url_for("routes.index"))
+    return render_template("daily-task.html", wallet=wallet)
+
+
 @routes.route("/wallet")
 def wallet_page():
     """Wallet page for sending/receiving G$ and CELO"""
