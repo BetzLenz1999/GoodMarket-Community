@@ -1243,6 +1243,9 @@
     <nav class="navbar">
         <div class="nav-inner">
             <a href="/wallet" class="back-wallet-btn">← Back to Wallet</a>
+            {% if is_admin_user %}
+            <a href="/admin" class="back-wallet-btn" style="background: linear-gradient(135deg,#ec4899,#db2777);">⚙️ Admin</a>
+            {% endif %}
         </div>
     </nav>
 
@@ -1314,15 +1317,7 @@
                     </div>
                 </div>
                 <div class="balance-card-actions">
-                    <a href="/minigames/" style="background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); padding: 0.35rem 0.7rem; border-radius: 8px; color: white; text-decoration: none; font-weight: 600; font-size: 0.75rem; transition: all 0.3s ease; border: 1px solid rgba(255,255,255,0.3);" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
-                        🎮 Play & Earn
-                    </a>
-                    <a href="/learn-earn" style="background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); padding: 0.35rem 0.7rem; border-radius: 8px; color: white; text-decoration: none; font-weight: 600; font-size: 0.75rem; transition: all 0.3s ease; border: 1px solid rgba(255,255,255,0.3);" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
-                        📚 Learn & Earn
-                    </a>
-                    <a href="/reloadly/" style="background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); padding: 0.35rem 0.7rem; border-radius: 8px; color: white; text-decoration: none; font-weight: 600; font-size: 0.75rem; transition: all 0.3s ease; border: 1px solid rgba(255,255,255,0.3);" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
-                        🛒 Store
-                    </a>
+                    <!-- Play & Earn, Learn & Earn, Store - hidden, available in wallet -->
                     <a href="/send-link" style="background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); padding: 0.35rem 0.7rem; border-radius: 8px; color: white; text-decoration: none; font-weight: 600; font-size: 0.75rem; transition: all 0.3s ease; border: 1px solid rgba(255,255,255,0.3);" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
                         🔗 Send via Link
                     </a>
