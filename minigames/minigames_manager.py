@@ -9,6 +9,16 @@ from .blockchain import minigames_blockchain
 
 logger = logging.getLogger(__name__)
 
+
+def normalize_tx_hash(tx_hash: str) -> str:
+    """Ensure tx_hash has 0x prefix for Celo Explorer"""
+    if not tx_hash:
+        return tx_hash
+    if not tx_hash.startswith('0x'):
+        return '0x' + tx_hash
+    return tx_hash
+
+
 class MinigamesManager:
     def __init__(self):
         self.supabase = get_supabase_client()
@@ -435,7 +445,7 @@ class MinigamesManager:
                     if disburse_result['success']:
                         # Log reward
                         self.supabase.table('minigame_rewards_log').insert({
-                            'transaction_hash': disburse_result['tx_hash'],
+                            'transaction_hash': normalize_tx_hash(disburse_result['tx_hash']),
                             'wallet_address': wallet_address,
                             'game_type': game_type,
                             'session_id': session_id,
@@ -447,7 +457,7 @@ class MinigamesManager:
                             'success': True,
                             'score': score,
                             'reward': reward_amount,
-                            'tx_hash': disburse_result['tx_hash'],
+                            'tx_hash': normalize_tx_hash(disburse_result['tx_hash']),
                             'explorer_url': disburse_result['explorer_url']
                         }
                     else:
@@ -679,7 +689,7 @@ class MinigamesManager:
                 self.supabase.table('minigame_withdrawals_log').insert({
                     'wallet_address': wallet_address,
                     'amount': available_balance,
-                    'tx_hash': disburse_result['tx_hash'],
+                    'tx_hash': normalize_tx_hash(disburse_result['tx_hash']),
                     'session_id': session_id,
                     'withdrawal_date': date.today().isoformat()
                 }).execute()
@@ -689,7 +699,7 @@ class MinigamesManager:
                 return {
                     'success': True,
                     'amount_withdrawn': available_balance,
-                    'tx_hash': disburse_result['tx_hash'],
+                    'tx_hash': normalize_tx_hash(disburse_result['tx_hash']),
                     'explorer_url': disburse_result['explorer_url'],
                     'message': f'Successfully withdrawn {available_balance} G$!'
                 }
