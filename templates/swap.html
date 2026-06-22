@@ -5660,7 +5660,7 @@
                 }
                 return d.tx_hash;
             }
-            const ep = _getEthProvider();
+            const ep = await _awaitEthProvider();
             if (!ep) throw new Error('No Web3 wallet found.');
             const switched = await ensureXDCNetwork(ep);
             if (!switched) throw new Error('Could not switch to XDC network.');
@@ -5851,7 +5851,7 @@
                     from = _normalizeAddrXdcToCelo(WALLET_ADDRESS);
                 } else {
                     // Injected wallet path: require Web3 wallet and verify identity
-                    ep = _getEthProvider();
+                    ep = await _awaitEthProvider();
                     if (!ep) throw new Error('No Web3 wallet found.');
                     const switched = await ensureXDCNetwork(ep);
                     if (!switched) throw new Error('Could not switch to XDC network.');
