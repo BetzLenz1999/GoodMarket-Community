@@ -251,20 +251,27 @@ def confirm_goodmarket_claim():
         # Idempotency unique-index violations are expected on repeat calls.
         logger.warning(f"[gm-claim-confirm] event insert skipped: {e_evt}")
 
-    # Best-effort attribution backfill: any wallet recording a claim through
-    # the GoodMarket UI is, by definition, "using GoodMarket". If they're
-    # also face-verified on-chain (verified inside the helper) but their
-    # user_data row still has verified_after_goodmarket=False, flip it now.
-    # Runs on a daemon thread so we don't add latency to the claim response.
-    try:
-        from goodmarket_attribution_backfill import mark_verified_via_goodmarket
-        mark_verified_via_goodmarket(
-            wallet,
-            source=f"claim_confirm:{network}:{status}",
-            background=True,
-        )
-    except Exception as e_attr:
-        logger.warning(f"[gm-claim-confirm] attribution backfill skipped: {e_attr}")
+    # Best-effort attribution backfill: any wallet recording a confirmed
+    # claim through the GoodMarket UI is, by definition, using GoodMarket
+    # AND face-verified (the UBI contract rejects non-whitelisted callers).
+    # Skip the strict on-chain timing-window check here — the claim itself
+    # is definitive proof that the user is both FV'd and active on
+    # GoodMarket, so we don't need the 30-min closeness heuristic. This
+    # fixes a gap where face_verified_at was never recorded (because the
+    # /wallet FV redirect didn't set it pre-fix) and the fallback
+    # reference_unix=now() caused the window check to reject attributions
+    # for users who verified hours/days before claiming.
+    if status in ("confirmed", "submitted"):
+        try:
+            from goodmarket_attribution_backfill import mark_verified_via_goodmarket
+            mark_verified_via_goodmarket(
+                wallet,
+                source=f"claim_confirm:{network}:{status}",
+                require_on_chain_check=False,
+                background=True,
+            )
+        except Exception as e_attr:
+            logger.warning(f"[gm-claim-confirm] attribution backfill skipped: {e_attr}")
 
     return jsonify({
         "success": True,
@@ -6530,6 +6537,31 @@ def wallet_page():
     wallet = session.get("wallet")
     if not wallet or not session.get("verified"):
         return redirect(url_for("routes.index"))
+
+    # ── FV-CALLBACK ATTRIBUTION ──────────────────────────────────────────
+    # GoodDollar redirects back here (via the rdu param) after face
+    # verification with src=goodmarket.  Record the attribution NOW while
+    # the on-chain lastAuthenticated is still within the strict timing
+    # window, so verified_after_goodmarket is set immediately instead of
+    # relying on a later claim or re-login to pick it up.
+    fv_pending = request.args.get("fv_pending") == "1"
+    fv_src_goodmarket = request.args.get("src", "") == "goodmarket"
+    if fv_pending and fv_src_goodmarket and wallet:
+        try:
+            analytics.track_verification_attempt(wallet, True, face_verified=True)
+        except Exception as fv_attr_err:
+            logger.warning(f"[wallet-fv-attr] track_verification_attempt error: {fv_attr_err}")
+        try:
+            from goodmarket_attribution_backfill import mark_verified_via_goodmarket
+            mark_verified_via_goodmarket(
+                wallet,
+                source="wallet_fv_redirect:goodmarket",
+                require_on_chain_check=False,
+                background=True,
+            )
+        except Exception as fv_attr_err:
+            logger.warning(f"[wallet-fv-attr] mark_verified_via_goodmarket error: {fv_attr_err}")
+
     buy_eth_visible = True
     try:
         supabase = get_supabase_client()
