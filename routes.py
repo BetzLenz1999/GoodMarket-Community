@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, make_response
 from blockchain import has_recent_ubi_claim, GOODDOLLAR_CONTRACTS
 from analytics_service import analytics
-from supabase_client import get_supabase_client, get_supabase_admin_client, safe_supabase_operation, supabase_logger, log_admin_action
+from supabase_client import get_supabase_client, get_supabase_admin_client, safe_supabase_operation, supabase_logger, log_admin_action, is_admin
 from notifications_service import NotificationService
 from web3 import Web3
 import json
@@ -6528,6 +6528,7 @@ def wallet_page():
     if not wallet or not session.get("verified"):
         return redirect(url_for("routes.index"))
     buy_eth_visible = True
+    is_admin_user = False
     try:
         supabase = get_supabase_client()
         if supabase:
@@ -6545,6 +6546,8 @@ def wallet_page():
                         return render_template("feature_unavailable.html", feature_name="Wallet", wallet=wallet)
                     if fn == 'wallet_buy_eth' and row.get('is_maintenance', False):
                         buy_eth_visible = False
+        # Check if user is admin
+        is_admin_user = is_admin(wallet)
     except Exception:
         pass
     return render_template(
@@ -6554,6 +6557,7 @@ def wallet_page():
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         buy_eth_visible=buy_eth_visible,
+        is_admin_user=is_admin_user,
     )
 
 
