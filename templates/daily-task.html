@@ -417,9 +417,47 @@
 
         <!-- History Section -->
         <div class="history-section card">
-            <h2>📋 Recent History</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2>📋 Recent History</h2>
+                <button onclick="showFullHistory()" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.8rem; width: auto;">
+                    View All
+                </button>
+            </div>
+            <div class="history-stats" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin-bottom: 1rem;">
+                <div class="stat-card-history" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 12px; padding: 1rem; text-align: center;">
+                    <div style="font-size: 0.75rem; font-weight: 600; color: rgba(241, 245, 249, 0.7); text-transform: uppercase; margin-bottom: 0.25rem;">Total Earned</div>
+                    <div style="font-size: 1.25rem; font-weight: 800; color: #f1f5f9;" id="dailyHistoryTotalEarned">0 G$</div>
+                </div>
+                <div class="stat-card-history" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 12px; padding: 1rem; text-align: center;">
+                    <div style="font-size: 0.75rem; font-weight: 600; color: rgba(241, 245, 249, 0.7); text-transform: uppercase; margin-bottom: 0.25rem;">Total Claims</div>
+                    <div style="font-size: 1.25rem; font-weight: 800; color: #f1f5f9;" id="dailyHistoryTotalClaims">0</div>
+                </div>
+            </div>
             <div id="historyList">
                 <p style="text-align: center; color: rgba(241, 245, 249, 0.5); padding: 1rem;">Loading history...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Full History Modal -->
+    <div id="dailyTaskHistoryModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(10px); z-index: 10000; align-items: center; justify-content: center; overflow-y: auto; padding: 1rem;">
+        <div class="modal-content" style="max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; margin: auto;">
+            <h3 style="margin-bottom: 1rem; font-size: 1.5rem; font-weight: 700; color: #f1f5f9; display: flex; align-items: center; justify-content: space-between;">
+                📋 Daily Task History
+                <button onclick="closeDailyTaskHistoryModal()" class="notification-close" style="position: static; margin: 0; background: rgba(255,255,255,0.1); border: none; color: white; font-size: 1.5rem; cursor: pointer;">×</button>
+            </h3>
+            <div class="history-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem;">
+                <div class="stat-card-history" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 12px; padding: 1rem; text-align: center;">
+                    <div style="font-size: 0.7rem; font-weight: 600; color: rgba(241, 245, 249, 0.7); text-transform: uppercase; margin-bottom: 0.25rem;">Total Earned</div>
+                    <div style="font-size: 1.5rem; font-weight: 800; color: #f1f5f9;" id="modalHistoryTotalEarned">0 G$</div>
+                </div>
+                <div class="stat-card-history" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 12px; padding: 1rem; text-align: center;">
+                    <div style="font-size: 0.7rem; font-weight: 600; color: rgba(241, 245, 249, 0.7); text-transform: uppercase; margin-bottom: 0.25rem;">Total Claims</div>
+                    <div style="font-size: 1.5rem; font-weight: 800; color: #f1f5f9;" id="modalHistoryTotalClaims">0</div>
+                </div>
+            </div>
+            <div id="dailyTaskHistoryList" style="margin-top: 1rem;">
+                <!-- Full transaction history will be loaded here -->
             </div>
         </div>
     </div>
@@ -467,34 +505,44 @@
                 if (result.can_claim) {
                     // User can claim - show platform selection
                     statusCard.className = 'status-card';
+                    statusCard.style.background = 'rgba(34, 197, 94, 0.1)';
+                    statusCard.style.borderColor = 'rgba(34, 197, 94, 0.3)';
                     statusIcon.textContent = '🎉';
                     statusTitle.textContent = 'Available!';
                     statusDesc.textContent = 'Complete a task to earn 100 G$ today';
                     platformSelection.classList.remove('hidden');
                     countdownTimer.classList.add('hidden');
-                } else if (result.already_claimed_today) {
-                    // Already claimed today - show cooldown
+                } else if (result.has_pending_submission) {
+                    // Has pending submission - UNDER REVIEW
+                    statusCard.className = 'status-card';
+                    statusCard.style.background = 'rgba(251, 191, 36, 0.1)';
+                    statusCard.style.borderColor = 'rgba(251, 191, 36, 0.3)';
+                    statusIcon.textContent = '⏳';
+                    statusTitle.textContent = 'Under Review';
+                    statusDesc.textContent = `Your ${result.pending_platform || 'task'} submission is being reviewed`;
+                    platformSelection.classList.add('hidden');
+                    countdownTimer.classList.add('hidden');
+                } else if (result.next_claim_time) {
+                    // Has cooldown - completed today
                     statusCard.className = 'status-card cooldown';
-                    statusIcon.textContent = '✅';
+                    statusIcon.textContent = '🔒';
                     statusTitle.textContent = 'Completed!';
                     statusDesc.textContent = 'Come back tomorrow for more rewards';
                     platformSelection.classList.add('hidden');
-
-                    // Show countdown to next available
-                    if (result.next_reset) {
+                    
+                    if (result.time_remaining_seconds > 0) {
                         countdownTimer.classList.remove('hidden');
-                        startCountdown(result.next_reset);
+                        startCountdownFromSeconds(result.time_remaining_seconds);
+                    } else {
+                        // Time expired, reload status
+                        countdownTimer.classList.add('hidden');
+                        setTimeout(loadDailyTaskStatus, 1000);
                     }
-                } else if (result.pending_submission) {
-                    // Has pending submission
-                    statusCard.className = 'status-card';
-                    statusIcon.textContent = '⏳';
-                    statusTitle.textContent = 'Under Review';
-                    statusDesc.textContent = 'Your submission is being reviewed';
-                    platformSelection.classList.add('hidden');
                 } else {
                     // Unknown state - default to available
                     statusCard.className = 'status-card';
+                    statusCard.style.background = 'rgba(34, 197, 94, 0.1)';
+                    statusCard.style.borderColor = 'rgba(34, 197, 94, 0.3)';
                     statusIcon.textContent = '🎉';
                     statusTitle.textContent = 'Available!';
                     statusDesc.textContent = 'Complete a task to earn 100 G$';
@@ -506,53 +554,284 @@
             }
         }
 
-        function startCountdown(targetTime) {
+        function startCountdownFromSeconds(seconds) {
             if (countdownInterval) clearInterval(countdownInterval);
 
             const countdownEl = document.getElementById('countdownTimer');
 
             countdownInterval = setInterval(() => {
-                const now = Date.now();
-                const diff = targetTime - now;
-
-                if (diff <= 0) {
+                seconds--;
+                
+                if (seconds <= 0) {
                     clearInterval(countdownInterval);
                     countdownEl.classList.add('hidden');
                     loadDailyTaskStatus();
                     return;
                 }
-
-                const hours = Math.floor(diff / (1000 * 60 * 60));
-                const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-
-                countdownEl.textContent = `Next task in: ${hours}h ${minutes}m ${seconds}s`;
+                
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                const secs = seconds % 60;
+                
+                countdownEl.textContent = `Next task in: ${hours}h ${minutes}m ${secs}s`;
             }, 1000);
         }
 
         async function loadDailyTaskHistory() {
             try {
-                const response = await fetch('/api/daily-task/history');
+                const response = await fetch('/api/daily-task/history?limit=50');
                 const result = await response.json();
+
+                // Update stats
+                const totalEarnedEl = document.getElementById('dailyHistoryTotalEarned');
+                const totalClaimsEl = document.getElementById('dailyHistoryTotalClaims');
+                
+                if (totalEarnedEl) totalEarnedEl.textContent = `${(result.total_earned || 0).toFixed(2)} G$`;
+                if (totalClaimsEl) totalClaimsEl.textContent = result.total_count || 0;
 
                 const historyList = document.getElementById('historyList');
 
-                if (result.history && result.history.length > 0) {
-                    historyList.innerHTML = result.history.slice(0, 5).map(item => `
-                        <div class="history-item">
-                            <div>
-                                <span class="platform">${item.platform === 'twitter' ? '🐦 Twitter' : '📱 Telegram'}</span>
-                                <span style="color: rgba(241,245,249,0.5); margin-left: 0.5rem;">${item.amount} G$</span>
+                if (result.transactions && result.transactions.length > 0) {
+                    let html = '';
+                    let hasPending = false;
+                    
+                    result.transactions.slice(0, 10).forEach(tx => {
+                        let statusBadge = '';
+                        let platformIcon = tx.platform === 'twitter' ? '🐦' : '📱';
+                        
+                        if (tx.status === 'completed') {
+                            statusBadge = '<span class="status status-approved">✅ Approved</span>';
+                        } else if (tx.status === 'pending') {
+                            statusBadge = '<span class="status status-pending">⏳ Pending</span>';
+                            hasPending = true;
+                        } else if (tx.status === 'rejected') {
+                            statusBadge = `<span class="status status-rejected">❌ Rejected</span>
+                                <span style="font-size: 0.7rem; color: rgba(239, 68, 68, 0.8);">${tx.rejection_reason || ''}</span>`;
+                        }
+                        
+                        const rewardText = tx.status === 'completed' ? `+${tx.reward_amount} G$` : 
+                                          tx.status === 'pending' ? '⏳ Awaiting...' : 
+                                          tx.reward_amount > 0 ? `${tx.reward_amount} G$` : '-';
+                        
+                        html += `
+                            <div class="history-item" style="flex-direction: column; align-items: flex-start; gap: 0.25rem; ${tx.status === 'pending' ? 'border-left: 3px solid #fbbf24;' : ''}">
+                                <div style="display: flex; justify-content: space-between; width: 100%;">
+                                    <span class="platform">${platformIcon} ${tx.platform === 'twitter' ? 'Twitter' : 'Telegram'}</span>
+                                    <span style="color: ${tx.status === 'completed' ? '#22c55e' : tx.status === 'pending' ? '#fbbf24' : '#f1f5f9'}; font-weight: 700; font-size: 0.85rem;">
+                                        ${rewardText}
+                                    </span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; gap: 0.5rem;">
+                                    <span style="color: rgba(241,245,249,0.5); font-size: 0.7rem;">${new Date(tx.created_at).toLocaleDateString()}</span>
+                                    ${statusBadge}
+                                </div>
                             </div>
-                            <span class="status status-${item.status}">${item.status}</span>
-                        </div>
-                    `).join('');
+                        `;
+                    });
+                    historyList.innerHTML = html;
+                    
+                    // Auto-refresh if there's a pending submission
+                    if (hasPending) {
+                        scheduleStatusRefresh();
+                    } else {
+                        cancelPendingRefresh();
+                    }
                 } else {
                     historyList.innerHTML = '<p style="text-align: center; color: rgba(241, 245, 249, 0.5); padding: 1rem;">No tasks completed yet</p>';
                 }
             } catch (error) {
                 console.error('Error loading history:', error);
                 document.getElementById('historyList').innerHTML = '<p style="text-align: center; color: rgba(241, 245, 249, 0.5); padding: 1rem;">Could not load history</p>';
+            }
+        }
+        
+        // Auto-refresh for pending submissions (every 10 seconds)
+        let pendingRefreshInterval = null;
+        let refreshAttempts = 0;
+        const MAX_REFRESH_ATTEMPTS = 30; // Stop after 5 minutes
+        
+        function scheduleStatusRefresh() {
+            if (pendingRefreshInterval) return; // Already scheduled
+            
+            pendingRefreshInterval = setInterval(async () => {
+                refreshAttempts++;
+                
+                // Stop refreshing after max attempts
+                if (refreshAttempts > MAX_REFRESH_ATTEMPTS) {
+                    clearInterval(pendingRefreshInterval);
+                    pendingRefreshInterval = null;
+                    refreshAttempts = 0;
+                    return;
+                }
+                
+                // Check status
+                try {
+                    const response = await fetch('/api/daily-task/status');
+                    const status = await response.json();
+                    
+                    // If no longer pending, reload everything
+                    if (!status.has_pending_submission) {
+                        clearInterval(pendingRefreshInterval);
+                        pendingRefreshInterval = null;
+                        refreshAttempts = 0;
+                        
+                        await loadDailyTaskStatus();
+                        await loadDailyTaskHistory();
+                        
+                        // Show notification
+                        if (status.can_claim) {
+                            showNotification('🎉 Task approved! You can claim again!', 'success');
+                        } else if (status.next_claim_time) {
+                            showNotification('✅ Task approved! Cooldown started.', 'success');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Auto-refresh error:', error);
+                }
+            }, 10000); // Check every 10 seconds
+        }
+        
+        function cancelPendingRefresh() {
+            if (pendingRefreshInterval) {
+                clearInterval(pendingRefreshInterval);
+                pendingRefreshInterval = null;
+                refreshAttempts = 0;
+            }
+        }
+
+        // Full History Modal Functions
+        window.showFullHistory = async function() {
+            const modal = document.getElementById('dailyTaskHistoryModal');
+            const historyList = document.getElementById('dailyTaskHistoryList');
+
+            if (!modal || !historyList) {
+                console.error('Modal elements not found');
+                return;
+            }
+
+            modal.style.display = 'flex';
+            historyList.innerHTML = '<div style="text-align: center; padding: 2rem;"><div class="loading-spinner"></div></div>';
+
+            try {
+                const response = await fetch('/api/daily-task/history?limit=50');
+                const data = await response.json();
+
+                // Update modal stats
+                const modalTotalEarned = document.getElementById('modalHistoryTotalEarned');
+                const modalTotalClaims = document.getElementById('modalHistoryTotalClaims');
+                if (modalTotalEarned) modalTotalEarned.textContent = `${(data.total_earned || 0).toFixed(2)} G$`;
+                if (modalTotalClaims) modalTotalClaims.textContent = data.total_count || 0;
+
+                if (data.transactions && data.transactions.length > 0) {
+                    let html = '';
+                    data.transactions.forEach(tx => {
+                        let statusBadge = '';
+                        let platformIcon = tx.platform === 'twitter' ? '🐦' : '📱';
+
+                        if (tx.status === 'completed') {
+                            statusBadge = '<span style="background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 0.3rem 0.6rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">✅ Approved</span>';
+                        } else if (tx.status === 'pending') {
+                            statusBadge = '<span style="background: rgba(251, 191, 36, 0.2); color: #fbbf24; padding: 0.3rem 0.6rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">⏳ Pending</span>';
+                        } else if (tx.status === 'rejected') {
+                            statusBadge = '<span style="background: rgba(239, 68, 68, 0.2); color: #ef4444; padding: 0.3rem 0.6rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">❌ Rejected</span>';
+                        }
+
+                        const explorerLink = tx.explorer_url ?
+                            `<a href="${tx.explorer_url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.7rem;">View TX ↗</a>` :
+                            '<span style="color: rgba(241, 245, 249, 0.5); font-size: 0.7rem;">-</span>';
+
+                        html += `
+                            <div style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 12px; padding: 1rem; margin-bottom: 0.75rem;">
+                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                                    <div>
+                                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                                            <span style="font-size: 1rem;">${platformIcon}</span>
+                                            <span style="font-weight: 700; font-size: 0.9rem;">${tx.platform === 'twitter' ? 'Twitter' : 'Telegram'}</span>
+                                            ${statusBadge}
+                                        </div>
+                                        <div style="font-size: 0.75rem; color: rgba(241, 245, 249, 0.6);">
+                                            ${new Date(tx.created_at).toLocaleString()}
+                                        </div>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <div style="font-size: 1rem; font-weight: 800; color: ${tx.status === 'completed' ? '#10b981' : '#f1f5f9'};">
+                                            ${tx.status === 'completed' ? '+' : ''}${tx.reward_amount} G$
+                                        </div>
+                                        ${explorerLink}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    historyList.innerHTML = html;
+                } else {
+                    historyList.innerHTML = `
+                        <div style="text-align: center; padding: 2rem; color: rgba(241, 245, 249, 0.6);">
+                            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📭</div>
+                            <div>No transaction history yet</div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading history:', error);
+                historyList.innerHTML = '<div style="text-align: center; padding: 2rem; color: #ef4444;">Failed to load history</div>';
+            }
+        };
+
+        window.closeDailyTaskHistoryModal = function() {
+            const modal = document.getElementById('dailyTaskHistoryModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        };
+        
+        // Auto-refresh for pending submissions (every 10 seconds)
+        let pendingRefreshInterval = null;
+        let refreshAttempts = 0;
+        const MAX_REFRESH_ATTEMPTS = 30; // Stop after 5 minutes
+        
+        function scheduleStatusRefresh() {
+            if (pendingRefreshInterval) return; // Already scheduled
+            
+            pendingRefreshInterval = setInterval(async () => {
+                refreshAttempts++;
+                
+                if (refreshAttempts > MAX_REFRESH_ATTEMPTS) {
+                    clearInterval(pendingRefreshInterval);
+                    pendingRefreshInterval = null;
+                    refreshAttempts = 0;
+                    return;
+                }
+                
+                try {
+                    const response = await fetch('/api/daily-task/status');
+                    const status = await response.json();
+                    
+                    if (!status.has_pending_submission) {
+                        clearInterval(pendingRefreshInterval);
+                        pendingRefreshInterval = null;
+                        refreshAttempts = 0;
+                        
+                        await loadDailyTaskStatus();
+                        await loadDailyTaskHistory();
+                        
+                        if (status.can_claim) {
+                            showNotification('🎉 Task approved! You can claim again!', 'success');
+                        } else if (status.next_claim_time) {
+                            showNotification('✅ Task approved! Cooldown started.', 'success');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Auto-refresh error:', error);
+                }
+            }, 10000); // Check every 10 seconds
+        }
+        
+        function cancelPendingRefresh() {
+            if (pendingRefreshInterval) {
+                clearInterval(pendingRefreshInterval);
+                pendingRefreshInterval = null;
+                refreshAttempts = 0;
             }
         }
 
