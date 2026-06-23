@@ -207,14 +207,17 @@ _CSP_DIRECTIVES = (
     "font-src 'self' data: "
     "https://fonts.gstatic.com https://cdnjs.cloudflare.com",
     "img-src 'self' data: blob: https:",
-    "connect-src 'self' https: wss:",
+    "connect-src 'self' https: wss: "
+    "https://auth.magic.link https://api.magic.dev "
+    "https://boxel.magic.link https://ws.magic.link",
     "frame-src 'self' "
     "https://telegram.org https://*.telegram.org "
     "https://www.youtube.com https://www.youtube-nocookie.com "
     "https://platform.twitter.com "
     "https://apiplus.squidrouter.com https://v2.api.squidrouter.com "
     "https://studio.squidrouter.com https://app.squidrouter.com "
-    "https://*.squidrouter.com",
+    "https://*.squidrouter.com "
+    "https://auth.magic.link",
     "media-src 'self' data: blob:",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
