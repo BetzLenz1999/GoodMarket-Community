@@ -1539,16 +1539,12 @@ def index():
             "tasks_last_30_days_formatted": "—",
         }
     google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
-    turnkey_auth_proxy_config_id = os.environ.get("TURNKEY_AUTH_PROXY_CONFIG_ID", "")
-    turnkey_organization_id = os.environ.get("TURNKEY_ORGANIZATION_ID", "")
     return render_template(
         "homepage.html",
         walletconnect_project_id=wc_project_id,
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         homepage_stats=homepage_stats,
         google_client_id=google_client_id,
-        turnkey_auth_proxy_config_id=turnkey_auth_proxy_config_id,
-        turnkey_organization_id=turnkey_organization_id,
     )
 
 
