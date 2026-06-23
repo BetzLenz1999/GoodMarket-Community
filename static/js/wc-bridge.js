@@ -185,13 +185,11 @@
     // default). Those WalletConnect users would otherwise sign with a desktop
     // MetaMask extension on a different account → "Wrong wallet connected". So
     // we also treat a valid, persisted WalletConnect session for the logged-in
-    // wallet as proof of a WalletConnect login. We never override an explicit
-    // Turnkey (server-signing) login, and a genuine injected-only user has no
+    // wallet as proof of a WalletConnect login. A genuine injected-only user has no
     // such WC session, so their flow is unchanged.
     function _prefersWcSigning() {
         var m = _normLogin(_config.loginMethod);
         if (["walletconnect", "manual", "manual_address"].indexOf(m) >= 0) return true;
-        if (m.indexOf("turnkey") === 0) return false;
         return _hasStoredWcSessionFor(_config.walletAddress);
     }
 
