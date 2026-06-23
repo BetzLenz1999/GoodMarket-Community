@@ -1,3 +1,4 @@
+
 # GoodMarket
 
 A Web3 earning platform built on the GoodDollar ecosystem. Users earn G$ tokens on the Celo network through educational quizzes, social media tasks, minigames, and community engagement.
