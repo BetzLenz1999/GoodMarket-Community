@@ -1623,7 +1623,6 @@
         const CELO_CHAIN_ID  = 42220;
         const LOGIN_METHOD = '{{ login_method }}';
         // Pure self-custody mode: never use server-side signing.
-        window.useServerSigning = ['turnkey_google', 'turnkey_email'].includes((LOGIN_METHOD || '').toLowerCase());
         window.GMSquidBootstrap = { ...SQUID_CONFIG, walletAddress: WALLET_ADDRESS, loginMethod: LOGIN_METHOD };
         const WC_PROJECT_ID = '{{ walletconnect_project_id }}';
         // Robust WalletConnect detection: LOGIN_METHOD is primary, but sessions
