@@ -7,6 +7,8 @@
 let magic = null;
 let magicWalletAddress = null;
 let pendingEmail = null;
+let magicLoadAttempts = 0;
+const MAX_LOAD_ATTEMPTS = 10;
 
 /**
  * Initialize and show the Magic wallet creation form
@@ -16,6 +18,7 @@ function showPrivyForm() {
     document.getElementById('privyFormContainer').classList.add('visible');
     document.getElementById('privySuccessContainer').style.display = 'none';
     document.getElementById('privy-embed-container').style.display = 'block';
+    magicLoadAttempts = 0;
     initMagic();
 }
 
@@ -32,6 +35,8 @@ async function initMagic() {
     // Get API Key from template variable
     const MAGIC_API_KEY = typeof MAGIC_API_KEY_VAR !== 'undefined' ? MAGIC_API_KEY_VAR : '';
 
+    console.log('Magic init called, API KEY present:', !!MAGIC_API_KEY, 'Value:', MAGIC_API_KEY);
+
     if (!MAGIC_API_KEY) {
         container.innerHTML = `
             <div style="padding: 2rem; text-align: center; color: #6b7280;">
@@ -44,12 +49,31 @@ async function initMagic() {
     }
 
     try {
-        // Check if Magic is loaded
+        // Check if Magic SDK is loaded
         if (typeof Magic === 'undefined') {
+            magicLoadAttempts++;
+            console.log('Magic SDK not loaded yet, attempt:', magicLoadAttempts);
+            
+            if (magicLoadAttempts >= MAX_LOAD_ATTEMPTS) {
+                container.innerHTML = `
+                    <div style="padding: 2rem; text-align: center; color: #ef4444;">
+                        <p style="margin-bottom: 1rem;">❌ Failed to load Magic SDK</p>
+                        <p style="font-size: 0.85rem; color: #6b7280;">
+                            The Magic SDK could not be loaded. Please check your internet connection<br>
+                            or try refreshing the page.
+                        </p>
+                        <p style="font-size: 0.75rem; color: #9ca3af; margin-top: 1rem;">
+                            Troubleshooting: Make sure the CDN URL is accessible
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+            
             container.innerHTML = `
                 <div style="padding: 2rem; text-align: center; color: #6b7280;">
-                    <div class="spinner" style="width: 24px; height: 24px; border: 3px solid #e5e7eb; border-top: 3px solid #7c3aed; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
-                    <p>Loading Magic SDK...</p>
+                    <div class="spinner" style="width: 24px; height: 24px; border: 3px solid #e5e7eb; border-top: 3px solid #35d07f; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
+                    <p>Loading Magic SDK... (${magicLoadAttempts}/${MAX_LOAD_ATTEMPTS})</p>
                 </div>
                 <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
             `;
@@ -57,17 +81,23 @@ async function initMagic() {
             return;
         }
 
+        console.log('Magic SDK loaded, initializing with API key...');
+
         // Initialize Magic with Celo support
         magic = new Magic(MAGIC_API_KEY, {
             network: 'celo',  // Magic supports Celo natively
         });
 
+        console.log('Magic instance created, checking login status...');
+
         // Check if user is already logged in
         const isLoggedIn = await magic.user.isLoggedIn();
+        console.log('User logged in:', isLoggedIn);
         
         if (isLoggedIn) {
             // Get existing wallet address
             const info = await magic.user.getInfo();
+            console.log('User info:', info);
             if (info && info.publicAddress) {
                 magicWalletAddress = info.publicAddress;
                 showMagicSuccess(info.publicAddress);
@@ -76,6 +106,7 @@ async function initMagic() {
         }
 
         // Show login form
+        console.log('Showing login form...');
         showMagicLoginForm();
 
     } catch (error) {
