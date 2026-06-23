@@ -4246,6 +4246,10 @@
             if (isXdcToCelo) {
                 if (typeof loadXdcGdBalance === "function") loadXdcGdBalance();
                 if (typeof loadXdcNativeBalance === "function") loadXdcNativeBalance();
+                // Pre-warm wallet provider for faster bridge signing
+                if (typeof _warmUpXdcWalletProvider === "function") {
+                    _warmUpXdcWalletProvider().catch(function() {});
+                }
             } else if (isFuseRoutes) {
                 if (typeof refreshFuseBridgeBalances === "function") refreshFuseBridgeBalances();
                 if (typeof estimateFuseBridgeFee === "function") estimateFuseBridgeFee(false);
@@ -5408,10 +5412,48 @@
             try { return ethers.getAddress(addr); } catch (_) { return addr; }
         }
 
+        // ── XDC Wallet Pre-warming for faster bridge signing ──────────────────
+        // Cache the XDC-connected provider so we don't re-request accounts
+        // and re-switch chains on every transaction.
+        var _xdcWarmedProvider = null;
+        var _xdcWarmedAddress = null;
+
+        async function _warmUpXdcWalletProvider() {
+            // If already warmed and cached, return the cached provider
+            if (_xdcWarmedProvider && _xdcWarmedAddress) {
+                return { provider: _xdcWarmedProvider, address: _xdcWarmedAddress };
+            }
+            
+            const ep = await _awaitEthProvider(3000);
+            if (!ep) return null;
+            
+            // Switch to XDC network first
+            const switched = await ensureXDCNetwork(ep);
+            if (!switched) return null;
+            
+            // Request accounts once and cache
+            const accounts = await ep.request({ method: 'eth_requestAccounts' });
+            const from = accounts && accounts[0];
+            if (!from) return null;
+            
+            // Validate it's the right wallet
+            if (WALLET_ADDRESS && _normalizeAddrXdcToCelo(from).toLowerCase() !== _normalizeAddrXdcToCelo(WALLET_ADDRESS).toLowerCase()) {
+                return null;
+            }
+            
+            // Cache for subsequent calls
+            _xdcWarmedProvider = ep;
+            _xdcWarmedAddress = from;
+            return { provider: ep, address: from };
+        }
+
+        function _clearXdcWarmedProvider() {
+            _xdcWarmedProvider = null;
+            _xdcWarmedAddress = null;
+        }
+
         // Auto-switch (or add) the user's wallet to XDC mainnet right
-        // before signing. Symmetric with the Celo-side switch in the
-        // Celo → XDC flow: we never eagerly switch on sub-tab toggle so
-        // the user only sees one MetaMask popup per Bridge click.
+        // before signing. Uses cached provider if available.
         async function ensureXDCNetwork(ep) {
             try {
                 const chainId = await ep.request({ method: 'eth_chainId' });
@@ -5659,15 +5701,24 @@
                 }
                 return d.tx_hash;
             }
-            const ep = await _awaitEthProvider();
-            if (!ep) throw new Error('No Web3 wallet found.');
-            const switched = await ensureXDCNetwork(ep);
-            if (!switched) throw new Error('Could not switch to XDC network.');
-            const accounts = await ep.request({ method: 'eth_requestAccounts' });
-            const from = accounts[0];
-            if (!from) throw new Error('No wallet account found.');
-            if (WALLET_ADDRESS && _normalizeAddrXdcToCelo(from).toLowerCase() !== _normalizeAddrXdcToCelo(WALLET_ADDRESS).toLowerCase()) {
-                throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+            // Use pre-warmed provider for faster signing - skips network switch and account request
+            let ep, from;
+            const warmed = await _warmUpXdcWalletProvider();
+            if (warmed) {
+                ep = warmed.provider;
+                from = warmed.address;
+            } else {
+                // Fallback to legacy flow if pre-warming failed
+                ep = await _awaitEthProvider();
+                if (!ep) throw new Error('No Web3 wallet found.');
+                const switched = await ensureXDCNetwork(ep);
+                if (!switched) throw new Error('Could not switch to XDC network.');
+                const accounts = await ep.request({ method: 'eth_requestAccounts' });
+                from = accounts[0];
+                if (!from) throw new Error('No wallet account found.');
+                if (WALLET_ADDRESS && _normalizeAddrXdcToCelo(from).toLowerCase() !== _normalizeAddrXdcToCelo(WALLET_ADDRESS).toLowerCase()) {
+                    throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+                }
             }
             const txParams = { from, to, data, value: valueHex, chainId: XDC_CHAIN_ID_HEX };
             try {
@@ -5849,16 +5900,23 @@
                     // _sendXdcBridgeTx() will route signing to /api/server/sign-tx
                     from = _normalizeAddrXdcToCelo(WALLET_ADDRESS);
                 } else {
-                    // Injected wallet path: require Web3 wallet and verify identity
-                    ep = await _awaitEthProvider();
-                    if (!ep) throw new Error('No Web3 wallet found.');
-                    const switched = await ensureXDCNetwork(ep);
-                    if (!switched) throw new Error('Could not switch to XDC network.');
-                    const accounts = await ep.request({ method: 'eth_requestAccounts' });
-                    from = accounts[0] ? _normalizeAddrXdcToCelo(accounts[0]) : null;
-                    if (!from) throw new Error('No wallet account found.');
-                    if (WALLET_ADDRESS && from.toLowerCase() !== _normalizeAddrXdcToCelo(WALLET_ADDRESS).toLowerCase()) {
-                        throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+                    // Use pre-warmed provider for faster signing - skips network switch and account request
+                    const warmed = await _warmUpXdcWalletProvider();
+                    if (warmed) {
+                        ep = warmed.provider;
+                        from = _normalizeAddrXdcToCelo(warmed.address);
+                    } else {
+                        // Fallback to legacy flow if pre-warming failed
+                        ep = await _awaitEthProvider();
+                        if (!ep) throw new Error('No Web3 wallet found.');
+                        const switched = await ensureXDCNetwork(ep);
+                        if (!switched) throw new Error('Could not switch to XDC network.');
+                        const accounts = await ep.request({ method: 'eth_requestAccounts' });
+                        from = accounts[0] ? _normalizeAddrXdcToCelo(accounts[0]) : null;
+                        if (!from) throw new Error('No wallet account found.');
+                        if (WALLET_ADDRESS && from.toLowerCase() !== _normalizeAddrXdcToCelo(WALLET_ADDRESS).toLowerCase()) {
+                            throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+                        }
                     }
                     const preflightAllowance = await gd.allowance(from, XDC_CELO_BRIDGE);
                     const needsApproveTx = preflightAllowance < amountWei;
