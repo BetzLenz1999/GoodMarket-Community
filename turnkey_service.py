@@ -5,13 +5,14 @@ look-up via the Turnkey REST API.
 """
 
 import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
 import time
 
 import requests as _requests
-from turnkey_api_key_stamper import ApiKeyStamper, ApiKeyStamperConfig
 
 logger = logging.getLogger(__name__)
 
@@ -40,16 +41,52 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 _stamper = None
 
 
+class _TurnkeyStamper:
+    """Standalone Turnkey API stamper using cryptography library."""
+    
+    def __init__(self, api_public_key: str, api_private_key: str):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.backends import default_backend
+        
+        self.public_key = api_public_key
+        # Decode private key from base64
+        priv_bytes = base64.b64decode(api_private_key)
+        self.private_key = ec.EllipticCurvePrivateKey.from_der_bytes(
+            priv_bytes, backend=default_backend()
+        )
+    
+    def stamp(self, body: str) -> '_StampResult':
+        """Create HMAC stamp for Turnkey API request."""
+        body_bytes = body.encode('utf-8')
+        signature = self.private_key.sign(
+            body_bytes,
+            ec.ECDSA(hashlib.sha256().digest())
+        )
+        # Convert signature to DER format, then base64
+        sig_der = signature.der_bytes if hasattr(signature, 'der_bytes') else signature
+        sig_b64 = base64.b64encode(sig_der).decode('utf-8')
+        
+        # Format: {public_key_hex}:{signature_b64}
+        stamp_value = f"a:{self.public_key}:{sig_b64}"
+        return _StampResult(stamp_value)
+
+
+class _StampResult:
+    """Compatibility wrapper for stamp result."""
+    def __init__(self, stamp_header_value: str):
+        self.stamp_header_value = stamp_header_value
+
+
 def _get_stamper():
     global _stamper
     if _stamper is None:
         if not TURNKEY_API_PUBLIC_KEY or not TURNKEY_API_PRIVATE_KEY:
             raise RuntimeError("TURNKEY_API_PUBLIC_KEY / TURNKEY_API_PRIVATE_KEY not configured")
-        cfg = ApiKeyStamperConfig(
+        _stamper = _TurnkeyStamper(
             api_public_key=TURNKEY_API_PUBLIC_KEY,
             api_private_key=TURNKEY_API_PRIVATE_KEY,
         )
-        _stamper = ApiKeyStamper(cfg)
     return _stamper
 
 
