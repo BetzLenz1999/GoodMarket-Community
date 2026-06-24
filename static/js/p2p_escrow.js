@@ -322,6 +322,19 @@
 
   async function _signTradeAction(tradeId, prepUrl) {
     const prep = await jsonPost(prepUrl);
+    
+    // Handle rate limiting response
+    if (prep.rate_limited) {
+      const err = new Error(prep.error || "Rate limited");
+      err.rate_limited = true;
+      err.seconds_remaining = prep.seconds_remaining || 3;
+      throw err;
+    }
+    
+    if (!prep.success) {
+      throw new Error(prep.error || "Transaction preparation failed");
+    }
+    
     const txKey = Object.keys(prep.transactions || {})[0];
     const tx = prep.transactions[txKey];
     const txHash = await sendPreparedTx(tx);
