@@ -457,12 +457,42 @@ class ReferralService:
             )
 
     def log_reward(self, wallet_address: str, amount: float, reward_type: str,
-                   referral_code: str, tx_hash: str = None, status: str = 'completed') -> None:
-        """Log a referral reward disbursement."""
+                   referral_code: str, tx_hash: str = None, status: str = 'completed') -> dict:
+        """Log a referral reward disbursement. Returns the log entry or existing entry."""
         supabase = _get_supabase()
         if not supabase:
-            return
+            return {"success": False, "error": "no_db"}
 
+        # Check if reward already exists and was completed successfully
+        existing = _safe(
+            lambda: supabase.table('referral_rewards_log')
+                .select('*')
+                .eq('wallet_address', wallet_address)
+                .eq('reward_type', reward_type)
+                .eq('referral_code', referral_code)
+                .eq('status', 'completed')
+                .limit(1)
+                .execute(),
+            op="check existing completed reward"
+        )
+        
+        if existing and existing.data:
+            logger.info(f"Reward already logged for {wallet_address[:8]}... ({reward_type}) - skipping duplicate")
+            return {"success": True, "skipped": True, "existing": existing.data[0]}
+
+        # Check if there's a pending reward log entry
+        pending = _safe(
+            lambda: supabase.table('referral_rewards_log')
+                .select('id')
+                .eq('wallet_address', wallet_address)
+                .eq('reward_type', reward_type)
+                .eq('referral_code', referral_code)
+                .in_('status', ['pending', 'pending_disbursed', 'pending_face_verification'])
+                .limit(1)
+                .execute(),
+            op="check existing pending reward"
+        )
+        
         data = {
             'wallet_address': wallet_address,
             'reward_amount': amount,
@@ -476,16 +506,51 @@ class ReferralService:
         if status == 'completed':
             data['completed_at'] = datetime.now(timezone.utc).isoformat()
 
-        _safe(
-            lambda: supabase.table('referral_rewards_log').insert(data).execute(),
-            op="log referral reward"
-        )
+        if pending and pending.data:
+            # Update existing pending entry instead of creating new one
+            _safe(
+                lambda: supabase.table('referral_rewards_log')
+                    .update(data)
+                    .eq('id', pending.data[0]['id'])
+                    .execute(),
+                op="update existing pending reward"
+            )
+            logger.info(f"Updated existing pending reward for {wallet_address[:8]}... ({reward_type})")
+        else:
+            # Insert new entry
+            _safe(
+                lambda: supabase.table('referral_rewards_log').insert(data).execute(),
+                op="log referral reward"
+            )
+            logger.info(f"Logged new reward for {wallet_address[:8]}... ({reward_type})")
+        
+        return {"success": True}
 
-    def increment_referrer_stats(self, referrer_wallet: str, amount: float) -> None:
-        """Increment the referrer's total_referrals and total_earned counters."""
+    def increment_referrer_stats(self, referrer_wallet: str, amount: float, referral_code: str = None) -> bool:
+        """Increment the referrer's total_referrals and total_earned counters.
+        
+        Returns True if incremented, False if already counted for this referral.
+        """
         supabase = _get_supabase()
         if not supabase:
-            return
+            return False
+
+        # If referral_code provided, check if this referral was already counted
+        if referral_code:
+            existing_completed = _safe(
+                lambda: supabase.table('referral_rewards_log')
+                    .select('id')
+                    .eq('wallet_address', referrer_wallet)
+                    .eq('reward_type', 'referrer')
+                    .eq('referral_code', referral_code)
+                    .eq('status', 'completed')
+                    .limit(1)
+                    .execute(),
+                op="check if referrer reward already completed for this referral"
+            )
+            if existing_completed and existing_completed.data:
+                logger.info(f"Referrer stats already incremented for {referral_code} - skipping duplicate")
+                return False
 
         existing = _safe(
             lambda: supabase.table('referral_codes').select('total_referrals,total_earned').eq('wallet_address', referrer_wallet).limit(1).execute(),
@@ -500,6 +565,9 @@ class ReferralService:
                 }).eq('wallet_address', referrer_wallet).execute(),
                 op="update referrer stats"
             )
+            logger.info(f"Incremented referrer stats for {referrer_wallet[:8]}... (+1 referral, +{amount} G$)")
+            return True
+        return False
 
     def get_referral_stats(self, wallet_address: str) -> dict:
         """Return referral stats for a wallet (as inviter)."""
@@ -542,6 +610,53 @@ class ReferralService:
             "rewards": rewards[:10]
         }
 
+    def _is_referral_already_disbursed(self, referral_code: str) -> dict:
+        """Check if a referral has already been successfully disbursed.
+        
+        Returns dict with:
+            - fully_disbursed: bool - True if both referrer and referee rewards were completed
+            - referrer_completed: bool
+            - referee_completed: bool
+            - referrer_tx: str or None
+            - referee_tx: str or None
+        """
+        supabase = _get_supabase()
+        if not supabase:
+            return {"fully_disbursed": False}
+        
+        rewards = _safe(
+            lambda: supabase.table('referral_rewards_log')
+                .select('wallet_address, reward_type, status, tx_hash')
+                .eq('referral_code', referral_code)
+                .eq('status', 'completed')
+                .execute(),
+            op="check if referral already disbursed"
+        )
+        
+        if not rewards or not rewards.data:
+            return {"fully_disbursed": False}
+        
+        referrer_completed = False
+        referee_completed = False
+        referrer_tx = None
+        referee_tx = None
+        
+        for r in rewards.data:
+            if r.get('reward_type') == 'referrer':
+                referrer_completed = True
+                referrer_tx = r.get('tx_hash')
+            elif r.get('reward_type') == 'referee':
+                referee_completed = True
+                referee_tx = r.get('tx_hash')
+        
+        return {
+            "fully_disbursed": referrer_completed and referee_completed,
+            "referrer_completed": referrer_completed,
+            "referee_completed": referee_completed,
+            "referrer_tx": referrer_tx,
+            "referee_tx": referee_tx
+        }
+
     def process_referral_disbursement(self, referrer_wallet: str, referee_wallet: str,
                                       referral_code: str) -> dict:
         """
@@ -572,17 +687,46 @@ class ReferralService:
         """
         from referral_program.blockchain import referral_blockchain_service
 
+        # DUPLICATE CHECK: Prevent double disbursement
+        existing = self._is_referral_already_disbursed(referral_code)
+        if existing.get("fully_disbursed"):
+            logger.info(f"Referral {referral_code} already fully disbursed - returning existing results")
+            return {
+                "success": True,
+                "already_disbursed": True,
+                "referrer_status": "completed",
+                "referee_status": "completed",
+                "referrer_tx": existing.get("referrer_tx"),
+                "referee_tx": existing.get("referee_tx"),
+                "message": "Referral already disbursed"
+            }
+        
+        # Track which side already completed to avoid re-sending
+        referrer_already_done = existing.get("referrer_completed", False)
+        referee_already_done = existing.get("referee_completed", False)
+
         try:
-            referrer_result = referral_blockchain_service.disburse_referral_reward_sync(
-                wallet_address=referrer_wallet,
-                amount=REFERRER_REWARD,
-                reward_type='referrer'
-            )
-            referee_result = referral_blockchain_service.disburse_referral_reward_sync(
-                wallet_address=referee_wallet,
-                amount=REFEREE_REWARD,
-                reward_type='referee'
-            )
+            # Only send to referrer if not already done
+            if referrer_already_done:
+                logger.info(f"Referrer reward for {referral_code} already completed - skipping blockchain call")
+                referrer_result = {"success": True, "tx_hash": existing.get("referrer_tx"), "skipped": True}
+            else:
+                referrer_result = referral_blockchain_service.disburse_referral_reward_sync(
+                    wallet_address=referrer_wallet,
+                    amount=REFERRER_REWARD,
+                    reward_type='referrer'
+                )
+            
+            # Only send to referee if not already done
+            if referee_already_done:
+                logger.info(f"Referee reward for {referral_code} already completed - skipping blockchain call")
+                referee_result = {"success": True, "tx_hash": existing.get("referee_tx"), "skipped": True}
+            else:
+                referee_result = referral_blockchain_service.disburse_referral_reward_sync(
+                    wallet_address=referee_wallet,
+                    amount=REFEREE_REWARD,
+                    reward_type='referee'
+                )
 
             def _status_for(result):
                 if result.get('success'):
@@ -626,8 +770,9 @@ class ReferralService:
             # Whenever the referrer was actually paid on-chain, reflect that in
             # their lifetime stats — even if the referee leg failed. Otherwise
             # the on-chain G$ payment exists with no DB tracking on the inviter.
-            if referrer_result.get('success'):
-                self.increment_referrer_stats(referrer_wallet, REFERRER_REWARD)
+            # Pass referral_code to prevent duplicate increments
+            if referrer_result.get('success') and not referrer_result.get('skipped'):
+                self.increment_referrer_stats(referrer_wallet, REFERRER_REWARD, referral_code)
 
             return {
                 "success": referrer_result.get('success') and referee_result.get('success'),
@@ -665,6 +810,9 @@ class ReferralService:
         Attempt to disburse all pending_disbursed referral rewards.
         Called when admin triggers it or automatically when REFERRAL_KEY is topped up.
         Retries rewards with status 'pending' (awaiting face verification) and 'pending_disbursed' (awaiting balance).
+        
+        Uses duplicate protection to prevent double disbursement when the same referral
+        appears in both referrer and referee pending rewards.
         """
         from referral_program.blockchain import referral_blockchain_service
 
@@ -697,6 +845,10 @@ class ReferralService:
         processed = 0
         failed = 0
         still_pending = 0
+        skipped_duplicates = 0
+        
+        # Track which referrals we've already processed to avoid duplicate processing
+        processed_referrals = set()
 
         for reward in pending_rewards.data:
             wallet = reward.get('wallet_address')
@@ -704,28 +856,76 @@ class ReferralService:
             reward_type = reward.get('reward_type')
             reward_id = reward.get('id')
             referral_code = reward.get('referral_code')
+            
+            # DUPLICATE CHECK: Skip if we've already processed this referral
+            if referral_code in processed_referrals:
+                logger.info(f"Skipping {reward_type} reward for {referral_code} - referral already processed in this batch")
+                skipped_duplicates += 1
+                continue
 
+            # Check if the OTHER side of this referral was already completed
+            existing = self._is_referral_already_disbursed(referral_code)
+            
+            if existing.get("fully_disbursed"):
+                logger.info(f"Referral {referral_code} already fully disbursed - marking this reward as completed")
+                _safe(
+                    lambda r_id=reward_id: supabase.table('referral_rewards_log').update({
+                        'status': 'completed',
+                        'completed_at': datetime.now(timezone.utc).isoformat()
+                    }).eq('id', r_id).execute(),
+                    op="mark already disbursed reward as completed"
+                )
+                skipped_duplicates += 1
+                continue
+            
+            # Check if this specific side was already completed (but other side wasn't)
+            other_side_completed = False
+            this_side_already_done = False
+            
+            if reward_type == 'referrer':
+                if existing.get("referrer_completed"):
+                    this_side_already_done = True
+                if existing.get("referee_completed"):
+                    other_side_completed = True
+            else:  # referee
+                if existing.get("referee_completed"):
+                    this_side_already_done = True
+                if existing.get("referrer_completed"):
+                    other_side_completed = True
+            
+            if this_side_already_done:
+                logger.info(f"{reward_type.capitalize()} reward for {referral_code} already completed - skipping")
+                skipped_duplicates += 1
+                continue
+
+            # Send blockchain transaction
             result = referral_blockchain_service.disburse_referral_reward(wallet, amount, reward_type)
 
             if result.get('success'):
                 _safe(
-                    lambda: supabase.table('referral_rewards_log').update({
+                    lambda r_id=reward_id, tx=result.get('tx_hash'): supabase.table('referral_rewards_log').update({
                         'status': 'completed',
-                        'tx_hash': result.get('tx_hash'),
+                        'tx_hash': tx,
                         'completed_at': datetime.now(timezone.utc).isoformat()
-                    }).eq('id', reward_id).execute(),
+                    }).eq('id', r_id).execute(),
                     op="update pending reward to completed"
                 )
                 processed += 1
                 logger.info(f"Pending referral reward disbursed: {amount} G$ to {wallet[:8]}... TX: {result.get('tx_hash')}")
+                
+                # Mark this referral as processed to avoid duplicate
+                processed_referrals.add(referral_code)
 
-                referee_done = _safe(
-                    lambda: supabase.table('referral_rewards_log').select('status').eq('referral_code', referral_code).eq('status', 'pending').execute(),
-                    op="check remaining pending for referral"
-                )
-                remaining = referee_done.data if referee_done else []
-                if not remaining:
-                    self.update_referral_status_by_code(referral_code, 'completed')
+                # Update referrer stats if referrer was paid
+                if reward_type == 'referrer':
+                    self.increment_referrer_stats(wallet, amount, referral_code)
+                
+                # If other side is also completed (or was already completed), mark referral as done
+                if other_side_completed or existing.get("referrer_completed") or existing.get("referee_completed"):
+                    # Both sides should be done now - verify and mark
+                    final_check = self._is_referral_already_disbursed(referral_code)
+                    if final_check.get("fully_disbursed"):
+                        self.update_referral_status_by_code(referral_code, 'completed')
 
             elif result.get('pending'):
                 still_pending += 1
@@ -733,10 +933,10 @@ class ReferralService:
                 break
             else:
                 _safe(
-                    lambda: supabase.table('referral_rewards_log').update({
+                    lambda r_id=reward_id: supabase.table('referral_rewards_log').update({
                         'status': 'failed',
                         'completed_at': datetime.now(timezone.utc).isoformat()
-                    }).eq('id', reward_id).execute(),
+                    }).eq('id', r_id).execute(),
                     op="mark reward as failed"
                 )
                 failed += 1
@@ -748,6 +948,7 @@ class ReferralService:
             "processed": processed,
             "failed": failed,
             "still_pending": still_pending,
+            "skipped_duplicates": skipped_duplicates,
             "reconciled_pending_face_verification": reconcile_summary.get("reconciled_pending_face_verification", 0),
             "still_waiting_face_verification": reconcile_summary.get("still_waiting_face_verification", 0)
         }
@@ -805,6 +1006,243 @@ class ReferralService:
                 }
                 for r in rewards
             ]
+        }
+
+
+    # =========================================================================
+    # PHASE 2: Auto-trigger referral after verification/UBI claim
+    # =========================================================================
+
+    def verify_and_disburse_referral(self, wallet_address: str, referral_code: str = None) -> dict:
+        """
+        PHASE 2 FIX: Called after user completes any verification action 
+        (FV callback, UBI claim, etc.). Checks if user is now verified and 
+        triggers disbursement if needed.
+
+        This ensures INSTANT disbursement when user verifies or claims UBI G$,
+        without waiting for the daily reconciliation script.
+
+        Args:
+            wallet_address: The wallet address of the user who just verified/claimed
+            referral_code: Optional - the referral code used. If not provided,
+                          will check for pending referrals for this wallet.
+
+        Returns:
+            dict with success status and details
+        """
+        if not referral_code:
+            # Try to find the referral code from the referral_codes table
+            code_result = _safe(
+                lambda: _get_supabase().table('referral_codes')
+                    .select('referral_code')
+                    .eq('wallet_address', wallet_address)
+                    .limit(1)
+                    .execute(),
+                op="get referral code for wallet"
+            )
+            if code_result and code_result.data:
+                # This user is a referrer, not a referee - check if they were referred
+                pass
+            
+            # Check if there's a pending referral where this wallet is the referee
+            pending_ref = _safe(
+                lambda: _get_supabase().table('referrals')
+                    .select('*')
+                    .eq('referee_wallet', wallet_address)
+                    .in_('status', ['pending_face_verification', 'pending_disbursed'])
+                    .limit(1)
+                    .execute(),
+                op="get pending referral for referee"
+            )
+            if pending_ref and pending_ref.data:
+                referral = pending_ref.data[0]
+                referral_code = referral.get('referral_code')
+                referrer_wallet = referral.get('referrer_wallet')
+            else:
+                logger.info(f"No pending referral found for wallet {wallet_address[:8]}...")
+                return {"success": False, "reason": "no_pending_referral"}
+        else:
+            # Get referral details
+            ref_result = _safe(
+                lambda: _get_supabase().table('referrals')
+                    .select('*')
+                    .eq('referral_code', referral_code.upper())
+                    .eq('referee_wallet', wallet_address)
+                    .in_('status', ['pending_face_verification', 'pending_disbursed'])
+                    .limit(1)
+                    .execute(),
+                op="get referral by code and wallet"
+            )
+            if not ref_result or not ref_result.data:
+                logger.info(f"No pending referral found for {referral_code} + {wallet_address[:8]}...")
+                return {"success": False, "reason": "no_pending_referral"}
+            referral = ref_result.data[0]
+            referrer_wallet = referral.get('referrer_wallet')
+
+        logger.info(f"🔔 Triggering referral disbursement for {wallet_address[:8]}... (code: {referral_code})")
+
+        # Step 1: Check verification status - SIMPLE logic
+        user = _safe(
+            lambda: _get_supabase().table('user_data')
+                .select('face_verified, verified_after_goodmarket, face_verified_at')
+                .ilike('wallet_address', wallet_address)
+                .limit(1)
+                .execute(),
+            op="get user verification status"
+        )
+        
+        is_verified = False
+        verification_reason = "unknown"
+        
+        if user and user.data:
+            row = user.data[0]
+            # Simple check: if either flag is true, user is verified
+            if row.get('face_verified') == True or row.get('verified_after_goodmarket') == True:
+                is_verified = True
+                verification_reason = "database_flag"
+                logger.info(f"User {wallet_address[:8]} verified via database flag")
+
+        # Step 2: If not verified in DB, try GoodMarket attribution
+        if not is_verified:
+            attribution = self.is_wallet_verified_via_goodmarket(wallet_address)
+            is_verified = attribution.get('verified_via_goodmarket', False)
+            verification_reason = attribution.get('reason', 'attribution_failed')
+            if is_verified:
+                logger.info(f"User {wallet_address[:8]} verified via GoodMarket attribution: {verification_reason}")
+            else:
+                logger.info(f"User {wallet_address[:8]} NOT verified: {verification_reason}")
+
+        # Step 3: If still not verified, try on-chain check
+        if not is_verified:
+            try:
+                from blockchain import is_identity_verified
+                onchain_check = is_identity_verified(wallet_address)
+                is_verified = onchain_check.get('verified', False)
+                verification_reason = "on_chain_check"
+                if is_verified:
+                    logger.info(f"User {wallet_address[:8]} verified via on-chain check")
+            except Exception as e:
+                logger.warning(f"On-chain verification check failed for {wallet_address[:8]}...: {e}")
+
+        # Step 4: If verified, trigger disbursement
+        if is_verified:
+            logger.info(f"✅ User {wallet_address[:8]} verified! Triggering referral disbursement...")
+            
+            # Mark user as verified in database if not already
+            if verification_reason != "database_flag":
+                _safe(
+                    lambda: _get_supabase().table('user_data')
+                        .update({
+                            'verified_after_goodmarket': True,
+                            'face_verified': True
+                        })
+                        .ilike('wallet_address', wallet_address)
+                        .execute(),
+                    op="mark user as verified"
+                )
+            
+            # Process the disbursement
+            result = self.process_referral_disbursement(
+                referrer_wallet=referrer_wallet,
+                referee_wallet=wallet_address,
+                referral_code=referral_code.upper() if referral_code else referral_code
+            )
+            
+            if result.get('success'):
+                logger.info(f"🎉 Referral disbursement SUCCESS for {referral_code}!")
+            elif result.get('already_disbursed'):
+                logger.info(f"ℹ️ Referral {referral_code} was already disbursed")
+            else:
+                logger.warning(f"⚠️ Referral disbursement returned: {result}")
+            
+            return {
+                "success": result.get('success', False),
+                "already_disbursed": result.get('already_disbursed', False),
+                "verification_reason": verification_reason,
+                "referral_code": referral_code,
+                "referrer_wallet": referrer_wallet,
+                "referee_wallet": wallet_address,
+                "result": result
+            }
+        else:
+            logger.info(f"❌ User {wallet_address[:8]} not verified yet - reason: {verification_reason}")
+            return {
+                "success": False,
+                "reason": "user_not_verified",
+                "verification_reason": verification_reason,
+                "referral_code": referral_code
+            }
+
+    def reconcile_stuck_referrals(self, older_than_hours: int = 1) -> dict:
+        """
+        PHASE 1 FIX: Reconciliation script to fix stuck pending_face_verification referrals.
+        
+        This should be called periodically (e.g., via cron job or manual trigger)
+        to fix referrals that are stuck despite the user being verified.
+
+        Args:
+            older_than_hours: Only process referrals older than this many hours
+                              (default: 1 hour to catch actual stuck cases)
+
+        Returns:
+            dict with counts of fixed and still stuck referrals
+        """
+        supabase = _get_supabase()
+        if not supabase:
+            return {"success": False, "error": "Database not available"}
+
+        from datetime import timedelta
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=older_than_hours)
+
+        # Get stuck referrals (pending_face_verification for more than X hours)
+        stuck_referrals = _safe(
+            lambda: supabase.table('referrals')
+                .select('*')
+                .eq('status', 'pending_face_verification')
+                .lt('created_at', cutoff_time.isoformat())
+                .execute(),
+            op="get stuck referrals"
+        )
+
+        if not stuck_referrals or not stuck_referrals.data:
+            return {
+                "success": True,
+                "fixed": 0,
+                "still_stuck": 0,
+                "message": "No stuck referrals found"
+            }
+
+        fixed = 0
+        still_stuck = 0
+        errors = 0
+
+        for referral in stuck_referrals.data:
+            wallet = referral.get('referee_wallet')
+            code = referral.get('referral_code')
+            referrer = referral.get('referrer_wallet')
+
+            if not wallet or not code:
+                errors += 1
+                continue
+
+            logger.info(f"🔧 Reconciling stuck referral: {code} ({wallet[:8]}...)")
+
+            # Try to verify and disburse
+            result = self.verify_and_disburse_referral(wallet, code)
+
+            if result.get('success') or result.get('already_disbursed'):
+                fixed += 1
+                logger.info(f"✅ Fixed stuck referral: {code}")
+            else:
+                still_stuck += 1
+                logger.info(f"⏳ Still stuck: {code} - reason: {result.get('reason')}")
+
+        return {
+            "success": True,
+            "fixed": fixed,
+            "still_stuck": still_stuck,
+            "errors": errors,
+            "total_checked": len(stuck_referrals.data)
         }
 
 
