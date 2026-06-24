@@ -1053,11 +1053,17 @@ if (window.P2PEscrow && typeof window.P2PEscrow.configure === "function") {
   const SESSION_WALLET = "{{ wallet }}".toLowerCase();
 
   function tradeActions(t) {
-    const stat = (t.onchain_status || '').toLowerCase();
+    let stat = (t.onchain_status || '').toLowerCase();
     const isBuyer = (t.buyer_wallet || '').toLowerCase() === SESSION_WALLET;
     const isSeller = (t.seller_wallet || '').toLowerCase() === SESSION_WALLET;
     const counter = isBuyer ? (t.seller_wallet || '') : (t.buyer_wallet || '');
     const buttons = [];
+    
+    // Normalize pending_user_signature to payment_pending if tx exists
+    if (stat === 'pending_user_signature' && t.place_order_tx) {
+      stat = 'payment_pending';
+    }
+    
     // Chat is available for any active or disputed trade. History stays
     // visible (read-only) on terminal states, surfaced via the same button.
     const chatStates = new Set([
@@ -1088,7 +1094,11 @@ if (window.P2PEscrow && typeof window.P2PEscrow.configure === "function") {
   }
 
   function tradeCard(t) {
-    const stat = (t.onchain_status || 'pending').toLowerCase();
+    let stat = (t.onchain_status || 'pending').toLowerCase();
+    // Normalize pending_user_signature to payment_pending if tx exists
+    if (stat === 'pending_user_signature' && t.place_order_tx) {
+      stat = 'payment_pending';
+    }
     const role = (t.buyer_wallet || '').toLowerCase() === SESSION_WALLET ? 'Buyer' : 'Seller';
     return `<div class="card">
       <div class="row between"><h3>${fmt(t.g_dollar_amount)} G$</h3><span class="badge ${stat}">${stat.replace(/_/g,' ')}</span></div>
