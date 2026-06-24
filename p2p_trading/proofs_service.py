@@ -180,8 +180,10 @@ class P2PProofsService:
             "original_name": (original_name or "")[:255] or None,
             "created_at": _utcnow_iso(),
         }
+        # Use admin client to bypass RLS for INSERT operations
+        db = self.admin or self.db
         try:
-            res = self.db.table("p2p_trade_proofs").insert(row).execute()
+            res = db.table("p2p_trade_proofs").insert(row).execute()
             inserted = (res.data or [None])[0] or row
         except Exception as exc:  # noqa: BLE001
             # Best-effort cleanup: remove the orphan file from Storage so we
