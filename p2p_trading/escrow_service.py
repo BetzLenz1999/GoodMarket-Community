@@ -689,16 +689,30 @@ class P2PEscrowService:
                 return {"success": False, "error": "Order not found"}
             if (order.get("seller_wallet") or "").lower() != actor:
                 return {"success": False, "error": "Not your ad"}
-            if (order.get("onchain_status") or "") != "pending_user_signature":
+            if (order.get("onchain_status") or "") not in ("pending_user_signature", "submitted"):
                 # Already advanced by indexer or another actor; ignore.
                 return {"success": True, "skipped": True}
-            # Use admin client to bypass RLS for UPDATE operations
+            
+            ad_id_hex = order.get("ad_id_onchain")
             db = self.admin or self.supabase
+            
+            # Check blockchain directly to confirm the ad is open
+            # This ensures the ad shows immediately even without the indexer
+            target_status = "submitted"
+            if ad_id_hex:
+                try:
+                    ad_view = self.contract.get_ad(ad_id_hex)
+                    if ad_view and ad_view.open:
+                        target_status = "open"  # Confirmed on-chain!
+                except Exception:
+                    pass  # Fallback to submitted if blockchain check fails
+            
             try:
                 db.table("p2p_orders").update(
                     {
                         "ad_open_tx": tx_hash,
-                        "onchain_status": "submitted",
+                        "onchain_status": target_status,
+                        "onchain_confirmed_at": _utcnow_iso() if target_status == "open" else None,
                     }
                 ).eq("order_id", identifier).eq(
                     "onchain_status", "pending_user_signature"
@@ -715,15 +729,28 @@ class P2PEscrowService:
             }
             if actor not in owners:
                 return {"success": False, "error": "Not your trade"}
-            if (trade.get("onchain_status") or "") != "pending_user_signature":
+            if (trade.get("onchain_status") or "") not in ("pending_user_signature", "submitted"):
                 return {"success": True, "skipped": True}
-            # Use admin client to bypass RLS for UPDATE operations
+            
+            trade_id_hex = trade.get("trade_id_onchain")
             db = self.admin or self.supabase
+            
+            # Check blockchain directly to confirm the trade is active
+            target_status = "submitted"
+            if trade_id_hex:
+                try:
+                    trade_view = self.contract.get_trade(trade_id_hex)
+                    if trade_view and trade_view.exists:
+                        target_status = "payment_pending"  # Confirmed on-chain!
+                except Exception:
+                    pass  # Fallback to submitted if blockchain check fails
+            
             try:
                 db.table("p2p_trades").update(
                     {
                         "place_order_tx": tx_hash,
-                        "onchain_status": "submitted",
+                        "onchain_status": target_status,
+                        "onchain_confirmed_at": _utcnow_iso() if target_status != "submitted" else None,
                     }
                 ).eq("trade_id", identifier).eq(
                     "onchain_status", "pending_user_signature"
@@ -956,6 +983,90 @@ class P2PEscrowService:
             ).execute()
         except Exception as exc:  # noqa: BLE001
             logger.warning("log_action failed: %s", exc)
+
+    def backfill_stuck_ads(self) -> int:
+        """Backfill ads that are stuck at 'submitted' status.
+        
+        Queries the blockchain for ads that have:
+        - onchain_status = 'submitted' (tx was submitted but never confirmed)
+        - ad_id_onchain is set (has a blockchain ID)
+        
+        Returns the count of updated ads.
+        """
+        db = self.admin or self.supabase
+        updated_count = 0
+        
+        try:
+            # Get all stuck ads (status = 'submitted')
+            stuck_ads = (
+                self.supabase.table("p2p_orders")
+                .select("order_id, ad_id_onchain, seller_wallet, onchain_status")
+                .eq("onchain_status", "submitted")
+                .execute()
+            )
+            
+            if not stuck_ads.data:
+                logger.info("No stuck ads found to backfill")
+                return 0
+            
+            logger.info(f"Found {len(stuck_ads.data)} stuck ads to backfill")
+            
+            for ad in stuck_ads.data:
+                ad_id_hex = ad.get("ad_id_onchain")
+                if not ad_id_hex:
+                    continue
+                
+                try:
+                    # Query the blockchain for the ad
+                    ad_view = self.contract.get_ad(ad_id_hex)
+                    
+                    if ad_view and ad_view.open:
+                        # Ad is open on-chain, update the DB
+                        db.table("p2p_orders").update({
+                            "onchain_status": "open",
+                            "total_locked_gd": float(ad_view.total_locked) / 1e18,
+                            "remaining_amount_gd": float(ad_view.remaining_amount) / 1e18,
+                            "min_order_gd": float(ad_view.min_order) / 1e18,
+                            "max_order_gd": float(ad_view.max_order) / 1e18,
+                            "onchain_confirmed_at": _utcnow_iso(),
+                        }).eq("order_id", ad["order_id"]).execute()
+                        
+                        self._log_action(
+                            action="backfill_confirmed",
+                            order_id=ad["order_id"],
+                            actor=ad.get("seller_wallet"),
+                            notes="Backfilled from stuck 'submitted' status",
+                        )
+                        
+                        updated_count += 1
+                        logger.info(f"Backfilled ad {ad['order_id']} ({ad_id_hex})")
+                    else:
+                        # Ad is closed/not found on-chain - mark as closed
+                        db.table("p2p_orders").update({
+                            "onchain_status": "closed",
+                            "closed_at": _utcnow_iso(),
+                        }).eq("order_id", ad["order_id"]).execute()
+                        
+                        self._log_action(
+                            action="backfill_closed",
+                            order_id=ad["order_id"],
+                            actor=ad.get("seller_wallet"),
+                            notes="Marked as closed (not found on-chain)",
+                        )
+                        
+                        updated_count += 1
+                        logger.info(f"Closed stale ad {ad['order_id']} ({ad_id_hex})")
+                        
+                except Exception as exc:
+                    logger.warning(f"Failed to backfill ad {ad['order_id']}: {exc}")
+                    continue
+            
+            logger.info(f"Backfill complete: {updated_count} ads updated")
+            return updated_count
+            
+        except Exception as exc:
+            logger.exception("Backfill failed: %s", exc)
+            raise
 
 
 # Module-level singleton -----------------------------------------------------
