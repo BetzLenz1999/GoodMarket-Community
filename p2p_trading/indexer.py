@@ -76,10 +76,12 @@ class P2PEscrowIndexer:
         self,
         contract: Optional[P2PEscrowContract] = None,
         supabase: Any = None,
+        supabase_admin: Any = None,
     ) -> None:
         self.contract = contract or get_contract()
         self.w3: Web3 = self.contract.w3
         self._supabase = supabase  # lazy-loaded if None
+        self._supabase_admin = supabase_admin  # lazy-loaded if None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self.poll_interval = int(
@@ -98,6 +100,15 @@ class P2PEscrowIndexer:
 
             self._supabase = get_supabase_client()
         return self._supabase
+
+    @property
+    def admin(self) -> Any:
+        """Admin client (service-role) for write operations that bypass RLS."""
+        if self._supabase_admin is None:
+            from supabase_client import get_supabase_admin_client
+
+            self._supabase_admin = get_supabase_admin_client()
+        return self._supabase_admin
 
     # ---- state -----------------------------------------------------------
 
@@ -125,8 +136,10 @@ class P2PEscrowIndexer:
     def set_last_indexed_block(self, block: int) -> None:
         if not self.supabase:
             return
+        # Use admin client to bypass RLS for UPSERT operations
+        db = self.admin or self.supabase
         try:
-            self.supabase.table("p2p_indexer_state").upsert(
+            db.table("p2p_indexer_state").upsert(
                 {
                     "contract_address": self.contract.address.lower(),
                     "last_block": block,
@@ -256,8 +269,10 @@ class P2PEscrowIndexer:
         if not self.supabase:
             return
         ad_hex = _hex_id(ad_id)
+        # Use admin client to bypass RLS for UPDATE operations
+        db = self.admin or self.supabase
         try:
-            self.supabase.table("p2p_orders").update(fields).eq(
+            db.table("p2p_orders").update(fields).eq(
                 "ad_id_onchain", ad_hex
             ).execute()
         except Exception as exc:  # noqa: BLE001
@@ -271,8 +286,10 @@ class P2PEscrowIndexer:
         if not self.supabase:
             return
         trade_hex = _hex_id(trade_id)
+        # Use admin client to bypass RLS for UPDATE operations
+        db = self.admin or self.supabase
         try:
-            self.supabase.table("p2p_trades").update(fields).eq(
+            db.table("p2p_trades").update(fields).eq(
                 "trade_id_onchain", trade_hex
             ).execute()
         except Exception as exc:  # noqa: BLE001
