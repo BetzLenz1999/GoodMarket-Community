@@ -984,84 +984,141 @@ class P2PEscrowService:
         except Exception as exc:  # noqa: BLE001
             logger.warning("log_action failed: %s", exc)
 
-    def backfill_stuck_ads(self) -> int:
-        """Backfill ads that are stuck at 'submitted' status.
+    def backfill_stuck_records(self) -> int:
+        """Backfill ads and trades stuck at 'submitted' or 'pending_user_signature'.
         
-        Queries the blockchain for ads that have:
-        - onchain_status = 'submitted' (tx was submitted but never confirmed)
-        - ad_id_onchain is set (has a blockchain ID)
+        Queries the blockchain to verify actual state and updates DB accordingly.
+        This fixes records created before the fix was deployed or when 
+        reportSubmitted() wasn't called properly.
         
-        Returns the count of updated ads.
+        Returns the count of updated records.
         """
         db = self.admin or self.supabase
         updated_count = 0
         
         try:
-            # Get all stuck ads (status = 'submitted')
+            # ===== BACKFILL STUCK ADS =====
             stuck_ads = (
                 self.supabase.table("p2p_orders")
                 .select("order_id, ad_id_onchain, seller_wallet, onchain_status")
-                .eq("onchain_status", "submitted")
+                .in_("onchain_status", ["submitted", "pending_user_signature"])
                 .execute()
             )
             
-            if not stuck_ads.data:
-                logger.info("No stuck ads found to backfill")
-                return 0
-            
-            logger.info(f"Found {len(stuck_ads.data)} stuck ads to backfill")
-            
-            for ad in stuck_ads.data:
-                ad_id_hex = ad.get("ad_id_onchain")
-                if not ad_id_hex:
-                    continue
+            if stuck_ads.data:
+                logger.info(f"Found {len(stuck_ads.data)} stuck ads to backfill")
                 
-                try:
-                    # Query the blockchain for the ad
-                    ad_view = self.contract.get_ad(ad_id_hex)
+                for ad in stuck_ads.data:
+                    ad_id_hex = ad.get("ad_id_onchain")
+                    if not ad_id_hex:
+                        continue
                     
-                    if ad_view and ad_view.open:
-                        # Ad is open on-chain, update the DB
-                        db.table("p2p_orders").update({
-                            "onchain_status": "open",
-                            "total_locked_gd": float(ad_view.total_locked) / 1e18,
-                            "remaining_amount_gd": float(ad_view.remaining_amount) / 1e18,
-                            "min_order_gd": float(ad_view.min_order) / 1e18,
-                            "max_order_gd": float(ad_view.max_order) / 1e18,
-                            "onchain_confirmed_at": _utcnow_iso(),
-                        }).eq("order_id", ad["order_id"]).execute()
+                    try:
+                        ad_view = self.contract.get_ad(ad_id_hex)
                         
-                        self._log_action(
-                            action="backfill_confirmed",
-                            order_id=ad["order_id"],
-                            actor=ad.get("seller_wallet"),
-                            notes="Backfilled from stuck 'submitted' status",
-                        )
-                        
-                        updated_count += 1
-                        logger.info(f"Backfilled ad {ad['order_id']} ({ad_id_hex})")
-                    else:
-                        # Ad is closed/not found on-chain - mark as closed
-                        db.table("p2p_orders").update({
-                            "onchain_status": "closed",
-                            "closed_at": _utcnow_iso(),
-                        }).eq("order_id", ad["order_id"]).execute()
-                        
-                        self._log_action(
-                            action="backfill_closed",
-                            order_id=ad["order_id"],
-                            actor=ad.get("seller_wallet"),
-                            notes="Marked as closed (not found on-chain)",
-                        )
-                        
-                        updated_count += 1
-                        logger.info(f"Closed stale ad {ad['order_id']} ({ad_id_hex})")
-                        
-                except Exception as exc:
-                    logger.warning(f"Failed to backfill ad {ad['order_id']}: {exc}")
-                    continue
+                        if ad_view and ad_view.open:
+                            db.table("p2p_orders").update({
+                                "onchain_status": "open",
+                                "total_locked_gd": float(ad_view.total_locked) / 1e18,
+                                "remaining_amount_gd": float(ad_view.remaining_amount) / 1e18,
+                                "min_order_gd": float(ad_view.min_order) / 1e18,
+                                "max_order_gd": float(ad_view.max_order) / 1e18,
+                                "onchain_confirmed_at": _utcnow_iso(),
+                            }).eq("order_id", ad["order_id"]).execute()
+                            
+                            self._log_action(
+                                action="backfill_confirmed",
+                                order_id=ad["order_id"],
+                                actor=ad.get("seller_wallet"),
+                                notes="Backfilled from stuck status",
+                            )
+                            updated_count += 1
+                            logger.info(f"Backfilled ad {ad['order_id']} -> open")
+                        else:
+                            db.table("p2p_orders").update({
+                                "onchain_status": "closed",
+                                "closed_at": _utcnow_iso(),
+                            }).eq("order_id", ad["order_id"]).execute()
+                            
+                            self._log_action(
+                                action="backfill_closed",
+                                order_id=ad["order_id"],
+                                actor=ad.get("seller_wallet"),
+                                notes="Marked closed (not found on-chain)",
+                            )
+                            updated_count += 1
+                            logger.info(f"Closed stale ad {ad['order_id']}")
+                            
+                    except Exception as exc:
+                        logger.warning(f"Failed to backfill ad {ad['order_id']}: {exc}")
+                        continue
             
-            logger.info(f"Backfill complete: {updated_count} ads updated")
+            # ===== BACKFILL STUCK TRADES =====
+            stuck_trades = (
+                self.supabase.table("p2p_trades")
+                .select("trade_id, trade_id_onchain, buyer_wallet, seller_wallet, onchain_status")
+                .in_("onchain_status", ["submitted", "pending_user_signature"])
+                .execute()
+            )
+            
+            if stuck_trades.data:
+                logger.info(f"Found {len(stuck_trades.data)} stuck trades to backfill")
+                
+                for trade in stuck_trades.data:
+                    trade_id_hex = trade.get("trade_id_onchain")
+                    if not trade_id_hex:
+                        continue
+                    
+                    try:
+                        trade_view = self.contract.get_trade(trade_id_hex)
+                        
+                        if trade_view and trade_view.exists:
+                            # Map contract status code to DB status
+                            status_map = {
+                                0: "payment_pending",
+                                1: "payment_pending",
+                                2: "awaiting_release",
+                                3: "completed",
+                                4: "cancelled",
+                                5: "expired",
+                                6: "disputed",
+                                7: "refunded",
+                            }
+                            new_status = status_map.get(trade_view.status, "payment_pending")
+                            
+                            db.table("p2p_trades").update({
+                                "onchain_status": new_status,
+                                "onchain_confirmed_at": _utcnow_iso(),
+                            }).eq("trade_id", trade["trade_id"]).execute()
+                            
+                            self._log_action(
+                                action="backfill_confirmed",
+                                trade_id=trade["trade_id"],
+                                actor=trade.get("buyer_wallet"),
+                                notes=f"Backfilled to {new_status}",
+                            )
+                            updated_count += 1
+                            logger.info(f"Backfilled trade {trade['trade_id']} -> {new_status}")
+                        else:
+                            db.table("p2p_trades").update({
+                                "onchain_status": "cancelled",
+                                "closed_at": _utcnow_iso(),
+                            }).eq("trade_id", trade["trade_id"]).execute()
+                            
+                            self._log_action(
+                                action="backfill_cancelled",
+                                trade_id=trade["trade_id"],
+                                actor=trade.get("buyer_wallet"),
+                                notes="Marked cancelled (not found on-chain)",
+                            )
+                            updated_count += 1
+                            logger.info(f"Cancelled stale trade {trade['trade_id']}")
+                            
+                    except Exception as exc:
+                        logger.warning(f"Failed to backfill trade {trade['trade_id']}: {exc}")
+                        continue
+            
+            logger.info(f"Backfill complete: {updated_count} records updated")
             return updated_count
             
         except Exception as exc:
