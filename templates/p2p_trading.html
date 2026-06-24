@@ -84,12 +84,26 @@
   .key-val .v { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85rem; }
   code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
   .hint { background:rgba(167,139,250,.08); border:1px solid rgba(167,139,250,.2); padding:.6rem .85rem; border-radius:8px; font-size:.85rem; color:var(--muted); margin:.5rem 0; }
+  .signing-indicator { display:inline-flex; align-items:center; gap:.4rem; padding:.35rem .75rem; background:rgba(52,211,153,.1); border:1px solid rgba(52,211,153,.3); border-radius:8px; font-size:.78rem; color:var(--good); font-weight:600; }
+  .signing-indicator .icon { font-size:.9rem; }
+  .blockchain-warning { background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.35); border-radius:8px; padding:.75rem 1rem; margin-bottom:1rem; font-size:.88rem; color:var(--warn); display:flex; align-items:center; gap:.5rem; }
+  .blockchain-warning.hidden { display:none; }
+  .blockchain-warning .icon { font-size:1.1rem; }
 </style>
 </head>
 <body>
   <div class="nav">
       <a href="/wallet" class="dashboard-btn" aria-label="Back to Wallet">← Back to Wallet</a>
+      <div class="signing-indicator" id="signingIndicator" title="{{ signing_description|default("Transactions will be signed via your connected wallet") }}">
+        <span class="icon">🔐</span>
+        <span id="signingMethodText">{{ signing_method|default("Wallet") }}</span>
+      </div>
   </div>
+
+<div class="blockchain-warning hidden" id="blockchainWarning">
+    <span class="icon">⚠️</span>
+    <span id="blockchainWarningText">Blockchain network temporarily unavailable. Some features may be limited.</span>
+</div>
 
 <div class="wrap">
   <div class="tabs" id="tabs">
@@ -604,6 +618,56 @@ if (window.P2PEscrow && typeof window.P2PEscrow.configure === "function") {
   const link = document.getElementById('contractLink');
   if (link) link.href = 'https://celoscan.io/address/' + link.textContent.trim();
 
+  // -------- blockchain status check --------
+  const blockchainWarning = document.getElementById('blockchainWarning');
+  const blockchainWarningText = document.getElementById('blockchainWarningText');
+  
+  async function checkBlockchainStatus() {
+    try {
+      const res = await fetch('/p2p/api/contract');
+      const data = await res.json();
+      
+      if (data.success && data.blockchain_available === false) {
+        blockchainWarning.classList.remove('hidden');
+        if (data.blockchain_error) {
+          blockchainWarningText.textContent = data.blockchain_error;
+        }
+      } else {
+        blockchainWarning.classList.add('hidden');
+      }
+    } catch (e) {
+      // Network error - show warning
+      blockchainWarning.classList.remove('hidden');
+      blockchainWarningText.textContent = 'Unable to connect to blockchain network. Please check your connection.';
+    }
+  }
+  
+  // Check on page load and periodically
+  checkBlockchainStatus();
+  setInterval(checkBlockchainStatus, 60000); // Check every minute
+
+  // -------- signing method clarity --------
+  // Update signing indicator when wallet connects
+  const signingMethodText = document.getElementById('signingMethodText');
+  const signingIndicator = document.getElementById('signingIndicator');
+  
+  function updateSigningIndicator(method) {
+    const methodNames = {
+      'walletconnect': 'WalletConnect',
+      'minipay': 'MiniPay',
+      'metamask': 'MetaMask',
+      'valora': 'Valora',
+      'manual_address': 'Manual Address',
+    };
+    const displayName = methodNames[method.toLowerCase()] || method;
+    if (signingMethodText) {
+      signingMethodText.textContent = displayName;
+    }
+    if (signingIndicator) {
+      signingIndicator.title = `Transactions will be signed via ${displayName}`;
+    }
+  }
+
   // -------- tab switching --------
   const tabs = document.querySelectorAll('.tab');
   const panes = {};
@@ -1054,7 +1118,16 @@ if (window.P2PEscrow && typeof window.P2PEscrow.configure === "function") {
       const id = b.getAttribute(selector.replace('[','').replace(']',''));
       b.disabled = true;
       try {
-        const { txHash } = await fn(id);
+        const { txHash, rate_limited, seconds_remaining } = await fn(id);
+        
+        // Handle rate limiting
+        if (rate_limited && seconds_remaining) {
+          toast(`Please wait ${seconds_remaining}s before trying again`, 'error');
+          // Re-enable button after cooldown
+          setTimeout(() => { b.disabled = false; }, seconds_remaining * 1000);
+          return;
+        }
+        
         toast(`${label} submitted (${txHash.slice(0,10)}…)`, 'success');
         setTimeout(refreshMyTrades, 18000);
       } catch (e) { toastErr(e); b.disabled = false; }
