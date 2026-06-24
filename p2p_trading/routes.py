@@ -52,9 +52,164 @@ from .proofs_service import (
 # proper rate-limiter dependency.
 CHAT_RATE_LIMIT_SECONDS = 1.0
 
+# Minimum delay between two trade actions (mark_paid, release, cancel, dispute)
+# from the same wallet. Prevents accidental double-clicks and spam.
+TRADE_ACTION_RATE_LIMIT_SECONDS = 3.0
+
 logger = logging.getLogger(__name__)
 
 p2p_bp = Blueprint("p2p", __name__)
+
+
+# ---------------------------------------------------------------------------
+# Login method helpers
+# ---------------------------------------------------------------------------
+
+def _is_walletconnect_sidecar_enabled() -> bool:
+    """Check if WalletConnect sidecar is enabled for this session.
+    
+    The sidecar enables an embedded WalletConnect modal for users who prefer
+    to connect via WalletConnect rather than injected wallets (MetaMask/MiniPay).
+    """
+    import os
+    env_val = os.environ.get("WALLETCONNECT_SIDECAR_ENABLED", "true").lower()
+    return env_val in ("1", "true", "yes", "on")
+
+
+def _normalize_login_method(method: Optional[str]) -> str:
+    """Normalize and validate the login method for clear user display.
+    
+    Returns a human-readable, unambiguous identifier for the wallet type
+    being used for signing transactions.
+    """
+    if not method:
+        return "wallet"
+    
+    method_lower = method.lower().strip()
+    
+    # Map to clear, user-friendly names
+    LOGIN_METHOD_NAMES = {
+        "walletconnect": "WalletConnect",
+        "walletconnect_sidecar": "WalletConnect",
+        "manual": "Manual Address",
+        "manual_address": "Manual Address",
+        "minipay": "MiniPay",
+        "metamask": "MetaMask",
+        "valora": "Valora",
+    }
+    
+    # Check for injected wallet indicators in session
+    session_wallet = session.get("wallet", "").lower()
+    if session_wallet:
+        # Try to detect wallet type from session data if available
+        provider = session.get("wallet_provider", "").lower()
+        if provider in LOGIN_METHOD_NAMES:
+            return LOGIN_METHOD_NAMES[provider]
+    
+    return LOGIN_METHOD_NAMES.get(method_lower, _format_wallet_type(method_lower))
+
+
+def _format_wallet_type(method: str) -> str:
+    """Format wallet type for user display - clear and unambiguous."""
+    # Make it clear this is for "signing" transactions
+    SIGNING_METHODS = {
+        "walletconnect": "WalletConnect",
+        "minipay": "MiniPay (In-App)",
+        "metamask": "MetaMask",
+        "valora": "Valora",
+        "walletconnect_sidecar": "WalletConnect",
+    }
+    return SIGNING_METHODS.get(method, method.title())
+
+
+def _get_signing_method_description() -> Dict[str, str]:
+    """Return a description of the current signing method for user clarity.
+    
+    This helps users understand exactly how transactions will be signed.
+    """
+    login_method = session.get("login_method", "")
+    normalized = _normalize_login_method(login_method)
+    
+    descriptions = {
+        "WalletConnect": "Transactions will be signed via WalletConnect modal",
+        "MiniPay (In-App)": "Transactions will be signed in MiniPay wallet",
+        "MetaMask": "Transactions will be signed in MetaMask browser extension",
+        "Valora": "Transactions will be signed in Valora wallet",
+        "Manual Address": "Transactions will be signed externally with the provided address",
+    }
+    
+    return {
+        "method": normalized,
+        "description": descriptions.get(normalized, f"Transactions signed via {normalized}"),
+        "login_method_raw": login_method,
+    }
+
+
+# In-memory rate limit tracking for trade actions (simple implementation)
+# For production, consider using Redis for distributed rate limiting
+_trade_action_cache: Dict[str, datetime] = {}
+
+
+def _check_trade_action_rate_limit(wallet: str, action: str) -> Optional[Dict[str, Any]]:
+    """Check if a wallet is rate-limited for a specific trade action.
+    
+    Returns None if allowed, or a dict with error info if rate-limited.
+    """
+    import os
+    import hashlib
+    
+    # Allow override via environment for testing
+    if os.environ.get("P2P_RATE_LIMIT_ENABLED", "true").lower() in ("0", "false", "no", "off"):
+        return None
+    
+    cache_key = f"{wallet.lower()}:{action}"
+    now = datetime.now(timezone.utc)
+    
+    last_action = _trade_action_cache.get(cache_key)
+    if last_action:
+        delta = (now - last_action).total_seconds()
+        if delta < TRADE_ACTION_RATE_LIMIT_SECONDS:
+            remaining = TRADE_ACTION_RATE_LIMIT_SECONDS - delta
+            return {
+                "rate_limited": True,
+                "seconds_remaining": round(remaining, 1),
+                "message": f"Please wait {round(remaining, 1)}s before this action",
+            }
+    
+    # Update cache
+    _trade_action_cache[cache_key] = now
+    
+    # Cleanup old entries periodically (simple approach)
+    if len(_trade_action_cache) > 10000:
+        cutoff = datetime.now(timezone.utc)
+        keys_to_remove = [
+            k for k, v in _trade_action_cache.items()
+            if (cutoff - v).total_seconds() > 60
+        ]
+        for k in keys_to_remove:
+            del _trade_action_cache[k]
+    
+    return None
+
+
+def trade_action_rate_limit(action_name: str):
+    """Decorator to apply rate limiting to trade action endpoints."""
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            wallet = _wallet_from_session()
+            rate_limit_result = _check_trade_action_rate_limit(wallet, action_name)
+            if rate_limit_result:
+                return jsonify({
+                    "success": False,
+                    "error": rate_limit_result["message"],
+                    "rate_limited": True,
+                    "seconds_remaining": rate_limit_result["seconds_remaining"],
+                    "retry_after": rate_limit_result["seconds_remaining"],
+                }), 429
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +349,8 @@ def p2p_dashboard():
     wallet = _wallet_from_session()
     import os
 
+    signing_info = _get_signing_method_description()
+
     return render_template(
         "p2p_trading.html",
         wallet=wallet,
@@ -204,6 +361,8 @@ def p2p_dashboard():
         login_method=session.get("login_method", "walletconnect"),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
+        signing_method=signing_info["method"],
+        signing_description=signing_info["description"],
     )
 
 
@@ -221,6 +380,7 @@ def api_contract_info():
 @p2p_bp.route("/api/config")
 @p2p_auth_required
 def api_config():
+    signing_info = _get_signing_method_description()
     return jsonify(
         {
             "success": True,
@@ -230,6 +390,9 @@ def api_config():
             "default_payment_window_seconds": (
                 escrow_service.DEFAULT_PAYMENT_WINDOW_SECONDS
             ),
+            # Signing method info for clear user feedback
+            "signing_method": signing_info["method"],
+            "signing_description": signing_info["description"],
         }
     )
 
@@ -307,6 +470,7 @@ def api_get_trade(trade_id: str):
 
 @p2p_bp.route("/api/ads/prepare-open", methods=["POST"])
 @p2p_terms_required
+@trade_action_rate_limit("open_ad")
 def api_prepare_open_ad():
     wallet = _wallet_from_session()
     body = _json_body()
@@ -329,6 +493,7 @@ def api_prepare_open_ad():
 
 @p2p_bp.route("/api/ads/<order_id>/prepare-close", methods=["POST"])
 @p2p_terms_required
+@trade_action_rate_limit("close_ad")
 def api_prepare_close_ad(order_id: str):
     wallet = _wallet_from_session()
     result = escrow_service.prepare_close_ad(wallet, order_id)
@@ -337,6 +502,7 @@ def api_prepare_close_ad(order_id: str):
 
 @p2p_bp.route("/api/orders/<order_id>/prepare-place", methods=["POST"])
 @p2p_terms_required
+@trade_action_rate_limit("place_order")
 def api_prepare_place_order(order_id: str):
     wallet = _wallet_from_session()
     body = _json_body()
@@ -769,6 +935,7 @@ def api_chat_limits():
 
 @p2p_bp.route("/api/trades/<trade_id>/prepare-mark-paid", methods=["POST"])
 @p2p_terms_required
+@trade_action_rate_limit("mark_paid")
 def api_prepare_mark_paid(trade_id: str):
     wallet = _wallet_from_session()
     result = escrow_service.prepare_mark_paid(wallet, trade_id)
@@ -777,6 +944,7 @@ def api_prepare_mark_paid(trade_id: str):
 
 @p2p_bp.route("/api/trades/<trade_id>/prepare-release", methods=["POST"])
 @p2p_terms_required
+@trade_action_rate_limit("release")
 def api_prepare_release(trade_id: str):
     wallet = _wallet_from_session()
     result = escrow_service.prepare_release(wallet, trade_id)
@@ -785,6 +953,7 @@ def api_prepare_release(trade_id: str):
 
 @p2p_bp.route("/api/trades/<trade_id>/prepare-cancel", methods=["POST"])
 @p2p_terms_required
+@trade_action_rate_limit("cancel")
 def api_prepare_cancel(trade_id: str):
     wallet = _wallet_from_session()
     result = escrow_service.prepare_cancel_order(wallet, trade_id)
@@ -793,6 +962,7 @@ def api_prepare_cancel(trade_id: str):
 
 @p2p_bp.route("/api/trades/<trade_id>/prepare-dispute", methods=["POST"])
 @p2p_terms_required
+@trade_action_rate_limit("dispute")
 def api_prepare_dispute(trade_id: str):
     wallet = _wallet_from_session()
     result = escrow_service.prepare_dispute(wallet, trade_id)
