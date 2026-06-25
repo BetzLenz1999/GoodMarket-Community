@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify, render_template, session, redirect, make_response
 from blockchain import has_recent_ubi_claim, is_identity_verified, check_ubi_entitlement
 from analytics_service import analytics
@@ -1805,6 +1804,136 @@ def verify_identity():
 
 
 @app.route('/api/server/sign-tx', methods=['POST'])
+def server_sign_tx():
+    """
+    Server-side transaction signing for Reloadly payments using signature wallet.
+    
+    This endpoint allows users with server-signed wallets (signature wallet mode)
+    to pay for Reloadly orders without needing to sign transactions with their
+    own wallet. The server signs the G$ token transfer using SERVER_SIGN_KEY.
+    
+    Expected request body:
+    {
+        "to": "0x...",       # Token contract address (G$ contract)
+        "data": "0x...",     # Encoded transfer calldata
+        "value": "0x0",      # ETH value (should be 0 for ERC-20)
+        "chain_id": 42220    # Celo mainnet
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "tx_hash": "0x..."   # Transaction hash
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "Request body required"}), 400
+        
+        to_address = data.get("to", "").strip()
+        data_hex = data.get("data", "0x").strip()
+        value_hex = data.get("value", "0x0").strip()
+        chain_id = data.get("chain_id", 42220)
+        
+        # Validate to_address
+        if not to_address:
+            return jsonify({"success": False, "error": "to address is required"}), 400
+        if not to_address.startswith("0x") or len(to_address) != 42:
+            return jsonify({"success": False, "error": "Invalid to address format"}), 400
+        
+        # Validate data_hex - must be valid hex
+        if not data_hex.startswith("0x"):
+            data_hex = "0x" + data_hex
+        
+        # Validate hex characters (must be 0-9, a-f, A-F)
+        hex_chars = data_hex[2:]  # Remove 0x prefix
+        if not all(c in '0123456789abcdefABCDEF' for c in hex_chars):
+            logger.error(f"❌ Invalid hex data received: {data_hex[:50]}...")
+            return jsonify({"success": False, "error": "Invalid hex data - contains non-hex characters"}), 400
+        
+        # Get signing key from environment
+        signing_key = os.getenv("SERVER_SIGN_KEY")
+        if not signing_key:
+            # Fall back to REFUND_KEY if SERVER_SIGN_KEY not set
+            signing_key = os.getenv("REFUND_KEY")
+        
+        if not signing_key:
+            return jsonify({"success": False, "error": "Server signing not configured (SERVER_SIGN_KEY or REFUND_KEY missing)"}), 503
+        
+        # Normalize key format
+        if not signing_key.startswith("0x"):
+            signing_key = "0x" + signing_key
+        
+        # Initialize Web3
+        from web3 import Web3
+        from eth_account import Account
+        
+        celo_rpc = os.getenv("CELO_RPC_URL", "https://forno.celo.org")
+        w3 = Web3(Web3.HTTPProvider(celo_rpc))
+        
+        if not w3.is_connected():
+            return jsonify({"success": False, "error": "Cannot connect to Celo network"}), 503
+        
+        # Validate chain_id matches
+        current_chain_id = w3.eth.chain_id
+        if chain_id != current_chain_id:
+            return jsonify({"success": False, "error": f"Chain ID mismatch: expected {current_chain_id}, got {chain_id}"}), 400
+        
+        # Create signer account
+        signer = Account.from_key(signing_key)
+        signer_address = signer.address
+        
+        # Parse value
+        try:
+            value_wei = int(value_hex, 16) if value_hex.startswith("0x") else int(value_hex, 16)
+        except ValueError:
+            return jsonify({"success": False, "error": "Invalid value format"}), 400
+        
+        # Build transaction
+        to_checksum = Web3.to_checksum_address(to_address)
+        
+        tx = {
+            "chainId": chain_id,
+            "from": signer_address,
+            "to": to_checksum,
+            "data": data_hex,
+            "value": value_wei,
+            "gas": 250000,  # Standard gas for ERC-20 transfer
+            "gasPrice": w3.eth.gas_price,
+            "nonce": w3.eth.get_transaction_count(signer_address),
+        }
+        
+        # Sign and send transaction
+        signed = w3.eth.account.sign_transaction(tx, private_key=signer.key)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        
+        # Wait for receipt (with timeout)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+        
+        # Format tx hash
+        tx_hash_hex = "0x" + tx_hash.hex() if not tx_hash.hex().startswith("0x") else tx_hash.hex()
+        
+        if receipt.status == 1:
+            logger.info(f"✅ Server-signed Reloadly payment tx: {tx_hash_hex} from {signer_address[:10]}...")
+            return jsonify({
+                "success": True,
+                "tx_hash": tx_hash_hex,
+                "block_number": receipt.blockNumber
+            })
+        else:
+            # Transaction was mined but reverted
+            logger.error(f"❌ Server-signed tx reverted: {tx_hash_hex}")
+            return jsonify({
+                "success": False,
+                "error": "Transaction failed on-chain (reverted)",
+                "tx_hash": tx_hash_hex
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"❌ server_sign_tx error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 @app.route('/manual-wallet-login', methods=['POST'])
 def manual_wallet_login():
