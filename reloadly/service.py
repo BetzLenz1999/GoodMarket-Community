@@ -289,7 +289,7 @@ def refund_gd(to_wallet: str, amount_gd: float, order_id: str) -> dict:
             "from": refund_account.address
         })
 
-        signed = w3.eth.account.sign_transaction(tx, private_key=refund_key)
+        signed = w3.eth.account.sign_transaction(tx, private_key=refund_account.key)
         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
 
