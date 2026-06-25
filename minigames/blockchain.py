@@ -39,14 +39,11 @@ class MinigamesBlockchainService:
                     server_private_key = '0x' + server_private_key
                 self.server_account = Account.from_key(server_private_key)
                 self.server_address = self.server_account.address
-                # Store the cleaned key for signing (Account.key is bytes, not hex string)
-                self._server_key = server_private_key
                 logger.info(f"✅ SERVER wallet configured: {self.server_address}")
             except Exception as e:
                 logger.error(f"❌ Error loading SERVER_PRIVATE_KEY: {e}")
                 self.server_account = None
                 self.server_address = None
-                self._server_key = None
         else:
             self.server_account = None
             self.server_address = None
@@ -366,7 +363,7 @@ class MinigamesBlockchainService:
             # Sign and send
             signed_txn = self.w3.eth.account.sign_transaction(
                 transaction,
-                private_key=self._server_key
+                private_key=self.server_account.key
             )
 
             logger.info("📡 Sending withdrawal transaction via contract...")
@@ -501,7 +498,7 @@ class MinigamesBlockchainService:
             # Sign the transaction with the server private key
             signed_txn = self.w3.eth.account.sign_transaction(
                 transaction,
-                private_key=self._server_key
+                private_key=self.server_account.key
             )
 
             # Send the signed transaction to the network
