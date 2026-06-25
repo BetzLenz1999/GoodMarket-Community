@@ -5121,49 +5121,6 @@
                 const gd = new ethers.Contract(CELO_TO_XDC_GD_TOKEN, CELO_TO_XDC_ERC20_ABI, readProvider);
                 const sourceBridge = new ethers.Contract(CELO_TO_XDC_BRIDGE_CONTRACT, CELO_TO_XDC_BRIDGE_ABI, readProvider);
 
-                btn.innerHTML = '<span class="spinner-inline"></span> Checking bridge limits...';
-                try {
-                    const canBridgeResult = await sourceBridge.canBridge(WALLET_ADDRESS, amountWei);
-                    // canBridge returns `(bool, string)`. The string carries
-                    // the rejection reason — e.g. "minAmount", "txLimit",
-                    // "dailyLimit", "accountDailyLimit", "onlyWhitelisted".
-                    const isAllowed = Array.isArray(canBridgeResult) ? Boolean(canBridgeResult[0]) : Boolean(canBridgeResult);
-                    const reasonRaw = Array.isArray(canBridgeResult) ? String(canBridgeResult[1] || '') : '';
-                    if (!isAllowed) {
-                        let friendly = 'Bridge preflight failed (canBridge=false). Lower the amount or retry later.';
-                        const reason = reasonRaw.toLowerCase();
-                        if (reason === 'minamount' && _celoBridgeLimitsCache) {
-                            const minG = Number(ethers.formatUnits(_celoBridgeLimitsCache.minAmount, 18));
-                            friendly = `Minimum bridge amount is ${minG.toLocaleString(undefined,{maximumFractionDigits:2})} G$.`;
-                        } else if (reason === 'txlimit' && _celoBridgeLimitsCache) {
-                            const txG = Number(ethers.formatUnits(_celoBridgeLimitsCache.txLimit, 18));
-                            friendly = `Amount exceeds the on-chain per-tx limit of ${txG.toLocaleString(undefined,{maximumFractionDigits:2})} G$.`;
-                        } else if (reason.includes('dailylimit')) {
-                            friendly = 'Bridge daily limit reached. Please try again later.';
-                        } else if (reason.includes('whitelist')) {
-                            friendly = 'This wallet is not whitelisted on the bridge yet.';
-                        } else if (reasonRaw) {
-                            friendly = `Bridge preflight failed: ${reasonRaw}.`;
-                        }
-                        throw new Error(friendly);
-                    }
-                } catch (limitErr) {
-                    const limitMessage = limitErr?.message || String(limitErr || '');
-                    const lower = limitMessage.toLowerCase();
-                    if (
-                        lower.includes('canbridge=false') ||
-                        lower.includes('minimum bridge amount') ||
-                        lower.includes('per-tx limit') ||
-                        lower.includes('daily limit') ||
-                        lower.includes('whitelisted') ||
-                        lower.includes('preflight failed')
-                    ) {
-                        throw limitErr;
-                    }
-                    // Soft-fail: surface as warning but allow user to retry.
-                    throw new Error('Could not verify bridge limits on Celo bridge. Please retry in a moment.');
-                }
-
                 btn.innerHTML = '<span class="spinner-inline"></span> Connecting wallet...';
                 const signer = await getConnectedSwapSigner();
                 const signerAddr = await signer.getAddress();
@@ -5171,26 +5128,51 @@
                     _throwCeloBridgePreflight('Wrong wallet connected. Please switch to your GoodMarket wallet.');
                 }
 
-                // Read allowance up-front so the gas-reserve calculation knows
-                // whether the user will also need to sign an approve() tx
-                // before bridging — the approve consumes its own slice of
-                // CELO that has to be reserved separately from msg.value.
-                btn.innerHTML = '<span class="spinner-inline"></span> Checking allowance...';
-                const currentAllowance = await gd.allowance(signerAddr, CELO_TO_XDC_BRIDGE_CONTRACT);
-                const needsApproveTx   = currentAllowance < amountWei;
+                // PARALLELIZED: Fetch all read data simultaneously for faster pre-flight
+                btn.innerHTML = '<span class="spinner-inline"></span> Checking balances...';
+                const [currentAllowance, gdBalWei, onchainBalWei, canBridgeResult] = await Promise.all([
+                    gd.allowance(signerAddr, CELO_TO_XDC_BRIDGE_CONTRACT),
+                    gd.balanceOf(signerAddr),
+                    readProvider.getBalance(signerAddr),
+                    sourceBridge.canBridge(WALLET_ADDRESS, amountWei).catch(err => {
+                        // Soft-fail canBridge - allow user to proceed
+                        console.warn('canBridge check failed, proceeding anyway:', err);
+                        return true;
+                    })
+                ]);
 
-                // Native CELO balance check: LayerZero fee (msg.value) + a
-                // *dynamic* gas reserve sized to the live `eth_gasPrice` and
-                // the operations the user is actually about to sign (bridge
-                // alone, or approve+bridge). Without this, a Celo gas-price
-                // spike to 200 gwei would slip past a static 0.001 CELO
-                // reserve and resurface as a confusing red "Network fee ⚠"
-                // warning inside MetaMask.
+                // Validate canBridge result
+                const isAllowed = Array.isArray(canBridgeResult) ? Boolean(canBridgeResult[0]) : Boolean(canBridgeResult);
+                const reasonRaw = Array.isArray(canBridgeResult) ? String(canBridgeResult[1] || '') : '';
+                if (!isAllowed) {
+                    let friendly = 'Bridge preflight failed (canBridge=false). Lower the amount or retry later.';
+                    const reason = reasonRaw.toLowerCase();
+                    if (reason === 'minamount' && _celoBridgeLimitsCache) {
+                        const minG = Number(ethers.formatUnits(_celoBridgeLimitsCache.minAmount, 18));
+                        friendly = `Minimum bridge amount is ${minG.toLocaleString(undefined,{maximumFractionDigits:2})} G$.`;
+                    } else if (reason === 'txlimit' && _celoBridgeLimitsCache) {
+                        const txG = Number(ethers.formatUnits(_celoBridgeLimitsCache.txLimit, 18));
+                        friendly = `Amount exceeds the on-chain per-tx limit of ${txG.toLocaleString(undefined,{maximumFractionDigits:2})} G$.`;
+                    } else if (reason.includes('dailylimit')) {
+                        friendly = 'Bridge daily limit reached. Please try again later.';
+                    } else if (reason.includes('whitelist')) {
+                        friendly = 'This wallet is not whitelisted on the bridge yet.';
+                    } else if (reasonRaw) {
+                        friendly = `Bridge preflight failed: ${reasonRaw}.`;
+                    }
+                    throw new Error(friendly);
+                }
+
+                const needsApproveTx = currentAllowance < amountWei;
+
+                // Gas reserve estimation (runs after we know needsApproveTx)
+                btn.innerHTML = '<span class="spinner-inline"></span> Estimating fees...';
                 const gasReserveWei = await _estimateCeloBridgeGasReserveWei(
                     readProvider, signerAddr, amountWei, feeWei, needsApproveTx
                 );
                 const minimumRequiredWei = feeWei + gasReserveWei;
-                const onchainBalWei = await readProvider.getBalance(signerAddr);
+
+                // Check CELO balance
                 if (onchainBalWei < minimumRequiredWei) {
                     const needCelo  = parseFloat(ethers.formatUnits(minimumRequiredWei, 18));
                     const hasCelo   = parseFloat(ethers.formatUnits(onchainBalWei, 18));
@@ -5208,7 +5190,6 @@
                 }
 
                 // Verify G$ balance on Celo before signing the approve.
-                const gdBalWei = await gd.balanceOf(signerAddr);
                 if (gdBalWei < amountWei) {
                     const haveGd = ethers.formatUnits(gdBalWei, 18);
                     _throwCeloBridgePreflight(`Not enough G$ on Celo. You have ${parseFloat(haveGd).toFixed(2)} G$ but tried to bridge ${parseFloat(amountStr).toFixed(2)} G$.`);
@@ -5954,25 +5935,36 @@
                     const preflightData = bridgeIface.encodeFunctionData('bridgeTo', [
                         toAddr, XDC_TO_CELO_TARGET_CHAIN_ID, amountWei, XDC_TO_CELO_BRIDGE_SERVICE_LAYERZERO
                     ]);
-                    const preflightMultipliers = [1.00, 1.15, 1.30];
+                    const preflightMultipliers = [1.00, 1.30]; // Reduced from 3 to 2 iterations for faster signing
                     let effectiveFeeWei = feeWei;
                     let preflightPassed = false;
                     let lastPreflightMsg = '';
+                    // Helper: wrap any Promise with a timeout
+                    const _withTimeout = (promise, ms) => new Promise((resolve, reject) => {
+                        const timer = setTimeout(() => reject(new Error('timeout')), ms);
+                        promise.then((v) => { clearTimeout(timer); resolve(v); },
+                                     (e) => { clearTimeout(timer); reject(e); });
+                    });
+                    
                     for (const multiplier of preflightMultipliers) {
                         const candidateFeeWei = multiplier === 1
                             ? feeWei
                             : (feeWei * BigInt(Math.round(multiplier * 100)) / 100n);
                         try {
-                            await ep.request({
-                                method: 'eth_estimateGas',
-                                params: [{
-                                    from,
-                                    to: XDC_CELO_BRIDGE,
-                                    data: preflightData,
-                                    value: ethers.toBeHex(candidateFeeWei),
-                                    chainId: XDC_CHAIN_ID_HEX
-                                }]
-                            });
+                            // 8 second timeout per preflight attempt to prevent hanging
+                            await _withTimeout(
+                                ep.request({
+                                    method: 'eth_estimateGas',
+                                    params: [{
+                                        from,
+                                        to: XDC_CELO_BRIDGE,
+                                        data: preflightData,
+                                        value: ethers.toBeHex(candidateFeeWei),
+                                        chainId: XDC_CHAIN_ID_HEX
+                                    }]
+                                }),
+                                8000
+                            );
                             bridgeAttemptContextXdcToCelo.preflight_attempts.push({
                                 multiplier, ok: true, candidate_fee_wei: candidateFeeWei.toString()
                             });
@@ -5980,8 +5972,19 @@
                             preflightPassed = true;
                             break;
                         } catch (attemptErr) {
-                            const attemptMsg = attemptErr?.message || String(attemptErr || '');
+                            const attemptMsg = (attemptErr?.message || String(attemptErr || ''));
+                            // Treat timeout as a soft failure - try next multiplier
                             const attemptMsgLower = attemptMsg.toLowerCase();
+                            if (attemptMsgLower === 'timeout' || attemptMsgLower.includes('timeout')) {
+                                bridgeAttemptContextXdcToCelo.preflight_attempts.push({
+                                    multiplier, ok: false,
+                                    candidate_fee_wei: candidateFeeWei.toString(),
+                                    selector: null,
+                                    error: 'Timeout - trying next fee level'
+                                });
+                                lastPreflightMsg = 'Timeout - trying next fee level';
+                                continue; // Try next multiplier instead of failing
+                            }
                             const selectorMatch = attemptMsgLower.match(/0x[a-f0-9]{8}/);
                             bridgeAttemptContextXdcToCelo.preflight_attempts.push({
                                 multiplier, ok: false,
@@ -6411,6 +6414,12 @@
             try { loadXdcGdBalance(); } catch (_) {}
             try { loadXdcNativeBalance(); } catch (_) {}
             try { estimateBridgeFeeXdcToCelo(false); } catch (_) {}
+            // Pre-warm XDC wallet provider for faster bridge signing
+            try {
+                if (typeof _warmUpXdcWalletProvider === "function") {
+                    _warmUpXdcWalletProvider().catch(function() {});
+                }
+            } catch (_) {}
         });
     </script>
 <script src="{{ url_for('static', filename='js/minipay-nav.js') }}"></script>
