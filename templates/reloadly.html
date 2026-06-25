@@ -1420,15 +1420,33 @@ async function dappSendPayment() {
         );
 
         let txHash;
+        const baseTxParams = {
+            from: from,
+            to: GD_CONTRACT,
+            data: data,
+            value: '0x0',
+            chainId: '0x' + CELO_CHAIN_ID.toString(16)
+        };
+        
         if (ep) {
+            // Try to estimate gas first for better compatibility with all wallets
+            let gasHex = '0x3D090'; // Default fallback
+            try {
+                const est = await ep.request({
+                    method: 'eth_estimateGas',
+                    params: [{ from: from, to: GD_CONTRACT, data: data, value: '0x0' }]
+                });
+                // Parse the estimate and add 40% headroom
+                const estNum = typeof est === 'string' ? parseInt(est, 16) : Number(est);
+                gasHex = '0x' + Math.ceil(estNum * 1.4).toString(16);
+            } catch (gasErr) {
+                // Gas estimation failed - use default, wallet will handle it
+                console.warn('[reloadly] gas estimation failed, using default:', gasErr?.message);
+            }
+            
             txHash = await ep.request({
                 method: 'eth_sendTransaction',
-                params: [{
-                    from: from,
-                    to: GD_CONTRACT,
-                    data: data,
-                    gas: '0x3D090'
-                }]
+                params: [{ ...baseTxParams, gas: gasHex }]
             });
         } else {
             txHash = await wcSendTxReloadly({
@@ -1449,6 +1467,42 @@ async function dappSendPayment() {
         btn.disabled = false;
         const friendly = (window.GMTxError && GMTxError.format) ? GMTxError.format(err) : (err?.message || 'Unknown error');
         const lc = String(err?.message || '').toLowerCase();
+        const errData = err?.data || '';
+        const errDataStr = typeof errData === 'string' ? errData.toLowerCase() : JSON.stringify(errData).toLowerCase();
+        
+        // Detect specific wallet/RPC errors
+        const isWalletError = 
+            lc.includes('estimategas') || 
+            lc.includes('invalid hex') || 
+            lc.includes('cannot unmarshal') ||
+            lc.includes('json: cannot') ||
+            lc.includes('invalid argument') ||
+            errDataStr.includes('estimategas') ||
+            errDataStr.includes('invalid hex') ||
+            lc.includes('rejected') ||
+            lc.includes('denied') ||
+            lc.includes('cancelled') ||
+            lc.includes('user rejected');
+        
+        if (isWalletError) {
+            // User rejected or wallet error - offer manual payment
+            setDappStatus('error', 
+                '❌ Transaction was not completed.<br><br>' +
+                '<small>Try using the <strong>Manual Payment</strong> option below.<br>' +
+                'Or copy the merchant address and send G$ from your wallet manually.</small>'
+            );
+            // Show merchant flow as fallback
+            const merchantFlow = document.getElementById('merchantFlow');
+            const dappFlow = document.getElementById('dappFlow');
+            if (merchantFlow) merchantFlow.style.display = 'block';
+            if (dappFlow) dappFlow.style.display = 'none';
+            const merchantAddrBox = document.getElementById('merchantAddrBox');
+            const showMerchantBtn = document.getElementById('showMerchantBtn');
+            if (merchantAddrBox) merchantAddrBox.style.display = 'block';
+            if (showMerchantBtn) showMerchantBtn.style.display = 'none';
+            return;
+        }
+        
         if (lc.includes('no transaction hash')) {
             setDappStatus('error', '❌ Wallet did not broadcast the transaction. Try using WalletConnect QR instead.');
         } else {
