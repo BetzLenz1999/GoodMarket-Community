@@ -2046,6 +2046,17 @@
         }
 
         function _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+        
+        // Helper: wrap Promise with timeout to prevent infinite waiting
+        function _waitWithTimeout(promise, timeoutMs, label) {
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    reject(new Error(label + ' timed out after ' + (timeoutMs/1000) + 's'));
+                }, timeoutMs);
+                promise.then((v) => { clearTimeout(timer); resolve(v); })
+                        .catch((e) => { clearTimeout(timer); reject(e); });
+            });
+        }
 
         function _wcLoadSdk() {
             if (_wcSdkLoading) return _wcSdkLoading;
@@ -5225,12 +5236,11 @@
                     const approveTx = await gdSigner.approve(CELO_TO_XDC_BRIDGE_CONTRACT, amountWei);
                     showCeloBridgeAlert(
                         'alert-info',
-                        `<span class="spinner-inline"></span> Approve submitted… <a class="info-link" href="https://celoscan.io/tx/${approveTx.hash}" target="_blank" rel="noopener">View ↗</a>`
+                        `<span class="spinner-inline"></span> Approve submitted… <a class="info-link" href="https://celoscan.io/tx/${approveTx.hash}" target="_blank" rel="noopener">View ↗</a> (waiting for confirmation)`
                     );
-                    await approveTx.wait();
-                }
-
-                // Step 2 — bridgeTo with msg.value = LayerZero fee.
+                    // 120 second timeout to prevent infinite waiting if wallet is stuck
+                    await _waitWithTimeout(approveTx.wait(), 120000, 'Approve transaction confirmation');
+                } with msg.value = LayerZero fee.
                 btn.innerHTML = '<span class="spinner-inline"></span> Bridging to XDC...';
                 if (window.GMTxPreview && GMTxPreview.confirm) {
                     try {
@@ -5263,6 +5273,8 @@
                 );
                 _celoBridgeAttemptContext.tx_hash = bridgeTx.hash;
                 _celoBridgeAttemptContext.effective_fee_celo = Number(ethers.formatUnits(feeWei, 18));
+                // 180 second timeout for bridge confirmation
+                await _waitWithTimeout(bridgeTx.wait(), 180000, 'Bridge transaction confirmation');
                 await _celoBridgeDebugLog('bridge_submitted', {
                     tx_hash: bridgeTx.hash,
                     effective_fee_wei: feeWei.toString(),
