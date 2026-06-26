@@ -2345,13 +2345,14 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 </div>
             </section>
 
-            <!-- Referral Program Section -->
+            <!-- Referral Program Section - NEW MANUAL APPROVAL WORKFLOW -->
             <section id="referral-stats-section" class="section">
                 <div class="page-header">
-                    <h1 class="page-title">🤝 Referral Program</h1>
-                    <p style="color: rgba(241, 245, 249, 0.7);">Monitor all referrals, rewards, and top referrers across the platform</p>
+                    <h1 class="page-title">🤝 Referral Management</h1>
+                    <p style="color: rgba(241, 245, 249, 0.7);">Manual approval workflow: Check CeloScan → Verify claim → Approve & Disburse</p>
                 </div>
 
+                <!-- Summary Stats -->
                 <div id="referral-summary-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.25rem;">
                     <div class="loading"><div class="spinner"></div><p>Loading...</p></div>
                 </div>
@@ -2361,7 +2362,7 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
                         <div>
                             <h2 style="margin:0 0 0.25rem;">💰 REFERRAL_KEY Wallet Status</h2>
-                            <p style="margin:0;font-size:0.85rem;color:rgba(241,245,249,0.6);">Monitor G$ and CELO balance needed for disbursements</p>
+                            <p style="margin:0;font-size:0.85rem;color:rgba(241,245,249,0.6);">Monitor G$ balance needed for disbursements (Referrer: 1000 G$, Referee: 500 G$)</p>
                         </div>
                         <button onclick="loadReferralKeyBalance()" class="admin-btn" style="background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.5);color:#86efac;white-space:nowrap;">
                             🔄 Refresh Balance
@@ -2373,32 +2374,63 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     <div id="referralKeyBalanceAlert" style="display:none;padding:0.85rem 1rem;border-radius:8px;font-size:0.88rem;margin-bottom:1rem;"></div>
                 </div>
 
-                <!-- Process Pending Rewards -->
-                <div class="content-box" style="margin-bottom: 2rem; border: 1px solid rgba(99,102,241,0.3); background: rgba(99,102,241,0.05);">
+                <!-- Instructions Box -->
+                <div class="content-box" style="margin-bottom: 2rem; border: 1px solid rgba(251,191,36,0.3); background: rgba(251,191,36,0.05);">
+                    <h2 style="margin:0 0 0.5rem;color:#fbbf24;">📋 Manual Verification Instructions</h2>
+                    <p style="margin:0;font-size:0.9rem;color:rgba(241,245,249,0.7);line-height:1.6;">
+                        <strong>Workflow:</strong><br>
+                        1. Look at <strong>PENDING REFERRALS</strong> below<br>
+                        2. Click <strong>👁️ View</strong> to see referral details<br>
+                        3. Check referee's wallet on <strong>CeloScan</strong> to verify G$ claim<br>
+                        4. If verified, click <strong>✅ Approve & Disburse</strong><br>
+                        5. Rewards sent: Referrer <strong>1,000 G$</strong> | Referee <strong>500 G$</strong>
+                    </p>
+                </div>
+
+                <!-- Pending Referrals Requiring Admin Action -->
+                <div class="content-box" style="margin-bottom: 2rem; border: 1px solid rgba(251,191,36,0.3); background: rgba(251,191,36,0.05);">
+                    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
+                        <div>
+                            <h2 style="margin:0 0 0.25rem;color:#fbbf24;">⏳ Pending Referrals (Requires Admin Action)</h2>
+                            <p style="margin:0;font-size:0.85rem;color:rgba(241,245,249,0.6);">These referrals need manual CeloScan verification and approval</p>
+                        </div>
+                        <button onclick="loadPendingReferrals()" class="admin-btn" style="background:rgba(251,191,36,0.2);border:1px solid rgba(251,191,36,0.5);color:#fbbf24;white-space:nowrap;">
+                            🔄 Refresh List
+                        </button>
+                    </div>
+                    <div id="pending-referrals-list" style="margin-top:1rem;">
+                        <div class="loading"><div class="spinner"></div><p>Loading pending referrals...</p></div>
+                    </div>
+                </div>
+
+                <!-- Completed/Verified Referrals -->
+                <div class="content-box" style="border: 1px solid rgba(34,197,94,0.3); background: rgba(34,197,94,0.05);">
+                    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
+                        <div>
+                            <h2 style="margin:0 0 0.25rem;color:#34d399;">✅ Verified & Disbursed</h2>
+                            <p style="margin:0;font-size:0.85rem;color:rgba(241,245,249,0.6);">Successfully approved and disbursed referrals</p>
+                        </div>
+                        <button onclick="loadCompletedReferrals()" class="admin-btn" style="background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.5);color:#34d399;white-space:nowrap;">
+                            🔄 Refresh List
+                        </button>
+                    </div>
+                    <div id="completed-referrals-list" style="margin-top:1rem;">
+                        <div class="loading"><div class="spinner"></div><p>Loading completed referrals...</p></div>
+                    </div>
+                </div>
+
+                <!-- Legacy: Process Pending Rewards (hidden by default, for edge cases) -->
+                <div class="content-box" style="margin-top: 2rem; display: none;">
                     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
                         <div>
-                            <h2 style="margin:0 0 0.25rem;">💸 Pending Reward Disbursements</h2>
-                            <p style="margin:0;font-size:0.85rem;color:rgba(241,245,249,0.6);">When the Referral Key has insufficient funds, rewards are queued here. Top up the wallet then click the button to retry.</p>
+                            <h2 style="margin:0 0 0.25rem;">💸 Pending Reward Disbursements (Edge Cases)</h2>
+                            <p style="margin:0;font-size:0.85rem;color:rgba(241,245,249,0.6);">For referrals stuck with insufficient balance. Normally not needed with manual approval.</p>
                         </div>
                         <button onclick="processPendingReferralRewards()" id="processPendingBtn" class="admin-btn" style="background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;white-space:nowrap;min-width:200px;">
                             🔄 Process Pending Rewards
                         </button>
                     </div>
                     <div id="processPendingResult" style="margin-top:1rem;display:none;padding:0.85rem 1rem;border-radius:8px;font-size:0.88rem;"></div>
-                </div>
-
-                <div class="content-box" style="margin-bottom: 2rem;">
-                    <h2 style="margin-bottom: 1rem;">Top Referrers</h2>
-                    <div id="referral-top-referrers">
-                        <div class="loading"><div class="spinner"></div><p>Loading...</p></div>
-                    </div>
-                </div>
-
-                <div class="content-box">
-                    <h2 style="margin-bottom: 1rem;">Recent Referrals</h2>
-                    <div id="referral-recent-list">
-                        <div class="loading"><div class="spinner"></div><p>Loading...</p></div>
-                    </div>
                 </div>
             </section>
 
@@ -2853,6 +2885,8 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 case 'referral-stats':
                     loadReferralKeyBalance();
                     loadReferralStats();
+                    loadPendingReferrals();
+                    loadCompletedReferrals();
                     break;
                 case 'daily-voucher':
                     adminLoadVoucherStatus();
@@ -6549,6 +6583,277 @@ async function loadMinigamesMaintenance() {
                 loadReferralKeyBalance();
             } catch (e) {
                 alert(`❌ Error: ${e.message}`);
+            }
+        }
+
+        // ==================== NEW MANUAL APPROVAL WORKFLOW ====================
+
+        async function loadPendingReferrals() {
+            const listEl = document.getElementById('pending-referrals-list');
+            listEl.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading...</p></div>';
+            
+            try {
+                const res = await fetch('/api/admin/referral/pending');
+                const data = await res.json();
+                
+                if (!data.success) {
+                    listEl.innerHTML = `<p style="color:#ef4444">❌ ${data.error || 'Error loading pending referrals'}</p>`;
+                    return;
+                }
+                
+                const referrals = data.pending_referrals || [];
+                
+                if (referrals.length === 0) {
+                    listEl.innerHTML = `
+                        <div style="text-align:center;padding:2rem;background:rgba(34,197,94,0.1);border-radius:12px;border:1px solid rgba(34,197,94,0.2)">
+                            <p style="font-size:2rem;margin-bottom:0.5rem">🎉</p>
+                            <p style="color:#34d399;font-weight:600">No pending referrals!</p>
+                            <p style="color:rgba(241,245,249,0.6);font-size:0.85rem">All referrals have been verified and disbursed.</p>
+                        </div>`;
+                    return;
+                }
+                
+                const rows = referrals.map(r => `
+                    <tr style="border-bottom:1px solid rgba(255,255,255,0.05)">
+                        <td style="padding:0.75rem 0.5rem"><code style="background:rgba(251,191,36,0.15);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.85rem;color:#fbbf24">${r.referral_code || '—'}</code></td>
+                        <td style="padding:0.75rem 0.5rem;font-family:monospace;font-size:0.82rem">${shortWallet(r.referee_wallet)}</td>
+                        <td style="padding:0.75rem 0.5rem;font-family:monospace;font-size:0.82rem">${shortWallet(r.referrer_wallet)}</td>
+                        <td style="padding:0.75rem 0.5rem">
+                            <span style="background:rgba(251,191,36,0.15);color:#fbbf24;padding:0.2rem 0.5rem;border-radius:4px;font-size:0.8rem">⏳ Pending</span>
+                        </td>
+                        <td style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-size:0.8rem">${r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</td>
+                        <td style="padding:0.75rem 0.5rem">
+                            <button class="admin-btn" style="padding:0.4rem 0.75rem;font-size:0.82rem;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;" onclick="viewReferralDetail('${(r.referral_code || '').replace(/'/g, '')}')">
+                                👁️ View
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+                
+                listEl.innerHTML = `
+                    <div style="overflow-x:auto">
+                    <table style="width:100%;border-collapse:collapse;min-width:600px">
+                        <thead>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.15);text-align:left">
+                                <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Code</th>
+                                <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Referee Wallet</th>
+                                <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Referrer Wallet</th>
+                                <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Status</th>
+                                <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Created</th>
+                                <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                    </div>
+                    <p style="margin-top:1rem;color:rgba(241,245,249,0.5);font-size:0.85rem">Total: ${referrals.length} pending referral(s)</p>
+                `;
+            } catch (e) {
+                listEl.innerHTML = `<p style="color:#ef4444">❌ Error: ${e.message}</p>`;
+            }
+        }
+
+        async function loadCompletedReferrals() {
+            const listEl = document.getElementById('completed-referrals-list');
+            listEl.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading...</p></div>';
+            
+            try {
+                const res = await fetch('/api/admin/referral/completed');
+                const data = await res.json();
+                
+                if (!data.success) {
+                    listEl.innerHTML = `<p style="color:#ef4444">❌ ${data.error || 'Error loading completed referrals'}</p>`;
+                    return;
+                }
+                
+                const referrals = data.completed_referrals || [];
+                
+                if (referrals.length === 0) {
+                    listEl.innerHTML = `<p style="color:rgba(241,245,249,0.5);text-align:center;padding:2rem">No completed referrals yet</p>`;
+                    return;
+                }
+                
+                const rows = referrals.map(r => `
+                    <tr style="border-bottom:1px solid rgba(255,255,255,0.05)">
+                        <td style="padding:0.75rem 0.5rem"><code style="background:rgba(34,197,94,0.15);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.85rem;color:#34d399">${r.referral_code || '—'}</code></td>
+                        <td style="padding:0.75rem 0.5rem;font-family:monospace;font-size:0.82rem">${shortWallet(r.referee_wallet)}</td>
+                        <td style="padding:0.75rem 0.5rem;font-family:monospace;font-size:0.82rem">${shortWallet(r.referrer_wallet)}</td>
+                        <td style="padding:0.75rem 0.5rem">
+                            <span style="background:rgba(34,197,94,0.15);color:#34d399;padding:0.2rem 0.5rem;border-radius:4px;font-size:0.8rem">✅ Verified</span>
+                        </td>
+                        <td style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-size:0.8rem">${r.completed_at ? new Date(r.completed_at).toLocaleDateString() : '—'}</td>
+                        <td style="padding:0.75rem 0.5rem">
+                            ${r.referrer_tx ? `<a href="https://celoscan.io/tx/${r.referrer_tx}" target="_blank" style="color:#60a5fa;font-size:0.8rem">🔗 TX</a>` : '—'}
+                        </td>
+                    </tr>
+                `).join('');
+                
+                listEl.innerHTML = `
+                    <div style="overflow-x:auto">
+                    <table style="width:100%;border-collapse:collapse;min-width:600px">
+                        <thead>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.15);text-align:left">
+                                <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Code</th>
+                                <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Referee</th>
+                                <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Referrer</th>
+                                <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Status</th>
+                                <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Completed</th>
+                                <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">TX</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                    </div>
+                    <p style="margin-top:1rem;color:rgba(241,245,249,0.5);font-size:0.85rem">Total: ${referrals.length} completed referral(s)</p>
+                `;
+            } catch (e) {
+                listEl.innerHTML = `<p style="color:#ef4444">❌ Error: ${e.message}</p>`;
+            }
+        }
+
+        async function viewReferralDetail(referralCode) {
+            if (!referralCode) return;
+            
+            try {
+                const res = await fetch(`/api/admin/referral/${referralCode}`);
+                const data = await res.json();
+                
+                if (!data.success) {
+                    alert(`❌ Error: ${data.error || 'Could not load referral details'}`);
+                    return;
+                }
+                
+                const r = data.referral;
+                const rewards = data.rewards_summary;
+                
+                // Create modal
+                const modalHtml = `
+                <div id="referral-detail-modal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;">
+                    <div style="background:#1e293b;border-radius:16px;max-width:700px;width:100%;max-height:90vh;overflow-y:auto;border:1px solid rgba(99,102,241,0.3)">
+                        <div style="padding:1.5rem;border-bottom:1px solid rgba(255,255,255,0.1);display:flex;justify-content:space-between;align-items:center">
+                            <h2 style="margin:0;color:#f1f5f9;font-size:1.3rem">🤝 Referral Details</h2>
+                            <button onclick="closeReferralModal()" style="background:none;border:none;color:rgba(241,245,249,0.6);font-size:1.5rem;cursor:pointer;padding:0.5rem">&times;</button>
+                        </div>
+                        
+                        <div style="padding:1.5rem">
+                            <div style="margin-bottom:1.5rem">
+                                <code style="background:rgba(99,102,241,0.2);padding:0.5rem 1rem;border-radius:8px;font-size:1.1rem;color:#a5b4fc;display:block;text-align:center">${r.referral_code}</code>
+                            </div>
+                            
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem">
+                                <div style="background:rgba(251,191,36,0.1);padding:1rem;border-radius:12px;border:1px solid rgba(251,191,36,0.2)">
+                                    <h3 style="margin:0 0 0.75rem;color:#fbbf24;font-size:1rem">👤 REFEREE (New User)</h3>
+                                    <p style="margin:0.25rem 0;font-size:0.85rem;color:rgba(241,245,249,0.7)">Wallet:</p>
+                                    <p style="margin:0;font-family:monospace;font-size:0.85rem;word-break:break-all;color:#f1f5f9">${r.referee_wallet || '—'}</p>
+                                    ${r.celoscan_referee_url ? `
+                                    <p style="margin:0.5rem 0 0 0"><a href="${r.celoscan_referee_url}" target="_blank" style="color:#60a5fa;font-size:0.85rem">🔗 View on CeloScan</a></p>
+                                    ` : ''}
+                                </div>
+                                <div style="background:rgba(99,102,241,0.1);padding:1rem;border-radius:12px;border:1px solid rgba(99,102,241,0.2)">
+                                    <h3 style="margin:0 0 0.75rem;color:#a5b4fc;font-size:1rem">👤 REFERRER (Existing User)</h3>
+                                    <p style="margin:0.25rem 0;font-size:0.85rem;color:rgba(241,245,249,0.7)">Wallet:</p>
+                                    <p style="margin:0;font-family:monospace;font-size:0.85rem;word-break:break-all;color:#f1f5f9">${r.referrer_wallet || '—'}</p>
+                                    ${r.celoscan_referrer_url ? `
+                                    <p style="margin:0.5rem 0 0 0"><a href="${r.celoscan_referrer_url}" target="_blank" style="color:#60a5fa;font-size:0.85rem">🔗 View on CeloScan</a></p>
+                                    ` : ''}
+                                </div>
+                            </div>
+                            
+                            <div style="background:rgba(251,191,36,0.1);padding:1rem;border-radius:12px;border:1px solid rgba(251,191,36,0.2);margin-bottom:1.5rem">
+                                <h3 style="margin:0 0 0.75rem;color:#fbbf24;font-size:1rem">🔍 Manual Verification Required</h3>
+                                <p style="margin:0;font-size:0.9rem;color:rgba(241,245,249,0.8);line-height:1.5">
+                                    1. Open the referee's wallet on <strong>CeloScan</strong><br>
+                                    2. Check if G$ tokens were claimed/transferred<br>
+                                    3. If YES, click <strong>"Approve & Disburse"</strong><br>
+                                    4. If NO, do NOT approve — wait for user action
+                                </p>
+                            </div>
+                            
+                            <div style="background:rgba(34,197,94,0.1);padding:1rem;border-radius:12px;border:1px solid rgba(34,197,94,0.2);margin-bottom:1.5rem">
+                                <h3 style="margin:0 0 0.75rem;color:#34d399;font-size:1rem">💰 Rewards to Disburse</h3>
+                                <div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid rgba(255,255,255,0.1)">
+                                    <span style="color:rgba(241,245,249,0.8)">Referrer (${shortWallet(r.referrer_wallet)})</span>
+                                    <strong style="color:#34d399">1,000 G$</strong>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;padding:0.5rem 0">
+                                    <span style="color:rgba(241,245,249,0.8)">Referee (${shortWallet(r.referee_wallet)})</span>
+                                    <strong style="color:#34d399">500 G$</strong>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;padding:0.75rem 0 0 0;margin-top:0.5rem;border-top:1px solid rgba(255,255,255,0.2)">
+                                    <strong style="color:#f1f5f9">TOTAL</strong>
+                                    <strong style="color:#34d399;font-size:1.1rem">1,500 G$</strong>
+                                </div>
+                            </div>
+                            
+                            ${r.status === 'completed' ? `
+                            <div style="background:rgba(34,197,94,0.2);padding:1rem;border-radius:12px;text-align:center">
+                                <p style="margin:0;color:#34d399;font-weight:600">✅ This referral has been approved and disbursed!</p>
+                                ${r.admin_verified_at ? `<p style="margin:0.5rem 0 0 0;color:rgba(241,245,249,0.6);font-size:0.85rem">Approved on: ${new Date(r.admin_verified_at).toLocaleString()}</p>` : ''}
+                            </div>
+                            ` : `
+                            <button onclick="approveReferral('${r.referral_code}')" id="approve-btn-${r.referral_code}" style="width:100%;padding:1rem;background:linear-gradient(135deg,#10b981,#059669);color:white;border:none;border-radius:12px;font-size:1rem;font-weight:700;cursor:pointer">
+                                🟢 ✅ Approve & Disburse Rewards
+                            </button>
+                            <p style="margin:0.75rem 0 0 0;text-align:center;color:rgba(241,245,249,0.5);font-size:0.8rem">
+                                By clicking this, you confirm you verified the on-chain claim on CeloScan
+                            </p>
+                            `}
+                        </div>
+                    </div>
+                </div>`;
+                
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+            } catch (e) {
+                alert(`❌ Error: ${e.message}`);
+            }
+        }
+
+        function closeReferralModal() {
+            const modal = document.getElementById('referral-detail-modal');
+            if (modal) modal.remove();
+        }
+
+        async function approveReferral(referralCode) {
+            if (!referralCode) return;
+            
+            const btn = document.getElementById(`approve-btn-${referralCode}`);
+            if (!confirm(`Are you sure you want to approve and disburse rewards for referral ${referralCode}?\n\nYou must have verified the on-chain claim on CeloScan first!`)) {
+                return;
+            }
+            
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner"></span> Processing...';
+            }
+            
+            try {
+                const res = await fetch('/api/admin/referral/approve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ referral_code: referralCode })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    alert(`✅ SUCCESS!\n\nReferral ${referralCode} approved and disbursed!\n\n• Referrer: 1,000 G$\n• Referee: 500 G$`);
+                    closeReferralModal();
+                    loadPendingReferrals();
+                    loadCompletedReferrals();
+                    loadReferralStats();
+                    loadReferralKeyBalance();
+                } else {
+                    alert(`❌ Failed: ${data.error || 'Unknown error'}\n\nStatus: ${data.status || 'N/A'}`);
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '🟢 ✅ Approve & Disburse Rewards';
+                    }
+                }
+            } catch (e) {
+                alert(`❌ Error: ${e.message}`);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '🟢 ✅ Approve & Disburse Rewards';
+                }
             }
         }
     </script>
