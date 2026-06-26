@@ -1815,6 +1815,29 @@
             return false;
         }
 
+        // Check if MiniPay user has stablecoin balance for gas.
+        // Returns true if user has any stablecoin (cUSD/USDT/USDC) above dust threshold.
+        async function checkMiniPayStablecoinBalance() {
+            if (!window.MPGasTopUp || !window.MPGasTopUp.isMiniPay()) return true;
+            if (!window.MPGasTopUp.getBalances) return true; // Safety fallback
+            
+            try {
+                const balances = await window.MPGasTopUp.getBalances(WALLET_ADDRESS);
+                if (!balances) return true;
+                
+                // Check if user has any stablecoin above the gas minimum
+                const STABLECOIN_GAS_MIN_WEI = BigInt('15000000000000000'); // 0.015 cUSD in wei
+                const hasCUSD = (balances.cusd || 0n) >= STABLECOIN_GAS_MIN_WEI;
+                const hasUSDT = (balances.usdt || 0n) >= 15000000n; // 0.015 USDT (6 decimals)
+                const hasUSDC = (balances.usdc || 0n) >= 15000000n; // 0.015 USDC (6 decimals)
+                
+                return hasCUSD || hasUSDT || hasUSDC;
+            } catch (e) {
+                console.warn('[swap] checkMiniPayStablecoinBalance error:', e);
+                return true; // Safety fallback - allow swap to proceed
+            }
+        }
+
         // CIP-64 fee currency addresses on Celo. MiniPay typically auto-selects the
         // gas token based on the user's balance, so `null` (let MiniPay decide) is
         // attempted first. Explicit values are kept as fallbacks for older MiniPay
@@ -3192,41 +3215,24 @@
 
             // MiniPay-only pre-flight: if the user holds CELO but has zero
             // stablecoin balance, MiniPay's CIP-64 fee abstraction has
-            // nothing to deduct gas from and the swap tx will fail with a
-            // wallet-side "no fee currency available" error. Offer to convert
-            // the CELO above the 0.09 CELO reserve to cUSD first, then resume
-            // the user's intended swap.
-            // MiniPay must run this even for CELO -> cUSD swaps: MiniPay
-            // does not accept native CELO as gas, so a CELO-only wallet cannot
-            // sign the very swap that would create cUSD. For CELO -> cUSD we
-            // request only the GoodMarket cUSD gas faucet and skip the extra
-            // auto-swap prompt because the user's intended swap already does it.
-            const isCeloToCusdSwap = fromToken === "CELO" && toToken === "CUSD";
+            // MiniPay users need stablecoin (cUSD/USDT/USDC) for gas, not CELO.
+            // Instead of auto-faucet (which wastes faucet funds), guide users to
+            // claim G$ on GoodMarket first to receive cUSD for gas.
             if (window.MPGasTopUp && window.MPGasTopUp.isMiniPay()) {
-                try {
-                    const r = await window.MPGasTopUp.ensureToppedUp(WALLET_ADDRESS, {
-                        stableGasOnly: isCeloToCusdSwap,
-                        skipAutoSwap: isCeloToCusdSwap,
-                        body: 'You\'re about to swap. MiniPay pays gas in '
-                            + '<strong>stablecoin (cUSD/USDT/USDC), not in CELO</strong> — '
-                            + 'you need to convert your CELO to cUSD first to pay for gas.'
-                            + '<br><br>'
-                            + 'You\'ll sign the swap inside MiniPay. We\'ll keep ~0.09 CELO untouched '
-                            + 'as your MiniPay reserve. '
-                            + '⚠️ <strong>Do not transfer the resulting cUSD to another wallet</strong> — '
-                            + 'it\'s needed as gas for your next transactions.',
-                    });
-                    if (!r.proceed) return; // user cancelled or pre-swap failed
-                    if (r.swapped) {
-                        // Refresh balances after the pre-swap so the main swap
-                        // sees the new stablecoin balance and the existing
-                        // CELO gas-buffer logic uses post-swap CELO balance.
-                        try { await loadBalances(); } catch (_) {}
-                    }
-                } catch (e) {
-                    console.warn('[swap] gas-top-up pre-flight error:', e);
-                    // Continue with the original swap; MiniPay will surface
-                    // its own gas error if it can't pay.
+                // Check if user has stablecoin for gas
+                const hasStablecoin = await checkMiniPayStablecoinBalance();
+                if (!hasStablecoin) {
+                    showSwapAlert('alert-error',
+                        '❌ Swap requires cUSD for gas<br><br>'
+                        + 'MiniPay uses stablecoins (cUSD/USDT/USDC) for transaction fees, not CELO.<br><br>'
+                        + 'Please claim your G$ on GoodMarket first to receive cUSD for gas.<br><br>'
+                        + '<button onclick="window.location.href=\'/wallet\'" '
+                        + 'style="background:linear-gradient(135deg,#7c3aed,#5b21b6);border:none;border-radius:12px;'
+                        + 'color:#fff;font-size:0.9rem;font-weight:700;padding:0.7rem 1.2rem;cursor:pointer;">'
+                        + '💰 Claim G$ on GoodMarket</button>'
+                    );
+                    setSwapBtnState("enter");
+                    return;
                 }
             }
             const stepIndicators = document.getElementById("stepIndicators");
@@ -4454,27 +4460,24 @@
             }
             clearReserveAlert();
 
-            // MiniPay-only pre-flight: same rationale as startSwap() — if
-            // the user has CELO but no stablecoin, the reserve swap tx will
-            // fail because MiniPay can't pay gas. Offer to convert the CELO
-            // above the 0.09 CELO reserve to cUSD first. Skipped when not in
-            // MiniPay or when the user
-            // is already buying with cUSD (they obviously have stablecoin).
+            // MiniPay users need stablecoin (cUSD/USDT/USDC) for gas, not CELO.
+            // Instead of auto-faucet (which wastes faucet funds), guide users to
+            // claim G$ on GoodMarket first to receive cUSD for gas.
             if (window.MPGasTopUp && window.MPGasTopUp.isMiniPay()) {
-                try {
-                    const r = await window.MPGasTopUp.ensureToppedUp(WALLET_ADDRESS, {
-                        body: 'You\'re about to swap on GoodReserve. MiniPay pays gas in '
-                            + '<strong>stablecoin (cUSD/USDT/USDC), not in CELO</strong> — '
-                            + 'you need to convert your CELO to cUSD first to pay for gas.'
-                            + '<br><br>'
-                            + 'You\'ll sign the swap inside MiniPay. We\'ll keep ~0.09 CELO untouched '
-                            + 'as your MiniPay reserve. '
-                            + '⚠️ <strong>Do not transfer the resulting cUSD to another wallet</strong> — '
-                            + 'it\'s needed as gas for your next transactions.',
-                    });
-                    if (!r.proceed) return; // user cancelled
-                } catch (e) {
-                    console.warn('[reserve] gas-top-up pre-flight error:', e);
+                // Check if user has stablecoin for gas
+                const hasStablecoin = await checkMiniPayStablecoinBalance();
+                if (!hasStablecoin) {
+                    showReserveAlert('alert-error',
+                        '❌ Swap requires cUSD for gas<br><br>'
+                        + 'MiniPay uses stablecoins (cUSD/USDT/USDC) for transaction fees, not CELO.<br><br>'
+                        + 'Please claim your G$ on GoodMarket first to receive cUSD for gas.<br><br>'
+                        + '<button onclick="window.location.href=\'/wallet\'" '
+                        + 'style="background:linear-gradient(135deg,#7c3aed,#5b21b6);border:none;border-radius:12px;'
+                        + 'color:#fff;font-size:0.9rem;font-weight:700;padding:0.7rem 1.2rem;cursor:pointer;">'
+                        + '💰 Claim G$ on GoodMarket</button>'
+                    );
+                    setReserveBtnState("enter");
+                    return;
                 }
             }
 
