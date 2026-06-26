@@ -239,6 +239,7 @@
   }
 
   async function placeOrder(orderId, amountGd, paymentWindowSeconds) {
+    // Flexible amount - must be between minOrder and maxOrder of the ad
     const prep = await jsonPost(
       "/p2p/api/orders/" + encodeURIComponent(orderId) + "/prepare-place",
       {
@@ -256,7 +257,7 @@
       console.warn("reportSubmitted failed (non-critical):", err);
     });
     
-    return { trade, txHash };
+    return { trade, txHash, order_amount_gd: prep.order_amount_gd, fiat_amount: prep.fiat_amount };
   }
 
   async function uploadProof(tradeId, proofUrl) {
@@ -375,10 +376,10 @@
       "/p2p/api/trades/" + encodeURIComponent(tradeId) + "/prepare-dispute"
     );
   }
-  function closeAd(orderId) {
+  function refundAd(orderId) {
     return _signTradeAction(
       orderId,
-      "/p2p/api/ads/" + encodeURIComponent(orderId) + "/prepare-close"
+      "/p2p/api/ads/" + encodeURIComponent(orderId) + "/prepare-refund"
     );
   }
 
@@ -403,7 +404,7 @@
     sendPreparedTx,
     waitForReceipt,
     openAd,
-    closeAd,
+    refundAd,
     placeOrder,
     uploadProof,
     uploadProofFile,
