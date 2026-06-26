@@ -116,14 +116,16 @@ class AdView:
     Mirrors the on-chain ``Ad`` struct in GoodMarketP2PEscrow.sol:
     ``(seller, totalLocked, remainingAmount, minOrder, maxOrder,
       activeTradeCount, open, exists)``.
+    
+    Note: Order amounts are flexible between minOrder and maxOrder.
     """
 
     ad_id: bytes  # 32-byte ad id
     seller: str
     total_locked: int  # wei
     remaining_amount: int  # wei
-    min_order: int
-    max_order: int
+    min_order: int  # minimum G$ per order (wei)
+    max_order: int  # maximum G$ per order (wei)
     active_trade_count: int
     open: bool
     exists: bool
@@ -258,6 +260,8 @@ class P2PEscrowContract:
     """
 
     # Defaults that match the contract constants
+    MIN_AD_AMOUNT_GD = 1_000.0  # 1,000 G$ minimum deposit
+    MIN_ORDER_GD = 1_000.0  # 1,000 G$ minimum per order
     DEFAULT_PAYMENT_WINDOW_SECONDS = 30 * 60  # 30 min
     MIN_PAYMENT_WINDOW_SECONDS = 15 * 60
     MAX_PAYMENT_WINDOW_SECONDS = 6 * 60 * 60
@@ -444,14 +448,18 @@ class P2PEscrowContract:
             label=f"openAd({ad_id_b.hex()})",
         )
 
-    def build_close_ad_tx(
+    def build_refund_ad_tx(
         self, seller_wallet: str, ad_id: bytes | str
     ) -> Dict[str, Any]:
+        """Build the unsigned ``refundAd`` tx for a seller.
+        
+        Refunds remaining G$ from ad. Only works if no active trades.
+        """
         ad_id_b = _ensure_bytes32(ad_id)
         return self._wrap_tx(
-            self.contract.functions.closeAd(ad_id_b),
+            self.contract.functions.refundAd(ad_id_b),
             from_=_checksum(seller_wallet),
-            label=f"closeAd({ad_id_b.hex()})",
+            label=f"refundAd({ad_id_b.hex()})",
         )
 
     def build_place_order_tx(
@@ -462,6 +470,10 @@ class P2PEscrowContract:
         amount_gd: float,
         payment_window_seconds: Optional[int] = None,
     ) -> Dict[str, Any]:
+        """Build the unsigned ``placeOrder`` tx for a buyer.
+        
+        Amount must be between the ad's minOrder and maxOrder.
+        """
         ad_id_b = _ensure_bytes32(ad_id)
         trade_id_b = _ensure_bytes32(trade_id)
         if payment_window_seconds is None:
@@ -496,7 +508,10 @@ class P2PEscrowContract:
             ),
             from_=_checksum(buyer_wallet),
             label=f"placeOrder({trade_id_b.hex()})",
-            extra={"payment_deadline": deadline},
+            extra={
+                "payment_deadline": deadline,
+                "amount_gd": amount_gd,
+            },
         )
 
     def build_cancel_order_tx(
