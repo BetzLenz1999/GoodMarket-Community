@@ -2629,15 +2629,18 @@ def admin_approve_referral():
         if not claim.get("claimed"):
             return jsonify({
                 "success": False,
-                "error": "Referral is already being processed. Please refresh and retry."
+                "error": "Referral is already being processed. Please refresh and retry.",
+                "debug": claim
             }), 409
 
         # Step 3: Process disbursement (referrer: 1000 G$, referee: 500 G$)
+        logger.info(f"Processing disbursement for {referral_code}: referrer={referrer_wallet[:8]}..., referee={referee_wallet[:8]}...")
         disbursement = referral_service.process_referral_disbursement(
             referrer_wallet=referrer_wallet,
             referee_wallet=referee_wallet,
             referral_code=referral_code
         )
+        logger.info(f"Disbursement result for {referral_code}: {disbursement}")
 
         # Step 4: Log admin action
         from supabase_client import log_admin_action
@@ -2665,15 +2668,34 @@ def admin_approve_referral():
                 "result": disbursement
             }), 200
 
-        return jsonify({
+        # Build detailed response
+        response = {
             "success": bool(disbursement.get("success")),
             "referral_code": referral_code,
             "referrer_wallet": referrer_wallet,
             "referee_wallet": referee_wallet,
             "referrer_reward": 1000.0,
             "referee_reward": 500.0,
+            "referrer_status": disbursement.get("referrer_status", "unknown"),
+            "referee_status": disbursement.get("referee_status", "unknown"),
             "result": disbursement
-        }), (200 if disbursement.get("success") else 202)
+        }
+
+        # Add error message if not fully successful
+        if not disbursement.get("success"):
+            referrer_ok = disbursement.get("referrer_status") == "completed"
+            referee_ok = disbursement.get("referee_status") == "completed"
+
+            if not referrer_ok and not referee_ok:
+                response["error"] = "Both referrer and referee disbursements failed"
+            elif not referrer_ok:
+                response["error"] = f"Referrer disbursement failed ({disbursement.get('referrer_status')})"
+            elif not referee_ok:
+                response["error"] = f"Referee disbursement failed ({disbursement.get('referee_status')})"
+            else:
+                response["error"] = "Partial disbursement - check results"
+
+        return jsonify(response), (200 if disbursement.get("success") else 202)
     except Exception as e:
         logger.error(f"❌ Admin approve referral error: {e}")
         import traceback
