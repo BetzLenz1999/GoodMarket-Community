@@ -6469,8 +6469,7 @@ async function loadMinigamesMaintenance() {
 
         async function loadReferralStats() {
             const cardsEl = document.getElementById('referral-summary-cards');
-            const topEl = document.getElementById('referral-top-referrers');
-            const recentEl = document.getElementById('referral-recent-list');
+            if (!cardsEl) return;
 
             try {
                 const res = await fetch('/api/admin/referral-stats');
@@ -6490,97 +6489,34 @@ async function loadMinigamesMaintenance() {
                     <div class="stat-card"><div class="stat-label">Failed</div><div class="stat-value" style="color:#ef4444">${s.failed}</div></div>
                     <div class="stat-card"><div class="stat-label">Total G$ Distributed</div><div class="stat-value" style="color:#10b981">${Number(s.total_g_distributed).toFixed(2)} G$</div></div>
                 `;
-
-                if (data.top_referrers && data.top_referrers.length > 0) {
-                    const rows = data.top_referrers.map(r => `
-                        <tr>
-                            <td style="font-family:monospace;font-size:0.85rem">${shortWallet(r.wallet_address)}</td>
-                            <td><code style="background:rgba(255,255,255,0.08);padding:0.2rem 0.5rem;border-radius:4px">${r.referral_code || '—'}</code></td>
-                            <td style="color:#10b981;font-weight:600">${Number(r.total_earned || 0).toFixed(2)} G$</td>
-                            <td style="color:rgba(241,245,249,0.6);font-size:0.85rem">${r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</td>
-                            <td>
-                                <button class="admin-btn" style="padding:0.35rem 0.6rem;font-size:0.78rem;" onclick="disburseReferralByCode('${(r.referral_code || '').replace(/'/g, '')}')">
-                                    💸 Disburse
-                                </button>
-                            </td>
-                        </tr>
-                    `).join('');
-                    topEl.innerHTML = `
-                        <table style="width:100%;border-collapse:collapse">
-                            <thead>
-                                <tr style="border-bottom:1px solid rgba(255,255,255,0.1);text-align:left">
-                                    <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Wallet</th>
-                                    <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Code</th>
-                                    <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Total Earned</th>
-                                    <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Since</th>
-                                    <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>${rows}</tbody>
-                        </table>`;
-                } else {
-                    topEl.innerHTML = `<p style="color:rgba(241,245,249,0.5);text-align:center;padding:1rem">No referrers yet</p>`;
-                }
-
-                if (data.recent_referrals && data.recent_referrals.length > 0) {
-                    const rows = data.recent_referrals.map(r => `
-                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05)">
-                            <td style="padding:0.6rem 0.5rem;font-family:monospace;font-size:0.82rem">${shortWallet(r.referrer_wallet)}</td>
-                            <td style="padding:0.6rem 0.5rem;font-family:monospace;font-size:0.82rem">${shortWallet(r.referee_wallet)}</td>
-                            <td style="padding:0.6rem 0.5rem"><code style="background:rgba(255,255,255,0.08);padding:0.15rem 0.4rem;border-radius:4px;font-size:0.8rem">${r.referral_code || '—'}</code></td>
-                            <td style="padding:0.6rem 0.5rem">${statusBadge(r.status)}</td>
-                            <td style="padding:0.6rem 0.5rem;color:rgba(241,245,249,0.6);font-size:0.82rem">${r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</td>
-                            <td style="padding:0.6rem 0.5rem;">
-                                <button class="admin-btn" style="padding:0.35rem 0.6rem;font-size:0.78rem;" onclick="disburseReferralByCode('${(r.referral_code || '').replace(/'/g, '')}')">
-                                    💸 Disburse
-                                </button>
-                            </td>
-                        </tr>
-                    `).join('');
-                    recentEl.innerHTML = `
-                        <div style="overflow-x:auto">
-                        <table style="width:100%;border-collapse:collapse;min-width:600px">
-                            <thead>
-                                <tr style="border-bottom:1px solid rgba(255,255,255,0.15);text-align:left">
-                                    <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Referrer</th>
-                                    <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Referee</th>
-                                    <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Code</th>
-                                    <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Status</th>
-                                    <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Date</th>
-                                    <th style="padding:0.75rem 0.5rem;color:rgba(241,245,249,0.6);font-weight:600">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>${rows}</tbody>
-                        </table>
-                        </div>`;
-                } else {
-                    recentEl.innerHTML = `<p style="color:rgba(241,245,249,0.5);text-align:center;padding:1rem">No referrals recorded yet</p>`;
-                }
             } catch (e) {
-                cardsEl.innerHTML = `<p style="color:#ef4444">❌ Error loading referral stats: ${e.message}</p>`;
+                if (cardsEl) cardsEl.innerHTML = `<p style="color:#ef4444">❌ Error: ${e.message}</p>`;
             }
         }
 
+        // Legacy function - kept for compatibility but uses new API
         async function disburseReferralByCode(referralCode) {
             if (!referralCode || referralCode === '—') {
                 alert('No referral code found for this row.');
                 return;
             }
-            if (!confirm(`Disburse rewards for referral code ${referralCode}?`)) return;
+            if (!confirm(`Approve and disburse rewards for referral code ${referralCode}?\n\nYou must have verified the on-chain claim on CeloScan first!`)) return;
             try {
-                const res = await fetch('/api/admin/referral/disburse-by-code', {
+                const res = await fetch('/api/admin/referral/approve', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ referral_code: referralCode })
                 });
                 const data = await res.json();
                 if (!res.ok || !data.success) {
-                    alert(`❌ Failed: ${data.error || 'Unable to disburse referral rewards.'}`);
+                    alert(`❌ Failed: ${data.error || 'Unable to approve referral.'}`);
                     return;
                 }
-                alert(`✅ Disbursement processed for ${referralCode}.`);
+                alert(`✅ SUCCESS!\n\nReferral ${referralCode} approved!\n\n• Referrer: 1,000 G$\n• Referee: 500 G$`);
                 loadReferralStats();
                 loadReferralKeyBalance();
+                loadPendingReferrals();
+                loadCompletedReferrals();
             } catch (e) {
                 alert(`❌ Error: ${e.message}`);
             }
