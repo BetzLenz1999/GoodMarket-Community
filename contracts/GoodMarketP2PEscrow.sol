@@ -8,20 +8,23 @@ pragma solidity ^0.8.21;
  * Architecture: Hybrid pre-funded escrow.
  *   - Seller "opens" an ad by depositing the full G$ amount into the contract.
  *   - Buyers "place orders" against the ad, locking a portion until payment is settled.
- *   - Seller "closes" the ad anytime there are no active trades, withdrawing remainder.
+ *   - Seller can "refund" remaining G$ anytime there are no active trades.
  *
  * Trust model: Fully trustless for users.
  *   - msg.sender is the authenticated party (no operator-relayed calls).
  *   - Contract holds funds; admin cannot withdraw on behalf of users.
  *   - Admin role is limited to dispute resolution and emergency pause.
  *
+ * Constants:
+ *   - MIN_AD_AMOUNT: 1,000 G$ (minimum deposit to create ad)
+ *   - MIN_ORDER: 1,000 G$ (minimum per order, flexible max)
+ *
  * Lifecycle:
- *   AD:    Open → Closed | Exhausted | Suspended
+ *   AD:    Open → Refunded | Exhausted
  *   TRADE: PaymentPending → AwaitingRelease → Completed | Disputed → Completed | Refunded
  *                       └→ Cancelled | Expired (refunds back to ad)
  *
  * Off-chain responsibilities (kept in DB / app):
- *   - Fiat currency, payment method, payment instructions
  *   - Payment proofs (screenshots), buyer/seller chat, ratings, dispute reasons
  *   - Dispute investigation (admin reviews proofs, then calls resolveDispute)
  */
@@ -43,7 +46,8 @@ contract GoodMarketP2PEscrow {
 
     // ─── Configuration Constants ────────────────────────────────────────────
 
-    uint256 public constant MIN_AD_AMOUNT      = 20_000 ether;  // 20,000 G$ (18 decimals)
+    uint256 public constant MIN_AD_AMOUNT      = 1_000 ether;    // 1,000 G$ minimum deposit
+    uint256 public constant MIN_ORDER          = 1_000 ether;    // 1,000 G$ minimum per order
     uint256 public constant MIN_PAYMENT_WINDOW = 15 minutes;
     uint256 public constant MAX_PAYMENT_WINDOW = 6 hours;
     uint256 public constant AUTO_RELEASE_DELAY = 48 hours;      // after markPaid, before auto-release allowed
@@ -54,8 +58,8 @@ contract GoodMarketP2PEscrow {
         address seller;
         uint256 totalLocked;       // G$ initially deposited
         uint256 remainingAmount;   // G$ available for new orders
-        uint256 minOrder;          // min G$ per order
-        uint256 maxOrder;          // max G$ per order
+        uint256 minOrder;          // min G$ per order (flexible)
+        uint256 maxOrder;          // max G$ per order (flexible)
         uint32  activeTradeCount;  // count of unresolved trades against this ad
         bool    open;              // true if ad is still accepting orders
         bool    exists;            // sentinel
@@ -75,9 +79,9 @@ contract GoodMarketP2PEscrow {
     struct Trade {
         bytes32 adId;
         address buyer;
-        uint256 amount;
-        uint64  deadline;        // payment-pending expires at this timestamp
-        uint64  markedPaidAt;    // 0 unless buyer marked paid
+        uint256 amount;           // flexible amount (between minOrder and maxOrder)
+        uint64  deadline;         // payment-pending expires at this timestamp
+        uint64  markedPaidAt;     // 0 unless buyer marked paid
         TradeStatus status;
         bool    exists;
     }
@@ -94,7 +98,7 @@ contract GoodMarketP2PEscrow {
         uint256 minOrder,
         uint256 maxOrder
     );
-    event AdClosed(bytes32 indexed adId, address indexed seller, uint256 refundedAmount);
+    event AdRefunded(bytes32 indexed adId, address indexed seller, uint256 refundedAmount);
     event AdExhausted(bytes32 indexed adId);
 
     event OrderPlaced(
@@ -169,6 +173,7 @@ contract GoodMarketP2PEscrow {
      * @dev Requires prior `gDollar.approve(this, totalAmount)`.
      *      adId must be unique and may be generated client-side
      *      (e.g. keccak256(seller, nonce)).
+     *      minOrder and maxOrder define the flexible order size range.
      */
     function openAd(
         bytes32 adId,
@@ -178,9 +183,9 @@ contract GoodMarketP2PEscrow {
     ) external whenNotPaused nonReentrant {
         require(!ads[adId].exists, "P2P: ad already exists");
         require(totalAmount >= MIN_AD_AMOUNT, "P2P: below MIN_AD_AMOUNT");
-        require(minOrder >= MIN_AD_AMOUNT,    "P2P: minOrder below MIN_AD_AMOUNT");
-        require(maxOrder >= minOrder,         "P2P: maxOrder < minOrder");
-        require(maxOrder <= totalAmount,      "P2P: maxOrder > totalAmount");
+        require(minOrder >= MIN_ORDER, "P2P: minOrder below MIN_ORDER");
+        require(maxOrder >= minOrder, "P2P: maxOrder < minOrder");
+        require(maxOrder <= totalAmount, "P2P: maxOrder > totalAmount");
 
         // Pull G$ from seller
         require(
@@ -203,26 +208,25 @@ contract GoodMarketP2PEscrow {
     }
 
     /**
-     * @notice Seller cancels their own ad. Only allowed if no active trades.
-     * @dev Refunds the remainingAmount back to the seller's wallet.
-     *      Also callable as a "withdraw dust" once an ad is exhausted.
+     * @notice Seller refunds remaining G$ from their ad.
+     * @dev Only allowed if no active trades are pending.
+     *      Refunds the remainingAmount back to the seller's wallet.
      */
-    function closeAd(bytes32 adId) external nonReentrant {
+    function refundAd(bytes32 adId) external nonReentrant {
         Ad storage ad = ads[adId];
         require(ad.exists, "P2P: ad not found");
         require(ad.seller == msg.sender, "P2P: not your ad");
         require(ad.open, "P2P: ad already closed");
         require(ad.activeTradeCount == 0, "P2P: ad has active trades");
+        require(ad.remainingAmount > 0, "P2P: nothing to refund");
 
         uint256 refund = ad.remainingAmount;
         ad.remainingAmount = 0;
         ad.open = false;
 
-        if (refund > 0) {
-            require(gDollar.transfer(msg.sender, refund), "P2P: G$ transfer failed");
-        }
+        require(gDollar.transfer(msg.sender, refund), "P2P: G$ transfer failed");
 
-        emit AdClosed(adId, msg.sender, refund);
+        emit AdRefunded(adId, msg.sender, refund);
     }
 
     /**
@@ -272,6 +276,7 @@ contract GoodMarketP2PEscrow {
     /**
      * @notice Buyer places an order against an open ad.
      * @dev Locks `amount` from the ad's remainingAmount.
+     *      Amount must be between minOrder and maxOrder of the ad.
      *      tradeId must be unique; deadline is the timestamp by which buyer must mark paid.
      */
     function placeOrder(
@@ -493,10 +498,10 @@ contract GoodMarketP2PEscrow {
 
     function _checkAdExhausted(bytes32 adId) internal {
         Ad storage ad = ads[adId];
+        // Check if remaining is less than minOrder and no active trades
         if (ad.open && ad.remainingAmount < ad.minOrder && ad.activeTradeCount == 0) {
-            // Ad is exhausted (or below min) and has no active trades.
-            // Mark closed; seller can call closeAd() to retrieve any dust.
-            // We don't auto-transfer here so the seller maintains control.
+            // Ad is exhausted (below minOrder) and has no active trades.
+            // Seller can call refundAd() to retrieve remaining G$.
             emit AdExhausted(adId);
         }
     }
