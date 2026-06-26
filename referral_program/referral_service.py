@@ -706,18 +706,10 @@ class ReferralService:
         referee_already_done = existing.get("referee_completed", False)
 
         try:
-            # Only send to referrer if not already done
-            if referrer_already_done:
-                logger.info(f"Referrer reward for {referral_code} already completed - skipping blockchain call")
-                referrer_result = {"success": True, "tx_hash": existing.get("referrer_tx"), "skipped": True}
-            else:
-                referrer_result = referral_blockchain_service.disburse_referral_reward_sync(
-                    wallet_address=referrer_wallet,
-                    amount=REFERRER_REWARD,
-                    reward_type='referrer'
-                )
-            
-            # Only send to referee if not already done
+            # IMPORTANT: Process referee FIRST (500 G$), then referrer (1000 G$)
+            # This ensures nonce ordering doesn't cause referrer TX to fail.
+            # Nonce must be sequential: referee=nonce N, referrer=nonce N+1
+
             if referee_already_done:
                 logger.info(f"Referee reward for {referral_code} already completed - skipping blockchain call")
                 referee_result = {"success": True, "tx_hash": existing.get("referee_tx"), "skipped": True}
@@ -726,6 +718,16 @@ class ReferralService:
                     wallet_address=referee_wallet,
                     amount=REFEREE_REWARD,
                     reward_type='referee'
+                )
+
+            if referrer_already_done:
+                logger.info(f"Referrer reward for {referral_code} already completed - skipping blockchain call")
+                referrer_result = {"success": True, "tx_hash": existing.get("referrer_tx"), "skipped": True}
+            else:
+                referrer_result = referral_blockchain_service.disburse_referral_reward_sync(
+                    wallet_address=referrer_wallet,
+                    amount=REFERRER_REWARD,
+                    reward_type='referrer'
                 )
 
             def _status_for(result):
