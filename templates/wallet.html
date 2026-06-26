@@ -1444,6 +1444,10 @@
                     <div class="action-circle">🏦</div>
                     <span class="action-label">Savings</span>
                 </div>
+                <div class="action-item" id="actionP2P" onclick="return navigateWithFeedback('/p2p/', 'Opening P2P Trade…')">
+                    <div class="action-circle" style="background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;">🤝</div>
+                    <span class="action-label">P2P Trade</span>
+                </div>
                 <div class="action-item" onclick="handleVirtualCardAction()">
                     <div class="action-circle">💳</div>
                     <span class="action-label">Virtual Card</span>
@@ -5359,29 +5363,9 @@
                 let gasCheckedByBackend = false;
 
                 if (isMiniPayClaim) {
-                    // GoodDapp-style: use the lower direct-claim threshold
-                    // (0.001 USD) instead of the conservative faucet threshold
-                    // (0.015 USD). A single claim() only costs ~0.001-0.003 cUSD,
-                    // so even tiny stablecoin balances are enough. Only block when
-                    // the user has literally zero stablecoin AND no CELO to swap.
-                    if (window.MPGasTopUp
-                        && typeof window.MPGasTopUp.getBalances === 'function') {
-                        const mpBalances = await window.MPGasTopUp.getBalances(WALLET);
-                        const hasAnyStable = window.MPGasTopUp.hasAnyStablecoinForDirectClaim
-                            ? window.MPGasTopUp.hasAnyStablecoinForDirectClaim(mpBalances)
-                            : window.MPGasTopUp.hasStablecoinGasBalance(mpBalances);
-                        const hasCeloToSwap = mpBalances && mpBalances.celo && mpBalances.celo > 90000000000000000n;
-
-                        if (!hasAnyStable && !hasCeloToSwap) {
-                            throw new Error('MiniPay wallet has insufficient gas: no stablecoin balance AND no CELO to swap. Please add funds or wait for faucet cooldown.');
-                        }
-                        // If user has even a tiny stablecoin, let MiniPay try the tx.
-                        // If it fails with insufficient funds, the catch block below
-                        // will trigger the faucet fallback.
-                    }
-
-                    // MiniPay: proceed to claim tx. Gas is paid in stablecoins
-                    // via CIP-64 fee currencies.
+                    // GoodDapp-style: No pre-flight balance check.
+                    // Proceed directly. If claim fails due to insufficient gas,
+                    // the catch block will handle the faucet fallback with proper UX messages.
                     setClaimGasUiState('gas_ready');
                 } else if (usingWcBridge) {
                     // WalletConnect bridge: skip the wallet-side balance
@@ -5395,27 +5379,11 @@
                 } else {
                     // Secondary MiniPay check: even if _isMiniPay() returned false earlier
                     // (due to late provider injection), re-check now that we have a provider.
-                    // This catches the race condition where MiniPay detection failed initially.
                     const lateDetectedMiniPay = provider && provider.isMiniPay;
                     if (lateDetectedMiniPay) {
-                        console.warn('[claim] Late MiniPay detection - provider.isMiniPay is true but _isMiniPay() was false');
+                        console.warn('[claim] Late MiniPay detection - proceeding directly');
                         if (window.MPGasTopUp && window.MPGasTopUp.setMiniPayDetected) {
                             window.MPGasTopUp.setMiniPayDetected();
-                        }
-                        // GoodDapp-style: only block if literally zero stablecoin AND no CELO.
-                        if (window.MPGasTopUp && window.MPGasTopUp.getBalances) {
-                            const mpBalances = await window.MPGasTopUp.getBalances(WALLET);
-                            const hasAnyStable = window.MPGasTopUp.hasAnyStablecoinForDirectClaim
-                                ? window.MPGasTopUp.hasAnyStablecoinForDirectClaim(mpBalances)
-                                : window.MPGasTopUp.hasStablecoinGasBalance(mpBalances);
-                            if (!hasAnyStable) {
-                                const hasCeloToSwap = mpBalances && mpBalances.celo && mpBalances.celo > 90000000000000000n;
-                                if (!hasCeloToSwap) {
-                                    throw new Error('MiniPay wallet detected late. No stablecoin and no CELO to swap. Please add funds or wait for faucet cooldown.');
-                                }
-                                // Has CELO but no stablecoin — still let it proceed,
-                                // the insufficient-funds catch will trigger faucet.
-                            }
                         }
                         setClaimGasUiState('gas_ready');
                     } else {
@@ -5578,23 +5546,51 @@
                 } catch (sendErr) {
                     if (!isInsufficientFundsError(sendErr)) throw sendErr;
                     if (isMiniPayClaim) {
-                        // GoodDapp-style fallback: direct claim failed with
-                        // insufficient funds. Run the faucet flow now and retry.
-                        console.warn('[claim] MiniPay direct claim failed (insufficient gas). Running faucet fallback…');
-                        setStatus('⛽ Direct claim needs more gas. Running faucet top-up…', '#facc15');
+                        // GoodDapp-style: direct claim failed with insufficient gas.
+                        // Show new UX messages and run the faucet + swap flow.
+                        console.warn('[claim] MiniPay direct claim failed (insufficient gas). Running faucet + swap flow...');
+
+                        // Step 1: Show message about insufficient gas and starting CELO faucet
+                        setStatus('⚠️ Insufficient stablecoin for gas. We\'re topping up your CELO from GoodDollar...', '#facc15');
+
                         if (window.MPGasTopUp && window.MPGasTopUp.ensureToppedUp) {
                             try {
-                                const r = await window.MPGasTopUp.ensureToppedUp(WALLET, { stableGasOnly: true });
+                                // Step 2: Run the full ensureToppedUp flow which includes:
+                                // - CELO faucet from GoodDollar
+                                // - cUSD faucet from GoodMarket
+                                // - CELO → cUSD swap
+                                const r = await window.MPGasTopUp.ensureToppedUp(WALLET);
+
                                 if (!r || !r.proceed) {
-                                    const reason = (r && r.error) || (r && r.cooldown ? 'Faucet on cooldown' : 'Faucet did not complete');
-                                    throw new Error('MiniPay claim failed: insufficient stablecoin gas and faucet could not help (' + reason + '). Please add cUSD/USDT/USDC to your wallet.');
+                                    // Handle faucet failure scenarios
+                                    if (r && r.cooldown) {
+                                        const human = r.cooldownSeconds ? Math.ceil(r.cooldownSeconds / 3600) + ' hours' : 'some time';
+                                        throw new Error('⏳ The GoodDollar CELO faucet is on cooldown. Please wait ~' + human + ' or add stablecoin to your wallet manually.');
+                                    } else if (r && r.insufficientGas) {
+                                        throw new Error('❌ Your MiniPay wallet has no stablecoin and no CELO to swap. Please add funds to your wallet.');
+                                    } else if (r && r.cancelled) {
+                                        throw new Error('❌ Gas top-up was cancelled. Please try again.');
+                                    } else {
+                                        throw new Error('❌ Gas top-up did not complete. ' + (r && r.error ? r.error : 'Please try again.'));
+                                    }
                                 }
-                                // Faucet succeeded, retry the claim
-                                setStatus('✅ Gas topped up. Retrying claim…', 'var(--text-dim)');
+
+                                // Step 3: CELO faucet received (handled by ensureToppedUp)
+                                // Step 4: cUSD faucet received (handled by ensureToppedUp)
+                                // Step 5: Swap confirmed (handled by ensureToppedUp)
+                                setStatus('✅ Gas topped up and swap confirmed! Retrying your claim...', 'var(--green)');
                                 txHash = await sendCeloClaim();
                             } catch (faucetErr) {
                                 if (_isUserRejectedError && _isUserRejectedError(faucetErr)) throw faucetErr;
-                                throw new Error('MiniPay claim failed: ' + ((faucetErr && faucetErr.message) || 'insufficient stablecoin gas for claim. Please add cUSD/USDT/USDC.'));
+                                // Check for specific error types
+                                const errMsg = (faucetErr && faucetErr.message) || '';
+                                if (errMsg.includes('cooldown')) {
+                                    throw faucetErr; // Already formatted above
+                                } else if (errMsg.includes('no stablecoin') || errMsg.includes('no CELO')) {
+                                    throw new Error('❌ Your MiniPay wallet needs either stablecoin (cUSD/USDT/USDC) or CELO to swap. Please add funds to your wallet.');
+                                } else {
+                                    throw new Error('❌ Claim failed: ' + errMsg || 'Insufficient gas. Please add cUSD or CELO to your wallet.');
+                                }
                             }
                         } else {
                             throw sendErr;
@@ -5790,155 +5786,16 @@
 
             showCeloBalanceWarningOnce();
 
-            // Debug logging for MiniPay detection
-            const hasMPGasTopUp = !!window.MPGasTopUp;
-            const isMiniPayDetected = hasMPGasTopUp && window.MPGasTopUp.isMiniPay ? window.MPGasTopUp.isMiniPay() : false;
-            console.log('[v0] doUbiClaim MiniPay check:', {
-                hasMPGasTopUp,
-                isMiniPayDetected,
-                hasEthereum: typeof window.ethereum !== 'undefined',
-                ethereumIsMiniPay: window.ethereum?.isMiniPay,
-                WALLET: WALLET
-            });
-
-            // MiniPay-only pre-flight: GoodDapp-style direct claim with faucet fallback.
-            //
-            // PRIMARY (GoodDapp-style): If the user has ANY stablecoin balance
-            // (even 0.002 cUSD), skip the faucet pre-flight entirely and let
-            // MiniPay attempt the claim tx directly. Celo's CIP-64 fee
-            // abstraction only needs a tiny amount for a single claim() call.
-            //
-            // FALLBACK (GoodMarket faucet): If the user has zero stablecoin,
-            // OR if the direct claim attempt fails with insufficient funds,
-            // then run the full faucet + swap flow (ensureToppedUp).
-            //
-            // This flag tracks whether we used the direct path so the claim
-            // error handler knows to retry via faucet on insufficient-funds.
-            let _miniPayDirectClaimAttempt = false;
-            if (window.MPGasTopUp && window.MPGasTopUp.isMiniPay()) {
-                let mpBalances;
-                try {
-                    mpBalances = await window.MPGasTopUp.getBalances(WALLET);
-                } catch (_) { mpBalances = null; }
-
-                const canDirectClaim = mpBalances
-                    && window.MPGasTopUp.hasAnyStablecoinForDirectClaim
-                    && window.MPGasTopUp.hasAnyStablecoinForDirectClaim(mpBalances);
-
-                console.log('[v0] doUbiClaim MiniPay direct-claim check:', {
-                    canDirectClaim,
-                    cusd: mpBalances?.cusd?.toString(),
-                    usdt: mpBalances?.usdt?.toString(),
-                    usdc: mpBalances?.usdc?.toString(),
-                    celo: mpBalances?.celo?.toString(),
-                });
-
-                if (canDirectClaim) {
-                    // GoodDapp-style: user has some stablecoin, proceed directly.
-                    _miniPayDirectClaimAttempt = true;
-                    appendStatusLine('✅ MiniPay stablecoin detected — attempting direct claim (GoodDapp-style).', 'var(--green)');
-                } else {
-                    // No stablecoin at all — must run the faucet flow first.
-                    try {
-                        const r = await window.MPGasTopUp.ensureToppedUp(WALLET, {
-                            body: 'You\'re about to claim G$. MiniPay pays gas in '
-                                + '<strong>stablecoin (cUSD/USDT/USDC), not in CELO</strong> — '
-                                + 'you need to convert your CELO to cUSD first to pay for gas.'
-                                + '<br><br>'
-                                + 'You\'ll sign the swap inside MiniPay. We\'ll keep ~0.09 CELO untouched '
-                                + 'as your MiniPay reserve. '
-                                + '⚠️ <strong>Do not transfer the resulting cUSD to another wallet</strong> — '
-                                + 'it\'s needed as gas for your next claims.',
-                        });
-                        if (!r || !r.proceed) {
-                            if (r && r.insufficientGas) {
-                                setStatus('❌ Insufficient gas: Your MiniPay wallet needs either stablecoin (cUSD/USDT/USDC) OR CELO to swap. Please add funds or wait for faucet cooldown.', 'var(--red)');
-                            } else if (r && r.cooldown) {
-                                const human = r.cooldownSeconds ? Math.ceil(r.cooldownSeconds / 3600) + ' hours' : 'some time';
-                                setStatus('⏳ Gas faucet is on cooldown. Please wait ~' + human + ' or add stablecoin to your wallet manually.', '#fbbf24');
-                            } else if (r && r.cancelled) {
-                                setStatus('Gas top-up was cancelled.', '#fbbf24');
-                            } else {
-                                setStatus('MiniPay gas pre-check did not complete. ' + (r && r.error ? r.error : 'Claim cancelled.'), '#fbbf24');
-                            }
-                            return;
-                        }
-                        appendStatusLine('✅ MiniPay gas pre-check passed. Proceeding to wallet approval.', 'var(--green)');
-                    } catch (e) {
-                        console.warn('[claim] gas-top-up pre-flight error:', e);
-                        if (window.MPGasTopUp && typeof window.MPGasTopUp.getBalances === 'function') {
-                            try {
-                                const recheckBal = await window.MPGasTopUp.getBalances(WALLET);
-                                const hasAny = window.MPGasTopUp.hasAnyStablecoinForDirectClaim
-                                    ? window.MPGasTopUp.hasAnyStablecoinForDirectClaim(recheckBal)
-                                    : false;
-                                if (hasAny) {
-                                    // Faucet errored but user actually has stablecoin — try direct.
-                                    _miniPayDirectClaimAttempt = true;
-                                    appendStatusLine('⚠️ Faucet flow failed, but stablecoin detected — attempting direct claim.', '#fbbf24');
-                                } else {
-                                    const hasCeloToSwap = recheckBal && recheckBal.celo && recheckBal.celo > 90000000000000000n;
-                                    if (!hasCeloToSwap) {
-                                        setStatus('❌ MiniPay wallet has insufficient gas: no stablecoin AND no CELO to swap. Please add funds or wait for faucet cooldown.', 'var(--red)');
-                                        return;
-                                    }
-                                    setStatus('⚠️ MiniPay needs stablecoin gas. You have CELO but no cUSD - please swap some CELO to cUSD first using the gas top-up flow.', '#fbbf24');
-                                    return;
-                                }
-                            } catch (balanceErr) {
-                                console.warn('[claim] MiniPay balance re-check failed:', balanceErr);
-                                setStatus('❌ Could not verify MiniPay gas balance. Please refresh and try again.', 'var(--red)');
-                                return;
-                            }
-                        } else {
-                            setStatus('❌ MiniPay gas check module not available. Please refresh the page.', 'var(--red)');
-                            return;
-                        }
-                    }
-                }
-            }
+            // GoodDapp-style: Always attempt direct claim first without any threshold check.
+            // Let the claim fail naturally if insufficient gas, then handle the fallback.
+            // MiniPay CIP-64 fee abstraction will handle stablecoin gas payment.
+            console.log('[v0] doUbiClaim: Attempting direct claim (GoodDapp-style, no threshold check)');
 
 
             if (!window.useServerSigning) {
-                // FINAL SAFETY CHECK: Before going to wallet approval, double-check
-                // if this is actually MiniPay (detection can be flaky). If it is,
-                // only block when the user has literally zero stablecoin AND no CELO.
-                // GoodDapp-style: any stablecoin balance is enough to attempt claim.
-                const finalMiniPayCheck = window.ethereum && window.ethereum.isMiniPay;
-                if (finalMiniPayCheck) {
-                    console.log('[v0] Final MiniPay safety check triggered');
-                    if (window.MPGasTopUp && window.MPGasTopUp.setMiniPayDetected) {
-                        window.MPGasTopUp.setMiniPayDetected();
-                    }
-                    if (window.MPGasTopUp && window.MPGasTopUp.getBalances) {
-                        try {
-                            const finalBalances = await window.MPGasTopUp.getBalances(WALLET);
-                            const hasAnyStable = window.MPGasTopUp.hasAnyStablecoinForDirectClaim
-                                ? window.MPGasTopUp.hasAnyStablecoinForDirectClaim(finalBalances)
-                                : window.MPGasTopUp.hasStablecoinGasBalance(finalBalances);
-                            const hasCeloToSwap = finalBalances && finalBalances.celo && finalBalances.celo > 90000000000000000n;
-
-                            console.log('[v0] Final MiniPay balance check (GoodDapp-style):', {
-                                hasAnyStable,
-                                hasCeloToSwap,
-                                celo: finalBalances?.celo?.toString(),
-                                cusd: finalBalances?.cusd?.toString()
-                            });
-
-                            if (!hasAnyStable && !hasCeloToSwap) {
-                                setStatus('❌ MiniPay detected: Your wallet has no stablecoin and no CELO to swap. Please add funds or wait for faucet cooldown.', 'var(--red)');
-                                return;
-                            }
-                            // If user has any stablecoin (even tiny), proceed —
-                            // the insufficient-funds catch will handle faucet fallback.
-                        } catch (finalCheckErr) {
-                            console.warn('[v0] Final MiniPay balance check failed:', finalCheckErr);
-                            // Don't block on balance check failure — let the claim attempt proceed.
-                            // If it truly fails, the catch block will handle it.
-                        }
-                    }
-                }
-                
+                // GoodDapp-style: No pre-flight balance check.
+                // Always proceed to claim. If it fails due to insufficient gas,
+                // the catch block will handle the faucet fallback.
                 ensureInjectedWalletClaim();
                 return;
             }
