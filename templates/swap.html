@@ -1622,7 +1622,9 @@
         };
         const CELO_CHAIN_ID  = 42220;
         const LOGIN_METHOD = '{{ login_method }}';
+        // Server-side signing is only used for Turnkey-based logins (Google/email).
         // Pure self-custody mode: never use server-side signing.
+        window.useServerSigning = ['turnkey_google', 'turnkey_email'].includes((LOGIN_METHOD || '').toLowerCase());
         window.GMSquidBootstrap = { ...SQUID_CONFIG, walletAddress: WALLET_ADDRESS, loginMethod: LOGIN_METHOD };
         const WC_PROJECT_ID = '{{ walletconnect_project_id }}';
         // Robust WalletConnect detection: LOGIN_METHOD is primary, but sessions
@@ -2690,6 +2692,18 @@
             await loadBalances();
             await loadFuseSwapBalances();
             updateUI();
+            // Backup click handler for swapBtn to ensure it's always attached
+            const swapBtn = document.getElementById("swapBtn");
+            if (swapBtn) {
+                swapBtn.addEventListener("click", function(e) {
+                    console.log('[swap] swapBtn click event fired');
+                    // Only trigger if not already handled by onclick
+                    if (typeof startSwap === "function" && !swapBtn.disabled) {
+                        e.preventDefault();
+                        startSwap();
+                    }
+                });
+            }
         });
 
         // ─── UI Helpers ───────────────────────────────────────────────────────────
@@ -2889,6 +2903,7 @@
 
         function setSwapBtnState(state, label) {
             const btn = document.getElementById("swapBtn");
+            if (!btn) return; // Guard: button not found, skip
             switch (state) {
                 case "enter":
                     btn.disabled = true;
@@ -2915,12 +2930,14 @@
 
         function showAlert(type, html) {
             const el = document.getElementById("swapAlert");
+            if (!el) return;
             el.className = `alert ${type} show`;
             el.innerHTML = html;
         }
 
         function clearAlert() {
             const el = document.getElementById("swapAlert");
+            if (!el) return;
             el.className = "alert";
             el.innerHTML = "";
         }
@@ -3207,11 +3224,13 @@
 
         // ─── Execute Swap ──────────────────────────────────────────────────────────
         async function startSwap() {
+            console.log('[swap] startSwap called, currentQuote:', currentQuote ? 'present' : 'null');
             if (!currentQuote) { showAlert("alert-error", "Please enter an amount first."); return; }
 
             clearAlert();
             const from  = TOKENS[fromToken];
             const to    = TOKENS[toToken];
+            console.log('[swap] swap params:', from.symbol, '->', to.symbol, 'amountIn:', currentQuote.amountIn);
 
             // MiniPay-only pre-flight: if the user holds CELO but has zero
             // stablecoin balance, MiniPay's CIP-64 fee abstraction has
