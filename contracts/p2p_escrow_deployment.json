@@ -33,31 +33,6 @@
           "internalType": "bytes32",
           "name": "adId",
           "type": "bytes32"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "seller",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "refundedAmount",
-          "type": "uint256"
-        }
-      ],
-      "name": "AdClosed",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "bytes32",
-          "name": "adId",
-          "type": "bytes32"
         }
       ],
       "name": "AdExhausted",
@@ -98,6 +73,31 @@
         }
       ],
       "name": "AdOpened",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "adId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "seller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "refundedAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "AdRefunded",
       "type": "event"
     },
     {
@@ -369,6 +369,19 @@
     },
     {
       "inputs": [],
+      "name": "MIN_ORDER",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
       "name": "MIN_PAYMENT_WINDOW",
       "outputs": [
         {
@@ -469,19 +482,6 @@
         }
       ],
       "name": "cancelOrder",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "adId",
-          "type": "bytes32"
-        }
-      ],
-      "name": "closeAd",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -737,6 +737,19 @@
       "inputs": [
         {
           "internalType": "bytes32",
+          "name": "adId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "refundAd",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
           "name": "tradeId",
           "type": "bytes32"
         }
@@ -859,5 +872,6 @@
       "stateMutability": "nonpayable",
       "type": "function"
     }
-  ]
+  ],
+  "updated": true
 }
