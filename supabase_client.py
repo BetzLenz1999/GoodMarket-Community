@@ -180,7 +180,11 @@ CREATE TABLE IF NOT EXISTS referrals (
     status VARCHAR(30) DEFAULT 'pending_face_verification',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     completed_at TIMESTAMP WITH TIME ZONE,
-    error_message TEXT
+    error_message TEXT,
+    onchain_verified BOOLEAN DEFAULT FALSE,
+    admin_verified_at TIMESTAMP WITH TIME ZONE,
+    approved_by_wallet VARCHAR(42),
+    approved_by_ip VARCHAR(45)
 );
 CREATE INDEX IF NOT EXISTS idx_referrals_code ON referrals(referral_code);
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_wallet);
