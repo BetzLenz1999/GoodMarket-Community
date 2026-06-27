@@ -5744,32 +5744,6 @@ def learn_earn_page():
                          walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
                          is_admin_user=is_admin_user)
 
-@routes.route('/api/p2p/history')
-def get_p2p_history_api():
-    """P2P trading has been removed - return empty history"""
-    try:
-        wallet = session.get('wallet')
-        if not wallet or not session.get('verified'):
-            return jsonify({"success": False, "error": "Not authenticated"}), 401
-
-        logger.info(f"📋 P2P trading disabled - returning empty history for {wallet[:8]}...")
-
-        return jsonify({
-            "success": True,
-            "trades": [],
-            "total": 0,
-            "message": "P2P trading feature has been disabled"
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error in P2P history endpoint: {e}")
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "trades": [],
-            "total": 0
-        }), 500
-
 @routes.route("/api/admin/community-stories-notifications", methods=["GET"])
 @admin_required
 def get_admin_notifications():
