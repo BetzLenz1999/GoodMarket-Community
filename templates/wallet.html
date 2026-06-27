@@ -2658,14 +2658,34 @@
     };
 
     // ── MiniPay CIP-64 fee-abstracted tx helpers ──
+    function _isMiniPayProvider(provider) {
+        return !!(
+            provider &&
+            (provider.isMiniPay || provider.isMiniPayWallet || provider.isOperaMiniPay)
+        );
+    }
+
     function _isMiniPay() {
         const ep = _getEthProvider();
-        if (ep && ep.isMiniPay) return true;
-        if (window.ethereum && window.ethereum.isMiniPay) return true;
+        if (_isMiniPayProvider(ep)) return true;
+        if (_isMiniPayProvider(window.ethereum)) return true;
         if (window.ethereum && window.ethereum.providers
-            && window.ethereum.providers.some(p => p && p.isMiniPay)) return true;
+            && window.ethereum.providers.some(p => _isMiniPayProvider(p))) return true;
         if (typeof navigator !== 'undefined' && /minipay/i.test(navigator.userAgent || '')) return true;
         return false;
+    }
+
+    function _isRpcMethodNotWhitelistedError(err) {
+        const raw = String(
+            (err && (
+                err.shortMessage ||
+                err.message ||
+                (err.data && err.data.message) ||
+                (err.error && err.error.message)
+            )) || ''
+        ).toLowerCase();
+        const code = err && (err.code || (err.error && err.error.code));
+        return code === -32601 || /rpc method.*not whitelisted|method.*not whitelisted|not whitelisted/.test(raw);
     }
 
     const MINIPAY_FEE_CURRENCY = {
@@ -3361,7 +3381,7 @@
 
                 const targetChainId = Number(txData.chain_id || meta.chainId);
                 const isCeloTx = targetChainId === 42220;
-                const miniPay = _isMiniPay() && isCeloTx;
+                const miniPay = (_isMiniPayProvider(provider) || _isMiniPay()) && isCeloTx;
 
                 // MiniPay is always on Celo — skip wallet_switchEthereumChain
                 // which MiniPay may not support.
@@ -5269,7 +5289,7 @@
                 setClaimGasUiState('approve_wallet');
 
                 // MiniPay CIP-64: try feeCurrency options for gas abstraction.
-                if (_isMiniPay()) {
+                if (_isMiniPayProvider(provider)) {
                     let gasHex;
                     try {
                         const est = await provider.request({
@@ -5305,6 +5325,13 @@
                             if (/revert/i.test(msg)) throw err;
                             console.warn('[MiniPay] claim tx attempt failed with feeCurrency=' + fc + ':', msg || err);
                         }
+                    }
+                    if (_isRpcMethodNotWhitelistedError(lastErr)) {
+                        console.warn('[MiniPay] feeCurrency claim rejected as non-whitelisted; retrying plain Celo tx');
+                        return provider.request({
+                            method: 'eth_sendTransaction',
+                            params: [{ from, to: UBI_CONTRACT, data: CLAIM_DATA, value: '0x0', gas: gasHex }],
+                        });
                     }
                     throw lastErr || new Error('MiniPay claim transaction failed.');
                 }
@@ -5353,7 +5380,7 @@
                 // wallets — /api/faucet/status + /api/faucet/gas use the
                 // backend's own Celo RPC, so they work regardless of which
                 // provider the user signed in with.
-                const isMiniPayClaim = _isMiniPay();
+                const isMiniPayClaim = _isMiniPayProvider(provider);
                 // Set to true whenever the backend faucet API is consulted for this
                 // attempt. The final wallet-side gas snapshot is skipped in that case
                 // because the frontend floor (0.15 CELO) is higher than the backend
