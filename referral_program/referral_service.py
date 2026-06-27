@@ -423,7 +423,9 @@ class ReferralService:
             op="claim pending referral — atomic update to disbursing"
         )
 
-        if update_result and update_result.data:
+        # BUG FIX: Supabase UPDATE returns data=[] even on success
+        # Use update_result.count to check if rows were actually updated
+        if update_result and getattr(update_result, 'count', 0) > 0:
             logger.info(f"✅ Claimed pending referral id={row_id} for disbursement (referee={referee_wallet[:8]}...)")
             return {"claimed": True, "referral": row}
 
@@ -687,8 +689,14 @@ class ReferralService:
         """
         from referral_program.blockchain import referral_blockchain_service
 
+        logger.info(f"🔔 [DISBURSEMENT START] referral={referral_code}")
+        logger.info(f"   referrer={referrer_wallet[:10]}... ({REFERRER_REWARD} G$)")
+        logger.info(f"   referee={referee_wallet[:10]}... ({REFEREE_REWARD} G$)")
+
         # DUPLICATE CHECK: Prevent double disbursement
         existing = self._is_referral_already_disbursed(referral_code)
+        logger.info(f"   [DUPLICATE CHECK] existing={existing}")
+
         if existing.get("fully_disbursed"):
             logger.info(f"Referral {referral_code} already fully disbursed - returning existing results")
             return {
@@ -704,6 +712,7 @@ class ReferralService:
         # Track which side already completed to avoid re-sending
         referrer_already_done = existing.get("referrer_completed", False)
         referee_already_done = existing.get("referee_completed", False)
+        logger.info(f"   referrer_already_done={referrer_already_done}, referee_already_done={referee_already_done}")
 
         try:
             # IMPORTANT: Process referee FIRST (500 G$), then referrer (1000 G$)
@@ -714,21 +723,25 @@ class ReferralService:
                 logger.info(f"Referee reward for {referral_code} already completed - skipping blockchain call")
                 referee_result = {"success": True, "tx_hash": existing.get("referee_tx"), "skipped": True}
             else:
+                logger.info(f"   [REFERE_DISBURSE] sending {REFEREE_REWARD} G$ to {referee_wallet[:10]}...")
                 referee_result = referral_blockchain_service.disburse_referral_reward_sync(
                     wallet_address=referee_wallet,
                     amount=REFEREE_REWARD,
                     reward_type='referee'
                 )
+                logger.info(f"   [REFERE_RESULT] {referee_result}")
 
             if referrer_already_done:
                 logger.info(f"Referrer reward for {referral_code} already completed - skipping blockchain call")
                 referrer_result = {"success": True, "tx_hash": existing.get("referrer_tx"), "skipped": True}
             else:
+                logger.info(f"   [REFERRER_DISBURSE] sending {REFERRER_REWARD} G$ to {referrer_wallet[:10]}...")
                 referrer_result = referral_blockchain_service.disburse_referral_reward_sync(
                     wallet_address=referrer_wallet,
                     amount=REFERRER_REWARD,
                     reward_type='referrer'
                 )
+                logger.info(f"   [REFERRER_RESULT] {referrer_result}")
 
             def _status_for(result):
                 if result.get('success'):
