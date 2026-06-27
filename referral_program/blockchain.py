@@ -120,7 +120,10 @@ class ReferralBlockchain:
                     "balance_required": amount
                 }
 
+            logger.info(f"[BLOCKCHAIN] Balance OK: {balance_g:.2f} G$ available, need {amount:.2f} G$")
+
             nonce = self.w3.eth.get_transaction_count(referral_account.address)
+            logger.info(f"[BLOCKCHAIN] nonce={nonce}")
             gas_price = int(self.w3.eth.gas_price * 1.2)
 
             # Estimate gas dynamically instead of hardcoding a fixed limit.
@@ -160,9 +163,12 @@ class ReferralBlockchain:
             if not tx_hash_hex.startswith('0x'):
                 tx_hash_hex = '0x' + tx_hash_hex
 
-            logger.info(f"Referral reward TX sent: {tx_hash_hex}")
+            logger.info(f"[BLOCKCHAIN] TX SENT: {tx_hash_hex}")
+            logger.info(f"[BLOCKCHAIN] Waiting for receipt...")
 
             receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
+            logger.info(f"[BLOCKCHAIN] Receipt: status={receipt.status}")
+
             if receipt.status == 1:
                 logger.info(
                     f"Referral {reward_type} reward of {amount} G$ sent to "
