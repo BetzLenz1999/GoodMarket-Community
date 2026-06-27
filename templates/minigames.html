@@ -411,7 +411,10 @@
                 list.innerHTML = data.withdrawals.map(w => {
                     const date = w.withdrawal_date || '—';
                     const amount = parseFloat(w.amount || 0).toFixed(2);
-                    const txHash = w.tx_hash || '';
+                    const rawTxHash = String(w.tx_hash || w.transaction_hash || '').trim();
+                    const txHashMatch = rawTxHash.match(/0x[a-fA-F0-9]{64}/);
+                    const txHashSource = txHashMatch ? txHashMatch[0] : rawTxHash.split('/tx/').pop().split(/[?#]/)[0].replace(/\/$/, '');
+                    const txHash = txHashSource && !txHashSource.startsWith('0x') ? `0x${txHashSource}` : txHashSource;
                     const shortTx = txHash ? txHash.slice(0, 10) + '...' + txHash.slice(-6) : '—';
                     const explorerUrl = txHash ? `https://explorer.celo.org/mainnet/tx/${txHash}` : null;
                     return `
