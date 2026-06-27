@@ -1,12 +1,27 @@
 import logging
 import asyncio
+import re
 from flask import Blueprint, request, jsonify, render_template, session, redirect
-from .minigames_manager import minigames_manager
+from .minigames_manager import minigames_manager, normalize_tx_hash
 from maintenance_service import maintenance_service
 
 logger = logging.getLogger(__name__)
 
 minigames_bp = Blueprint('minigames', __name__, url_prefix='/minigames')
+
+
+def _normalize_withdrawal_tx_hash(value) -> str:
+    """Return a normalized Celo tx hash from a raw hash or explorer URL."""
+    raw_value = str(value or '').strip()
+    if not raw_value:
+        return ''
+
+    tx_hash_match = re.search(r'0x[a-fA-F0-9]{64}|(?<![a-fA-F0-9])[a-fA-F0-9]{64}(?![a-fA-F0-9])', raw_value)
+    if not tx_hash_match:
+        return ''
+
+    return normalize_tx_hash(tx_hash_match.group(0))
+
 
 @minigames_bp.route('/')
 def minigames_home():
@@ -231,7 +246,24 @@ def withdrawal_history():
             .limit(20)\
             .execute()
 
-        return jsonify({'success': True, 'withdrawals': res.data or []})
+        withdrawals = []
+        for withdrawal in res.data or []:
+            withdrawal = dict(withdrawal)
+            tx_hash = (
+                withdrawal.get('tx_hash')
+                or withdrawal.get('transaction_hash')
+                or ''
+            )
+            tx_hash = _normalize_withdrawal_tx_hash(tx_hash)
+
+            withdrawal['tx_hash'] = tx_hash
+            withdrawal['explorer_url'] = (
+                f'https://explorer.celo.org/mainnet/tx/{tx_hash}'
+                if tx_hash else None
+            )
+            withdrawals.append(withdrawal)
+
+        return jsonify({'success': True, 'withdrawals': withdrawals})
     except Exception as e:
         logger.error(f"❌ Error fetching withdrawal history: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
