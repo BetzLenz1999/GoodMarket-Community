@@ -425,12 +425,10 @@ class ReferralService:
 
         # BUG FIX: Supabase UPDATE returns data=[] even on success
         # Use update_result.count to check if rows were actually updated
-        update_count = 0
-        if update_result:
-            try:
-                update_count = getattr(update_result, 'count', 0) or 0
-            except:
-                update_count = 0
+        # Note: getattr returns the actual value, not default, if attribute exists
+        update_count = getattr(update_result, 'count', None)
+        if update_count is None:
+            update_count = 0
         if update_count > 0:
             logger.info(f"✅ Claimed pending referral id={row_id} for disbursement (referee={referee_wallet[:8]}...)")
             return {"claimed": True, "referral": row}
