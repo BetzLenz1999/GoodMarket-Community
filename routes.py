@@ -2621,19 +2621,11 @@ def admin_approve_referral():
         if not referee_wallet or not referrer_wallet:
             return jsonify({"success": False, "error": "Referral row missing wallet data"}), 400
 
-        # Step 1: Mark as onchain_verified with admin info
-        now = datetime.now(timezone.utc).isoformat()
-        supabase.table("referrals").update({
-            "onchain_verified": True,
-            "admin_verified_at": now,
-            "approved_by_wallet": admin_wallet,
-            "approved_by_ip": admin_ip
-        }).eq("id", row.get("id")).execute()
-
         logger.info(f"✅ Admin {admin_wallet[:8]}... approved referral {referral_code} | referee={referee_wallet[:8]}...")
 
-        # Step 2: Claim for disbursement
-        claim = referral_service.claim_pending_referral_for_disbursement(referee_wallet)
+        # Step 1: Claim the exact referral row for disbursement. Use referral_id
+        # when supplied so duplicate referral codes cannot move the wrong row.
+        claim = referral_service.claim_pending_referral_for_disbursement(referee_wallet, row.get("id"))
         if not claim.get("claimed"):
             return jsonify({
                 "success": False,
@@ -2641,14 +2633,26 @@ def admin_approve_referral():
                 "debug": claim
             }), 409
 
-        # Step 3: Process disbursement (referrer: 1000 G$, referee: 500 G$)
+        # Step 2: Process disbursement (referrer: 1000 G$, referee: 500 G$)
         logger.info(f"Processing disbursement for {referral_code}: referrer={referrer_wallet[:8]}..., referee={referee_wallet[:8]}...")
         disbursement = referral_service.process_referral_disbursement(
             referrer_wallet=referrer_wallet,
             referee_wallet=referee_wallet,
-            referral_code=referral_code
+            referral_code=referral_code,
+            referral_id=row.get("id")
         )
         logger.info(f"Disbursement result for {referral_code}: {disbursement}")
+
+        # Step 3: Mark admin verification only after the exact referral row was
+        # claimed and either completed or safely queued for later disbursement.
+        if disbursement.get("success") or disbursement.get("already_disbursed") or disbursement.get("pending"):
+            now = datetime.now(timezone.utc).isoformat()
+            supabase.table("referrals").update({
+                "onchain_verified": True,
+                "admin_verified_at": now,
+                "approved_by_wallet": admin_wallet,
+                "approved_by_ip": admin_ip
+            }).eq("id", row.get("id")).execute()
 
         # Step 4: Log admin action
         from supabase_client import log_admin_action
