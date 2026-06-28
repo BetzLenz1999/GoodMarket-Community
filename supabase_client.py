@@ -197,6 +197,7 @@ CREATE TABLE IF NOT EXISTS referral_rewards_log (
     reward_amount NUMERIC NOT NULL,
     reward_type VARCHAR(20) NOT NULL,
     referral_code VARCHAR(20) NOT NULL,
+    referral_id INTEGER REFERENCES referrals(id) ON DELETE SET NULL,
     tx_hash VARCHAR(66),
     status VARCHAR(20) DEFAULT 'pending',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -205,6 +206,7 @@ CREATE TABLE IF NOT EXISTS referral_rewards_log (
 CREATE INDEX IF NOT EXISTS idx_referral_rewards_wallet ON referral_rewards_log(wallet_address);
 CREATE INDEX IF NOT EXISTS idx_referral_rewards_status ON referral_rewards_log(status);
 CREATE INDEX IF NOT EXISTS idx_referral_rewards_code ON referral_rewards_log(referral_code);
+CREATE INDEX IF NOT EXISTS idx_referral_rewards_referral_id ON referral_rewards_log(referral_id);
 
 -- 1. Create user_data table for user storage and counting
 CREATE TABLE IF NOT EXISTS user_data (
