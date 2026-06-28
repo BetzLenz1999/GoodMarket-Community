@@ -339,14 +339,16 @@ class ReferralService:
             self.update_referral_status(
                 referee_wallet,
                 'failed',
-                'Missing referrer/referral code while reconciling pending referral'
+                'Missing referrer/referral code while reconciling pending referral',
+                row.get('id')
             )
             return {"success": False, "reason": "missing_referral_data"}
 
         disb = self.process_referral_disbursement(
             referrer_wallet=referrer_wallet,
             referee_wallet=referee_wallet,
-            referral_code=referral_code
+            referral_code=referral_code,
+            referral_id=row.get('id')
         )
         return {"success": bool(disb.get("success")), "reason": "disbursement_attempted", "disbursement": disb}
 
@@ -387,7 +389,7 @@ class ReferralService:
             "errors": errors,
         }
 
-    def claim_pending_referral_for_disbursement(self, referee_wallet: str) -> dict:
+    def claim_pending_referral_for_disbursement(self, referee_wallet: str, referral_id: int = None) -> dict:
         """
         Atomically transition a pending_face_verification referral to 'disbursing'.
         Returns {"claimed": True, "referral": row} if the record was successfully
@@ -398,15 +400,17 @@ class ReferralService:
         if not supabase:
             return {"claimed": False}
 
-        existing = _safe(
-            lambda: supabase.table('referrals')
-                .select('*')
-                .eq('referee_wallet', referee_wallet)
+        def _fetch_pending_referral():
+            query = supabase.table('referrals') \
+                .select('*') \
                 .eq('status', 'pending_face_verification')
-                .limit(1)
-                .execute(),
-            op="claim pending referral — fetch"
-        )
+            if referral_id is not None:
+                query = query.eq('id', referral_id)
+            else:
+                query = query.eq('referee_wallet', referee_wallet)
+            return query.limit(1).execute()
+
+        existing = _safe(_fetch_pending_referral, op="claim pending referral — fetch")
 
         if not existing or not existing.data:
             return {"claimed": False}
@@ -454,7 +458,7 @@ class ReferralService:
         logger.info(f"ℹ️ Referral id={row_id} already claimed by another process for {referee_wallet[:8]}...")
         return {"claimed": False}
 
-    def update_referral_status(self, referee_wallet: str, status: str, error_message: str = None) -> None:
+    def update_referral_status(self, referee_wallet: str, status: str, error_message: str = None, referral_id: int = None) -> None:
         """Update the status of a referral record."""
         supabase = _get_supabase()
         if not supabase:
@@ -466,10 +470,15 @@ class ReferralService:
         if error_message:
             update_data['error_message'] = error_message
 
-        _safe(
-            lambda: supabase.table('referrals').update(update_data).ilike('referee_wallet', referee_wallet).execute(),
-            op="update referral status"
-        )
+        def _update_referral():
+            query = supabase.table('referrals').update(update_data)
+            if referral_id is not None:
+                query = query.eq('id', referral_id)
+            else:
+                query = query.ilike('referee_wallet', referee_wallet)
+            return query.execute()
+
+        _safe(_update_referral, op="update referral status")
 
         # A completed referral means the referee verified via GoodMarket — mark them accordingly
         if status == 'completed':
@@ -725,7 +734,7 @@ class ReferralService:
         }
 
     def process_referral_disbursement(self, referrer_wallet: str, referee_wallet: str,
-                                      referral_code: str) -> dict:
+                                      referral_code: str, referral_id: int = None) -> dict:
         """
         Single source of truth for disbursing a referral's rewards.
 
@@ -758,7 +767,8 @@ class ReferralService:
         logger.info(f"   referrer={referrer_wallet[:10]}... ({REFERRER_REWARD} G$)")
         logger.info(f"   referee={referee_wallet[:10]}... ({REFEREE_REWARD} G$)")
 
-        referral_id = self._get_referral_id(referral_code, referee_wallet, referrer_wallet)
+        if referral_id is None:
+            referral_id = self._get_referral_id(referral_code, referee_wallet, referrer_wallet)
 
         # DUPLICATE CHECK: Prevent double disbursement
         existing = self._is_referral_already_disbursed(referral_code, referrer_wallet, referee_wallet, referral_id)
@@ -810,7 +820,8 @@ class ReferralService:
                                         referral_code, None, 'pending_disbursed', referral_id)
                     self.update_referral_status(
                         referee_wallet, 'pending_disbursed',
-                        f"Insufficient REFERRAL_KEY balance: {available_balance:.2f} G$ < {remaining_required:.2f} G$"
+                        f"Insufficient REFERRAL_KEY balance: {available_balance:.2f} G$ < {remaining_required:.2f} G$",
+                        referral_id
                     )
                     return {
                         "success": False,
@@ -868,7 +879,7 @@ class ReferralService:
                             referral_code, referee_result.get('tx_hash'), referee_status, referral_id)
 
             if referrer_result.get('success') and referee_result.get('success'):
-                self.update_referral_status(referee_wallet, 'completed')
+                self.update_referral_status(referee_wallet, 'completed', referral_id=referral_id)
                 logger.info(
                     f"✅ Referral rewards disbursed: {referral_code} | "
                     f"referrer={referrer_wallet[:8]}... referee={referee_wallet[:8]}..."
@@ -876,7 +887,8 @@ class ReferralService:
             elif referrer_result.get('pending') or referee_result.get('pending'):
                 self.update_referral_status(
                     referee_wallet, 'pending_disbursed',
-                    'Insufficient REFERRAL_KEY balance'
+                    'Insufficient REFERRAL_KEY balance',
+                    referral_id
                 )
                 logger.warning(
                     f"⚠️ Referral reward pending disbursement (insufficient balance) "
@@ -887,7 +899,8 @@ class ReferralService:
                 self.update_referral_status(
                     referee_wallet, 'failed',
                     f"Referrer: {referrer_result.get('error', 'unknown')} | "
-                    f"Referee: {referee_result.get('error', 'unknown')}"
+                    f"Referee: {referee_result.get('error', 'unknown')}",
+                    referral_id
                 )
                 logger.error(f"❌ Referral reward disbursement failed for {referral_code}")
 
@@ -916,7 +929,8 @@ class ReferralService:
             try:
                 self.update_referral_status(
                     referee_wallet, 'pending_face_verification',
-                    f"Disbursement crashed and was reset: {e}"
+                    f"Disbursement crashed and was reset: {e}",
+                    referral_id
                 )
                 logger.info(
                     f"↩️ Reset referral {referral_code} to pending_face_verification "
