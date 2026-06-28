@@ -2501,20 +2501,29 @@ def get_completed_referrals():
         # Format for frontend
         formatted_referrals = []
         for r in referrals:
-            # Get reward txs
-            rewards = supabase.table('referral_rewards_log') \
-                .select('*') \
-                .eq('referral_code', r.get('referral_code')) \
-                .eq('status', 'completed') \
-                .execute()
+            # Get reward txs for this exact referral row. Referral codes are
+            # reused by each inviter, so querying by code only can display a
+            # transaction hash from a different referee. Prefer referral_id and
+            # still verify wallet/reward_type to avoid mixing the two payout legs.
+            rewards_query = supabase.table('referral_rewards_log') \
+                .select('wallet_address,reward_type,status,tx_hash,referral_id') \
+                .eq('status', 'completed')
+            if r.get('id') is not None:
+                rewards_query = rewards_query.eq('referral_id', r.get('id'))
+            else:
+                rewards_query = rewards_query.eq('referral_code', r.get('referral_code'))
+            rewards = rewards_query.execute()
             
             referrer_tx = None
             referee_tx = None
+            referrer_wallet_l = (r.get('referrer_wallet') or '').lower()
+            referee_wallet_l = (r.get('referee_wallet') or '').lower()
             if rewards and rewards.data:
                 for reward in rewards.data:
-                    if reward.get('reward_type') == 'referrer':
+                    reward_wallet = (reward.get('wallet_address') or '').lower()
+                    if reward.get('reward_type') == 'referrer' and reward_wallet == referrer_wallet_l:
                         referrer_tx = reward.get('tx_hash')
-                    elif reward.get('reward_type') == 'referee':
+                    elif reward.get('reward_type') == 'referee' and reward_wallet == referee_wallet_l:
                         referee_tx = reward.get('tx_hash')
 
             formatted_referrals.append({
