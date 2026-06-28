@@ -2404,12 +2404,17 @@ def get_referral_detail(referral_code):
         if not supabase:
             return jsonify({"success": False, "error": "Database unavailable"}), 500
 
-        # Get referral
-        result = supabase.table('referrals') \
+        referral_id = request.args.get("id")
+
+        # Get the exact referral row when the dashboard supplies an id. Referral
+        # codes can appear on multiple referral rows, so fetching by code alone
+        # can show a different referee/referrer pair than the clicked table row.
+        query = supabase.table('referrals') \
             .select('*') \
-            .eq('referral_code', referral_code.upper()) \
-            .limit(1) \
-            .execute()
+            .eq('referral_code', referral_code.upper())
+        if referral_id:
+            query = query.eq('id', referral_id)
+        result = query.limit(1).execute()
 
         if not result or not result.data:
             return jsonify({"success": False, "error": "Referral not found"}), 404
@@ -2561,6 +2566,7 @@ def admin_approve_referral():
 
         data = request.get_json(silent=True) or {}
         referral_code = (data.get("referral_code") or "").strip().upper()
+        referral_id = data.get("referral_id")
         if not referral_code:
             return jsonify({"success": False, "error": "referral_code is required"}), 400
 
@@ -2571,22 +2577,26 @@ def admin_approve_referral():
         if not supabase:
             return jsonify({"success": False, "error": "Database unavailable"}), 500
 
-        # Get referral record
-        referrals_result = supabase.table("referrals") \
+        # Get referral record. Prefer the row id from the admin dashboard so
+        # approving a duplicate referral_code cannot approve/disburse the wrong
+        # referee/referrer pair.
+        referrals_query = supabase.table("referrals") \
             .select("*") \
             .eq("referral_code", referral_code) \
-            .eq("status", "pending_face_verification") \
-            .limit(1) \
-            .execute()
+            .eq("status", "pending_face_verification")
+        if referral_id:
+            referrals_query = referrals_query.eq("id", referral_id)
+        referrals_result = referrals_query.limit(1).execute()
         
         referrals = referrals_result.data if referrals_result and referrals_result.data else []
         if not referrals:
             # Check if already completed
-            existing = supabase.table("referrals") \
+            existing_query = supabase.table("referrals") \
                 .select("status, referee_wallet, referrer_wallet") \
-                .eq("referral_code", referral_code) \
-                .limit(1) \
-                .execute()
+                .eq("referral_code", referral_code)
+            if referral_id:
+                existing_query = existing_query.eq("id", referral_id)
+            existing = existing_query.limit(1).execute()
             if existing and existing.data:
                 row = existing.data[0]
                 if row.get("status") == "completed":
