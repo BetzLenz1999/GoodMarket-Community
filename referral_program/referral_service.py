@@ -487,22 +487,27 @@ class ReferralService:
         if not supabase:
             return {"success": False, "error": "no_db"}
 
-        # Check if reward already exists and was completed successfully
-        existing = _safe(
-            lambda: supabase.table('referral_rewards_log')
-                .select('*')
-                .eq('wallet_address', wallet_address)
-                .eq('reward_type', reward_type)
-                .eq('referral_code', referral_code)
-                .eq('status', 'completed')
-                .limit(1)
-                .execute(),
-            op="check existing completed reward"
-        )
-        
-        if existing and existing.data:
-            logger.info(f"Reward already logged for {wallet_address[:8]}... ({reward_type}) - skipping duplicate")
-            return {"success": True, "skipped": True, "existing": existing.data[0]}
+        # Check if a referee reward already exists and was completed successfully.
+        # Do not apply this shortcut to referrer rewards: the same referral_code
+        # is reused by every person an inviter refers, so code+referrer wallet is
+        # not a unique referral identity and skipping here can hide real payouts.
+        existing = None
+        if reward_type == 'referee':
+            existing = _safe(
+                lambda: supabase.table('referral_rewards_log')
+                    .select('*')
+                    .eq('wallet_address', wallet_address)
+                    .eq('reward_type', reward_type)
+                    .eq('referral_code', referral_code)
+                    .eq('status', 'completed')
+                    .limit(1)
+                    .execute(),
+                op="check existing completed reward"
+            )
+            
+            if existing and existing.data:
+                logger.info(f"Reward already logged for {wallet_address[:8]}... ({reward_type}) - skipping duplicate")
+                return {"success": True, "skipped": True, "existing": existing.data[0]}
 
         # Check if there's a pending reward log entry
         pending = _safe(
@@ -634,7 +639,7 @@ class ReferralService:
             "rewards": rewards[:10]
         }
 
-    def _is_referral_already_disbursed(self, referral_code: str) -> dict:
+    def _is_referral_already_disbursed(self, referral_code: str, referrer_wallet: str = None, referee_wallet: str = None) -> dict:
         """Check if a referral has already been successfully disbursed.
         
         Returns dict with:
@@ -665,13 +670,27 @@ class ReferralService:
         referrer_tx = None
         referee_tx = None
         
+        referrer_wallet_l = referrer_wallet.lower() if referrer_wallet else None
+        referee_wallet_l = referee_wallet.lower() if referee_wallet else None
+
         for r in rewards.data:
+            reward_wallet = (r.get('wallet_address') or '').lower()
             if r.get('reward_type') == 'referrer':
-                referrer_completed = True
-                referrer_tx = r.get('tx_hash')
+                # A referral code belongs to the inviter and is reused for every
+                # invite.  Therefore a completed referrer reward for the same
+                # code+wallet may belong to an older referee.  Only treat it as
+                # duplicate evidence when the caller did not provide the current
+                # referee context (legacy callers); otherwise never skip the
+                # referrer leg solely from referral_rewards_log.
+                if not referee_wallet_l and (not referrer_wallet_l or reward_wallet == referrer_wallet_l):
+                    referrer_completed = True
+                    referrer_tx = r.get('tx_hash')
             elif r.get('reward_type') == 'referee':
-                referee_completed = True
-                referee_tx = r.get('tx_hash')
+                # The referee wallet is unique per referral, so this side can be
+                # safely used to detect an already-paid current referral.
+                if not referee_wallet_l or reward_wallet == referee_wallet_l:
+                    referee_completed = True
+                    referee_tx = r.get('tx_hash')
         
         return {
             "fully_disbursed": referrer_completed and referee_completed,
@@ -716,7 +735,7 @@ class ReferralService:
         logger.info(f"   referee={referee_wallet[:10]}... ({REFEREE_REWARD} G$)")
 
         # DUPLICATE CHECK: Prevent double disbursement
-        existing = self._is_referral_already_disbursed(referral_code)
+        existing = self._is_referral_already_disbursed(referral_code, referrer_wallet, referee_wallet)
         logger.info(f"   [DUPLICATE CHECK] existing={existing}")
 
         if existing.get("fully_disbursed"):
