@@ -1545,14 +1545,12 @@ def index():
             "tasks_last_30_days_formatted": "—",
         }
     google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
-    magic_api_key = os.environ.get("MAGIC_API_KEY", "")
     return render_template(
         "homepage.html",
         walletconnect_project_id=wc_project_id,
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         homepage_stats=homepage_stats,
         google_client_id=google_client_id,
-        privy_app_id=magic_api_key,  # Reusing variable name for template compatibility
     )
 
 
