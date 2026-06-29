@@ -1,4 +1,5 @@
 from .routes import p2p_bp
+from .expiry import init_p2p_expiry_scheduler, get_expiry_scheduler
 
 
 def init_p2p(app):
@@ -14,4 +15,9 @@ def init_p2p(app):
         return False
 
 
-__all__ = ["p2p_bp", "init_p2p"]
+__all__ = [
+    "p2p_bp",
+    "init_p2p",
+    "init_p2p_expiry_scheduler",
+    "get_expiry_scheduler",
+]
