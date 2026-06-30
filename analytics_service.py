@@ -159,8 +159,7 @@ class AnalyticsService:
                 "platform_breakdown": {
                     "learn_earn": disbursements_stats.get("learn_earn_total", 0),
                     "forum_rewards": disbursements_stats.get("forum_rewards_total", 0),
-                    "task_completion": disbursements_stats.get("task_completion_total", 0),
-                    "p2p_volume": disbursements_stats.get("p2p_trading_volume", 0)
+                    "task_completion": disbursements_stats.get("task_completion_total", 0)
                 }
             }
         }
@@ -549,7 +548,6 @@ class AnalyticsService:
                     "Minigames Withdrawals": "0.0 G$",
                     "Forum Rewards Disbursed": "0.0 G$",
                     "Task Completion Rewards": "0.0 G$",
-                    "P2P Trading Volume": "0.0 G$",
                     "NFT Card Sales (G$ OUT)": "0.0 G$",
                     "NFT Burn Rewards (G$ OUT)": "0.0 G$",
                     "Reloadly Store (G$ IN)": "0.0 G$",
@@ -565,8 +563,7 @@ class AnalyticsService:
                     "minigames_total": 0,
                     "forum_rewards_total": 0,
                     "task_completion_total": 0,
-                    "p2p_trading_volume": 0,
-                    "reloadly_total": 0,
+                        "reloadly_total": 0,
                     "nft_sales_total": 0,
                     "nft_burn_total": 0,
                     "daily_voucher_claims": 0,
@@ -578,7 +575,6 @@ class AnalyticsService:
                         "minigames_withdrawals": 0,
                         "forum_disbursed": 0,
                         "task_completion": 0,
-                        "p2p_volume": 0,
                         "reloadly_orders": 0,
                         "nft_sales": 0,
                         "nft_burns": 0,
@@ -820,30 +816,7 @@ class AnalyticsService:
             total_disbursements += community_stories_total
             logger.debug(f"   Total Community Stories (ALL TIME): {community_stories_total} G$")
 
-            # 6. P2P Trading volume (p2p_trades) - ALL RECORDS
-            p2p_volume = 0
-            try:
-                p2p_trades_result = supabase.table('p2p_trades')\
-                    .select('g_dollar_amount, status')\
-                    .execute()
-
-                logger.debug(f"📊 P2P Trades Query: Found {len(p2p_trades_result.data) if p2p_trades_result.data else 0} records")
-
-                if p2p_trades_result.data:
-                    for record in p2p_trades_result.data:
-                        amount = record.get('g_dollar_amount', 0)
-                        if amount is not None and amount != '':
-                            try:
-                                p2p_volume += float(amount)
-                            except (ValueError, TypeError):
-                                logger.warning(f"⚠️ Invalid amount in p2p_trades: {amount}")
-            except Exception as e:
-                logger.warning(f"⚠️ P2P trades table query failed: {e}")
-
-            breakdown['p2p_volume'] = p2p_volume
-            logger.debug(f"   Total: {p2p_volume} G$")
-
-            # 7. Reloadly orders (G$ received IN from users) - completed orders only
+            # 6. Reloadly orders (G$ received IN from users) - completed orders only
             reloadly_total = 0
             try:
                 reloadly_result = supabase.table('reloadly_orders')\
@@ -1115,7 +1088,6 @@ class AnalyticsService:
                 "Minigames Withdrawals": f"{minigames_total:,.1f} G$",
                 "Forum Rewards Disbursed": f"{forum_disbursed_total:,.1f} G$",
                 "Task Completion Rewards": f"{task_completion_total:,.1f} G$",
-                "P2P Trading Volume": f"{p2p_volume:,.1f} G$",
                 "NFT Card Sales (G$ OUT)": f"{nft_sales_total:,.1f} G$",
                 "NFT Burn Rewards (G$ OUT)": f"{nft_burn_total:,.1f} G$",
                 "Reloadly Store (G$ IN)": f"{reloadly_total:,.1f} G$",
@@ -1172,7 +1144,6 @@ class AnalyticsService:
             logger.debug(f"   Minigames Withdrawals: {minigames_total:,.1f} G$")
             logger.debug(f"   Forum Disbursed: {forum_disbursed_total:,.1f} G$")
             logger.debug(f"   Task Completion: {task_completion_total:,.1f} G$")
-            logger.debug(f"   P2P Volume: {p2p_volume:,.1f} G$")
             logger.debug(f"   TOTAL DISBURSED: {total_disbursements:,.1f} G$")
 
             logger.debug(f"✅ Returning disbursement data with {len(breakdown_formatted)} categories")
@@ -1189,7 +1160,6 @@ class AnalyticsService:
                 'minigames_total': minigames_total,
                 'forum_rewards_total': forum_disbursed_total,
                 'task_completion_total': task_completion_total,
-                'p2p_trading_volume': p2p_volume,
                 'reloadly_total': reloadly_total,
                 'nft_sales_total': nft_sales_total,
                 'nft_burn_total': nft_burn_total,
@@ -1226,7 +1196,6 @@ class AnalyticsService:
                 "Minigames Withdrawals": "0.0 G$",
                 "Forum Rewards Disbursed": "0.0 G$",
                 "Task Completion Rewards": "0.0 G$",
-                "P2P Trading Volume": "0.0 G$",
                 "NFT Card Sales (G$ OUT)": "0.0 G$",
                 "NFT Burn Rewards (G$ OUT)": "0.0 G$",
                 "Reloadly Store (G$ IN)": "0.0 G$",
@@ -1244,7 +1213,6 @@ class AnalyticsService:
                 "minigames_total": 0,
                 "forum_rewards_total": 0,
                 "task_completion_total": 0,
-                "p2p_trading_volume": 0,
                 "reloadly_total": 0,
                 "nft_sales_total": 0,
                 "nft_burn_total": 0,
@@ -1257,7 +1225,6 @@ class AnalyticsService:
                     "minigames_withdrawals": 0,
                     "forum_disbursed": 0,
                     "task_completion": 0,
-                    "p2p_volume": 0,
                     "reloadly_orders": 0,
                     "nft_sales": 0,
                     "nft_burns": 0,
