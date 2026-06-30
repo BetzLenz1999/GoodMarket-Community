@@ -63,6 +63,15 @@
         .modal-box { background:#15102e; border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:1.3rem; max-width:560px; width:100%; max-height:90vh; overflow-y:auto; }
         .muted { color:rgba(255,255,255,.45); font-size:.8rem; }
         .pm-tag { display:inline-block; background:rgba(124,58,237,.12); border:1px solid rgba(124,58,237,.25); border-radius:8px; padding:.2rem .55rem; font-size:.74rem; margin:.15rem .2rem 0 0; }
+        .next-steps { background:rgba(99,102,241,.10); border:1px solid rgba(99,102,241,.25); border-radius:12px; padding:.8rem 1rem; margin:.75rem 0; }
+        .next-steps ol { margin:.45rem 0 0 1.1rem; padding:0; color:rgba(255,255,255,.78); font-size:.84rem; line-height:1.55; }
+        .next-steps li { margin:.25rem 0; }
+        .step-done { color:#6ee7b7; font-weight:700; }
+        .step-current { color:#fcd34d; font-weight:800; }
+        .deadline-pill { display:inline-block; background:rgba(245,158,11,.12); color:#fcd34d; border:1px solid rgba(245,158,11,.25); border-radius:999px; padding:.15rem .5rem; font-size:.72rem; font-weight:700; margin-top:.25rem; }
+        .review-callout { display:none; background:rgba(245,158,11,.11); border:1px solid rgba(245,158,11,.26); color:#fde68a; border-radius:12px; padding:.8rem 1rem; margin-bottom:.8rem; font-size:.86rem; }
+        .review-callout strong { color:#fff7ed; }
+        .tab-count { display:none; margin-left:.35rem; background:rgba(245,158,11,.18); color:#fcd34d; border:1px solid rgba(245,158,11,.30); border-radius:999px; padding:.05rem .4rem; font-size:.68rem; font-weight:800; }
     </style>
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     <script>
@@ -101,7 +110,7 @@
     <div class="tabs">
         <button class="tab-btn active" data-tab="buy">Buy G$</button>
         <button class="tab-btn" data-tab="sell">Sell (My Ads)</button>
-        <button class="tab-btn" data-tab="orders">My Orders</button>
+        <button class="tab-btn" data-tab="orders">My Orders <span class="tab-count" id="sellerReviewCount"></span></button>
         {% if is_admin_user %}<button class="tab-btn" data-tab="admin">Admin Review</button>{% endif %}
     </div>
 
@@ -132,7 +141,7 @@
                 <div class="form-group"><label>Fiat rate per USDT (optional)</label><input id="sellFiatRate" type="number" step="0.0001" placeholder="e.g. 58"></div>
             </div>
             <div class="form-group"><label>Terms / notes (optional)</label><textarea id="sellTerms" rows="2" placeholder="Payment instructions buyers will see"></textarea></div>
-            <button class="btn btn-primary" id="createAdBtn" {% if not p2p_contract %}disabled{% endif %}>Approve &amp; Create Ad</button>
+            <button type="button" class="btn btn-primary" id="createAdBtn" {% if not p2p_contract %}disabled{% endif %}>Approve &amp; Create Ad</button>
         </div>
 
         <div class="card">
@@ -150,7 +159,7 @@
                 </select>
                 <input id="pmLabel" placeholder="Label e.g. GCash" style="max-width:180px">
                 <input id="pmDetails" placeholder="Account no / address">
-                <button class="btn btn-outline btn-sm" id="addPmBtn">Add</button>
+                <button type="button" class="btn btn-outline btn-sm" id="addPmBtn">Add</button>
             </div>
             <div id="myPms" style="margin-top:.6rem"></div>
         </div>
@@ -163,10 +172,11 @@
         <div class="card row" style="justify-content:space-between">
             <strong>My orders</strong>
             <div class="row">
-                <button class="btn btn-outline btn-sm" id="ordBuyer">As buyer</button>
-                <button class="btn btn-outline btn-sm" id="ordSeller">As seller</button>
+                <button type="button" class="btn btn-outline btn-sm" id="ordBuyer">As buyer</button>
+                <button type="button" class="btn btn-outline btn-sm" id="ordSeller">As seller</button>
             </div>
         </div>
+        <div id="sellerReviewNotice" class="review-callout"></div>
         <div id="ordersList"><div class="empty">…</div></div>
     </div>
 
@@ -203,7 +213,6 @@ P2PWallet.configure({ wallet: WALLET, chainId: CHAIN_ID });
 const ABI_APPROVE   = "function approve(address spender, uint256 amount) returns (bool)";
 const ABI_CREATE    = "function createListing(uint256 amount, uint256 minOrder) returns (uint256)";
 const ABI_OPEN      = "function openOrder(uint256 listingId, uint256 amount) returns (uint256)";
-const ABI_MARKPAID  = "function markPaid(uint256 orderId)";
 const ABI_RELEASE   = "function releaseOrder(uint256 orderId)";
 const ABI_CANCEL_O  = "function cancelOrder(uint256 orderId)";
 const ABI_CANCEL_L  = "function cancelListing(uint256 listingId)";
@@ -217,8 +226,30 @@ const EVENT_ABI = [
 function gd(x){ return ethers.parseUnits(String(x), 18); }
 function shortAddr(a){ return a ? a.slice(0,6)+"…"+a.slice(-4) : ""; }
 function showAlert(type,msg){ const el=document.getElementById('globalAlert'); el.className='alert alert-'+type; el.innerHTML=msg; el.style.display='block'; if(type==='success') setTimeout(()=>el.style.display='none',6000); }
-function api(url,opts){ return fetch(url,Object.assign({headers:{'Content-Type':'application/json'}},opts)).then(r=>r.json()); }
+async function api(url,opts){
+    const res = await fetch(url,Object.assign({headers:{'Content-Type':'application/json'}},opts));
+    const text = await res.text();
+    let data;
+    try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {success:false,error:text || ('HTTP '+res.status)}; }
+    if(!res.ok && data && data.success === undefined) data.success = false;
+    if(!res.ok && data && !data.error) data.error = 'HTTP '+res.status;
+    return data;
+}
 function scan(tx){ return `<a href="https://celoscan.io/tx/${tx}" target="_blank" style="color:#86efac">View ↗</a>`; }
+function escapeHtml(v){ return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function formatDeadline(v){ if(!v) return ''; const d=new Date(v); if(Number.isNaN(d.getTime())) return ''; return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+function buyerNextSteps(o, proofs){
+    const hasProof = proofs && proofs.length;
+    const paid = ['paid','released','owner_released'].includes(o.status);
+    const terminal = ['released','owner_released','cancelled','owner_refunded'].includes(o.status);
+    const deadline = formatDeadline(o.deadline);
+    return `<div class="next-steps"><strong>Buyer next steps</strong>${deadline&&!paid?`<div class="deadline-pill">Pay before ${deadline}</div>`:''}<ol>
+        <li class="step-done">G$ reserved in escrow.</li>
+        <li class="${paid?'step-done':'step-current'}">Send the off-chain payment to the seller using the payment details below.</li>
+        <li class="${hasProof?'step-done':(paid?'step-current':'')}">Upload a screenshot/receipt and optional reference number.</li>
+        <li class="${paid?'step-done':(hasProof?'step-current':'')}">${terminal?'Seller has been notified / order is closed.':`Tap <strong>I've paid</strong> to notify the seller for approval or rejection.`}</li>
+    </ol></div>`;
+}
 
 // ── Tabs ──
 document.querySelectorAll('.tab-btn').forEach(b=>b.onclick=()=>{
@@ -258,8 +289,13 @@ async function loadListings(){
 
 async function openBuyModal(l){
     const pms = await api('/p2p/api/payment-methods?seller='+l.seller_wallet);
-    const pmHtml = (pms.success&&pms.payment_methods.length)
-        ? pms.payment_methods.map(p=>`<span class="pm-tag">${p.label||p.kind}: ${(p.details&&(p.details.account||p.details.address))||''}</span>`).join('')
+    const paymentMethods = (pms.success&&pms.payment_methods.length) ? pms.payment_methods : [];
+    const pmHtml = paymentMethods.length
+        ? `<div class="muted" style="margin-bottom:.35rem">Choose where you will pay the seller:</div>${paymentMethods.map((p,i)=>{
+            const detail=(p.details&&(p.details.account||p.details.address||p.details.number))||'';
+            const text=`${p.label||p.kind}${detail?': '+detail:''}`;
+            return `<label class="pm-tag" style="cursor:pointer"><input type="radio" name="buyPaymentMethod" value="${p.id}" ${i===0?'checked':''}> ${escapeHtml(text)}</label>`;
+        }).join('')}`
         : '<span class="muted">No payment methods listed</span>';
     const body=document.getElementById('buyModalBody');
     body.innerHTML=`<h3 style="margin-bottom:.6rem">Buy G$ from ${shortAddr(l.seller_wallet)}</h3>
@@ -297,9 +333,14 @@ async function doOpenOrder(l){
         al.innerHTML='<span class="spinner"></span> Order reserved on-chain. Recording… '+scan(tx);
         const ev=await P2PWallet.decodeEvent(tx, EVENT_ABI, 'OrderOpened');
         const onchainId = ev? Number(ev.orderId): null;
-        const res=await api('/p2p/api/orders',{method:'POST',body:JSON.stringify({listing_id:l.id, onchain_id:onchainId, amount_gd:amt, open_tx_hash:tx})});
+        const selectedPm=document.querySelector('input[name="buyPaymentMethod"]:checked');
+        const paymentMethodId=selectedPm ? Number(selectedPm.value) : null;
+        const res=await api('/p2p/api/orders',{method:'POST',body:JSON.stringify({listing_id:l.id, onchain_id:onchainId, amount_gd:amt, payment_method_id:paymentMethodId, open_tx_hash:tx})});
         if(!res.success) throw new Error(res.error||'Failed to record order');
-        closeModal('buyModal'); showAlert('success','Order opened! Pay the seller, then upload proof in My Orders.');
+        closeModal('buyModal');
+        document.querySelector('[data-tab="orders"]').click();
+        currentOrderRole='buyer';
+        showAlert('success','Order opened! Follow the buyer next steps: pay the seller, upload proof, then mark paid.');
         openOrderRoom(res.order.id);
     }catch(e){ al.className='alert alert-error'; al.style.display='block'; al.textContent='❌ '+(e.message||e); btn.disabled=false; }
 }
@@ -344,13 +385,17 @@ async function loadMyPms(){
     box.innerHTML=(res.success&&res.payment_methods.length)? res.payment_methods.map(p=>`<span class="pm-tag">${p.label||p.kind}: ${(p.details&&(p.details.account||p.details.address))||''}</span>`).join(''):'<span class="muted">None yet</span>';
 }
 async function loadMyAds(){
-    const res=await api('/p2p/api/listings'); const box=document.getElementById('myAds');
+    const res=await api('/p2p/api/listings?seller='+WALLET+'&include_inactive=1'); const box=document.getElementById('myAds');
     const mine=(res.listings||[]).filter(l=>l.seller_wallet&&l.seller_wallet.toLowerCase()===WALLET.toLowerCase());
     if(!mine.length){ box.innerHTML='<div class="empty">No ads yet.</div>'; return; }
-    box.innerHTML=mine.map(l=>`<div class="listing"><div class="row" style="justify-content:space-between">
-        <div><div class="price">${Number(l.price_usdt)} USDT/G$</div><div class="muted">Total ${Number(l.total_gd).toLocaleString()} G$ · ${l.status}</div></div>
-        ${l.status==='active'?`<button class="btn btn-outline btn-sm" onclick="cancelAd(${l.id},${l.onchain_id})">Cancel ad</button>`:''}
-        </div></div>`).join('');
+    box.innerHTML=mine.map(l=>{
+        const avail = Number(l.available_gd!==undefined ? l.available_gd : l.total_gd);
+        const status = avail <= 0 && l.status === 'active' ? 'closed' : l.status;
+        return `<div class="listing"><div class="row" style="justify-content:space-between">
+            <div><div class="price">${Number(l.price_usdt)} USDT/G$</div><div class="muted">Total ${Number(l.total_gd).toLocaleString()} G$ · Available ${avail.toLocaleString()} G$ · ${status}</div></div>
+            ${status==='active'?`<button class="btn btn-outline btn-sm" onclick="cancelAd(${l.id},${l.onchain_id})">Cancel ad</button>`:''}
+            </div></div>`;
+    }).join('');
 }
 async function cancelAd(id,onchain){
     try{ showAlert('info','<span class="spinner"></span> Confirm cancel in wallet…');
@@ -365,14 +410,45 @@ let currentOrderRole='buyer';
 document.getElementById('ordBuyer').onclick=()=>{currentOrderRole='buyer';loadOrders('buyer');};
 document.getElementById('ordSeller').onclick=()=>{currentOrderRole='seller';loadOrders('seller');};
 async function loadOrders(role){
-    const res=await api('/p2p/api/orders?role='+role); const box=document.getElementById('ordersList');
-    if(!res.success||!res.orders.length){ box.innerHTML='<div class="empty">No orders.</div>'; return; }
-    box.innerHTML=res.orders.map(o=>`<div class="listing"><div class="row" style="justify-content:space-between">
-        <div><strong>${Number(o.amount_gd).toLocaleString()} G$</strong> for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}
-        <div class="muted">${role==='buyer'?'Seller '+shortAddr(o.seller_wallet):'Buyer '+shortAddr(o.buyer_wallet)}</div></div>
-        <div style="text-align:right"><span class="badge badge-${o.status}">${o.status}</span>
-        <div style="margin-top:.4rem"><button class="btn btn-outline btn-sm" onclick="openOrderRoom(${o.id})">Open</button></div></div>
-        </div></div>`).join('');
+    const res=await api('/p2p/api/orders?role='+role);
+    const box=document.getElementById('ordersList');
+    const notice=document.getElementById('sellerReviewNotice');
+    const orders=(res.success&&res.orders)||[];
+    const paidForReview=orders.filter(o=>o.status==='paid');
+    if(notice){
+        if(role==='seller' && paidForReview.length){
+            notice.style.display='block';
+            notice.innerHTML=`<strong>${paidForReview.length} order${paidForReview.length>1?'s':''} waiting for your review.</strong> Open the paid order below to approve/release G$ or reject to admin review.`;
+        }else{
+            notice.style.display='none';
+            notice.innerHTML='';
+        }
+    }
+    if(role==='seller') updateSellerReviewBadge(paidForReview.length);
+    if(!res.success||!orders.length){ box.innerHTML='<div class="empty">No orders.</div>'; return; }
+    box.innerHTML=orders.map(o=>{
+        const needsReview = role==='seller' && o.status==='paid';
+        const terminal = ['released','owner_released','cancelled','owner_refunded'].includes(o.status);
+        const buttonLabel = needsReview ? 'Review' : (terminal ? 'View' : 'Continue');
+        return `<div class="listing"><div class="row" style="justify-content:space-between">
+            <div><strong>${Number(o.amount_gd).toLocaleString()} G$</strong> for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}
+            <div class="muted">${role==='buyer'?'Seller '+shortAddr(o.seller_wallet):'Buyer '+shortAddr(o.buyer_wallet)}</div>
+            ${needsReview?'<div class="muted" style="color:#fcd34d;margin-top:.25rem">Needs your review: approve/release or reject</div>':''}</div>
+            <div style="text-align:right"><span class="badge badge-${o.status}">${o.status}</span>
+            <div style="margin-top:.4rem"><button type="button" class="btn ${needsReview?'btn-primary':'btn-outline'} btn-sm" onclick="openOrderRoom(${o.id})">${buttonLabel}</button></div></div>
+            </div></div>`;
+    }).join('');
+}
+function updateSellerReviewBadge(count){
+    const badge=document.getElementById('sellerReviewCount');
+    if(!badge) return;
+    badge.textContent=count?String(count):'';
+    badge.style.display=count?'inline-block':'none';
+}
+async function refreshSellerReviewBadge(){
+    const res=await api('/p2p/api/orders?role=seller');
+    if(!res.success) return;
+    updateSellerReviewBadge((res.orders||[]).filter(o=>o.status==='paid').length);
 }
 
 async function openOrderRoom(orderId){
@@ -380,28 +456,36 @@ async function openOrderRoom(orderId){
     if(!res.success){ showAlert('error',res.error||'Failed'); return; }
     const o=res.order, isBuyer=o.buyer_wallet.toLowerCase()===WALLET.toLowerCase(), isSeller=o.seller_wallet.toLowerCase()===WALLET.toLowerCase();
     const proofs=res.proofs||[], msgs=res.messages||[];
+    const pms = await api('/p2p/api/payment-methods?seller='+o.seller_wallet);
+    const paymentMethodsHtml = (pms.success&&pms.payment_methods.length)
+        ? pms.payment_methods.map(p=>`<span class="pm-tag">${escapeHtml(p.label||p.kind)}: ${escapeHtml((p.details&&(p.details.account||p.details.address))||'')}</span>`).join('')
+        : '<span class="muted">Seller has not listed payment details. Message them in chat before paying.</span>';
     let actions='';
     if(isBuyer){
-        if(o.status==='open'||o.status==='paid'){
-            actions+=`<button class="btn btn-primary btn-sm" onclick="markPaid(${o.id},${o.onchain_id})">I've paid (mark paid)</button>`;
+        if(o.status==='open'){
+            actions+=`<button type="button" class="btn btn-primary btn-sm" onclick="markPaid(${o.id},${o.onchain_id})">I've paid (mark paid)</button>`;
             actions+=`<label class="btn btn-outline btn-sm" style="cursor:pointer">Upload proof<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label>`;
-            actions+=`<button class="btn btn-outline btn-sm" onclick="cancelOrder(${o.id},${o.onchain_id})">Cancel</button>`;
+            actions+=`<button type="button" class="btn btn-outline btn-sm" onclick="cancelOrder(${o.id},${o.onchain_id})">Cancel</button>`;
+        } else if(o.status==='paid'){
+            actions+=`<label class="btn btn-outline btn-sm" style="cursor:pointer">Upload / replace proof<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label>`;
         }
     }
-    if(isSeller && (o.status==='open'||o.status==='paid')){
-        actions+=`<button class="btn btn-green btn-sm" onclick="sellerApprove(${o.id},${o.onchain_id})">Approve &amp; Release</button>`;
-        actions+=`<button class="btn btn-red btn-sm" onclick="sellerReject(${o.id})">Reject (to admin)</button>`;
+    if(isSeller && o.status==='paid'){
+        actions+=`<button type="button" class="btn btn-green btn-sm" onclick="sellerApprove(${o.id},${o.onchain_id})">Approve &amp; Release</button>`;
+        actions+=`<button type="button" class="btn btn-red btn-sm" onclick="sellerReject(${o.id})">Reject (to admin)</button>`;
     }
     const body=document.getElementById('orderModalBody');
     body.innerHTML=`<div class="row" style="justify-content:space-between"><h3>Order #${o.id} <span class="badge badge-${o.status}">${o.status}</span></h3>
-        <button class="btn btn-outline btn-sm" onclick="closeModal('orderModal')">✕</button></div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('orderModal')">✕</button></div>
         <div class="muted" style="margin:.4rem 0">${Number(o.amount_gd).toLocaleString()} G$ for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}<br>
         Buyer ${shortAddr(o.buyer_wallet)} · Seller ${shortAddr(o.seller_wallet)}</div>
-        ${o.reject_reason?`<div class="alert alert-error" style="display:block">Seller rejected: ${o.reject_reason}</div>`:''}
-        <div><strong>Proof of payment</strong>${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${p.reference}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div>
+        ${isBuyer?buyerNextSteps(o, proofs):''}
+        <div class="card" style="margin:.7rem 0"><strong>Seller payment details</strong><div style="margin-top:.35rem">${paymentMethodsHtml}</div></div>
+        ${o.reject_reason?`<div class="alert alert-error" style="display:block">Seller rejected: ${escapeHtml(o.reject_reason)}</div>`:''}
+        <div><strong>Proof of payment</strong>${isBuyer&&['open','paid'].includes(o.status)?`<div class="row" style="margin:.45rem 0"><input id="proofReference" placeholder="Reference no. / transaction ID (optional)"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap">Choose receipt<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label></div>`:''}<div id="proofList">${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${escapeHtml(p.reference)}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div></div>
         <div style="margin-top:.7rem"><strong>Chat</strong>
         <div class="chat" id="chatBox">${msgs.map(m=>`<div class="msg ${m.sender_wallet.toLowerCase()===WALLET.toLowerCase()?'me':'them'}">${m.body}</div>`).join('')}</div>
-        <div class="row"><input id="chatInput" placeholder="Message…"><button class="btn btn-outline btn-sm" onclick="sendMsg(${o.id})">Send</button></div></div>
+        <div class="row"><input id="chatInput" placeholder="Message…"><button type="button" class="btn btn-outline btn-sm" onclick="sendMsg(${o.id})">Send</button></div></div>
         <div id="roomAlert" class="alert"></div>
         <div class="row" style="margin-top:.7rem">${actions}</div>`;
     document.getElementById('orderModal').classList.add('open');
@@ -410,18 +494,42 @@ async function openOrderRoom(orderId){
 function roomAlert(t,m){ const el=document.getElementById('roomAlert'); el.className='alert alert-'+t; el.style.display='block'; el.innerHTML=m; }
 
 async function markPaid(id,onchain){
-    try{ roomAlert('info','<span class="spinner"></span> Confirm in wallet…');
-        const tx=await P2PWallet.sendTx(P2P_CONTRACT, ABI_MARKPAID, [onchain]);
-        await api('/p2p/api/orders/'+id+'/mark-paid',{method:'POST',body:JSON.stringify({paid_tx_hash:tx})});
-        roomAlert('success','Marked paid. '+scan(tx)); openOrderRoom(id);
+    try{
+        roomAlert('info','<span class="spinner"></span> Notifying seller…');
+        const res=await api('/p2p/api/orders/'+id+'/mark-paid',{method:'POST',body:JSON.stringify({})});
+        if(!res.success) throw new Error(res.error||'Could not notify the seller. Please refresh and try again.');
+        roomAlert('success','Marked paid. The seller can now review your proof and approve or reject.');
+        setTimeout(()=>closeModal('orderModal'), 700);
+        loadOrders(currentOrderRole);
+        refreshSellerReviewBadge();
     }catch(e){ roomAlert('error','❌ '+(e.message||e)); }
 }
 async function uploadProof(id,input){
-    if(!input.files.length) return;
-    const fd=new FormData(); fd.append('image',input.files[0]);
-    roomAlert('info','<span class="spinner"></span> Uploading proof…');
-    const r=await fetch('/p2p/api/orders/'+id+'/proof',{method:'POST',body:fd}).then(x=>x.json());
-    if(r.success){ roomAlert('success','Proof uploaded.'); openOrderRoom(id); } else roomAlert('error',r.error||'Upload failed');
+    if(!input || !input.files || !input.files.length) return;
+    const file = input.files[0];
+    const fd=new FormData(); fd.append('image',file);
+    const refEl=document.getElementById('proofReference');
+    if(refEl && refEl.value.trim()) fd.append('reference', refEl.value.trim());
+    input.disabled = true;
+    roomAlert('info','<span class="spinner"></span> Uploading proof… Please keep this window open.');
+    try{
+        const res = await fetch('/p2p/api/orders/'+id+'/proof',{method:'POST',body:fd});
+        const text = await res.text();
+        let r;
+        try { r = text ? JSON.parse(text) : {}; } catch (_) { throw new Error(text || ('Upload failed with HTTP '+res.status)); }
+        if(!res.ok || !r.success) throw new Error(r.error||('Upload failed with HTTP '+res.status));
+        const proofList = document.getElementById('proofList');
+        if(proofList && r.proof){
+            const ref = r.proof.reference ? `<div class="muted">Ref: ${escapeHtml(r.proof.reference)}</div>` : '';
+            proofList.innerHTML = `<div><img class="proof-img" src="${escapeHtml(r.proof.image_url)}">${ref}</div>` + proofList.innerHTML.replace('<div class="muted">None uploaded yet</div>','');
+        }
+        roomAlert('success', r.order_status === 'paid' ? 'Proof uploaded. The seller can now view it for review.' : 'Proof uploaded. Click Mark as paid when you are ready to notify the seller.');
+    }catch(e){
+        input.disabled = false;
+        roomAlert('error','❌ '+(e.message||'Upload failed'));
+    }finally{
+        input.value = '';
+    }
 }
 async function cancelOrder(id,onchain){
     try{ roomAlert('info','<span class="spinner"></span> Confirm cancel…');
@@ -433,14 +541,15 @@ async function cancelOrder(id,onchain){
 async function sellerApprove(id,onchain){
     try{ roomAlert('info','<span class="spinner"></span> Sign releaseOrder…');
         const tx=await P2PWallet.sendTx(P2P_CONTRACT, ABI_RELEASE, [onchain]);
-        await api('/p2p/api/orders/'+id+'/approve',{method:'POST',body:JSON.stringify({release_tx_hash:tx})});
-        roomAlert('success','Released to buyer. '+scan(tx)); openOrderRoom(id);
+        const res=await api('/p2p/api/orders/'+id+'/approve',{method:'POST',body:JSON.stringify({release_tx_hash:tx})});
+        if(!res.success) throw new Error(res.error||'Released on-chain, but failed to update the order.');
+        roomAlert('success','Released to buyer. '+scan(tx)); refreshSellerReviewBadge(); if(currentOrderRole==='seller') loadOrders('seller'); openOrderRoom(id);
     }catch(e){ roomAlert('error','❌ '+(e.message||e)); }
 }
 async function sellerReject(id){
     const reason=prompt('Reason for rejecting this proof (sent to admin review):')||'';
     const r=await api('/p2p/api/orders/'+id+'/reject',{method:'POST',body:JSON.stringify({reason})});
-    if(r.success){ roomAlert('success','Rejected. Escalated to admin review.'); openOrderRoom(id); } else roomAlert('error',r.error||'Failed');
+    if(r.success){ roomAlert('success','Rejected. Escalated to admin review.'); refreshSellerReviewBadge(); if(currentOrderRole==='seller') loadOrders('seller'); openOrderRoom(id); } else roomAlert('error',r.error||'Failed');
 }
 async function sendMsg(id){
     const inp=document.getElementById('chatInput'); const body=inp.value.trim(); if(!body) return;
@@ -481,6 +590,7 @@ document.querySelectorAll('.modal').forEach(m=>m.onclick=e=>{ if(e.target===m) m
 
 // init
 loadListings();
+refreshSellerReviewBadge();
 </script>
 </body>
 </html>
