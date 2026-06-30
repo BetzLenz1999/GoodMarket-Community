@@ -2335,13 +2335,28 @@ def get_admin_referral_stats():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# Referral statuses the admin dashboard can act on: brand-new ones awaiting
+# manual approval plus recoverable ones (stuck mid-disbursement, or previously
+# failed / queued for balance). Disbursement is duplicate-protected, so listing
+# and re-approving these is safe and never double-pays a completed leg.
+REFERRAL_RETRYABLE_STATUSES = [
+    'pending_face_verification',
+    'disbursing',
+    'failed',
+    'pending_disbursed',
+]
+
+
 @routes.route("/api/admin/referral/pending", methods=["GET"])
 @admin_required
 def get_pending_referrals():
-    """Get all pending referrals awaiting admin approval.
-    
-    Returns referrals with status 'pending_face_verification' that need
-    manual CeloScan verification and admin approval.
+    """Get all referrals that still need admin action.
+
+    Returns referrals awaiting manual approval ('pending_face_verification')
+    plus those that need recovery: ones stuck mid-flight ('disbursing') or that
+    previously failed ('failed' / 'pending_disbursed'). The admin can re-approve
+    any of these from the dashboard; disbursement is duplicate-protected so a
+    retry never double-pays an already-completed leg.
     """
     try:
         supabase = get_supabase_client()
@@ -2351,10 +2366,10 @@ def get_pending_referrals():
         limit = int(request.args.get('limit', 100))
         offset = int(request.args.get('offset', 0))
 
-        # Get pending referrals
+        # Get pending / recoverable referrals
         result = supabase.table('referrals') \
             .select('*') \
-            .eq('status', 'pending_face_verification') \
+            .in_('status', REFERRAL_RETRYABLE_STATUSES) \
             .order('created_at', desc=True) \
             .range(offset, offset + limit - 1) \
             .execute()
@@ -2362,7 +2377,7 @@ def get_pending_referrals():
         # Get total count
         count_result = supabase.table('referrals') \
             .select('id', count='exact') \
-            .eq('status', 'pending_face_verification') \
+            .in_('status', REFERRAL_RETRYABLE_STATUSES) \
             .execute()
         
         total_count = count_result.count if count_result else 0
@@ -2592,7 +2607,7 @@ def admin_approve_referral():
         referrals_query = supabase.table("referrals") \
             .select("*") \
             .eq("referral_code", referral_code) \
-            .eq("status", "pending_face_verification")
+            .in_("status", REFERRAL_RETRYABLE_STATUSES)
         if referral_id:
             referrals_query = referrals_query.eq("id", referral_id)
         referrals_result = referrals_query.limit(1).execute()
@@ -2616,7 +2631,7 @@ def admin_approve_referral():
                     }), 400
                 return jsonify({
                     "success": False,
-                    "error": f"Referral has status '{row.get('status')}' - only pending_face_verification can be approved",
+                    "error": f"Referral has status '{row.get('status')}' which cannot be approved/retried",
                     "status": row.get("status")
                 }), 400
             return jsonify({
@@ -2634,7 +2649,11 @@ def admin_approve_referral():
 
         # Step 1: Claim the exact referral row for disbursement. Use referral_id
         # when supplied so duplicate referral codes cannot move the wrong row.
-        claim = referral_service.claim_pending_referral_for_disbursement(referee_wallet, row.get("id"))
+        # Allow claiming recoverable states too (stuck 'disbursing' / 'failed' /
+        # 'pending_disbursed') so the admin can retry from the dashboard.
+        claim = referral_service.claim_pending_referral_for_disbursement(
+            referee_wallet, row.get("id"), allowed_statuses=REFERRAL_RETRYABLE_STATUSES
+        )
         if not claim.get("claimed"):
             return jsonify({
                 "success": False,
