@@ -146,6 +146,27 @@ def _payment_method_label(payment_method):
     return f"{label}: {account}" if account else label
 
 
+def _legacy_order_payment_method(payment_method):
+    """Return a safe value for legacy p2p_orders.payment_method columns.
+
+    Early P2P deployments used a NOT NULL varchar(50) text column on
+    p2p_orders instead of the current payment_method_id foreign key. Full
+    labels can include a 42-character wallet address plus a prefix, which can
+    exceed that legacy limit and make order recording fail after the buyer has
+    already opened the escrow on-chain. Current schemas keep the complete
+    payment details in p2p_payment_methods, so this compatibility mirror should
+    stay short and descriptive.
+    """
+    if not payment_method:
+        return "Not specified"
+    label = (payment_method.get("label") or payment_method.get("kind") or "payment_method").strip()
+    kind = (payment_method.get("kind") or "payment_method").strip()
+    value = label or kind or "payment_method"
+    if len(value) <= 50:
+        return value
+    return value[:47].rstrip() + "..."
+
+
 # ── Orders ──────────────────────────────────────────────────────────────────
 def create_order(listing_row, buyer_wallet, amount_gd, pay_amount, pay_currency,
                 payment_method_id=None, onchain_id=None, open_tx_hash=None,
@@ -158,7 +179,7 @@ def create_order(listing_row, buyer_wallet, amount_gd, pay_amount, pay_currency,
         seller_methods = list_payment_methods(listing_row["seller_wallet"])
         payment_method = seller_methods[0] if seller_methods else None
         payment_method_id = payment_method.get("id") if payment_method else None
-    payment_method_text = _payment_method_label(payment_method) or "Not specified"
+    payment_method_text = _legacy_order_payment_method(payment_method)
     row = {
         "onchain_id": onchain_id,
         "listing_id": listing_row["id"],
