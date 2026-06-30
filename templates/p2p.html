@@ -44,6 +44,8 @@
         .listing { background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.07); border-radius:12px; padding:1rem; margin-bottom:.7rem; }
         .listing .seller { font-family:monospace; color:#c4b5fd; font-size:.82rem; }
         .listing .price { font-size:1.15rem; font-weight:700; color:#fff; }
+        .order-meta { display:flex; flex-wrap:wrap; gap:.35rem .65rem; align-items:center; margin-top:.2rem; }
+        .order-date { color:rgba(255,255,255,.52); font-size:.78rem; }
         .badge { padding:.2rem .6rem; border-radius:20px; font-size:.7rem; font-weight:700; }
         .badge-open { background:rgba(245,158,11,.12); color:#fcd34d; }
         .badge-paid { background:rgba(99,102,241,.15); color:#a5b4fc; }
@@ -57,12 +59,21 @@
         .msg { padding:.4rem .7rem; border-radius:10px; font-size:.82rem; max-width:80%; }
         .msg.me { background:rgba(124,58,237,.25); align-self:flex-end; }
         .msg.them { background:rgba(255,255,255,.06); align-self:flex-start; }
+        .chat-status { font-size:.72rem; color:rgba(255,255,255,.42); margin-left:.4rem; font-weight:500; }
         .proof-img { max-width:240px; border-radius:10px; border:1px solid rgba(255,255,255,.12); margin-top:.4rem; }
         .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:200; align-items:center; justify-content:center; padding:1rem; }
         .modal.open { display:flex; }
         .modal-box { background:#15102e; border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:1.3rem; max-width:560px; width:100%; max-height:90vh; overflow-y:auto; }
         .muted { color:rgba(255,255,255,.45); font-size:.8rem; }
         .pm-tag { display:inline-block; background:rgba(124,58,237,.12); border:1px solid rgba(124,58,237,.25); border-radius:8px; padding:.2rem .55rem; font-size:.74rem; margin:.15rem .2rem 0 0; }
+        .pm-choice { display:flex; align-items:center; gap:.45rem; width:100%; max-width:100%; padding:.55rem .75rem; margin:.25rem 0; }
+        .pm-choice input { width:auto; flex:0 0 auto; }
+        .pm-text { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; line-height:1.35; }
+        .pm-copy-btn { flex:0 0 auto; padding:.28rem .55rem; border-radius:8px; border:1px solid rgba(167,139,250,.35); background:rgba(124,58,237,.18); color:#ddd6fe; font-size:.72rem; font-weight:800; cursor:pointer; }
+        .pm-copy-btn:hover { background:rgba(124,58,237,.32); color:#fff; }
+        .pm-copy-btn.copied { border-color:rgba(16,185,129,.45); background:rgba(16,185,129,.18); color:#6ee7b7; }
+        .pm-detail-row { display:flex; align-items:center; gap:.45rem; max-width:100%; margin:.25rem .25rem 0 0; }
+        .pm-detail-row .pm-tag { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; margin:0; }
         .next-steps { background:rgba(99,102,241,.10); border:1px solid rgba(99,102,241,.25); border-radius:12px; padding:.8rem 1rem; margin:.75rem 0; }
         .next-steps ol { margin:.45rem 0 0 1.1rem; padding:0; color:rgba(255,255,255,.78); font-size:.84rem; line-height:1.55; }
         .next-steps li { margin:.25rem 0; }
@@ -72,6 +83,12 @@
         .review-callout { display:none; background:rgba(245,158,11,.11); border:1px solid rgba(245,158,11,.26); color:#fde68a; border-radius:12px; padding:.8rem 1rem; margin-bottom:.8rem; font-size:.86rem; }
         .review-callout strong { color:#fff7ed; }
         .tab-count { display:none; margin-left:.35rem; background:rgba(245,158,11,.18); color:#fcd34d; border:1px solid rgba(245,158,11,.30); border-radius:999px; padding:.05rem .4rem; font-size:.68rem; font-weight:800; }
+        .tx-proof { background:rgba(16,185,129,.10); border:1px solid rgba(16,185,129,.28); border-radius:12px; padding:.85rem 1rem; margin:.75rem 0; }
+        .tx-proof strong { color:#bbf7d0; }
+        .tx-proof-row { margin-top:.35rem; color:rgba(255,255,255,.72); font-size:.82rem; overflow-wrap:anywhere; }
+        .tx-proof code { color:#d1fae5; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:.78rem; }
+        .tx-proof a { color:#86efac; font-weight:800; text-decoration:none; }
+        .tx-proof a:hover { text-decoration:underline; }
     </style>
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     <script>
@@ -128,25 +145,8 @@
     <!-- SELL -->
     <div class="tab-panel" id="tab-sell">
         <div class="card">
-            <strong>Create a sell ad</strong>
-            <p class="muted" style="margin:.3rem 0 .8rem">
-                Lock {{ "{:,}".format(min_lock_gd) }}–{{ "{:,}".format(max_lock_gd) }} G$. You approve G$ to the escrow,
-                then sign <code>createListing</code>. Buyers pay you off-chain; you Approve to release.
-            </p>
-            <div class="grid2">
-                <div class="form-group"><label>Total G$ to lock</label><input id="sellAmount" type="number" placeholder="e.g. 50000"></div>
-                <div class="form-group"><label>Min order (G$)</label><input id="sellMinOrder" type="number" placeholder="e.g. 1000"></div>
-                <div class="form-group"><label>Price per G$ (USDT)</label><input id="sellPrice" type="number" step="0.000001" placeholder="e.g. 0.00012"></div>
-                <div class="form-group"><label>Fiat currency (optional)</label><input id="sellFiat" placeholder="e.g. PHP"></div>
-                <div class="form-group"><label>Fiat rate per USDT (optional)</label><input id="sellFiatRate" type="number" step="0.0001" placeholder="e.g. 58"></div>
-            </div>
-            <div class="form-group"><label>Terms / notes (optional)</label><textarea id="sellTerms" rows="2" placeholder="Payment instructions buyers will see"></textarea></div>
-            <button type="button" class="btn btn-primary" id="createAdBtn" {% if not p2p_contract %}disabled{% endif %}>Approve &amp; Create Ad</button>
-        </div>
-
-        <div class="card">
-            <strong>Payment methods</strong>
-            <p class="muted" style="margin:.3rem 0 .6rem">Buyers see these on your ads.</p>
+            <strong>Step 1: Add a payment method</strong>
+            <p class="muted" style="margin:.3rem 0 .6rem">Add where buyers should pay you first. Once at least one payment method is saved, the sell ad form will appear.</p>
             <div class="row">
                 <select id="pmKind" style="max-width:180px">
                     <option value="fiat_bank">Bank</option>
@@ -162,6 +162,23 @@
                 <button type="button" class="btn btn-outline btn-sm" id="addPmBtn">Add</button>
             </div>
             <div id="myPms" style="margin-top:.6rem"></div>
+        </div>
+
+        <div class="card" id="createSellAdCard" style="display:none">
+            <strong>Step 2: Create a sell ad</strong>
+            <p class="muted" style="margin:.3rem 0 .8rem">
+                Lock {{ "{:,}".format(min_lock_gd) }}–{{ "{:,}".format(max_lock_gd) }} G$. You approve G$ to the escrow,
+                then sign <code>createListing</code>. Buyers pay using your saved payment method; you Approve to release.
+            </p>
+            <div class="grid2">
+                <div class="form-group"><label>Total G$ to lock</label><input id="sellAmount" type="number" placeholder="e.g. 50000"></div>
+                <div class="form-group"><label>Min order (G$)</label><input id="sellMinOrder" type="number" placeholder="e.g. 1000"></div>
+                <div class="form-group"><label>Price per G$ (USDT)</label><input id="sellPrice" type="number" step="0.000001" placeholder="e.g. 0.00012"></div>
+                <div class="form-group"><label>Fiat currency (optional)</label><input id="sellFiat" placeholder="e.g. PHP"></div>
+                <div class="form-group"><label>Fiat rate per USDT (optional)</label><input id="sellFiatRate" type="number" step="0.0001" placeholder="e.g. 58"></div>
+            </div>
+            <div class="form-group"><label>Terms / notes (optional)</label><textarea id="sellTerms" rows="2" placeholder="Additional instructions buyers will see"></textarea></div>
+            <button type="button" class="btn btn-primary" id="createAdBtn" {% if not p2p_contract %}disabled{% endif %}>Approve &amp; Create Ad</button>
         </div>
 
         <div class="card"><strong>My ads</strong><div id="myAds"><div class="empty">…</div></div></div>
@@ -235,9 +252,59 @@ async function api(url,opts){
     if(!res.ok && data && !data.error) data.error = 'HTTP '+res.status;
     return data;
 }
-function scan(tx){ return `<a href="https://celoscan.io/tx/${tx}" target="_blank" style="color:#86efac">View ↗</a>`; }
+function txHashLink(tx, label='View on CeloScan ↗'){
+    const safeTx = String(tx || '').trim();
+    if(!safeTx) return '';
+    return `<a href="https://celoscan.io/tx/${encodeURIComponent(safeTx)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+}
+function scan(tx){ return txHashLink(tx, 'View ↗'); }
 function escapeHtml(v){ return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function escapeAttr(v){ return escapeHtml(v).replace(/`/g, '&#96;'); }
+async function copyPaymentDetail(value, btn){
+    const text = String(value ?? '').trim();
+    if(!text) return;
+    try{
+        if(navigator.clipboard && window.isSecureContext){
+            await navigator.clipboard.writeText(text);
+        }else{
+            const ta=document.createElement('textarea');
+            ta.value=text; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.opacity='0';
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+        }
+        if(btn){ const old=btn.textContent; btn.textContent='Copied'; btn.classList.add('copied'); setTimeout(()=>{btn.textContent=old||'Copy'; btn.classList.remove('copied');},1400); }
+    }catch(e){ showAlert('error','Could not copy. Please select and copy manually.'); }
+}
+function paymentMethodDetail(p){ return (p.details && (p.details.account || p.details.address || p.details.number)) || ''; }
+function paymentMethodText(p){ const detail=paymentMethodDetail(p); return `${p.label||p.kind}${detail?': '+detail:''}`; }
+function paymentCopyButton(detail){ return detail ? `<button type="button" class="pm-copy-btn" data-copy-detail="${escapeAttr(detail)}" onclick="event.preventDefault();event.stopPropagation();copyPaymentDetail(this.dataset.copyDetail, this)"><i class="fa-regular fa-copy"></i> Copy</button>` : ''; }
 function formatDeadline(v){ if(!v) return ''; const d=new Date(v); if(Number.isNaN(d.getTime())) return ''; return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+function formatOrderDate(v){
+    if(!v) return '';
+    const d = new Date(v);
+    if(Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+}
+function orderDateLabel(o){
+    const created = formatOrderDate(o.created_at);
+    const updated = formatOrderDate(o.updated_at);
+    if(created && updated && o.updated_at !== o.created_at) return `Opened ${created} · Updated ${updated}`;
+    return created ? `Opened ${created}` : '';
+}
+function releaseProofPanel(o){
+    const releaseTx = o.release_tx_hash;
+    if(!releaseTx || !['released','owner_released'].includes(o.status)) return '';
+    const releasedBy = o.status === 'owner_released' ? 'admin review' : 'seller approval';
+    return `<div class="tx-proof">
+        <strong>✅ Release proof</strong>
+        <div class="tx-proof-row">G$ was released to buyer wallet <code>${escapeHtml(o.buyer_wallet)}</code> via ${releasedBy}.</div>
+        <div class="tx-proof-row">Transaction hash: <code>${escapeHtml(releaseTx)}</code></div>
+        <div class="tx-proof-row">${txHashLink(releaseTx, 'Open transaction on CeloScan ↗')}</div>
+    </div>`;
+}
+function compactReleaseProof(o){
+    if(!o.release_tx_hash || !['released','owner_released'].includes(o.status)) return '';
+    return `<div class="muted" style="margin-top:.25rem;color:#86efac">Released to buyer ${shortAddr(o.buyer_wallet)} · ${txHashLink(o.release_tx_hash, 'TX proof ↗')}</div>`;
+}
 function buyerNextSteps(o, proofs){
     const hasProof = proofs && proofs.length;
     const paid = ['paid','released','owner_released'].includes(o.status);
@@ -292,9 +359,9 @@ async function openBuyModal(l){
     const paymentMethods = (pms.success&&pms.payment_methods.length) ? pms.payment_methods : [];
     const pmHtml = paymentMethods.length
         ? `<div class="muted" style="margin-bottom:.35rem">Choose where you will pay the seller:</div>${paymentMethods.map((p,i)=>{
-            const detail=(p.details&&(p.details.account||p.details.address||p.details.number))||'';
-            const text=`${p.label||p.kind}${detail?': '+detail:''}`;
-            return `<label class="pm-tag" style="cursor:pointer"><input type="radio" name="buyPaymentMethod" value="${p.id}" ${i===0?'checked':''}> ${escapeHtml(text)}</label>`;
+            const detail=paymentMethodDetail(p);
+            const text=paymentMethodText(p);
+            return `<label class="pm-tag pm-choice" style="cursor:pointer"><input type="radio" name="buyPaymentMethod" value="${p.id}" ${i===0?'checked':''}><span class="pm-text">${escapeHtml(text)}</span>${paymentCopyButton(detail)}</label>`;
         }).join('')}`
         : '<span class="muted">No payment methods listed</span>';
     const body=document.getElementById('buyModalBody');
@@ -353,6 +420,7 @@ document.getElementById('createAdBtn').onclick=async function(){
     const fiat=document.getElementById('sellFiat').value.trim();
     const fiatRate=parseFloat(document.getElementById('sellFiatRate').value||'0')||null;
     const terms=document.getElementById('sellTerms').value.trim();
+    if(!(await sellerHasPaymentMethod())){ showAlert('error','Add a payment method first so buyers know where to pay you.'); return; }
     if(!amount||!price){ showAlert('error','Enter amount and price.'); return; }
     const btn=this; btn.disabled=true;
     try{
@@ -376,13 +444,20 @@ document.getElementById('addPmBtn').onclick=async function(){
     const label=document.getElementById('pmLabel').value.trim();
     const det=document.getElementById('pmDetails').value.trim();
     const res=await api('/p2p/api/payment-methods',{method:'POST',body:JSON.stringify({kind,label,details:{account:det,address:det}})});
-    if(res.success){ document.getElementById('pmLabel').value=''; document.getElementById('pmDetails').value=''; loadMyPms(); }
+    if(res.success){ document.getElementById('pmLabel').value=''; document.getElementById('pmDetails').value=''; loadMyPms(); showAlert('success','Payment method saved. You can now create a sell ad.'); }
     else showAlert('error',res.error||'Failed');
 };
+async function sellerHasPaymentMethod(){
+    const res=await api('/p2p/api/payment-methods?seller='+WALLET);
+    return !!(res.success && res.payment_methods && res.payment_methods.length);
+}
 async function loadMyPms(){
     const res=await api('/p2p/api/payment-methods?seller='+WALLET);
     const box=document.getElementById('myPms');
-    box.innerHTML=(res.success&&res.payment_methods.length)? res.payment_methods.map(p=>`<span class="pm-tag">${p.label||p.kind}: ${(p.details&&(p.details.account||p.details.address))||''}</span>`).join(''):'<span class="muted">None yet</span>';
+    const createCard=document.getElementById('createSellAdCard');
+    const methods=(res.success&&res.payment_methods) ? res.payment_methods : [];
+    box.innerHTML=methods.length ? methods.map(p=>`<span class="pm-tag">${p.label||p.kind}: ${(p.details&&(p.details.account||p.details.address))||''}</span>`).join('') : '<span class="muted">No payment method yet. Add one to unlock sell ad creation.</span>';
+    if(createCard) createCard.style.display = methods.length ? 'block' : 'none';
 }
 async function loadMyAds(){
     const res=await api('/p2p/api/listings?seller='+WALLET+'&include_inactive=1'); const box=document.getElementById('myAds');
@@ -407,6 +482,9 @@ async function cancelAd(id,onchain){
 
 // ── Orders ──
 let currentOrderRole='buyer';
+let activeOrderRoomId=null;
+let chatPollTimer=null;
+let lastChatSignature='';
 document.getElementById('ordBuyer').onclick=()=>{currentOrderRole='buyer';loadOrders('buyer');};
 document.getElementById('ordSeller').onclick=()=>{currentOrderRole='seller';loadOrders('seller');};
 async function loadOrders(role){
@@ -430,10 +508,14 @@ async function loadOrders(role){
         const needsReview = role==='seller' && o.status==='paid';
         const terminal = ['released','owner_released','cancelled','owner_refunded'].includes(o.status);
         const buttonLabel = needsReview ? 'Review' : (terminal ? 'View' : 'Continue');
+        const dateLabel = orderDateLabel(o);
         return `<div class="listing"><div class="row" style="justify-content:space-between">
             <div><strong>${Number(o.amount_gd).toLocaleString()} G$</strong> for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}
-            <div class="muted">${role==='buyer'?'Seller '+shortAddr(o.seller_wallet):'Buyer '+shortAddr(o.buyer_wallet)}</div>
-            ${needsReview?'<div class="muted" style="color:#fcd34d;margin-top:.25rem">Needs your review: approve/release or reject</div>':''}</div>
+            <div class="order-meta">
+                <span class="muted">${role==='buyer'?'Seller '+shortAddr(o.seller_wallet):'Buyer '+shortAddr(o.buyer_wallet)}</span>
+                ${dateLabel?`<span class="order-date">${dateLabel}</span>`:''}
+            </div>
+            ${needsReview?'<div class="muted" style="color:#fcd34d;margin-top:.25rem">Needs your review: approve/release or reject</div>':''}${compactReleaseProof(o)}</div>
             <div style="text-align:right"><span class="badge badge-${o.status}">${o.status}</span>
             <div style="margin-top:.4rem"><button type="button" class="btn ${needsReview?'btn-primary':'btn-outline'} btn-sm" onclick="openOrderRoom(${o.id})">${buttonLabel}</button></div></div>
             </div></div>`;
@@ -452,13 +534,14 @@ async function refreshSellerReviewBadge(){
 }
 
 async function openOrderRoom(orderId){
+    stopChatPolling();
     const res=await api('/p2p/api/orders/'+orderId);
     if(!res.success){ showAlert('error',res.error||'Failed'); return; }
     const o=res.order, isBuyer=o.buyer_wallet.toLowerCase()===WALLET.toLowerCase(), isSeller=o.seller_wallet.toLowerCase()===WALLET.toLowerCase();
     const proofs=res.proofs||[], msgs=res.messages||[];
     const pms = await api('/p2p/api/payment-methods?seller='+o.seller_wallet);
     const paymentMethodsHtml = (pms.success&&pms.payment_methods.length)
-        ? pms.payment_methods.map(p=>`<span class="pm-tag">${escapeHtml(p.label||p.kind)}: ${escapeHtml((p.details&&(p.details.account||p.details.address))||'')}</span>`).join('')
+        ? pms.payment_methods.map(p=>{ const detail=paymentMethodDetail(p); return `<div class="pm-detail-row"><span class="pm-tag"><strong>${escapeHtml(p.label||p.kind)}</strong>${detail?`: ${escapeHtml(detail)}`:''}</span>${paymentCopyButton(detail)}</div>`; }).join('')
         : '<span class="muted">Seller has not listed payment details. Message them in chat before paying.</span>';
     let actions='';
     if(isBuyer){
@@ -475,23 +558,67 @@ async function openOrderRoom(orderId){
         actions+=`<button type="button" class="btn btn-red btn-sm" onclick="sellerReject(${o.id})">Reject (to admin)</button>`;
     }
     const body=document.getElementById('orderModalBody');
+    const modalDateLabel = orderDateLabel(o);
     body.innerHTML=`<div class="row" style="justify-content:space-between"><h3>Order #${o.id} <span class="badge badge-${o.status}">${o.status}</span></h3>
         <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('orderModal')">✕</button></div>
         <div class="muted" style="margin:.4rem 0">${Number(o.amount_gd).toLocaleString()} G$ for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}<br>
-        Buyer ${shortAddr(o.buyer_wallet)} · Seller ${shortAddr(o.seller_wallet)}</div>
+        Buyer ${shortAddr(o.buyer_wallet)} · Seller ${shortAddr(o.seller_wallet)}${modalDateLabel?`<br>${modalDateLabel}`:''}</div>
         ${isBuyer?buyerNextSteps(o, proofs):''}
+        ${releaseProofPanel(o)}
         <div class="card" style="margin:.7rem 0"><strong>Seller payment details</strong><div style="margin-top:.35rem">${paymentMethodsHtml}</div></div>
         ${o.reject_reason?`<div class="alert alert-error" style="display:block">Seller rejected: ${escapeHtml(o.reject_reason)}</div>`:''}
         <div><strong>Proof of payment</strong>${isBuyer&&['open','paid'].includes(o.status)?`<div class="row" style="margin:.45rem 0"><input id="proofReference" placeholder="Reference no. / transaction ID (optional)"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap">Choose receipt<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label></div>`:''}<div id="proofList">${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${escapeHtml(p.reference)}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div></div>
-        <div style="margin-top:.7rem"><strong>Chat</strong>
-        <div class="chat" id="chatBox">${msgs.map(m=>`<div class="msg ${m.sender_wallet.toLowerCase()===WALLET.toLowerCase()?'me':'them'}">${m.body}</div>`).join('')}</div>
+        <div style="margin-top:.7rem"><strong>Chat</strong><span class="chat-status" id="chatStatus">Live updates on</span>
+        <div class="chat" id="chatBox"></div>
         <div class="row"><input id="chatInput" placeholder="Message…"><button type="button" class="btn btn-outline btn-sm" onclick="sendMsg(${o.id})">Send</button></div></div>
         <div id="roomAlert" class="alert"></div>
         <div class="row" style="margin-top:.7rem">${actions}</div>`;
     document.getElementById('orderModal').classList.add('open');
-    const c=document.getElementById('chatBox'); c.scrollTop=c.scrollHeight;
+    activeOrderRoomId=orderId;
+    renderChatMessages(msgs, true);
+    startChatPolling(orderId);
 }
 function roomAlert(t,m){ const el=document.getElementById('roomAlert'); el.className='alert alert-'+t; el.style.display='block'; el.innerHTML=m; }
+function chatSignature(messages){
+    return (messages||[]).map(m=>`${m.id || ''}:${m.created_at || ''}:${m.sender_wallet || ''}:${m.body || ''}`).join('|');
+}
+function renderChatMessages(messages, forceScroll=false){
+    const c=document.getElementById('chatBox');
+    if(!c) return false;
+    const signature=chatSignature(messages);
+    if(signature===lastChatSignature) return false;
+    const shouldStickToBottom = forceScroll || (c.scrollHeight - c.scrollTop - c.clientHeight < 48);
+    c.innerHTML=(messages||[]).map(m=>`<div class="msg ${(m.sender_wallet||'').toLowerCase()===WALLET.toLowerCase()?'me':'them'}">${escapeHtml(m.body)}</div>`).join('');
+    lastChatSignature=signature;
+    if(shouldStickToBottom) c.scrollTop=c.scrollHeight;
+    return true;
+}
+function setChatStatus(text){
+    const el=document.getElementById('chatStatus');
+    if(el) el.textContent=text;
+}
+async function refreshOrderChat(orderId){
+    if(activeOrderRoomId!==orderId || !document.getElementById('orderModal').classList.contains('open')) return;
+    try{
+        const res=await api('/p2p/api/orders/'+orderId+'/messages');
+        if(!res.success) throw new Error(res.error||'Failed to refresh chat');
+        const changed=renderChatMessages(res.messages||[]);
+        setChatStatus(changed ? 'New messages loaded' : 'Live updates on');
+    }catch(e){
+        setChatStatus('Reconnecting…');
+    }
+}
+function startChatPolling(orderId){
+    lastChatSignature='';
+    refreshOrderChat(orderId);
+    chatPollTimer=setInterval(()=>refreshOrderChat(orderId), 2500);
+}
+function stopChatPolling(){
+    if(chatPollTimer) clearInterval(chatPollTimer);
+    chatPollTimer=null;
+    activeOrderRoomId=null;
+    lastChatSignature='';
+}
 
 async function markPaid(id,onchain){
     try{
@@ -554,7 +681,7 @@ async function sellerReject(id){
 async function sendMsg(id){
     const inp=document.getElementById('chatInput'); const body=inp.value.trim(); if(!body) return;
     const r=await api('/p2p/api/orders/'+id+'/messages',{method:'POST',body:JSON.stringify({body})});
-    if(r.success){ inp.value=''; openOrderRoom(id); }
+    if(r.success){ inp.value=''; await refreshOrderChat(id); setChatStatus('Sent'); }
 }
 
 // ── Admin review ──
@@ -568,7 +695,8 @@ async function loadReviewQueue(){
             <strong>Order #${o.id} <span class="badge badge-${o.status}">${o.status}</span></strong>
             <span class="muted">${Number(o.amount_gd).toLocaleString()} G$ · ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}</span></div>
             <div class="muted" style="margin:.3rem 0">Buyer ${shortAddr(o.buyer_wallet)} · Seller ${shortAddr(o.seller_wallet)}</div>
-            ${o.reject_reason?`<div class="alert alert-error" style="display:block">Reject reason: ${o.reject_reason}</div>`:''}
+            ${o.reject_reason?`<div class="alert alert-error" style="display:block">Reject reason: ${escapeHtml(o.reject_reason)}</div>`:''}
+            ${releaseProofPanel(o)}
             <div><strong>Proof</strong>${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${p.reference}</div>`:''}</div>`).join(''):'<div class="muted">No proof uploaded</div>'}</div>
             <div style="margin-top:.5rem"><strong>Chat</strong><div class="chat">${msgs.map(m=>`<div class="msg ${m.sender_wallet.toLowerCase()===o.buyer_wallet.toLowerCase()?'them':'me'}">${shortAddr(m.sender_wallet)}: ${m.body}</div>`).join('')||'<span class="muted">No messages</span>'}</div></div>
             <div class="row" style="margin-top:.6rem">
@@ -585,8 +713,8 @@ async function adminAct(id,action){
     else showAlert('error',r.error||'Failed');
 }
 
-function closeModal(id){ document.getElementById(id).classList.remove('open'); }
-document.querySelectorAll('.modal').forEach(m=>m.onclick=e=>{ if(e.target===m) m.classList.remove('open'); });
+function closeModal(id){ document.getElementById(id).classList.remove('open'); if(id==='orderModal') stopChatPolling(); }
+document.querySelectorAll('.modal').forEach(m=>m.onclick=e=>{ if(e.target===m) closeModal(m.id); });
 
 // init
 loadListings();
