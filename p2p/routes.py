@@ -244,10 +244,21 @@ def api_quote():
     listing = db.get_listing_row(listing_id)
     if not listing:
         return jsonify({"success": False, "error": "Listing not found"}), 404
+    listing = _sync_listing_from_chain(listing)
+    available_gd = float(listing.get("available_gd", listing.get("total_gd", 0)) or 0)
+    if listing.get("status") != "active" or not listing.get("onchain_active", True) or available_gd <= 0:
+        return jsonify({"success": False, "error": "This sell ad is no longer available."}), 409
+    if amount > available_gd:
+        return jsonify({
+            "success": False,
+            "error": f"Only {available_gd:g} G$ is still available for this ad. Refresh the listings and try a lower amount.",
+            "available_gd": available_gd,
+        }), 409
     price_usdt = float(listing["price_usdt"])
     usdt_total = amount * price_usdt
     quote = {
         "amount_gd": amount,
+        "available_gd": available_gd,
         "price_usdt": price_usdt,
         "pay_amount_usdt": usdt_total,
         "pay_currency": "USDT",
