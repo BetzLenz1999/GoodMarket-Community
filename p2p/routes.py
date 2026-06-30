@@ -625,9 +625,22 @@ def api_admin_release(order_id):
         return jsonify({"success": False, "error": "Order has no on-chain id"}), 400
     if not chain.P2P_KEY:
         return jsonify({"success": False, "error": "P2P_KEY not configured on server"}), 503
-    result = chain.owner_release_order(order["onchain_id"])
+    try:
+        result = chain.owner_release_order(order["onchain_id"])
+    except Exception as exc:
+        logger.exception("P2P admin release failed for order %s", order_id)
+        return jsonify({
+            "success": False,
+            "error": f"On-chain release failed: {exc}",
+            "explanation": "No database status was changed. Check the on-chain order/listing status and the server owner key before retrying.",
+        }), 502
     if not result.get("success"):
-        return jsonify({"success": False, "error": "On-chain release failed", "tx_hash": result.get("tx_hash")}), 502
+        return jsonify({
+            "success": False,
+            "error": "On-chain release transaction reverted or was not confirmed",
+            "tx_hash": result.get("tx_hash"),
+            "explanation": "Funds remain in escrow unless the linked Celo transaction succeeded.",
+        }), 502
     updated = db.update_order(order_id, {
         "status": "owner_released", "reviewed_by": wallet, "release_tx_hash": result["tx_hash"],
     })
@@ -652,16 +665,37 @@ def api_admin_refund(order_id):
         return jsonify({"success": False, "error": "Order has no on-chain id"}), 400
     if not chain.P2P_KEY:
         return jsonify({"success": False, "error": "P2P_KEY not configured on server"}), 503
-    result = chain.owner_refund_order(order["onchain_id"])
+    try:
+        result = chain.owner_refund_order(order["onchain_id"])
+    except Exception as exc:
+        logger.exception("P2P admin refund failed for order %s", order_id)
+        return jsonify({
+            "success": False,
+            "error": f"On-chain refund failed: {exc}",
+            "explanation": "No database status was changed. Refund to seller means the reserved G$ returns to the listing's on-chain available balance, not a wallet transfer to the seller.",
+        }), 502
     if not result.get("success"):
-        return jsonify({"success": False, "error": "On-chain refund failed", "tx_hash": result.get("tx_hash")}), 502
+        return jsonify({
+            "success": False,
+            "error": "On-chain refund transaction reverted or was not confirmed",
+            "tx_hash": result.get("tx_hash"),
+            "explanation": "Funds remain in escrow unless the linked Celo transaction succeeded.",
+        }), 502
     updated = db.update_order(order_id, {
         "status": "owner_refunded", "reviewed_by": wallet, "release_tx_hash": result["tx_hash"],
     })
     dispute = db.get_open_dispute_for_order(order_id)
     if dispute:
         db.resolve_dispute_row(dispute["id"], "resolved_seller", wallet, result["tx_hash"])
-    return jsonify({"success": True, "order": updated, "tx_hash": result["tx_hash"]})
+    listing = db.get_listing_row(order.get("listing_id"))
+    synced_listing = _sync_listing_from_chain(listing) if listing else None
+    return jsonify({
+        "success": True,
+        "order": updated,
+        "listing": synced_listing,
+        "tx_hash": result["tx_hash"],
+        "message": "Refund completed: reserved G$ was returned to the seller listing's on-chain available balance.",
+    })
 
 
 @p2p_bp.route("/api/admin/worker-status")
