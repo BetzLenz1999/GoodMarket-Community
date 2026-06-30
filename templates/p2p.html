@@ -89,6 +89,26 @@
         .tx-proof code { color:#d1fae5; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:.78rem; }
         .tx-proof a { color:#86efac; font-weight:800; text-decoration:none; }
         .tx-proof a:hover { text-decoration:underline; }
+        .seller-hero { background:linear-gradient(135deg,rgba(124,58,237,.16),rgba(16,185,129,.08)); border-color:rgba(167,139,250,.22); }
+        .seller-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.55rem; margin:.85rem 0; }
+        .seller-kpi { background:rgba(0,0,0,.22); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:.75rem; }
+        .seller-kpi .label { color:rgba(255,255,255,.52); font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.02em; }
+        .seller-kpi .value { color:#fff; font-size:1.1rem; font-weight:850; margin-top:.2rem; }
+        .flow-steps { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.5rem; margin-top:.7rem; }
+        .flow-step { background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:.65rem; font-size:.78rem; color:rgba(255,255,255,.68); line-height:1.35; }
+        .flow-step strong { display:block; color:#ddd6fe; margin-bottom:.18rem; }
+        .seller-review-panel { background:rgba(245,158,11,.09); border:1px solid rgba(245,158,11,.25); border-radius:12px; padding:.85rem 1rem; margin:.75rem 0; }
+        .seller-review-panel strong { color:#fff7ed; }
+        .seller-checklist { display:grid; gap:.45rem; margin:.7rem 0; }
+        .seller-checklist label { display:flex; align-items:flex-start; gap:.5rem; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.08); border-radius:10px; padding:.55rem .65rem; color:rgba(255,255,255,.78); font-size:.82rem; line-height:1.35; }
+        .seller-checklist input { width:auto; margin-top:.1rem; flex:0 0 auto; }
+        .danger-note { background:rgba(239,68,68,.10); border:1px solid rgba(239,68,68,.25); color:#fecaca; border-radius:12px; padding:.75rem .9rem; font-size:.84rem; line-height:1.45; margin:.65rem 0; }
+        @media (max-width: 760px) {
+            .seller-kpis, .flow-steps { grid-template-columns:1fr 1fr; }
+        }
+        @media (max-width: 480px) {
+            .seller-kpis, .flow-steps, .grid2 { grid-template-columns:1fr; }
+        }
     </style>
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     <script>
@@ -144,6 +164,28 @@
 
     <!-- SELL -->
     <div class="tab-panel" id="tab-sell">
+        <div class="card seller-hero">
+            <div class="row" style="justify-content:space-between;align-items:flex-start">
+                <div>
+                    <strong>Seller Hub</strong>
+                    <p class="muted" style="margin:.3rem 0 0">Manage your sell ads, payment setup, and buyer payments from one review-first workspace.</p>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('createSellAdCard')?.scrollIntoView({behavior:'smooth',block:'start'})">Create Sell Offer</button>
+            </div>
+            <div class="seller-kpis">
+                <div class="seller-kpi"><div class="label">Active ads</div><div class="value" id="sellerKpiAds">—</div></div>
+                <div class="seller-kpi"><div class="label">Available G$</div><div class="value" id="sellerKpiAvailable">—</div></div>
+                <div class="seller-kpi"><div class="label">Reserved G$</div><div class="value" id="sellerKpiReserved">—</div></div>
+                <div class="seller-kpi"><div class="label">Needs review</div><div class="value" id="sellerKpiReview">—</div></div>
+            </div>
+            <div class="flow-steps">
+                <div class="flow-step"><strong>1. Add payout details</strong>Tell buyers exactly where to pay you off-chain.</div>
+                <div class="flow-step"><strong>2. Lock G$ in escrow</strong>Approve G$ and sign createListing from your wallet.</div>
+                <div class="flow-step"><strong>3. Review proof</strong>When a buyer marks paid, verify receipt in your bank/wallet.</div>
+                <div class="flow-step"><strong>4. Release safely</strong>Only approve after payment is confirmed and matched.</div>
+            </div>
+        </div>
+
         <div class="card">
             <strong>Step 1: Add a payment method</strong>
             <p class="muted" style="margin:.3rem 0 .6rem">Add where buyers should pay you first. Once at least one payment method is saved, the sell ad form will appear.</p>
@@ -165,7 +207,7 @@
         </div>
 
         <div class="card" id="createSellAdCard" style="display:none">
-            <strong>Step 2: Create a sell ad</strong>
+            <strong>Step 2: Create a sell offer</strong>
             <p class="muted" style="margin:.3rem 0 .8rem">
                 Lock {{ "{:,}".format(min_lock_gd) }}–{{ "{:,}".format(max_lock_gd) }} G$. You approve G$ to the escrow,
                 then sign <code>createListing</code>. Buyers pay using your saved payment method; you Approve to release.
@@ -178,6 +220,14 @@
                 <div class="form-group"><label>Fiat rate per USDT (optional)</label><input id="sellFiatRate" type="number" step="0.0001" placeholder="e.g. 58"></div>
             </div>
             <div class="form-group"><label>Terms / notes (optional)</label><textarea id="sellTerms" rows="2" placeholder="Additional instructions buyers will see"></textarea></div>
+            <div class="next-steps">
+                <strong>Before you publish</strong>
+                <ol>
+                    <li>Confirm the payment details above are correct and easy for buyers to follow.</li>
+                    <li>Set a minimum order you are comfortable reviewing manually.</li>
+                    <li>Remember: approving a paid order releases escrowed G$ to the buyer.</li>
+                </ol>
+            </div>
             <button type="button" class="btn btn-primary" id="createAdBtn" {% if not p2p_contract %}disabled{% endif %}>Approve &amp; Create Ad</button>
         </div>
 
@@ -304,6 +354,27 @@ function releaseProofPanel(o){
 function compactReleaseProof(o){
     if(!o.release_tx_hash || !['released','owner_released'].includes(o.status)) return '';
     return `<div class="muted" style="margin-top:.25rem;color:#86efac">Released to buyer ${shortAddr(o.buyer_wallet)} · ${txHashLink(o.release_tx_hash, 'TX proof ↗')}</div>`;
+}
+function sellerReviewGuide(o, proofs){
+    if(!o || o.status !== 'paid') return '';
+    const hasProof = proofs && proofs.length;
+    const latestRef = hasProof ? (proofs[0].reference || '') : '';
+    return `<div class="seller-review-panel">
+        <strong>Seller review checklist</strong>
+        <div class="muted" style="margin-top:.25rem;color:rgba(255,255,255,.7)">Buyer marked this order as paid. Verify the off-chain payment before releasing escrowed G$.</div>
+        <div class="grid2" style="margin-top:.65rem">
+            <div class="muted">Expected payment<br><strong style="color:#fff">${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${escapeHtml(o.pay_currency)}</strong></div>
+            <div class="muted">G$ to release<br><strong style="color:#fff">${Number(o.amount_gd).toLocaleString()} G$</strong></div>
+            <div class="muted">Buyer wallet<br><code>${escapeHtml(o.buyer_wallet)}</code></div>
+            <div class="muted">Proof status<br><strong style="color:${hasProof?'#86efac':'#fcd34d'}">${hasProof?'Uploaded':'No receipt uploaded yet'}</strong>${latestRef?` · Ref: ${escapeHtml(latestRef)}`:''}</div>
+        </div>
+        <div class="seller-checklist">
+            <label><input type="checkbox" class="release-check"> I confirmed the payment arrived in my bank/wallet, not just in the screenshot.</label>
+            <label><input type="checkbox" class="release-check"> The amount, currency, and reference/sender details match this order.</label>
+            <label><input type="checkbox" class="release-check"> I understand releasing is irreversible once the wallet transaction confirms.</label>
+        </div>
+        <div class="danger-note">Do not approve from screenshot alone. If the payment is missing, mismatched, or suspicious, reject to admin review instead.</div>
+    </div>`;
 }
 function buyerNextSteps(o, proofs){
     const hasProof = proofs && proofs.length;
@@ -462,7 +533,8 @@ async function loadMyPms(){
 async function loadMyAds(){
     const res=await api('/p2p/api/listings?seller='+WALLET+'&include_inactive=1'); const box=document.getElementById('myAds');
     const mine=(res.listings||[]).filter(l=>l.seller_wallet&&l.seller_wallet.toLowerCase()===WALLET.toLowerCase());
-    if(!mine.length){ box.innerHTML='<div class="empty">No ads yet.</div>'; return; }
+    updateSellerHub(mine);
+    if(!mine.length){ box.innerHTML='<div class="empty">No ads yet. Add a payment method, then create your first sell offer.</div>'; return; }
     box.innerHTML=mine.map(l=>{
         const avail = Number(l.available_gd!==undefined ? l.available_gd : l.total_gd);
         const status = avail <= 0 && l.status === 'active' ? 'closed' : l.status;
@@ -471,6 +543,16 @@ async function loadMyAds(){
             ${status==='active'?`<button class="btn btn-outline btn-sm" onclick="cancelAd(${l.id},${l.onchain_id})">Cancel ad</button>`:''}
             </div></div>`;
     }).join('');
+}
+function updateSellerHub(ads){
+    const active = (ads||[]).filter(l=>l.status==='active');
+    const total = active.reduce((sum,l)=>sum+Number(l.total_gd||0),0);
+    const available = active.reduce((sum,l)=>sum+Number(l.available_gd!==undefined?l.available_gd:l.total_gd||0),0);
+    const reserved = Math.max(total - available, 0);
+    const set=(id,val)=>{ const el=document.getElementById(id); if(el) el.textContent=val; };
+    set('sellerKpiAds', String(active.length));
+    set('sellerKpiAvailable', available.toLocaleString()+' G$');
+    set('sellerKpiReserved', reserved.toLocaleString()+' G$');
 }
 async function cancelAd(id,onchain){
     try{ showAlert('info','<span class="spinner"></span> Confirm cancel in wallet…');
@@ -503,6 +585,7 @@ async function loadOrders(role){
         }
     }
     if(role==='seller') updateSellerReviewBadge(paidForReview.length);
+    if(role==='seller') updateSellerReviewKpi(paidForReview.length);
     if(!res.success||!orders.length){ box.innerHTML='<div class="empty">No orders.</div>'; return; }
     box.innerHTML=orders.map(o=>{
         const needsReview = role==='seller' && o.status==='paid';
@@ -527,10 +610,16 @@ function updateSellerReviewBadge(count){
     badge.textContent=count?String(count):'';
     badge.style.display=count?'inline-block':'none';
 }
+function updateSellerReviewKpi(count){
+    const el=document.getElementById('sellerKpiReview');
+    if(el) el.textContent=String(count||0);
+}
 async function refreshSellerReviewBadge(){
     const res=await api('/p2p/api/orders?role=seller');
     if(!res.success) return;
-    updateSellerReviewBadge((res.orders||[]).filter(o=>o.status==='paid').length);
+    const count=(res.orders||[]).filter(o=>o.status==='paid').length;
+    updateSellerReviewBadge(count);
+    updateSellerReviewKpi(count);
 }
 
 async function openOrderRoom(orderId){
@@ -564,6 +653,7 @@ async function openOrderRoom(orderId){
         <div class="muted" style="margin:.4rem 0">${Number(o.amount_gd).toLocaleString()} G$ for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}<br>
         Buyer ${shortAddr(o.buyer_wallet)} · Seller ${shortAddr(o.seller_wallet)}${modalDateLabel?`<br>${modalDateLabel}`:''}</div>
         ${isBuyer?buyerNextSteps(o, proofs):''}
+        ${isSeller?sellerReviewGuide(o, proofs):''}
         ${releaseProofPanel(o)}
         <div class="card" style="margin:.7rem 0"><strong>Seller payment details</strong><div style="margin-top:.35rem">${paymentMethodsHtml}</div></div>
         ${o.reject_reason?`<div class="alert alert-error" style="display:block">Seller rejected: ${escapeHtml(o.reject_reason)}</div>`:''}
@@ -666,6 +756,12 @@ async function cancelOrder(id,onchain){
     }catch(e){ roomAlert('error','❌ '+(e.message||e)); }
 }
 async function sellerApprove(id,onchain){
+    const checks=[...document.querySelectorAll('#orderModal .release-check')];
+    if(checks.length && checks.some(c=>!c.checked)){
+        roomAlert('error','Please complete the seller review checklist before releasing escrow.');
+        return;
+    }
+    if(!confirm('Final confirmation: release escrowed G$ to the buyer for order #'+id+'? Only continue if payment is confirmed in your bank/wallet.')) return;
     try{ roomAlert('info','<span class="spinner"></span> Sign releaseOrder…');
         const tx=await P2PWallet.sendTx(P2P_CONTRACT, ABI_RELEASE, [onchain]);
         const res=await api('/p2p/api/orders/'+id+'/approve',{method:'POST',body:JSON.stringify({release_tx_hash:tx})});
