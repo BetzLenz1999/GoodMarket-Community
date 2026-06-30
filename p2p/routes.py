@@ -119,6 +119,11 @@ def _same(a, b):
     return (a or "").strip().lower() == (b or "").strip().lower()
 
 
+def _looks_like_tx_hash(value):
+    value = (value or "").strip()
+    return value.startswith("0x") and len(value) == 66 and all(c in "0123456789abcdefABCDEF" for c in value[2:])
+
+
 def _db_error(e):
     """Pull a concise, readable message out of a Supabase/Postgrest error so the
     frontend can show *why* a write failed (e.g. a missing column or constraint)
@@ -495,7 +500,10 @@ def api_seller_approve(order_id):
     if not _same(order["seller_wallet"], wallet):
         return jsonify({"success": False, "error": "Only the seller can approve"}), 403
     data = request.get_json(silent=True) or {}
-    updated = db.update_order(order_id, {"status": "released", "release_tx_hash": data.get("release_tx_hash")})
+    release_tx_hash = data.get("release_tx_hash")
+    if not _looks_like_tx_hash(release_tx_hash):
+        return jsonify({"success": False, "error": "Missing or invalid release transaction hash"}), 400
+    updated = db.update_order(order_id, {"status": "released", "release_tx_hash": release_tx_hash})
     listing = db.get_listing_row(order.get("listing_id"))
     if listing:
         _sync_listing_from_chain(listing)
