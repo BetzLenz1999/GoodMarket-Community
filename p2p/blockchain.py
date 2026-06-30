@@ -82,6 +82,10 @@ P2P_ESCROW_ABI = [
          {"name": "deadline", "type": "uint64"},
          {"name": "status", "type": "uint8"},
      ], "stateMutability": "view", "type": "function"},
+    # Permissionless after the deadline (anyone may cancel an expired Open order);
+    # the auto-expiry worker calls this with P2P_KEY to refund reserved G$ to the seller.
+    {"inputs": [{"name": "orderId", "type": "uint256"}], "name": "cancelOrder",
+     "outputs": [], "stateMutability": "nonpayable", "type": "function"},
     # Owner-only admin-review actions (server-signed with P2P_KEY).
     {"inputs": [{"name": "orderId", "type": "uint256"}], "name": "releaseOrderByOwner",
      "outputs": [], "stateMutability": "nonpayable", "type": "function"},
@@ -224,8 +228,20 @@ def _send_owner_tx(fn_name, *args):
 
 
 def owner_release_order(order_id):
-    """Admin review: release escrowed G$ to the buyer (proof verified genuine)."""
-    return _send_owner_tx("releaseOrderByOwner", int(order_id))
+    """Admin review: release escrowed G$ to the buyer (proof verified genuine).
+
+    Seller-rejected orders may already be disputed on-chain if a party clicked
+    the dispute action before admin review. The escrow contract's
+    releaseOrderByOwner() intentionally only handles Open/Paid orders, while
+    Disputed orders must be completed through resolveDispute(orderId, true).
+    Pick the correct contract entrypoint up front so admin "Release to buyer"
+    works for both normal seller-rejected and disputed review rows.
+    """
+    order_id = int(order_id)
+    onchain_order = get_order(order_id)
+    if onchain_order and onchain_order.get("status_code") == 5:
+        return _send_owner_tx("resolveDispute", order_id, True)
+    return _send_owner_tx("releaseOrderByOwner", order_id)
 
 
 def owner_refund_order(order_id):
@@ -235,6 +251,16 @@ def owner_refund_order(order_id):
 
 def owner_resolve_dispute(order_id, release_to_buyer):
     return _send_owner_tx("resolveDispute", int(order_id), bool(release_to_buyer))
+
+
+def cancel_expired_order(order_id):
+    """
+    Cancel an Open order whose payment deadline has passed, returning the
+    reserved G$ to the listing's available balance. The contract's cancelOrder
+    is permissionless once `block.timestamp > deadline`, so signing with the
+    P2P_KEY (or any funded key) works; we reuse P2P_KEY for gas.
+    """
+    return _send_owner_tx("cancelOrder", int(order_id))
 
 
 def get_gd_price_reference(fiat_currency=None):
