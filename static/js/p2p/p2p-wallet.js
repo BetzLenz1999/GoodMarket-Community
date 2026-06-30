@@ -7,8 +7,9 @@
  *   - walletconnect /  -> the GMWalletConnect EIP-1193 bridge provider
  *     goodmarket/manual    (static/js/wc-bridge.js, configured by the page)
  *
- * All P2P user actions (createListing/approve, openOrder, markPaid,
- * releaseOrder=Approve, cancel, raiseDispute) go through sendTx(). The owner
+ * P2P on-chain user actions (createListing/approve, openOrder,
+ * releaseOrder=Approve, cancel, raiseDispute) go through sendTx(). Mark-paid
+ * is an off-chain seller notification handled by the backend. The owner
  * (P2P_KEY) admin-review release/refund is server-signed and NOT handled here.
  *
  * Requires ethers v6 and wc-bridge.js to be loaded first.
