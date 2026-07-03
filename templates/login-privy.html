@@ -34,6 +34,7 @@
             background: linear-gradient(135deg, #1a0b2e 0%, #2d1b3d 50%, #1a0b2e 100%);
             min-height: 100vh;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
             overflow-y: auto;
@@ -260,6 +261,9 @@
 
         /* Footer */
         .footer-links {
+            position: relative;
+            z-index: 10;
+            width: 100%;
             text-align: center;
             margin-top: 20px;
             color: rgba(241, 245, 249, 0.5);
