@@ -15,7 +15,12 @@
     <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}">
 
     <!-- Privy SDK -->
-    <script src="https://unpkg.com/@privy-io/react-auth@1.65.0" defer></script>
+    <script>
+        window.privyConfig = {
+            appId: '{{ privy_app_id }}',
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@privy-io/react-auth@1.78.1/embed/embed.iife.min.js" defer></script>
 
     <style>
         * {
@@ -465,19 +470,37 @@ PRIVY_APP_SECRET=your_secret</code>
             showLoading('Verifying...');
 
             try {
+                // Extract user info from Privy user object
+                const idToken = privyUser.idToken || privyUser.id_token || privyUser.token;
+                
+                // Try to get wallet address from linked accounts
+                let walletAddress = null;
+                if (privyUser.wallet) {
+                    walletAddress = privyUser.wallet.address;
+                } else if (privyUser.linkedAccounts) {
+                    const walletAccount = privyUser.linkedAccounts.find(a => a.type === 'wallet');
+                    if (walletAccount) {
+                        walletAddress = walletAccount.address;
+                    }
+                }
+
+                console.log('🔐 Privy user:', privyUser);
+                console.log('📦 Wallet address:', walletAddress);
+
                 const response = await fetch('/api/auth/privy', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        id_token: privyUser.idToken,
-                        wallet_address: privyUser.wallet?.address || null,
+                        id_token: idToken,
+                        wallet_address: walletAddress,
                         referral_code: REFERRAL_CODE || null,
                     }),
                 });
 
                 const data = await response.json();
+                console.log('📬 Server response:', data);
 
                 if (data.success) {
                     showSuccess('✅ Login successful! Redirecting...');
@@ -588,70 +611,25 @@ PRIVY_APP_SECRET=your_secret</code>
                 return;
             }
 
-            try {
-                const config = {
-                    // Required: Your Privy App ID
-                    appId: PRIVY_APP_ID,
-                    
-                    // Target container
-                    target: '#privy-login-container',
-                    
-                    // Login methods - ALL handled by Privy
-                    loginMethods: ['wallet', 'email', 'google'],
-                    
-                    // Connection configuration - uses Privy's built-in WalletConnect
-                    // No need for external WalletConnect Project ID!
-                    walletConnectProjectId: null, // Let Privy handle it
-                    
-                    // Supported chains
-                    supportedChains: [1, 42220], // Ethereum, Celo
-                    
-                    // Customization
-                    appearance: {
-                        theme: 'dark',
-                        accentColor: '#6366f1',
-                        logo: '/static/icons/goodmarket-icon.png',
-                    },
-                    
-                    // Embedded wallet settings
-                    embeddedWallets: {
-                        // Show option to create embedded wallet for users without crypto wallet
-                        showWalletUIs: true,
-                        // Require user to explicitly create wallet
-                        requireUserLogin: true,
-                    },
-                    
-                    // Login callback
-                    onSuccess: async (user) => {
-                        console.log('✅ Privy login success:', user);
-                        await authenticateWithBackend(user);
-                    },
-                    
-                    // Error callback
-                    onError: (error) => {
-                        hideLoading();
-                        console.error('❌ Privy error:', error);
-                        showError('Authentication failed. Please try again.');
-                    },
-                    
-                    // Modal opened
-                    onModalOpen: () => {
-                        hideLoading();
-                    },
-                    
-                    // Modal closed without login
-                    onModalClose: () => {
-                        hideLoading();
-                    },
-                };
+            // Wait for Privy Embed SDK to load
+            let attempts = 0;
+            while (typeof window.Privy === 'undefined' && attempts < 50) {
+                await new Promise(r => setTimeout(r, 100));
+                attempts++;
+            }
 
+            if (typeof window.Privy === 'undefined') {
+                showError('Failed to load Privy SDK. Please refresh the page.');
+                return;
+            }
+
+            try {
                 // Check for existing session
                 try {
                     const statusRes = await fetch('/api/auth/status');
                     const status = await statusRes.json();
                     
                     if (status.authenticated) {
-                        // Already logged in - redirect
                         window.location.href = '/overview';
                         return;
                     }
@@ -659,13 +637,21 @@ PRIVY_APP_SECRET=your_secret</code>
                     console.log('Session check skipped');
                 }
 
-                // Initialize Privy
-                if (typeof window.PrivyManager !== 'undefined') {
-                    window.PrivyManager.init(config);
-                } else if (typeof window.Privy !== 'undefined') {
-                    // Alternative initialization for different SDK versions
-                    window.Privy.init(config);
-                }
+                // Initialize Privy Embed
+                await window.Privy.init({
+                    appId: PRIVY_APP_ID,
+                });
+
+                // Show the login UI
+                window.Privy.showLoginWidget({
+                    target: '#privy-login-container',
+                });
+
+                // Listen for successful login
+                window.Privy.on('login', async (user) => {
+                    console.log('✅ Privy login success:', user);
+                    await authenticateWithBackend(user);
+                });
 
             } catch (error) {
                 console.error('Failed to initialize Privy:', error);
