@@ -36,20 +36,6 @@
             zoom: 0.85;
         }
 
-        /* Animated background elements */
-        .bg-animation {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            z-index: 0;
-        }
-
-        .floating-shapes {
-            display: none;
-        }
-
-        /* Main login container */
         .login-container {
             position: relative;
             z-index: 10;
@@ -130,16 +116,6 @@
             font-weight: 500;
         }
 
-        /* Privy Modal Styles */
-        #privy-login-container {
-            width: 100%;
-        }
-
-        #privy-login-container .PrivyLoginButton_content {
-            width: 100% !important;
-        }
-
-        /* Status Messages */
         .status-message {
             margin-top: 20px;
             padding: 16px;
@@ -156,7 +132,6 @@
             border: 1px solid rgba(16, 185, 129, 0.4);
             color: #f1f5f9;
             font-weight: 700;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         }
 
         .status-error {
@@ -164,7 +139,6 @@
             border: 1px solid rgba(239, 68, 68, 0.4);
             color: #f1f5f9;
             font-weight: 700;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         }
 
         .status-loading {
@@ -189,7 +163,6 @@
             to { transform: rotate(360deg); }
         }
 
-        /* Loading overlay */
         .loading-overlay {
             position: fixed;
             top: 0;
@@ -217,7 +190,6 @@
             font-weight: 600;
         }
 
-        /* Referral Banner */
         .referral-banner {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -234,7 +206,6 @@
             margin-bottom: 4px;
         }
 
-        /* Security note */
         .security-note {
             margin-top: 20px;
             padding: 12px;
@@ -251,7 +222,6 @@
             content: '🔒 ';
         }
 
-        /* Footer */
         .footer-links {
             position: relative;
             z-index: 10;
@@ -273,29 +243,6 @@
             color: #f1f5f9;
         }
 
-        /* Privy custom styles */
-        [data-testid="privy-login-button"],
-        .PrivyLoginButton {
-            width: 100% !important;
-            padding: 16px 24px !important;
-            background: linear-gradient(135deg, #ff8c00, #ff4500, #8b00ff) !important;
-            border: none !important;
-            border-radius: 12px !important;
-            font-size: 1rem !important;
-            font-weight: 700 !important;
-            color: white !important;
-            cursor: pointer !important;
-            transition: all 0.3s ease !important;
-            box-shadow: 0 8px 25px rgba(255, 140, 0, 0.4) !important;
-        }
-
-        [data-testid="privy-login-button"]:hover,
-        .PrivyLoginButton:hover {
-            transform: translateY(-2px) !important;
-            box-shadow: 0 12px 35px rgba(99, 102, 241, 0.4) !important;
-        }
-
-        /* PWA Install Prompt */
         #installPrompt {
             display: none;
             position: fixed;
@@ -330,13 +277,11 @@
     </style>
 </head>
 <body>
-    <!-- Loading Overlay -->
     <div id="loadingOverlay" class="loading-overlay" style="display: none;">
         <div class="spinner"></div>
         <div class="loading-text">Connecting...</div>
     </div>
 
-    <!-- PWA Install Prompt -->
     <div id="installPrompt">
         <span>📱 Install GoodMarket for a better experience</span>
         <button onclick="installPWA()">Install</button>
@@ -356,19 +301,15 @@
             </div>
         </div>
 
-        <!-- Referral Banner (shown if ref code in URL) -->
         <div id="referralBanner" class="referral-banner" style="display: none;">
             <strong>🎁 Referral Bonus!</strong>
             <span id="referralCodeText">You were referred!</span>
         </div>
 
-        <!-- Privy Login Container -->
         <div id="privy-login-container"></div>
 
-        <!-- Status Message -->
         <div id="status" class="status-message" style="display: none;"></div>
 
-        <!-- Security Note -->
         <div class="security-note">
             Your data is encrypted and secure. We never access your wallet or private keys.
         </div>
@@ -381,12 +322,10 @@
     </div>
 
     <script>
-        // Configuration
         const PRIVY_APP_ID = '{{ privy_app_id }}';
         const REFERRAL_CODE = '{{ referral_code }}';
         const PRIVY_NOT_CONFIGURED = PRIVY_APP_ID === 'CONFIGURE_PRIVY' || !PRIVY_APP_ID;
 
-        // Show/hide loading overlay
         function showLoading(message = 'Connecting...') {
             const overlay = document.getElementById('loadingOverlay');
             overlay.querySelector('.loading-text').textContent = message;
@@ -397,7 +336,6 @@
             document.getElementById('loadingOverlay').style.display = 'none';
         }
 
-        // Show status message
         function showStatus(message, type = 'loading') {
             const status = document.getElementById('status');
             status.innerHTML = type === 'loading' ? 
@@ -414,7 +352,6 @@
             showStatus(message, 'error');
         }
 
-        // Show configuration required message
         function showConfigRequired() {
             const container = document.getElementById('privy-login-container');
             container.innerHTML = `
@@ -446,70 +383,115 @@ PRIVY_APP_SECRET=your_secret</code>
             `;
         }
 
-        // Handle referral code
         function handleReferral() {
             const urlParams = new URLSearchParams(window.location.search);
-            const refCode = urlParams.get('ref');
+            return urlParams.get('ref') || REFERRAL_CODE;
+        }
 
-            if (refCode) {
-                const banner = document.getElementById('referralBanner');
-                const text = document.getElementById('referralCodeText');
-                banner.style.display = 'block';
-                text.textContent = `Referred with code: ${refCode.toUpperCase()}`;
-                return refCode;
+        function extractWalletAddress(user) {
+            if (!user) return null;
+            
+            // Check embedded_wallet (Privy creates this for users)
+            const embeddedWallet = user.embedded_wallet || user.embeddedWallet;
+            if (embeddedWallet && embeddedWallet.address) {
+                return embeddedWallet.address.toLowerCase();
             }
+            
+            // Check wallet property directly
+            const directWallet = user.wallet;
+            if (directWallet) {
+                if (typeof directWallet === 'string') {
+                    return directWallet.toLowerCase();
+                }
+                if (directWallet.address) {
+                    return directWallet.address.toLowerCase();
+                }
+            }
+            
+            // Check linked_accounts for external wallets
+            const linkedAccounts = user.linked_accounts || user.linkedAccounts || [];
+            for (const account of linkedAccounts) {
+                if (account.type === 'wallet') {
+                    if (account.address) {
+                        return account.address.toLowerCase();
+                    }
+                    if (account.wallet && account.wallet.address) {
+                        return account.wallet.address.toLowerCase();
+                    }
+                }
+            }
+            
             return null;
         }
 
-        // Authenticate with backend
-        async function authenticateWithBackend(privyUser) {
+        function determineAuthMethod(user) {
+            if (!user) return 'unknown';
+            
+            const linkedAccounts = user.linked_accounts || user.linkedAccounts || [];
+            
+            for (const account of linkedAccounts) {
+                if (account.type === 'wallet') return 'wallet';
+            }
+            
+            for (const account of linkedAccounts) {
+                const type = account.type || '';
+                if (type.includes('google')) return 'google';
+                if (type.includes('discord')) return 'discord';
+                if (type.includes('twitter')) return 'twitter';
+                if (type.includes('apple')) return 'apple';
+            }
+            
+            for (const account of linkedAccounts) {
+                if (account.type === 'email') return 'email';
+            }
+            
+            if (user.embedded_wallet || user.embeddedWallet) {
+                return 'embedded_wallet';
+            }
+            
+            return 'unknown';
+        }
+
+        async function authenticateWithBackend(privyUser, accessToken) {
             showLoading('Verifying...');
 
             try {
-                // Extract user info from Privy user object
-                const idToken = privyUser.idToken || privyUser.id_token || privyUser.token || privyUser.accessToken;
-                
-                // Try to get wallet address from linked accounts
-                let walletAddress = null;
-                if (privyUser.wallet) {
-                    walletAddress = privyUser.wallet.address;
-                } else if (privyUser.linkedAccounts) {
-                    const walletAccount = privyUser.linkedAccounts.find(a => a.type === 'wallet');
-                    if (walletAccount) {
-                        walletAddress = walletAccount.address;
-                    }
-                }
+                const walletAddress = extractWalletAddress(privyUser);
+                const authMethod = determineAuthMethod(privyUser);
+                const referralCode = handleReferral();
 
-                console.log('🔐 Privy user:', privyUser);
-                console.log('📦 Wallet address:', walletAddress);
+                console.log('🔐 Privy login:', {
+                    userId: privyUser.id,
+                    wallet: walletAddress,
+                    authMethod: authMethod,
+                    hasEmbeddedWallet: !!(privyUser.embedded_wallet || privyUser.embeddedWallet)
+                });
 
-                const response = await fetch('/api/auth/privy', {
+                const response = await fetch('/api/auth/privy-session', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        id_token: idToken,
+                        user_id: privyUser.id,
                         wallet_address: walletAddress,
-                        referral_code: REFERRAL_CODE || null,
+                        auth_method: authMethod,
+                        id_token: accessToken,
+                        referral_code: referralCode,
                     }),
                 });
 
                 const data = await response.json();
-                console.log('📬 Server response:', data);
 
                 if (data.success) {
                     showSuccess('✅ Login successful! Redirecting...');
                     
-                    // Track analytics
                     try {
-                        await fetch('/track-analytics', {
+                        await fetch('/api/analytics/track', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 event: 'login_success',
-                                wallet: data.wallet,
-                                auth_method: data.auth_method,
+                                wallet: walletAddress,
+                                auth_method: authMethod,
                                 timestamp: new Date().toISOString(),
                             }),
                         });
@@ -517,7 +499,6 @@ PRIVY_APP_SECRET=your_secret</code>
                         console.warn('Analytics error:', e);
                     }
 
-                    // Redirect to dashboard
                     setTimeout(() => {
                         window.location.href = data.redirect_to || '/overview';
                     }, 500);
@@ -532,7 +513,6 @@ PRIVY_APP_SECRET=your_secret</code>
             }
         }
 
-        // Logout handler
         async function handleLogout() {
             try {
                 await fetch('/api/auth/logout', { method: 'POST' });
@@ -542,7 +522,6 @@ PRIVY_APP_SECRET=your_secret</code>
             }
         }
 
-        // PWA Install
         let deferredPrompt;
 
         window.addEventListener('beforeinstallprompt', (e) => {
@@ -572,17 +551,15 @@ PRIVY_APP_SECRET=your_secret</code>
             showError('Failed to load Privy. Please check your connection and refresh the page.');
         }
 
-        function getWalletAddressFromPrivyUser(user) {
-            if (user?.wallet?.address) return user.wallet.address;
-            const linkedAccounts = user?.linkedAccounts || user?.linked_accounts || [];
-            const walletAccount = linkedAccounts.find((account) => account.type === 'wallet');
-            return walletAccount?.address || walletAccount?.wallet?.address || null;
-        }
-
-        // Initialize the official Privy React SDK. Do not mount a custom wallet-provider form here;
-        // Privy's own modal owns email, Google, wallet selection, and embedded-wallet UX.
+        // Initialize Privy React SDK
         document.addEventListener('DOMContentLoaded', async function() {
-            handleReferral();
+            const refCode = handleReferral();
+            if (refCode) {
+                const banner = document.getElementById('referralBanner');
+                const text = document.getElementById('referralCodeText');
+                banner.style.display = 'block';
+                text.textContent = `Referred with code: ${refCode.toUpperCase()}`;
+            }
 
             if (PRIVY_NOT_CONFIGURED) {
                 showConfigRequired();
@@ -606,9 +583,10 @@ PRIVY_APP_SECRET=your_secret</code>
                 import('https://esm.sh/react@18.2.0'),
                 import('https://esm.sh/react-dom@18.2.0/client'),
                 import('https://esm.sh/@privy-io/react-auth@1.78.1?deps=react@18.2.0,react-dom@18.2.0'),
-            ]).then(([{ default: React, useEffect, useRef }, { createRoot }, { PrivyProvider, usePrivy }]) => {
+            ]).then(([{ default: React, useEffect, useRef, useState }, { createRoot }, { PrivyProvider, usePrivy }]) => {
+                
                 function GoodMarketPrivyLogin() {
-                    const { ready, authenticated, user, login, getAccessToken } = usePrivy();
+                    const { ready, authenticated, user, login, logout, getAccessToken } = usePrivy();
                     const authStartedRef = useRef(false);
 
                     useEffect(() => {
@@ -623,11 +601,7 @@ PRIVY_APP_SECRET=your_secret</code>
                         (async () => {
                             try {
                                 const accessToken = await getAccessToken();
-                                await authenticateWithBackend({
-                                    ...user,
-                                    accessToken,
-                                    wallet: { address: getWalletAddressFromPrivyUser(user) },
-                                });
+                                await authenticateWithBackend(user, accessToken);
                             } catch (error) {
                                 authStartedRef.current = false;
                                 hideLoading();
@@ -635,18 +609,59 @@ PRIVY_APP_SECRET=your_secret</code>
                                 showError('❌ Could not verify your Privy login. Please try again.');
                             }
                         })();
-                    }, [ready, authenticated, user, getAccessToken]);
+                    }, [ready, authenticated, user]);
 
-                    return React.createElement(
-                        'button',
-                        {
-                            type: 'button',
-                            className: 'PrivyLoginButton',
-                            disabled: !ready,
-                            onClick: login,
+                    if (!ready) {
+                        return React.createElement('div', { 
+                            style: { textAlign: 'center', padding: '20px', color: '#f1f5f9' }
+                        }, 'Loading Privy...');
+                    }
+
+                    if (authenticated && user) {
+                        return React.createElement('div', {
+                            style: { textAlign: 'center', padding: '20px' }
+                        }, 
+                            React.createElement('p', { style: { color: '#10b981', marginBottom: '10px' } }, 
+                                '✅ Logged in as ' + (user.id || 'User')
+                            ),
+                            React.createElement('button', {
+                                onClick: () => { logout(); authStartedRef.current = false; },
+                                style: {
+                                    background: 'rgba(239, 68, 68, 0.2)',
+                                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                                    color: '#f1f5f9',
+                                    padding: '10px 20px',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer'
+                                }
+                            }, 'Logout')
+                        );
+                    }
+
+                    return React.createElement('button', {
+                        type: 'button',
+                        onClick: async () => {
+                            try {
+                                await login();
+                            } catch (error) {
+                                console.error('Login error:', error);
+                                showError('❌ Login failed. Please try again.');
+                            }
                         },
-                        ready ? 'Continue with Privy' : 'Loading Privy...'
-                    );
+                        style: {
+                            width: '100%',
+                            padding: '16px 24px',
+                            background: 'linear-gradient(135deg, #ff8c00, #ff4500, #8b00ff)',
+                            border: 'none',
+                            borderRadius: '12px',
+                            fontSize: '1rem',
+                            fontWeight: '700',
+                            color: 'white',
+                            cursor: 'pointer',
+                            boxShadow: '0 8px 25px rgba(255, 140, 0, 0.4)',
+                            transition: 'all 0.3s ease'
+                        }
+                    }, 'Continue with Privy');
                 }
 
                 const root = createRoot(document.getElementById('privy-login-container'));
@@ -657,6 +672,7 @@ PRIVY_APP_SECRET=your_secret</code>
                             appId: PRIVY_APP_ID,
                             config: {
                                 loginMethods: ['email', 'google', 'wallet'],
+                                supportedChains: [1, 42220],
                                 appearance: {
                                     theme: 'dark',
                                     accentColor: '#8b5cf6',
@@ -673,11 +689,9 @@ PRIVY_APP_SECRET=your_secret</code>
             }).catch(renderPrivyLoadError);
         });
 
-        // Global error handler
         window.addEventListener('unhandledrejection', function(event) {
             console.error('Unhandled promise rejection:', event.reason);
             hideLoading();
-            
             let errorMsg = '❌ An unexpected error occurred.';
             if (event.reason?.message?.includes('network')) {
                 errorMsg = '⚠️ Network error. Please check your connection.';
@@ -686,7 +700,6 @@ PRIVY_APP_SECRET=your_secret</code>
             event.preventDefault();
         });
 
-        // Service Worker registration
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/static/service-worker.js')
                 .then(registration => {

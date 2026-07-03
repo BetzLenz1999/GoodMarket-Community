@@ -1011,6 +1011,163 @@ def privy_auth():
         }), 500
 
 
+@app.route("/api/auth/privy-session", methods=["POST"])
+def privy_session():
+    """
+    Privy Session Endpoint - Direct Session Creation
+    =================================================
+    This endpoint receives user data directly from the Privy React SDK
+    and creates a session. This is the preferred method as it avoids
+    the complexity of JWT verification on the server.
+    
+    Request body:
+        - user_id: str (required) - Privy user ID
+        - wallet_address: str (optional) - Wallet address
+        - auth_method: str (optional) - Authentication method
+        - id_token: str (optional) - Access token from Privy SDK
+        - referral_code: str (optional) - Referral code
+        
+    Response:
+        - success: bool
+        - wallet: str (wallet address)
+        - auth_method: str ('wallet', 'google', 'email', 'embedded_wallet')
+        - redirect_to: str (URL to redirect)
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        
+        user_id = data.get("user_id", "").strip()
+        wallet_address = data.get("wallet_address", "").strip()
+        auth_method = data.get("auth_method", "").strip()
+        id_token = data.get("id_token", "").strip()
+        referral_code = data.get("referral_code", "").strip()
+        
+        if not user_id:
+            return jsonify({
+                "success": False,
+                "error": "User ID is required"
+            }), 400
+        
+        logger.info(f"🔐 Privy session request: user_id={user_id[:20]}..., wallet={wallet_address[:10] if wallet_address else 'None'}...")
+        
+        # ── NORMALIZE WALLET ADDRESS ───────────────────────────────────────────────
+        final_wallet = None
+        if wallet_address:
+            try:
+                if Web3.is_address(wallet_address):
+                    final_wallet = Web3.to_checksum_address(wallet_address)
+                else:
+                    logger.warning(f"⚠️ Invalid wallet address format: {wallet_address}")
+            except Exception as addr_err:
+                logger.warning(f"⚠️ Could not normalize wallet address: {addr_err}")
+        
+        # ── HANDLE LOGIN WITHOUT WALLET ──────────────────────────────────────────
+        if not final_wallet:
+            logger.info(f"ℹ️ Non-wallet login via Privy: auth_method={auth_method}")
+            
+            session.permanent = True
+            session["verified"] = True
+            session["privy_user_id"] = user_id
+            session["auth_method"] = auth_method or "unknown"
+            session["login_method"] = "privy"
+            session["verification_time"] = datetime.now().isoformat()
+            session["wallet_connected"] = False
+            
+            return jsonify({
+                "success": True,
+                "wallet": None,
+                "auth_method": auth_method or "unknown",
+                "message": "Login successful. Connect wallet to access all features.",
+                "requires_wallet": True,
+                "redirect_to": "/overview"
+            })
+        
+        # ── NEW USER CHECK ──────────────────────────────────────────────────────────
+        is_new_user = False
+        try:
+            from supabase_client import get_supabase_client, safe_supabase_operation
+            _sb = get_supabase_client()
+            if _sb:
+                _existing = safe_supabase_operation(
+                    lambda: _sb.table('user_data')
+                        .select('wallet_address')
+                        .ilike('wallet_address', final_wallet)
+                        .limit(1)
+                        .execute(),
+                    operation_name="check new user for privy session"
+                )
+                is_new_user = not (_existing and _existing.data)
+                logger.info(f"{'🆕 New' if is_new_user else '👤 Existing'} user: {final_wallet[:10]}...")
+        except Exception as _nu_err:
+            logger.warning(f"⚠️ Could not determine new-user status: {_nu_err}")
+        
+        # ── FACE VERIFICATION CHECK ───────────────────────────────────────────────
+        fv_status = {}
+        try:
+            fv_status = is_identity_verified(final_wallet)
+        except Exception as fv_err:
+            logger.warning(f"⚠️ Could not check face verification: {fv_err}")
+        
+        is_face_verified = fv_status.get("verified", False)
+        
+        # ── CREATE SESSION ────────────────────────────────────────────────────────
+        session.permanent = True
+        session["wallet"] = final_wallet
+        session["wallet_address"] = final_wallet
+        session["verified"] = True
+        session["ubi_verified"] = True
+        session["privy_user_id"] = user_id
+        session["auth_method"] = auth_method or "wallet"
+        session["login_method"] = "privy"
+        session["verification_time"] = datetime.now().isoformat()
+        session["wallet_connected"] = True
+        
+        # Track analytics
+        analytics.track_verification_attempt(final_wallet, True)
+        analytics.track_user_session(final_wallet)
+        
+        # ── REFERRAL PROCESSING ──────────────────────────────────────────────────
+        if referral_code and is_new_user and not is_face_verified:
+            try:
+                from referral_program.referral_service import referral_service as ref_svc
+                
+                validation = ref_svc.validate_referral_code(referral_code.upper())
+                if validation.get("valid"):
+                    referrer_wallet = validation.get("referrer_wallet")
+                    record_result = ref_svc.record_referral(referral_code.upper(), final_wallet)
+                    if record_result.get("success"):
+                        logger.info(f"📋 Referral recorded: {referral_code} for {final_wallet[:8]}...")
+                        try:
+                            from supabase_client import supabase_logger as _sb_log
+                            if _sb_log:
+                                _sb_log.save_referrer_wallet(
+                                    final_wallet, referrer_wallet, referral_code.upper()
+                                )
+                        except Exception as _sr_err:
+                            logger.warning(f"⚠️ Could not save referral data: {_sr_err}")
+                        logger.info(f"⏳ Referral pending face verification: {referral_code}")
+            except Exception as ref_err:
+                logger.warning(f"⚠️ Referral processing error: {ref_err}")
+        
+        logger.info(f"✅ Privy session created for {final_wallet}")
+        
+        return jsonify({
+            "success": True,
+            "wallet": final_wallet,
+            "auth_method": auth_method or "wallet",
+            "is_new_user": is_new_user,
+            "is_face_verified": is_face_verified,
+            "redirect_to": "/overview"
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Privy session error: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Session creation failed"
+        }), 500
+
+
 @app.route("/api/auth/logout", methods=["POST"])
 def privy_logout():
     """
