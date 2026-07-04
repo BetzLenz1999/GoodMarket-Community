@@ -1587,14 +1587,22 @@ def verify_identity():
 
         logger.info(f"🔐 Identity verification attempt for {wallet_address}")
 
-        # Check if user is already verified in the session
+        login_method = (data.get('login_method') or 'injected').strip().lower()
+        if login_method not in {'injected', 'walletconnect', 'manual', 'manual_address', 'privy'}:
+            login_method = 'injected'
+
+        # Check if user is already verified in the session. Keep login_method fresh
+        # because a user may re-enter through Privy after previously using another
+        # signer, and downstream wallet pages rely on this value.
         if session.get('verified') and session.get('wallet') == wallet_address:
+            session['login_method'] = login_method
             logger.info(f"✅ User {wallet_address} already verified in session")
             return jsonify({
                 'success': True,
                 'message': 'Already verified!',
                 'wallet': wallet_address,
-                'already_verified': True
+                'already_verified': True,
+                'redirect_to': '/wallet'
             })
 
         # Verify signature to prove wallet ownership
@@ -1668,7 +1676,7 @@ def verify_identity():
         # while "injected" uses window.ethereum. Defaulting to "injected" keeps the
         # WalletConnect expiry guard from firing for MetaMask / MiniPay / Trust
         # Wallet users that omit the field.
-        session['login_method'] = data.get('login_method') or 'injected'
+        session['login_method'] = login_method
 
         # Record unverified visit or log face-verified status for attribution
         try:
@@ -1785,7 +1793,7 @@ def verify_identity():
             'message': 'Identity verification successful!',
             'wallet': wallet_address,
             'ubi_verified': True,
-            'redirect_to': '/overview'
+            'redirect_to': '/wallet'
         }
         if referral_warning:
             response_data['referral_warning'] = referral_warning
