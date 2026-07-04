@@ -2221,7 +2221,9 @@
 
             useEffect(() => {
                 async function completePrivyLogin() {
+                    if (authenticated) window.GMPrivyAuthenticated = true;
                     if (!ready || !authenticated || !walletsReady || processingRef.current) return;
+                    clearTimeout(window.GMPrivyOpenWatchTimer);
                     if (!wallets || wallets.length === 0) {
                         window.showWalletStatus?.('walletConnectStatus', '⏳ Creating your Privy wallet…', 'info');
                         if (!walletWaitTimerRef.current) {
@@ -2345,7 +2347,11 @@
             // Re-apply any referral code captured from the URL / sessionStorage
             // so the Privy login receives the same referral context.
             try { initReferralFromUrl(); } catch (e) {}
-            beginPrivyLogin(true);
+            if (window.GM_PRIVY_CONFIG && window.GM_PRIVY_CONFIG.appId) {
+                showWalletStatus('walletConnectStatus', '🔐 Tap Open Privy Login to continue.', 'info');
+            } else {
+                showWalletStatus('walletConnectStatus', '❌ Privy is not configured. Set PRIVY_APP_ID in the server environment.', 'error');
+            }
         }
 
         function closeWalletModal() {
@@ -2412,11 +2418,16 @@
         function watchPrivyOpen() {
             clearTimeout(window.GMPrivyOpenWatchTimer);
             window.GMPrivyOpenWatchTimer = setTimeout(function () {
-                if (isPrivyUiVisible()) return;
+                // OAuth/social-wallet flows can legitimately move browser focus or
+                // take several seconds before Privy's portal is visible. Do not put
+                // the GoodMarket modal back on top while that handoff may still be
+                // happening; only show the retry CTA when the page is still active
+                // and no Privy UI/authenticated callback was observed.
+                if (window.GMPrivyAuthenticated || isPrivyUiVisible() || document.hidden || !document.hasFocus()) return;
                 window.restoreWalletModalAfterPrivy?.(true);
                 window.showPrivyRetry?.();
                 showWalletStatus('walletConnectStatus', '⚠️ Privy did not appear. Tap Open Privy Login again, and allow popups/third-party cookies if your browser asks.', 'warning');
-            }, 3500);
+            }, 12000);
         }
 
         window.watchPrivyOpen = watchPrivyOpen;
@@ -3989,6 +4000,7 @@
         // always reachable even if the script block loads after the first
         // user interaction (race condition on slow connections).
         window.openWalletModal         = openWalletModal;
+        window.beginPrivyLogin         = beginPrivyLogin;
         window.closeWalletModal        = closeWalletModal;
         window.showWalletOptions       = showWalletOptions;
         window.showWalletConnectOptions= showWalletConnectOptions;
