@@ -2186,8 +2186,21 @@
                     window.GMPrivyAutoOpenRequested = false;
                     window.showWalletStatus?.('walletConnectStatus', '🔐 Opening Privy login…', 'info');
                     try {
-                        loginRef.current();
-                        window.hideWalletModalForPrivy?.();
+                        const loginResult = loginRef.current();
+                        if (loginResult && typeof loginResult.catch === 'function') {
+                            loginResult.catch((err) => {
+                                window.GMPrivyAutoOpenRequested = true;
+                                window.restoreWalletModalAfterPrivy?.();
+                                const msg = err && err.message ? err.message : 'Privy did not open automatically.';
+                                window.showWalletStatus?.('walletConnectStatus', '⚠️ ' + msg + ' Please tap Open Privy Login.', 'warning');
+                                window.showPrivyRetry?.();
+                            });
+                        }
+                        // Keep the GoodMarket modal visible behind Privy's dialog.
+                        // Hiding it immediately can make the page look like nothing
+                        // happened when Privy is slow to mount or the browser blocks
+                        // the popup, and it also hides the retry button users need.
+                        window.schedulePrivyRetry?.();
                     } catch (err) {
                         window.GMPrivyAutoOpenRequested = true;
                         window.restoreWalletModalAfterPrivy?.();
