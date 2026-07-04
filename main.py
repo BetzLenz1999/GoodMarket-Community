@@ -201,6 +201,7 @@ _CSP_DIRECTIVES = (
     "https://cdn.jsdelivr.net https://cdnjs.cloudflare.com "
     "https://esm.sh "
     "https://accounts.google.com "
+    "https://auth.privy.io https://*.privy.io "
     "https://telegram.org https://*.telegram.org",
     "style-src 'self' 'unsafe-inline' "
     "https://fonts.googleapis.com https://cdnjs.cloudflare.com",
@@ -215,6 +216,7 @@ _CSP_DIRECTIVES = (
     "https://apiplus.squidrouter.com https://v2.api.squidrouter.com "
     "https://studio.squidrouter.com https://app.squidrouter.com "
     "https://*.squidrouter.com "
+    "https://auth.privy.io https://*.privy.io",
     "media-src 'self' data: blob:",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
