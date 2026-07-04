@@ -2241,7 +2241,9 @@
                             ? ('✅ Privy login verified. ⚠️ ' + verifyData.referral_warning + ' Redirecting…')
                             : '✅ Privy login verified. Redirecting…';
                         window.showWalletStatus?.('walletConnectStatus', okMsg, verifyData && verifyData.referral_warning ? 'warning' : 'success');
-                        setTimeout(() => { window.location.href = '/wallet'; }, verifyData && verifyData.referral_warning ? 2400 : 900);
+                        const redirectTo = (verifyData && verifyData.redirect_to) || '/wallet';
+                        try { sessionStorage.setItem('verified', 'true'); } catch (_) {}
+                        setTimeout(() => { window.location.assign(redirectTo); }, verifyData && verifyData.referral_warning ? 2400 : 900);
                     } catch (err) {
                         processingRef.current = false;
                         const msg = err && err.message ? err.message : 'Privy login failed';
