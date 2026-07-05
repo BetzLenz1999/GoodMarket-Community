@@ -17,7 +17,7 @@
 window.P2PWallet = (function () {
     "use strict";
 
-    var cfg = { wallet: "", chainId: 42220 };
+    var cfg = { wallet: "", chainId: 42220, loginMethod: "" };
     var CELO_RPC_URLS = [
         "https://forno.celo.org",
         "https://1rpc.io/celo",
@@ -32,6 +32,42 @@ window.P2PWallet = (function () {
     };
 
     function configure(o) { Object.assign(cfg, o || {}); }
+
+    function _isPrivyLogin() {
+        return String(cfg.loginMethod || "").toLowerCase() === "privy";
+    }
+
+    async function _getPrivyProvider(options) {
+        if (!_isPrivyLogin()) return null;
+        options = options || {};
+        var timeoutMs = typeof options.timeoutMs === "number" ? options.timeoutMs : 4000;
+        var start = Date.now();
+        var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        while (Date.now() - start < timeoutMs) {
+            try {
+                var wallets = Array.isArray(window.GMPrivyWallets) ? window.GMPrivyWallets : [];
+                var sessionWallet = (cfg.wallet || "").toLowerCase();
+                var wallet = wallets.find(function (w) { return (w.address || "").toLowerCase() === sessionWallet; })
+                    || wallets.find(function (w) { return w.walletClientType === "privy"; })
+                    || wallets[0];
+                if (wallet && typeof wallet.getEthereumProvider === "function") {
+                    var provider = await wallet.getEthereumProvider();
+                    if (provider && typeof provider.request === "function") {
+                        provider.__gmPrivyProvider = true;
+                        return provider;
+                    }
+                }
+                if (window.GMPrivyReady && !window.GMPrivyAuthenticated && typeof window.GMPrivyLogin === "function" && options.promptLogin) {
+                    await window.GMPrivyLogin();
+                }
+            } catch (err) {
+                if (err && (err.code === 4001 || /reject|cancel/i.test(String(err.message || "")))) throw err;
+                console.warn("[privy] provider lookup failed:", err);
+            }
+            await wait(150);
+        }
+        return null;
+    }
 
     function _preferWc() {
         return (
@@ -60,7 +96,7 @@ window.P2PWallet = (function () {
     function _getInjected() {
         // WalletConnect / manual logins must never use an injected wallet — its
         // account differs from the logged-in GoodMarket wallet.
-        if (_preferWc()) return null;
+        if (_preferWc() || _isPrivyLogin()) return null;
         try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (_) {}
         var providers = _collectInjected();
         if (!providers.length) return null;
@@ -78,13 +114,17 @@ window.P2PWallet = (function () {
     }
 
     async function getProvider() {
+        var privy = await _getPrivyProvider({ promptLogin: true, timeoutMs: 10000 });
+        if (privy) return privy;
         var ep = _getInjected();
         if (ep) return ep;
         if (typeof GMWalletConnect !== "undefined") {
             try { return await GMWalletConnect.getProvider(); } catch (_) {}
         }
         throw new Error(
-            "No wallet available. Open in a dApp browser (MiniPay / Trust / MetaMask) or log in with WalletConnect."
+            _isPrivyLogin()
+                ? "Privy wallet is not ready. Please sign in again."
+                : "No wallet available. Open in a dApp browser (MiniPay / Trust / MetaMask) or log in with WalletConnect."
         );
     }
 
