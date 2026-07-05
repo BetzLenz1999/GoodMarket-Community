@@ -2881,7 +2881,7 @@
         if (_isMiniPayProvider(window.ethereum)) return true;
         if (window.ethereum && window.ethereum.providers
             && window.ethereum.providers.some(p => _isMiniPayProvider(p))) return true;
-        if (typeof navigator !== 'undefined' && /minipay/i.test(navigator.userAgent || '')) return true;
+        if (typeof navigator !== 'undefined' && /minipay|OPR.*Mini|Opera.*Mini/i.test(navigator.userAgent || '')) return true;
         return false;
     }
 
@@ -5641,6 +5641,7 @@
                 // backend's own Celo RPC, so they work regardless of which
                 // provider the user signed in with.
                 const isMiniPayClaim = _isMiniPayProvider(provider);
+                const isMiniPayContext = isMiniPayClaim || _isMiniPay();
                 // Set to true whenever the backend faucet API is consulted for this
                 // attempt. The final wallet-side gas snapshot is skipped in that case
                 // because the frontend floor (0.15 CELO) is higher than the backend
@@ -5832,7 +5833,7 @@
                     txHash = await sendCeloClaim();
                 } catch (sendErr) {
                     if (!isInsufficientFundsError(sendErr)) throw sendErr;
-                    if (isMiniPayClaim) {
+                    if (isMiniPayContext) {
                         // GoodDapp-style: direct claim failed with insufficient gas.
                         // Show new UX messages and run the faucet + swap flow.
                         console.warn('[claim] MiniPay direct claim failed (insufficient gas). Running faucet + swap flow...');
@@ -5846,7 +5847,7 @@
                                 // - CELO faucet from GoodDollar
                                 // - cUSD faucet from GoodMarket
                                 // - CELO → cUSD swap
-                                const r = await window.MPGasTopUp.ensureToppedUp(WALLET);
+                                const r = await window.MPGasTopUp.ensureToppedUp(WALLET, { provider: provider });
 
                                 if (!r || !r.proceed) {
                                     // Handle faucet failure scenarios
