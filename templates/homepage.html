@@ -2173,6 +2173,38 @@
             );
         }
 
+        function suppressMiniPayProviderForPrivy() {
+            if (!isMiniPayDappBrowser() || window.GMMiniPayProviderSuppressed) return;
+            const descriptor = Object.getOwnPropertyDescriptor(window, 'ethereum');
+            window.GMMiniPayEthereumBackup = {descriptor, value: window.ethereum};
+            try {
+                Object.defineProperty(window, 'ethereum', {
+                    configurable: true,
+                    writable: true,
+                    value: undefined
+                });
+                window.GMMiniPayProviderSuppressed = true;
+            } catch (err) {
+                console.warn('[MiniPay] Could not temporarily hide provider from Privy:', err);
+            }
+        }
+
+        function restoreMiniPayProviderAfterPrivy() {
+            if (!window.GMMiniPayProviderSuppressed || !window.GMMiniPayEthereumBackup) return;
+            const backup = window.GMMiniPayEthereumBackup;
+            try {
+                if (backup.descriptor) {
+                    Object.defineProperty(window, 'ethereum', backup.descriptor);
+                } else {
+                    window.ethereum = backup.value;
+                }
+            } catch (err) {
+                try { window.ethereum = backup.value; } catch (_) {}
+                console.warn('[MiniPay] Could not restore provider descriptor after Privy:', err);
+            }
+            window.GMMiniPayProviderSuppressed = false;
+        }
+
         function PrivyLoginController() {
             const {ready, authenticated, login, signMessage} = usePrivy();
             const {ready: walletsReady, wallets} = useWallets();
@@ -2197,7 +2229,16 @@
                     window.GMPrivyAutoOpenRequested = false;
                     window.showWalletStatus?.('walletConnectStatus', '🔐 Opening Privy login…', 'info');
                     try {
+                        // MiniPay injects an EIP-1193 provider whose internal
+                        // responses can include non-hex strings. Privy's modal
+                        // probes injected wallets even when we only show email /
+                        // Google login, so hide MiniPay just while the Privy
+                        // login sheet initializes. We restore it afterwards so
+                        // GoodMarket's MiniPay transaction flows keep working.
+                        const miniPayPrivyLogin = isMiniPayDappBrowser();
+                        suppressMiniPayProviderForPrivy();
                         const loginResult = loginRef.current();
+                        setTimeout(restoreMiniPayProviderAfterPrivy, miniPayPrivyLogin ? 8000 : 0);
                         window.hideWalletModalForPrivy?.();
                         window.watchPrivyOpen?.();
                         if (loginResult && typeof loginResult.catch === 'function') {
@@ -2215,6 +2256,7 @@
                         // retry CTA if Privy was blocked or failed to render.
                         window.schedulePrivyRetry?.();
                     } catch (err) {
+                        restoreMiniPayProviderAfterPrivy();
                         window.GMPrivyAutoOpenRequested = true;
                         window.restoreWalletModalAfterPrivy?.();
                         window.showWalletStatus?.('walletConnectStatus', '⚠️ Privy did not open automatically. Please tap Open Privy Login.', 'warning');
@@ -2234,6 +2276,7 @@
                     if (authenticated) window.GMPrivyAuthenticated = true;
                     if (!ready || !authenticated || !walletsReady || processingRef.current) return;
                     clearTimeout(window.GMPrivyOpenWatchTimer);
+                    restoreMiniPayProviderAfterPrivy();
                     if (!wallets || wallets.length === 0) {
                         window.showWalletStatus?.('walletConnectStatus', '⏳ Creating your Privy wallet…', 'info');
                         if (!walletWaitTimerRef.current) {
