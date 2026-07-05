@@ -44,6 +44,8 @@ def reloadly_home():
         walletconnect_project_id=os.getenv("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=wc_sidecar,
         login_method=session.get("login_method", "walletconnect"),
+        privy_app_id=os.getenv("PRIVY_APP_ID", ""),
+        privy_client_id=os.getenv("PRIVY_CLIENT_ID", ""),
     )
 
 
