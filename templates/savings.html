@@ -152,6 +152,65 @@
         import {createRoot} from 'https://esm.sh/react-dom@18.3.1/client';
         import {PrivyProvider, usePrivy, useWallets} from 'https://esm.sh/@privy-io/react-auth@3.32.2?deps=react@18.3.1,react-dom@18.3.1';
 
+
+        const CELO_PRIVY_CHAIN = {
+            id: 42220,
+            name: 'Celo',
+            network: 'celo',
+            nativeCurrency: {name: 'CELO', symbol: 'CELO', decimals: 18},
+            rpcUrls: {
+                default: {http: ['https://forno.celo.org']},
+                public: {http: ['https://forno.celo.org']}
+            },
+            blockExplorers: {
+                default: {name: 'CeloScan', url: 'https://celoscan.io'}
+            }
+        };
+
+        const FUSE_PRIVY_CHAIN = {
+            id: 122,
+            name: 'Fuse',
+            network: 'fuse',
+            nativeCurrency: {name: 'Fuse', symbol: 'FUSE', decimals: 18},
+            rpcUrls: {
+                default: {http: ['https://rpc.fuse.io']},
+                public: {http: ['https://rpc.fuse.io']}
+            },
+            blockExplorers: {
+                default: {name: 'Fuse Explorer', url: 'https://explorer.fuse.io'}
+            }
+        };
+
+        const XDC_PRIVY_CHAIN = {
+            id: 50,
+            name: 'XDC Network',
+            network: 'xdc',
+            nativeCurrency: {name: 'XDC', symbol: 'XDC', decimals: 18},
+            rpcUrls: {
+                default: {http: ['https://earpc.xinfin.network']},
+                public: {http: ['https://earpc.xinfin.network']}
+            },
+            blockExplorers: {
+                default: {name: 'XDCScan', url: 'https://xdcscan.com'}
+            }
+        };
+
+        const BASE_PRIVY_CHAIN = {
+            id: 8453,
+            name: 'Base',
+            network: 'base',
+            nativeCurrency: {name: 'Ether', symbol: 'ETH', decimals: 18},
+            rpcUrls: {
+                default: {http: ['https://mainnet.base.org']},
+                public: {http: ['https://mainnet.base.org']}
+            },
+            blockExplorers: {
+                default: {name: 'BaseScan', url: 'https://basescan.org'}
+            }
+        };
+
+        const GM_PRIVY_SUPPORTED_CHAINS = [CELO_PRIVY_CHAIN, FUSE_PRIVY_CHAIN, XDC_PRIVY_CHAIN, BASE_PRIVY_CHAIN];
+
         const privyConfig = {
             appId: {{ privy_app_id|default('', true)|tojson }},
             clientId: {{ privy_client_id|default('', true)|tojson }}
@@ -181,6 +240,8 @@
                         clientId: privyConfig.clientId || undefined,
                         config: {
                             loginMethods: ['email', 'google', 'wallet'],
+                            defaultChain: CELO_PRIVY_CHAIN,
+                            supportedChains: GM_PRIVY_SUPPORTED_CHAINS,
                             embeddedWallets: {ethereum: {createOnLogin: 'users-without-wallets'}},
                             appearance: {theme: 'dark', accentColor: '#7f8cff'}
                         }
