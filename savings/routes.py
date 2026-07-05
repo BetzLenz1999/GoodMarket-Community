@@ -44,6 +44,8 @@ def savings_home():
         chain_id=CHAIN_ID,
         walletconnect_project_id=wc_pid,
         walletconnect_sidecar_enabled=wc_sidecar,
+        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
+        privy_client_id=os.environ.get("PRIVY_CLIENT_ID", ""),
         login_method=session.get("login_method", "walletconnect"),
     )
 
