@@ -3339,7 +3339,13 @@
                 // (`_wcBridgeRequest` / `getConnectedSwapSigner`). Don't lock
                 // the button for them — they'll get a QR / approval prompt
                 // when they actually click "Swap".
-                if (_getEthProvider() || PREFER_WC_SIGNING) {
+                // Privy does not inject a global `window.ethereum` provider.
+                // Its signer is resolved lazily in getConnectedSwapSigner() via
+                // _swapGetPrivyProviderIfPreferred(), so treating `_getEthProvider()`
+                // as the only wallet signal leaves the Uniswap V3 button stuck on
+                // "No wallet detected" for Privy logins even though GoodReserve
+                // can sign successfully through the same helper.
+                if (_getEthProvider() || PREFER_WC_SIGNING || IS_PRIVY_LOGIN) {
                     setSwapBtnState("ready");
                 } else {
                     setSwapBtnState("no-wallet");
