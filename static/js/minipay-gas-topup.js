@@ -136,8 +136,9 @@
         _miniPayDetectedCache = true;
     }
 
-    function _getProvider() {
+    function _getProvider(providerOpt) {
         try {
+            if (providerOpt && typeof providerOpt.request === 'function') return providerOpt;
             const eth = global.ethereum;
             if (!eth) return null;
             if (eth.isMiniPay) return eth;
@@ -589,16 +590,16 @@
         }
     }
 
-    async function _waitForStablecoin(walletAddr, attempts, progress) {
+    async function _waitForStablecoin(walletAddr, attempts, progress, providerOpt) {
         const maxAttempts = attempts || 30;
         let latest = null;
         for (let i = 0; i < maxAttempts; i++) {
-            latest = await getBalances(walletAddr);
+            latest = await getBalances(walletAddr, providerOpt);
             if (hasStablecoinGasBalance(latest)) return latest;
             if (progress) progress.update('Step 3/3 — waiting for cUSD to arrive… (' + (i + 1) + '/' + maxAttempts + ')');
             await _sleep(2000);
         }
-        return latest || await getBalances(walletAddr);
+        return latest || await getBalances(walletAddr, providerOpt);
     }
 
 
@@ -621,10 +622,10 @@
     }
 
     // ─── Swap execution: Uniswap V3 exactInputSingle CELO -> cUSD ─────────
-    async function _swapCeloForCusd(walletAddr, amountCeloWei, progress) {
+    async function _swapCeloForCusd(walletAddr, amountCeloWei, progress, providerOpt) {
         const ethers = await _loadEthers();
-        const provider = _getProvider();
-        if (!provider) throw new Error('No injected wallet detected.');
+        const provider = _getProvider(providerOpt);
+        if (!provider) throw new Error('No MiniPay or Privy wallet provider detected.');
 
         const iface = new ethers.Interface([
             'function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)',
@@ -728,7 +729,7 @@
 
         let balances;
         try {
-            balances = await getBalances(walletAddr);
+            balances = await getBalances(walletAddr, opts.provider);
             console.log('[v0][MPGasTopUp] Balance read:', {
                 celo: balances?.celo?.toString(),
                 cusd: balances?.cusd?.toString(),
@@ -773,7 +774,7 @@
                 // wallet already holds enough CELO.
                 await _ensureCeloGasFaucet(walletAddr, balances, progress);
                 try {
-                    balances = await getBalances(walletAddr);
+                    balances = await getBalances(walletAddr, opts.provider);
                 } catch (_) { /* keep the pre-flight balances */ }
 
                 // Step 2/3: ask goodmarket TOPWALLET_KEY to send the cUSD gas
@@ -794,7 +795,7 @@
                 // when the server told us a refill cooldown is active (no
                 // cUSD will arrive from goodmarket then).
                 const pollAttempts = cooldownActive ? 5 : 30;
-                balances = await _waitForStablecoin(walletAddr, pollAttempts, progress);
+                balances = await _waitForStablecoin(walletAddr, pollAttempts, progress, opts.provider);
                 progress.close();
 
                 if (!hasStablecoinGasBalance(balances)) {
@@ -929,7 +930,7 @@
         // Step 5: Show swap progress message
         const progress = _showProgressModal('Swapping CELO to cUSD…');
         try {
-            const txHash = await _swapCeloForCusd(walletAddr, amountWei, progress);
+            const txHash = await _swapCeloForCusd(walletAddr, amountWei, progress, opts.provider);
             // Step 6: Swap complete - show success
             progress.update('✅ Swap confirmed! Waiting for balances to update…');
             await new Promise((r) => setTimeout(r, 3000));
