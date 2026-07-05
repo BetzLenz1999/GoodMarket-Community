@@ -1428,6 +1428,60 @@
             transform: none;
         }
 
+        .wc-panel-note {
+            margin: 0 0 0.75rem;
+            color: #4b5563;
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+
+        .wc-qr-wrap {
+            display: none;
+            margin-top: 0.9rem;
+            padding: 1rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            background: #f9fafb;
+            text-align: center;
+        }
+
+        .wc-qr-title {
+            margin: 0 0 0.35rem;
+            color: #111827;
+            font-size: 0.98rem;
+            font-weight: 800;
+        }
+
+        .wc-qr-desc {
+            margin: 0 auto 0.8rem;
+            color: #6b7280;
+            font-size: 0.78rem;
+            line-height: 1.45;
+            max-width: 300px;
+        }
+
+        .wc-qr-code {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 180px;
+            min-height: 180px;
+            padding: 0.55rem;
+            border-radius: 14px;
+            background: #fff;
+            box-shadow: inset 0 0 0 1px #e5e7eb;
+        }
+
+        .wc-qr-code img,
+        .wc-qr-code canvas {
+            display: block;
+            border-radius: 8px;
+        }
+
+        .wc-copy-btn-container {
+            margin-top: 0.75rem;
+        }
+
         .status-message {
             margin-top: 0.7rem;
             padding: 0.65rem 0.85rem;
@@ -2027,12 +2081,12 @@
     <!-- Panel: Referral Program -->
     <div class="section-panel" id="panel-referral">
         <h2 class="panel-title">🔗 Referral Program</h2>
-        <p class="panel-subtitle">Invite friends to GoodMarket and both of you earn G$ rewards when they join and get verified.</p>
+        <p class="panel-subtitle">Invite friends to GoodMarket and both of you earn G$ rewards when they create a new Privy email wallet and get verified.</p>
         <div class="earn-grid">
             <div class="earn-card">
                 <div class="earn-card-icon">📨</div>
                 <div class="earn-card-title">How to Refer</div>
-                <p class="earn-card-desc">Every GoodMarket user gets a unique referral link. Share it with friends, family, or on social media. When someone signs up using your link, you're automatically linked as their referrer.</p>
+                <p class="earn-card-desc">Every GoodMarket user gets a unique referral link. Share it with friends, family, or on social media. Rewards apply only when a new referee creates a Privy email/social wallet, not when they connect an existing wallet with WalletConnect, MiniPay, or MetaMask.</p>
             </div>
             <div class="earn-card">
                 <div class="earn-card-icon">💰</div>
@@ -2042,7 +2096,7 @@
                     <li>🟢 <strong style="color:#10b981;">500 G$</strong> — Your friend (referee) earns</li>
                     <li>🟢 No limit on how many friends you can refer</li>
                 </ul>
-                <p class="earn-card-note">🎯 Rewards are disbursed after the referee completes UBI verification.</p>
+                <p class="earn-card-note">🎯 Rewards are disbursed after the eligible Privy-created referee completes UBI verification.</p>
             </div>
             <div class="earn-card">
                 <div class="earn-card-icon">✅</div>
@@ -2232,6 +2286,18 @@
 
             <!-- Step 1: Privy-first login -->
             <div class="wallet-options" id="walletOptions">
+                <div id="privyReferralWrap" class="wallet-input-group">
+                    <label class="wallet-label" for="privyReferralCode">Referral code <span style="font-weight:500;color:#9ca3af">(optional)</span></label>
+                    <input
+                        id="privyReferralCode"
+                        class="wallet-input"
+                        type="text"
+                        maxlength="16"
+                        autocomplete="off"
+                        placeholder="Referral works for new Privy email wallets"
+                        oninput="syncReferralInputs(this)"
+                    >
+                </div>
                 <button id="privyPrimaryButton" class="wallet-option-card wc-option" type="button" onclick="beginPrivyLogin(true)" aria-live="polite">
                     <div class="option-icon">✨</div>
                     <div class="option-text">
@@ -2248,13 +2314,42 @@
                     </div>
                     <span class="option-arrow">→</span>
                 </button>
+                <button id="walletConnectPrimaryButton" class="wallet-option-card" type="button" onclick="showWalletConnectOptions()">
+                    <div class="option-icon">📲</div>
+                    <div class="option-text">
+                        <div class="option-title">WalletConnect QR / URI</div>
+                        <p class="option-desc">Scan a barcode or copy the URI link from your wallet app</p>
+                    </div>
+                    <span class="option-arrow">→</span>
+                </button>
                 <div id="privyLoginMount" style="display:none"></div>
                 <div id="walletConnectStatus" class="status-message" style="margin-top:0.85rem;"></div>
             </div>
 
-
-            <!-- Legacy WalletConnect / injected wallet picker removed from the user-facing homepage.
-                 Privy now owns email, Google, embedded wallet creation, and external wallet connect. -->
+            <!-- Optional WalletConnect path kept separate from Privy so users can
+                 scan a QR/barcode or copy a URI without disrupting Privy login. -->
+            <div class="wallet-form" id="walletConnectOptions">
+                <button class="back-btn" type="button" onclick="showWalletOptions()">← Back to login options</button>
+                <p class="wc-panel-note">
+                    Use this if your wallet connects better with a WalletConnect barcode/URI.
+                    Privy remains available from the previous screen.
+                </p>
+                <div id="wcOptionCards">
+                    <button class="connect-btn" type="button" onclick="connectWalletConnect()">Show WalletConnect QR / URI</button>
+                </div>
+                <div id="wcQrWrap" class="wc-qr-wrap">
+                    <div id="wcQrContainer">
+                        <h3 class="wc-qr-title">Scan WalletConnect QR</h3>
+                        <p id="wcInstructions" class="wc-qr-desc">
+                            Scan this code from your wallet app, or copy/open the URI link below.
+                        </p>
+                        <div id="wcQrCode" class="wc-qr-code" aria-label="WalletConnect QR code"></div>
+                        <div id="wcCopyBtnContainer" class="wc-copy-btn-container"></div>
+                    </div>
+                    <button id="wcBackBtn" class="back-btn" type="button" style="display:none;margin:0.85rem auto 0;" onclick="showWalletConnectOptions()">← Choose another method</button>
+                </div>
+                <div id="walletConnectPanelStatus" class="status-message" style="margin-top:0.85rem;"></div>
+            </div>
 
 
         </div>
@@ -2381,6 +2476,9 @@
                         try { localStorage.setItem('privy_wallet_address', address); } catch (_) {}
                         const message = window.makeLoginMessage(address);
                         const isPrivyEmbeddedWallet = wallet && wallet.walletClientType === 'privy';
+                        const referralCodeForPrivy = isPrivyEmbeddedWallet
+                            ? (window.getPendingReferralCode?.() || '')
+                            : '';
                         let signature;
                         if (isPrivyEmbeddedWallet) {
                             const sigResult = await signMessage({message}, {address});
@@ -2396,7 +2494,17 @@
                             signature = await provider.request({ method: 'personal_sign', params: [messageHex, address] });
                         }
                         if (!signature) throw new Error('Privy did not return a login signature.');
-                        const verifyData = await window.postVerifyIdentity(address, signature, message, window.getPendingReferralCode?.() || '', 'privy');
+                        const verifyData = await window.postVerifyIdentity(
+                            address,
+                            signature,
+                            message,
+                            referralCodeForPrivy,
+                            'privy',
+                            {
+                                referralEligible: isPrivyEmbeddedWallet,
+                                privyWalletClientType: wallet && wallet.walletClientType ? wallet.walletClientType : ''
+                            }
+                        );
                         const okMsg = verifyData && verifyData.referral_warning
                             ? ('✅ Privy login verified. ⚠️ ' + verifyData.referral_warning + ' Redirecting…')
                             : '✅ Privy login verified. Redirecting…';
@@ -2524,6 +2632,11 @@
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('visible');
             });
+            const panelStatus = document.getElementById('walletConnectPanelStatus');
+            if (panelStatus) {
+                panelStatus.className = 'status-message';
+                panelStatus.textContent = '';
+            }
         }
 
         function showPrivyRetry() {
@@ -2622,9 +2735,18 @@
 
         function showWalletStatus(targetId, message, type = 'info') {
             const el = document.getElementById(targetId);
-            if (!el) return;
-            el.className = 'status-message ' + type;
-            el.textContent = message;
+            if (el) {
+                el.className = 'status-message ' + type;
+                el.textContent = message;
+            }
+            if (targetId === 'walletConnectStatus') {
+                const panel = document.getElementById('walletConnectPanelStatus');
+                const wcOptions = document.getElementById('walletConnectOptions');
+                if (panel && wcOptions && wcOptions.classList.contains('visible')) {
+                    panel.className = 'status-message ' + type;
+                    panel.textContent = message;
+                }
+            }
         }
 
         // EIP-6963 provider discovery — Trust Wallet (mobile dApp browser +
@@ -3172,14 +3294,14 @@
 
 
         function getPendingReferralCode() {
-            const fromWc = ((document.getElementById('wcReferralCode') || {}).value || '').trim();
+            const fromPrivy = ((document.getElementById('privyReferralCode') || {}).value || '').trim();
             const saved = (sessionStorage.getItem('pending_referral_code') || '').trim();
-            return (fromWc || saved || '').toUpperCase();
+            return (fromPrivy || saved || '').toUpperCase();
         }
 
         function syncReferralInputs(sourceEl) {
             const value = (sourceEl && sourceEl.value ? sourceEl.value : '').trim().toUpperCase();
-            const ids = ['wcReferralCode'];
+            const ids = ['privyReferralCode'];
             ids.forEach(function(id) {
                 var el = document.getElementById(id);
                 if (el && el !== sourceEl && el.value !== value) el.value = value;
@@ -3224,8 +3346,8 @@
                     try { sessionStorage.setItem('pending_referral_code', ref); } catch (e) {}
                 }
 
-                const wcEl = document.getElementById('wcReferralCode');
-                if (wcEl && !wcEl.value.trim()) wcEl.value = ref;
+                const privyEl = document.getElementById('privyReferralCode');
+                if (privyEl && !privyEl.value.trim()) privyEl.value = ref;
 
                 // Show the referral banner only once per page load — after it
                 // auto-dismisses we don't want subsequent openWalletModal() calls
@@ -3236,7 +3358,7 @@
                     banner.id = 'referralBanner';
                     banner.style.cssText = 'position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9998;max-width:92%;padding:0.7rem 1rem;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.18);font-size:0.86rem;text-align:center;line-height:1.5;';
                     // Use textContent to prevent any HTML injection via the URL-derived ref value.
-                    banner.textContent = '🎁 Referral applied — Code ' + ref + ' will be used when you sign up. Both you and your referrer earn G$ after UBI verification.';
+                    banner.textContent = '🎁 Referral applied — Code ' + ref + ' will be used only if the new user creates a Privy email wallet.';
                     document.body.appendChild(banner);
                     setTimeout(function () { banner.style.transition = 'opacity 0.6s'; banner.style.opacity = '0'; setTimeout(function () { banner.remove(); }, 700); }, 8000);
                 }
@@ -3265,7 +3387,7 @@
                 .join('');
         }
 
-        async function postVerifyIdentity(walletAddress, signature, message, referralCode = '', loginMethod = 'injected') {
+        async function postVerifyIdentity(walletAddress, signature, message, referralCode = '', loginMethod = 'injected', options = {}) {
             const resp = await fetch('/verify-identity', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -3273,7 +3395,9 @@
                     wallet_address: walletAddress,
                     signature,
                     message,
-                    referral_code: referralCode || '',
+                    referral_code: options.referralEligible ? (referralCode || '') : '',
+                    referral_eligible: !!options.referralEligible,
+                    privy_wallet_client_type: options.privyWalletClientType || '',
                     // Persist HOW the user logged in so every feature page picks the
                     // matching signer: WalletConnect logins must never fall back to an
                     // injected desktop wallet (e.g. MetaMask) whose account differs
@@ -3367,7 +3491,7 @@
                 const messageHex = utf8ToHex(message);
                 showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve the login message in your wallet.', 'info');
                 const signature = await provider.request({ method: 'personal_sign', params: [messageHex, wallet] });
-                const verifyData = await postVerifyIdentity(wallet, signature, message, getPendingReferralCode(), 'injected');
+                const verifyData = await postVerifyIdentity(wallet, signature, message, '', 'injected');
                 // Drop any WalletConnect session left over from an earlier sign-in
                 // so feature pages don't misclassify this injected login as
                 // WalletConnect (which would force a QR prompt instead of MetaMask).
@@ -3502,14 +3626,11 @@
         }
 
         // Once the WalletConnect QR is shown the user has committed to
-        // the WalletConnect path — collapse the referral input and the
-        // three option cards above so the modal fits a single phone
+        // the WalletConnect path — collapse the option card above so the modal fits a single phone
         // viewport without internal scrolling. showWalletConnectOptions
         // calls this with `false` to restore the picker on Back.
         function setWcQrCompactMode(active) {
-            const referral = document.getElementById('wcReferralWrap');
             const cards = document.getElementById('wcOptionCards');
-            if (referral) referral.style.display = active ? 'none' : '';
             if (cards) cards.style.display = active ? 'none' : '';
         }
 
@@ -3699,7 +3820,7 @@
                         if (!signResp.ok || !signData.signature) {
                             throw new Error(signData.error || 'WalletConnect signature failed');
                         }
-                        const wcVerifyData = await postVerifyIdentity(stData.address, signData.signature, message, getPendingReferralCode(), 'walletconnect');
+                        const wcVerifyData = await postVerifyIdentity(stData.address, signData.signature, message, '', 'walletconnect');
                         const wcOkMsg = (wcVerifyData && wcVerifyData.referral_warning)
                             ? ('✅ Wallet connected via WalletConnect. ⚠️ ' + wcVerifyData.referral_warning + ' Redirecting...')
                             : '✅ Wallet connected via WalletConnect. Redirecting...';
@@ -3837,7 +3958,7 @@
                 // session approval that just completed.
                 _wcWakeWalletApp(session);
                 const signature = await sigReqPromise;
-                const wcFbVerifyData = await postVerifyIdentity(address, signature, message, getPendingReferralCode(), 'walletconnect');
+                const wcFbVerifyData = await postVerifyIdentity(address, signature, message, '', 'walletconnect');
                 
                 // Show success immediately — the session is already in localStorage.
                 // The 2.5 s wait below is only to let IndexedDB flush; any IDB
