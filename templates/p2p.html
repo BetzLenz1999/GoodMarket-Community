@@ -110,6 +110,55 @@
             .seller-kpis, .flow-steps, .grid2 { grid-template-columns:1fr; }
         }
     </style>
+    <div id="privyWalletMount" style="display:none"></div>
+    <script type="module">
+        import React, {useEffect} from 'https://esm.sh/react@18.3.1';
+        import {createRoot} from 'https://esm.sh/react-dom@18.3.1/client';
+        import {PrivyProvider, usePrivy, useWallets} from 'https://esm.sh/@privy-io/react-auth@3.32.2?deps=react@18.3.1,react-dom@18.3.1';
+
+        const CELO_PRIVY_CHAIN = {
+            id: 42220,
+            name: 'Celo',
+            network: 'celo',
+            nativeCurrency: {name: 'CELO', symbol: 'CELO', decimals: 18},
+            rpcUrls: {default: {http: ['https://forno.celo.org']}, public: {http: ['https://forno.celo.org']}},
+            blockExplorers: {default: {name: 'CeloScan', url: 'https://celoscan.io'}}
+        };
+        const privyConfig = {
+            appId: {{ privy_app_id|default('', true)|tojson }},
+            clientId: {{ privy_client_id|default('', true)|tojson }}
+        };
+        function PrivyWalletBridge() {
+            const {ready, authenticated, login} = usePrivy();
+            const {wallets} = useWallets();
+            useEffect(() => {
+                window.GMPrivyReady = !!ready;
+                window.GMPrivyAuthenticated = !!authenticated;
+                window.GMPrivyLogin = login;
+                window.GMPrivyWallets = wallets || [];
+                window.dispatchEvent(new CustomEvent('gm:privy-wallets-updated'));
+            }, [ready, authenticated, login, wallets]);
+            return null;
+        }
+        if (privyConfig.appId) {
+            const mount = document.getElementById('privyWalletMount');
+            if (mount) {
+                createRoot(mount).render(
+                    React.createElement(PrivyProvider, {
+                        appId: privyConfig.appId,
+                        clientId: privyConfig.clientId || undefined,
+                        config: {
+                            loginMethods: ['email', 'google', 'wallet'],
+                            defaultChain: CELO_PRIVY_CHAIN,
+                            supportedChains: [CELO_PRIVY_CHAIN],
+                            embeddedWallets: {ethereum: {createOnLogin: 'users-without-wallets'}},
+                            appearance: {theme: 'dark', accentColor: '#7f8cff'}
+                        }
+                    }, React.createElement(PrivyWalletBridge))
+                );
+            }
+        }
+    </script>
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     <script>
         if (typeof GMWalletConnect !== "undefined") {
@@ -274,7 +323,7 @@ const GD_CONTRACT = "{{ gd_contract }}";
 const CHAIN_ID = {{ chain_id }};
 const IS_ADMIN = {{ 'true' if is_admin_user else 'false' }};
 
-P2PWallet.configure({ wallet: WALLET, chainId: CHAIN_ID });
+P2PWallet.configure({ wallet: WALLET, chainId: CHAIN_ID, loginMethod: "{{ login_method }}" });
 
 // ── ABI fragments (user-signed) ──
 const ABI_APPROVE   = "function approve(address spender, uint256 amount) returns (bool)";
