@@ -7043,6 +7043,8 @@ def swap_page():
         login_method=session.get("login_method", ""),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
+        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
+        privy_client_id=os.environ.get("PRIVY_CLIENT_ID", ""),
         reserve_swap_visible=reserve_visible,
         is_minipay=is_minipay,
         bridge_contract=bridge_contract,
