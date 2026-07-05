@@ -4548,17 +4548,38 @@
             const loader = document.getElementById('gmWelcomeLoader');
             if (!loader) return;
 
+            const MIN_VISIBLE_MS = 12000;
+            const MAX_VISIBLE_MS = 15000;
+            const startedAt = Date.now();
+            let pageLoaded = document.readyState === 'complete';
+            let hidden = false;
+
             const hideLoader = () => {
+                if (hidden) return;
+                hidden = true;
                 loader.classList.add('is-hidden');
                 window.setTimeout(() => loader.remove(), 650);
             };
 
-            if (document.readyState === 'complete') {
-                window.setTimeout(hideLoader, 350);
-            } else {
-                window.addEventListener('load', () => window.setTimeout(hideLoader, 350), { once: true });
-                window.setTimeout(hideLoader, 4500);
+            const hideWhenReady = () => {
+                const elapsed = Date.now() - startedAt;
+                if (pageLoaded && elapsed >= MIN_VISIBLE_MS) {
+                    hideLoader();
+                    return;
+                }
+
+                window.setTimeout(hideWhenReady, Math.max(120, MIN_VISIBLE_MS - elapsed));
+            };
+
+            if (!pageLoaded) {
+                window.addEventListener('load', () => {
+                    pageLoaded = true;
+                    hideWhenReady();
+                }, { once: true });
             }
+
+            hideWhenReady();
+            window.setTimeout(hideLoader, MAX_VISIBLE_MS);
         })();
     </script>
 
