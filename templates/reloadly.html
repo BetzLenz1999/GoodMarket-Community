@@ -1670,6 +1670,7 @@ async function openPayModal(order) {
             body: JSON.stringify({
                 order_type: order.order_type,
                 usd_amount: order.usd_amount,
+                quoted_gd_amount: order.gd_amount,
                 payload: order.payload
             })
         });
