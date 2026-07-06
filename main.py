@@ -1529,6 +1529,21 @@ def get_unified_transaction_history():
         return jsonify({"success": False, "error": str(e), "transactions": [], "total": 0}), 500
 
 
+
+
+@app.route('/api/session-status', methods=['GET'])
+def session_status():
+    """Return the current GoodMarket login session without creating a wallet/user row."""
+    wallet = session.get('wallet') or session.get('wallet_address')
+    verified = bool(session.get('verified') or session.get('ubi_verified'))
+    return jsonify({
+        'success': True,
+        'authenticated': bool(wallet and verified),
+        'wallet': wallet if wallet and verified else None,
+        'login_method': session.get('login_method') if wallet and verified else None,
+        'redirect_to': '/wallet' if wallet and verified else None,
+    })
+
 @app.route('/api/debug/session', methods=['GET'])
 def debug_session():
     """Debug endpoint to check session status"""
