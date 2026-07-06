@@ -390,7 +390,7 @@ def api_confirm_order():
     update_order_record(order_id, {"status": "verifying", "tx_hash": tx_hash})
 
     # Verify blockchain payment
-    verify = verify_gd_payment(wallet, order["gd_amount"], tx_hash)
+    verify = verify_gd_payment(wallet, float(order["gd_amount"]), tx_hash)
     if not verify["success"]:
         update_order_record(order_id, {
             "status": "payment_failed",
@@ -426,11 +426,13 @@ def api_confirm_order():
 
         return jsonify({
             "success": False,
+            "found": True,
+            "status": refund_status,
             "error": msg,
             "order_id": order_id,
             "refunded": refund_result["success"],
             "refund_tx": refund_result.get("tx_hash")
-        }), 500
+        })
 
 
 @reloadly_bp.route("/api/order/detect-payment", methods=["POST"])
@@ -540,11 +542,12 @@ def api_detect_payment():
         return jsonify({
             "success": False,
             "found": True,
+            "status": refund_status,
             "tx_hash": tx_hash,
             "error": msg,
             "refunded": refund_result["success"],
             "refund_tx": refund_result.get("tx_hash")
-        }), 500
+        })
 
 
 @reloadly_bp.route("/api/order/<order_id>")
