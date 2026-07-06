@@ -695,6 +695,7 @@ let selectedOperator = null, selectedAmount = null;
 let selectedGcProduct = null, selectedBiller = null;
 let currentOrderId = null;
 let _pendingOrderData = null;
+let _activePaymentQuote = null;
 let _scanningActive = false;   // true while blockchain polling is running
 let _wcSessionId = null;
 let _wcAddress = null;
@@ -1062,6 +1063,23 @@ function encodeGdTransfer(toAddress, amountGd) {
 
 function gdToWeiHex(amountGd) {
     return '0x' + gdToWei(amountGd).toString(16);
+}
+
+function normalizeGdAmount(amountGd) {
+    const normalized = String(amountGd ?? '0').replace(/,/g, '').trim();
+    if (!/^\d+(\.\d+)?$/.test(normalized)) {
+        throw new Error('Invalid G$ amount for payment');
+    }
+    const [intPart, decPart = ''] = normalized.split('.');
+    const trimmedDec = decPart.slice(0, 18).replace(/0+$/, '');
+    return trimmedDec ? `${intPart || '0'}.${trimmedDec}` : (intPart || '0');
+}
+
+function formatGdAmount(amountGd) {
+    const normalized = normalizeGdAmount(amountGd);
+    const [intPart, decPart] = normalized.split('.');
+    const formattedInt = Number(intPart).toLocaleString();
+    return decPart ? `${formattedInt}.${decPart}` : formattedInt;
 }
 
 
@@ -1472,7 +1490,12 @@ async function dappSendPayment() {
     setDappStatus('info', '<i class="fas fa-spinner spin"></i> Checking your G$ balance...');
 
     try {
-        const gdNeeded = _pendingOrderData.gd_amount;
+        const quote = _activePaymentQuote;
+        if (!quote || quote.orderId !== currentOrderId) {
+            throw new Error('Payment quote expired. Please reopen checkout and try again.');
+        }
+        const gdNeeded = quote.gdAmount;
+        const gdNeededDisplay = quote.gdAmountDisplay;
 
         // Balance check
         try {
@@ -1484,7 +1507,7 @@ async function dappSendPayment() {
                     btn.disabled = false;
                     setDappStatus('error',
                         `❌ Insufficient G$ balance.<br>` +
-                        `<small>You need <strong>${gdNeeded.toLocaleString()} G$</strong> but your wallet only has <strong>${Math.floor(gdBal).toLocaleString()} G$</strong>.<br>` +
+                        `<small>You need <strong>${gdNeededDisplay} G$</strong> but your wallet only has <strong>${Math.floor(gdBal).toLocaleString()} G$</strong>.<br>` +
                         `Claim more G$ via UBI or earn more before buying.</small>`
                     );
                     return;
@@ -1523,7 +1546,7 @@ async function dappSendPayment() {
 
         setDappStatus('info',
             '<i class="fas fa-spinner spin"></i> Confirm in wallet:<br>' +
-            '<small style="color:#aaa">Sending <strong>' + gdNeeded + ' G$</strong> to merchant via G$ token contract.<br>' +
+            '<small style="color:#aaa">Sending <strong>' + gdNeededDisplay + ' G$</strong> to merchant via G$ token contract.<br>' +
             'The recipient shown in advanced details is:<br>' +
             '<code style="font-size:10px">' + MERCHANT_ADDRESS.slice(0,10) + '...' + MERCHANT_ADDRESS.slice(-6) + '</code></small>'
         );
@@ -1612,6 +1635,7 @@ function showStep(id) {
 
 async function openPayModal(order) {
     _pendingOrderData = order;
+    _activePaymentQuote = null;
     currentOrderId = null;
     document.getElementById('payModalLabel').textContent = order.label;
     document.getElementById('payFlowStatus').style.display = 'none';
@@ -1646,8 +1670,14 @@ async function openPayModal(order) {
         // The client estimate can become stale if the G$ price refreshes between
         // product selection and Privy signing, which makes the wallet popup show
         // a different transfer amount than checkout.
-        order.gd_amount = Number(res.gd_amount);
+        order.gd_amount = normalizeGdAmount(res.gd_amount);
         order.usd_amount = Number(res.usd_amount);
+        _activePaymentQuote = {
+            orderId: currentOrderId,
+            gdAmount: order.gd_amount,
+            gdAmountDisplay: formatGdAmount(order.gd_amount),
+            usdAmount: order.usd_amount
+        };
         _pendingOrderData = order;
     } catch (e) {
         showStep('stepResult');
@@ -1659,7 +1689,7 @@ async function openPayModal(order) {
     document.getElementById('payModalSummary').innerHTML = `
         <div class="summary-row"><span>Product</span><span style="text-align:right;max-width:60%">${order.label}</span></div>
         <div class="summary-row"><span>Amount</span><span>$${order.usd_amount.toFixed(2)} USD</span></div>
-        <div class="summary-row"><span>You Pay</span><span style="color:#69f0ae;font-weight:700">${order.gd_amount.toLocaleString()} G$</span></div>`;
+        <div class="summary-row"><span>You Pay</span><span style="color:#69f0ae;font-weight:700">${formatGdAmount(order.gd_amount)} G$</span></div>`;
 
     // Balance check — show warning if user may not have enough G$
     try {
@@ -1667,11 +1697,11 @@ async function openPayModal(order) {
         const bData = await bRes.json();
         if (bData.success) {
             const bal = parseFloat(bData.balance);
-            const needed = order.gd_amount;
+            const needed = Number(order.gd_amount);
             if (bal < needed) {
                 document.getElementById('payFlowStatus').className = 'pay-status-box pay-status-error';
                 document.getElementById('payFlowStatus').innerHTML =
-                    `⚠️ Low G$ balance: You have <strong>${Math.floor(bal).toLocaleString()} G$</strong> but this order requires <strong>${needed.toLocaleString()} G$</strong>. Please top up your G$ before proceeding.`;
+                    `⚠️ Low G$ balance: You have <strong>${Math.floor(bal).toLocaleString()} G$</strong> but this order requires <strong>${formatGdAmount(order.gd_amount)} G$</strong>. Please top up your G$ before proceeding.`;
                 document.getElementById('payFlowStatus').style.display = 'block';
             }
         }
@@ -1687,7 +1717,7 @@ async function openPayModal(order) {
         // not have an injected window.ethereum provider, so they must not fall
         // back to the manual merchant-address instructions.
         document.getElementById('dappFlow').style.display = 'block';
-        document.getElementById('dappGdAmt').textContent = order.gd_amount;
+        document.getElementById('dappGdAmt').textContent = _activePaymentQuote.gdAmountDisplay;
         let signingMessage = '<i class="fas fa-mobile-alt"></i> Wallet detected! Click below to pay.';
         if (IS_PRIVY_LOGIN) {
             signingMessage = '<i class="fas fa-shield-alt"></i> Privy wallet ready. Click below to sign and pay.';
@@ -1699,7 +1729,7 @@ async function openPayModal(order) {
     } else {
         // Regular browser without an app wallet — manual send to merchant address.
         document.getElementById('merchantFlow').style.display = 'block';
-        document.getElementById('merchantGdAmt').textContent = order.gd_amount;
+        document.getElementById('merchantGdAmt').textContent = _activePaymentQuote.gdAmountDisplay;
     }
 }
 
@@ -1845,6 +1875,7 @@ function closePayModal() {
         _scanningActive = false;
     }
     _pendingOrderData = null;
+    _activePaymentQuote = null;
     currentOrderId = null;
     _lastKnownTxHash = null;
 }
