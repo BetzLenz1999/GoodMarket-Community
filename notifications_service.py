@@ -286,8 +286,16 @@ class NotificationService:
         self._cache.pop(f'notif_{wallet_address}', None)
 
     def _get_p2p_notifications(self, wallet_address: str, limit: int) -> List[Dict]:
-        """Get P2P seller review notifications for orders marked paid."""
+        """Get P2P notifications.
+
+        For sellers: orders marked paid (review receipt).
+        For admins: orders where the seller rejected the buyer's proof
+                    (needs admin review with release/refund decision).
+        """
         try:
+            notifications = []
+
+            # -- Seller-facing: orders marked paid --
             orders = self.client.table('p2p_orders')\
                 .select('*')\
                 .eq('seller_wallet', wallet_address.lower())\
@@ -296,7 +304,6 @@ class NotificationService:
                 .limit(limit)\
                 .execute()
 
-            notifications = []
             for order in orders.data or []:
                 amount_gd = order.get('amount_gd') or order.get('g_dollar_amount') or 0
                 pay_amount = order.get('pay_amount') or order.get('fiat_amount') or 0
@@ -319,6 +326,46 @@ class NotificationService:
                     'module': 'P2P',
                     'read': False
                 })
+
+            # -- Admin-facing: seller-rejected or disputed orders awaiting review --
+            from supabase_client import is_admin
+            if is_admin(wallet_address):
+                review_orders = self.client.table('p2p_orders')\
+                    .select('*')\
+                    .in_('status', ['seller_rejected', 'disputed'])\
+                    .order('updated_at', desc=True)\
+                    .limit(limit)\
+                    .execute()
+
+                for order in review_orders.data or []:
+                    amount_gd = order.get('amount_gd') or order.get('g_dollar_amount') or 0
+                    pay_amount = order.get('pay_amount') or order.get('fiat_amount') or 0
+                    pay_currency = order.get('pay_currency') or order.get('fiat_currency') or ''
+                    buyer_short = (order.get('buyer_wallet') or '')[:8] + '...' if order.get('buyer_wallet') else '—'
+                    seller_short = (order.get('seller_wallet') or '')[:8] + '...' if order.get('seller_wallet') else '—'
+                    reason = order.get('reject_reason') or 'No reason given'
+                    notifications.append({
+                        'id': f"p2p_admin_review_{order.get('id', '')}",
+                        'type': 'p2p_admin_review',
+                        'title': '⚠️ P2P Dispute — Admin Review Needed',
+                        'message': (
+                            f"Order #{order.get('id')}: Seller ({seller_short}) rejected buyer ({buyer_short}) proof. "
+                            f"{amount_gd} G$ / {pay_amount} {pay_currency}. "
+                            f"Reason: {reason}. "
+                            f"Go to P2P Proof Review to release to buyer or refund seller."
+                        ),
+                        'amount': amount_gd,
+                        'timestamp': order.get('updated_at') or order.get('created_at'),
+                        'transaction_hash': None,
+                        'order_id': order.get('id'),
+                        'buyer_wallet': order.get('buyer_wallet'),
+                        'seller_wallet': order.get('seller_wallet'),
+                        'reject_reason': reason,
+                        'icon': '⚠️',
+                        'color': '#ef4444',
+                        'module': 'P2P Admin',
+                        'read': False
+                    })
 
             return notifications
 
