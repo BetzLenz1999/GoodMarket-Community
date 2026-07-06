@@ -1,6 +1,7 @@
 import logging
 import uuid
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from flask import Blueprint, request, jsonify, render_template, session, redirect
 
 from .client import reloadly_client
@@ -279,6 +280,22 @@ def api_prepare_order():
 
     try:
         gd_amount = usd_to_gd(float(usd_amount))
+        # Honor the G$ amount quoted in the cart when it is close to the
+        # server-side conversion, so the amount signed in the wallet matches
+        # what the user saw at checkout (price cache drift otherwise inflates it).
+        quoted = data.get("quoted_gd_amount")
+        if quoted is not None:
+            try:
+                quoted_d = Decimal(str(quoted).replace(",", "").strip())
+                server_d = Decimal(gd_amount)
+                if quoted_d > 0 and server_d > 0:
+                    drift = abs(quoted_d - server_d) / server_d
+                    if drift <= Decimal("0.05"):
+                        gd_amount = format(
+                            quoted_d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f"
+                        )
+            except (InvalidOperation, ValueError):
+                pass
         order_id = str(uuid.uuid4())
 
         order_data = {
