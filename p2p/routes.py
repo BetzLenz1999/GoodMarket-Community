@@ -542,6 +542,15 @@ def api_seller_reject(order_id):
     updated = db.update_order(order_id, {"status": "seller_rejected", "reject_reason": reason})
     if not db.get_open_dispute_for_order(order_id):
         db.create_dispute(order_id, "seller_rejected", reason)
+    # Invalidate notification cache for admins so they see the new review item
+    # immediately (best-effort; only clears the seller cache since we can't
+    # enumerate all admin wallets cheaply).
+    try:
+        from notifications_service import notification_service
+        notification_service.clear_user_cache(order.get("buyer_wallet"))
+        notification_service.clear_user_cache(order.get("seller_wallet"))
+    except Exception:
+        pass
     return jsonify({"success": True, "order": updated})
 
 
@@ -691,14 +700,26 @@ def api_admin_refund(order_id):
     dispute = db.get_open_dispute_for_order(order_id)
     if dispute:
         db.resolve_dispute_row(dispute["id"], "resolved_seller", wallet, result["tx_hash"])
+    # After a refund the on-chain listing's available balance is restored by
+    # _returnToSeller (see P2PEscrow.sol). Re-activate the offchain listing
+    # if the contract shows the listing active with balance, so the ad becomes
+    # available to buyers again (it may have been marked closed/cancelled by a
+    # stale _sync while the G$ was reserved).
     listing = db.get_listing_row(order.get("listing_id"))
-    synced_listing = _sync_listing_from_chain(listing) if listing else None
+    synced_listing = None
+    if listing:
+        live = chain.get_listing(listing.get("onchain_id")) if listing.get("onchain_id") is not None else None
+        if live and live.get("active") and float(live.get("available_gd", 0)) > 0:
+            if listing.get("status") != "active":
+                db.update_listing(listing["id"], {"status": "active"})
+                listing["status"] = "active"
+        synced_listing = _sync_listing_from_chain(listing)
     return jsonify({
         "success": True,
         "order": updated,
         "listing": synced_listing,
         "tx_hash": result["tx_hash"],
-        "message": "Refund completed: reserved G$ was returned to the seller listing's on-chain available balance.",
+        "message": "Refund completed: reserved G$ was returned to the seller listing's on-chain available balance. The ad is available again.",
     })
 
 
