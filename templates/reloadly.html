@@ -315,7 +315,7 @@
     <script type="module">
         import React, {useEffect} from 'https://esm.sh/react@18.3.1';
         import {createRoot} from 'https://esm.sh/react-dom@18.3.1/client';
-        import {PrivyProvider, usePrivy, useWallets} from 'https://esm.sh/@privy-io/react-auth@3.32.2?deps=react@18.3.1,react-dom@18.3.1';
+        import {PrivyProvider, usePrivy, useWallets, useSendTransaction} from 'https://esm.sh/@privy-io/react-auth@3.32.2?deps=react@18.3.1,react-dom@18.3.1';
 
         const CELO_PRIVY_CHAIN = {
             id: 42220,
@@ -332,13 +332,15 @@
         function PrivyWalletBridge() {
             const {ready, authenticated, login} = usePrivy();
             const {wallets} = useWallets();
+            const {sendTransaction} = useSendTransaction();
             useEffect(() => {
                 window.GMPrivyReady = !!ready;
                 window.GMPrivyAuthenticated = !!authenticated;
                 window.GMPrivyLogin = login;
                 window.GMPrivyWallets = wallets || [];
+                window.GMPrivySendTransaction = sendTransaction;
                 window.dispatchEvent(new CustomEvent('gm:privy-wallets-updated'));
-            }, [ready, authenticated, login, wallets]);
+            }, [ready, authenticated, login, wallets, sendTransaction]);
             return null;
         }
         if (privyConfig.appId) {
@@ -1563,7 +1565,35 @@ async function dappSendPayment() {
         );
 
         let txHash;
-        if (ep) {
+        const privyWallets = Array.isArray(window.GMPrivyWallets) ? window.GMPrivyWallets : [];
+        const privyEmbedded = ep && ep.__gmPrivyProvider && privyWallets.some(w =>
+            w.walletClientType === 'privy' && (w.address || '').toLowerCase() === String(from).toLowerCase());
+        if (privyEmbedded && typeof window.GMPrivySendTransaction === 'function') {
+            // Privy's default signing sheet shows the wallet BALANCE next to the
+            // account (not the transfer amount), which reads like a wrong charge.
+            // Use Privy's sendTransaction uiOptions so the sheet itself states
+            // the exact G$ amount from the checkout.
+            const receipt = await window.GMPrivySendTransaction(
+                {
+                    to: GD_CONTRACT,
+                    data: data,
+                    value: '0x0',
+                    chainId: CELO_CHAIN_ID
+                },
+                {
+                    address: from,
+                    uiOptions: {
+                        description: 'You are paying exactly ' + gdNeededDisplay + ' G$ (GoodDollar) to the GoodMarket merchant for this Reloadly order.',
+                        buttonText: 'Pay ' + gdNeededDisplay + ' G$',
+                        transactionInfo: {
+                            title: 'Reloadly order payment',
+                            action: 'Send ' + gdNeededDisplay + ' G$'
+                        }
+                    }
+                }
+            );
+            txHash = (receipt && (receipt.hash || receipt.transactionHash)) || (typeof receipt === 'string' ? receipt : null);
+        } else if (ep) {
             await _ensureCeloNetwork(ep);
             txHash = await ep.request({
                 method: 'eth_sendTransaction',
