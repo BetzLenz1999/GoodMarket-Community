@@ -2376,13 +2376,15 @@
         };
 
         function PrivyLoginController() {
-            const {ready, authenticated, login, signMessage} = usePrivy();
+            const {ready, authenticated, login, logout, signMessage} = usePrivy();
             const {ready: walletsReady, wallets} = useWallets();
             const processingRef = useRef(false);
             const walletWaitTimerRef = useRef(null);
             const loginRef = useRef(login);
+            const logoutRef = useRef(logout);
 
             useEffect(() => { loginRef.current = login; }, [login]);
+            useEffect(() => { logoutRef.current = logout; }, [logout]);
 
             useEffect(() => {
                 window.GMPrivyLogin = async function (fromUserTap) {
@@ -2397,8 +2399,13 @@
                         return;
                     }
                     window.GMPrivyAutoOpenRequested = false;
+                    window.GMPrivyLoginStarted = true;
                     window.showWalletStatus?.('walletConnectStatus', '🔐 Opening Privy login…', 'info');
                     try {
+                        if (authenticated && typeof logoutRef.current === 'function') {
+                            window.showWalletStatus?.('walletConnectStatus', '🔄 Refreshing Privy session so you can choose Email/Google or Connect Wallet…', 'info');
+                            try { await logoutRef.current(); } catch (_) {}
+                        }
                         // Keep MiniPay's injected provider visible to Privy. The
                         // MiniPay dapp browser should use the same Privy-first
                         // form as regular browsers, including Privy's Connect
@@ -2434,12 +2441,13 @@
                     window.showWalletStatus?.('walletConnectStatus', '✅ Privy is ready. Tap Open Privy Login to continue.', 'success');
                     window.showPrivyRetry?.();
                 }
-            }, [ready]);
+            }, [ready, authenticated]);
 
             useEffect(() => {
                 async function completePrivyLogin() {
                     if (authenticated) window.GMPrivyAuthenticated = true;
                     if (!ready || !authenticated || !walletsReady || processingRef.current) return;
+                    if (!window.GMPrivyLoginStarted) return;
                     clearTimeout(window.GMPrivyOpenWatchTimer);
                     if (!wallets || wallets.length === 0) {
                         window.showWalletStatus?.('walletConnectStatus', '⏳ Creating your Privy wallet…', 'info');
@@ -2511,6 +2519,7 @@
                         window.showWalletStatus?.('walletConnectStatus', okMsg, verifyData && verifyData.referral_warning ? 'warning' : 'success');
                         const redirectTo = (verifyData && verifyData.redirect_to) || '/wallet';
                         try { sessionStorage.setItem('verified', 'true'); } catch (_) {}
+                        window.GMPrivyLoginStarted = false;
                         setTimeout(() => { window.location.assign(redirectTo); }, verifyData && verifyData.referral_warning ? 2400 : 900);
                     } catch (err) {
                         processingRef.current = false;
@@ -2590,7 +2599,15 @@
             submenu.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
-        function openWalletModal() {
+        async function openWalletModal() {
+            try {
+                const resp = await fetch('/api/session-status', {cache: 'no-store'});
+                const data = await resp.json();
+                if (resp.ok && data && data.authenticated && data.redirect_to) {
+                    window.location.assign(data.redirect_to);
+                    return;
+                }
+            } catch (_) { /* continue to login choices */ }
             showWalletOptions();
             hidePrivyRetry();
             window.restoreWalletModalAfterPrivy?.(false);
