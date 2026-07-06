@@ -1743,12 +1743,14 @@
 
             <div class="form-group">
                 <label class="form-label">Recipient Address</label>
-                <input class="form-input" id="sendTo" type="text" placeholder="0x..." autocomplete="off" spellcheck="false">
+                <input class="form-input" id="sendTo" type="text" placeholder="0x..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                       style="cursor:text;pointer-events:auto;-webkit-user-select:text;-moz-user-select:text;user-select:text;">
             </div>
             <div class="form-group">
                 <label class="form-label">Amount (<span id="sendTokenLabel">G$</span>)</label>
                 <div class="amount-row">
-                    <input class="form-input" id="sendAmount" type="number" min="0" step="any" placeholder="0.00">
+                    <input class="form-input" id="sendAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"
+                           style="cursor:text;pointer-events:auto;-webkit-user-select:text;-moz-user-select:text;user-select:text;">
                     <button class="max-btn" onclick="setMaxSend()">MAX</button>
                 </div>
             </div>
@@ -2639,7 +2641,48 @@
     // `eip6963:requestProvider`. Callers that gate user actions (Claim G$,
     // Send, FV signing) should use this instead of the sync `_getEthProvider`
     // so a first click doesn't spuriously fail with "No wallet detected".
+    // Privy "connect a wallet" logins inside a dApp browser (MetaMask,
+    // Trust Wallet, MiniPay): when the Privy SDK can't produce a provider
+    // (session not hydrated, external wallet not re-connected), sign with
+    // the in-app injected wallet as long as it is on the same account, so
+    // the signing prompt still appears instead of failing silently.
+    async function _privyInjectedFallback(timeoutMs) {
+        const budget = typeof timeoutMs === 'number' ? timeoutMs : 4000;
+        const start = Date.now();
+        while (Date.now() - start < budget) {
+            try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+            const ep = _pickProviderFromCandidates(_collectInjectedProviders());
+            if (ep) {
+                try {
+                    let accounts = await ep.request({ method: 'eth_accounts' });
+                    if (!accounts || !accounts.length) {
+                        accounts = await ep.request({ method: 'eth_requestAccounts' });
+                    }
+                    const active = (accounts && accounts[0] || '').toLowerCase();
+                    if (active === WALLET.toLowerCase()) return ep;
+                    return null; // injected wallet is on a different account
+                } catch (err) {
+                    if (err && (err.code === 4001 || /reject|denied/i.test(String(err.message || '')))) return null;
+                }
+            }
+            await new Promise(r => setTimeout(r, 150));
+        }
+        return null;
+    }
+
     async function _awaitEthProvider(timeoutMs) {
+        if (IS_PRIVY_LOGIN) {
+            // _getEthProvider() is gated off for Privy logins — resolve the
+            // Privy wallet provider first (works for embedded AND external
+            // wallets connected through Privy), then fall back to a matching
+            // injected wallet, then to a prompted Privy login.
+            const privyProvider = await _walletGetPrivyProviderIfPreferred({ promptLogin: false, timeoutMs: 4000 });
+            if (privyProvider) return privyProvider;
+            const injected = await _privyInjectedFallback(4000);
+            if (injected) return injected;
+            return await _walletGetPrivyProviderIfPreferred({ promptLogin: true, timeoutMs: 10000 });
+        }
+
         // Keep the longer wait strictly for Trust Wallet mobile.
         const trustBudget = _isTrustWalletMobileContext() ? 4200 : 800;
         const budget = typeof timeoutMs === 'number' ? timeoutMs : trustBudget;
@@ -2653,10 +2696,6 @@
             await new Promise(r => setTimeout(r, stepMs));
             const p = _getEthProvider();
             if (p) return p;
-        }
-        if (!first && IS_PRIVY_LOGIN) {
-            const privyProvider = await _walletGetPrivyProviderIfPreferred({ promptLogin: true, timeoutMs: 10000 });
-            if (privyProvider) return privyProvider;
         }
         // WalletConnect fallback: if no injected provider was found, try the
         // existing WC session so users who logged in via WalletConnect can
@@ -3578,7 +3617,7 @@
     async function doSend() {
         clearAlert('sendAlert');
         const toAddrRaw = document.getElementById('sendTo').value.trim();
-        const amount = document.getElementById('sendAmount').value.trim();
+        const amount = document.getElementById('sendAmount').value.trim().replace(/,/g, '');
         const btn = document.getElementById('sendBtn');
         const meta = getSelectedTokenMeta();
         const isXdcToken = meta.network === 'xdc';
@@ -7075,7 +7114,21 @@
 
     // Override openModal to load stream info when stream modal opens
     const _originalOpenModal = window.openModal;
+    function _forceEditable(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.removeAttribute('readonly');
+        el.removeAttribute('disabled');
+        el.style.pointerEvents = 'auto';
+        el.style.cursor = 'text';
+    }
     window.openModal = function(modalId) {
+        if (modalId === 'sendModal') {
+            setTimeout(function() {
+                _forceEditable('sendTo');
+                _forceEditable('sendAmount');
+            }, 100);
+        }
         if (modalId === 'streamModal') {
             loadStreamConstants();
             loadIncomingStreamInfo();
