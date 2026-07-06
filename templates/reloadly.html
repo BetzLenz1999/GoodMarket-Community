@@ -1038,13 +1038,15 @@ function switchTab(name, btn) {
 
 // ─── ERC-20 Transfer Encoding ─────────────────────────────────────────────────
 function gdToWei(amountGd) {
-    // Use BigInt-only arithmetic to avoid float64 precision loss on large numbers
-    // amountGd is a number like 875 — multiply integer part and decimal part separately
-    const amountStr = amountGd.toFixed(6);            // e.g. "875.000000"
-    const [intPart, decPart = '000000'] = amountStr.split('.');
-    const dec6 = decPart.slice(0, 6).padEnd(6, '0'); // 6 decimal places
-    const wei6 = BigInt(intPart) * BigInt(1_000_000) + BigInt(dec6); // G$ * 10^6
-    return wei6 * BigInt(10 ** 12); // scale to 18 decimals (10^6 * 10^12 = 10^18)
+    // Use decimal-string + BigInt arithmetic so wallet signing receives the
+    // exact G$ amount shown in the checkout, without float64/toFixed drift.
+    const normalized = String(amountGd ?? '0').replace(/,/g, '').trim();
+    if (!/^\d+(\.\d+)?$/.test(normalized)) {
+        throw new Error('Invalid G$ amount for payment');
+    }
+    const [intPart, decPart = ''] = normalized.split('.');
+    const dec18 = decPart.slice(0, 18).padEnd(18, '0');
+    return BigInt(intPart || '0') * 10n ** 18n + BigInt(dec18 || '0');
 }
 
 function encodeGdTransfer(toAddress, amountGd) {
@@ -1640,6 +1642,13 @@ async function openPayModal(order) {
             return;
         }
         currentOrderId = res.order_id;
+        // Use the backend-created order amount as the single source of truth.
+        // The client estimate can become stale if the G$ price refreshes between
+        // product selection and Privy signing, which makes the wallet popup show
+        // a different transfer amount than checkout.
+        order.gd_amount = Number(res.gd_amount);
+        order.usd_amount = Number(res.usd_amount);
+        _pendingOrderData = order;
     } catch (e) {
         showStep('stepResult');
         setResult('error', '❌ Network error creating order.');
