@@ -3,6 +3,7 @@ import os
 import logging
 import requests
 import time
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from web3 import Web3
 from eth_account import Account
@@ -91,10 +92,13 @@ def get_gd_usd_price() -> float:
     return _gd_price_cache["price"] or 0.00012
 
 
-def usd_to_gd(usd_amount: float) -> float:
-    """Convert USD amount to G$ amount"""
-    price = get_gd_usd_price()
-    return round(usd_amount / price, 2) if price > 0 else 0
+def usd_to_gd(usd_amount: float) -> str:
+    """Convert USD amount to a 2-decimal G$ string without float drift."""
+    price = Decimal(str(get_gd_usd_price()))
+    if price <= 0:
+        return "0.00"
+    gd = (Decimal(str(usd_amount)) / price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return format(gd, "f")
 
 
 def gd_to_usd(gd_amount: float) -> float:
@@ -276,8 +280,9 @@ def refund_gd(to_wallet: str, amount_gd: float, order_id: str) -> dict:
         )
 
         recipient = Web3.to_checksum_address(to_wallet)
-        # BigInt-safe: avoid float64 precision loss on large G$ amounts
-        amount_wei = int(round(float(amount_gd) * (10 ** GD_DECIMALS)))
+        # Decimal-safe: match the exact checkout amount and avoid float64 drift.
+        amount_dec = Decimal(str(amount_gd).replace(",", "").strip())
+        amount_wei = int((amount_dec * (Decimal(10) ** GD_DECIMALS)).to_integral_value(rounding=ROUND_HALF_UP))
 
         nonce = w3.eth.get_transaction_count(refund_account.address)
         gas_price = w3.eth.gas_price
