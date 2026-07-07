@@ -6899,6 +6899,7 @@ def wallet_page():
         "wallet.html",
         wallet=wallet,
         login_method=session.get("login_method", ""),
+        privy_wallet_client_type=session.get("privy_wallet_client_type", ""),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
