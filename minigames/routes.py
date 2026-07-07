@@ -249,6 +249,7 @@ def withdrawal_history():
         withdrawals = []
         for withdrawal in res.data or []:
             withdrawal = dict(withdrawal)
+            status = str(withdrawal.get('status') or 'completed').lower()
             tx_hash = (
                 withdrawal.get('tx_hash')
                 or withdrawal.get('transaction_hash')
@@ -256,11 +257,16 @@ def withdrawal_history():
             )
             tx_hash = _normalize_withdrawal_tx_hash(tx_hash)
 
+            # Withdrawal history must only show completed on-chain payouts. Old
+            # rows without a status are treated as completed only when they have
+            # a valid transaction hash; failed/pending rows stay hidden so users
+            # do not see fake or reverted transactions as successful withdrawals.
+            if status not in ('completed', 'success', 'successful') or not tx_hash:
+                continue
+
+            withdrawal['status'] = 'completed'
             withdrawal['tx_hash'] = tx_hash
-            withdrawal['explorer_url'] = (
-                f'https://explorer.celo.org/mainnet/tx/{tx_hash}'
-                if tx_hash else None
-            )
+            withdrawal['explorer_url'] = f'https://explorer.celo.org/mainnet/tx/{tx_hash}'
             withdrawals.append(withdrawal)
 
         return jsonify({'success': True, 'withdrawals': withdrawals})
