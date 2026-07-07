@@ -1792,7 +1792,7 @@
                 <div style="font-family:monospace;font-size:0.8rem;color:var(--text-dim);background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:0.75rem;word-break:break-all;line-height:1.6;">{{ wallet }}</div>
             </div>
 
-            <div class="private-key-export-card" id="privateKeyExportCard" style="display:none;">
+            <div class="private-key-export-card" id="privateKeyExportCard">
                 <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Private Key Export</div>
                 <div class="warning-title">⚠️ Security warning</div>
                 <div class="warning-copy">
@@ -2114,7 +2114,6 @@
     const WALLET = "{{ wallet }}";
     var LOGIN_METHOD = '{{ login_method }}';
     const IS_PRIVY_LOGIN = (LOGIN_METHOD || '').toLowerCase() === 'privy';
-    const SERVER_PRIVY_WALLET_CLIENT_TYPE = {{ privy_wallet_client_type|default('', true)|tojson }};
 
     // Configure the shared WalletConnect bridge so users that logged in via
     // WalletConnect (no `window.ethereum`) can still claim / send / sign with
@@ -2939,10 +2938,45 @@
     }
 
     const MINIPAY_FEE_CURRENCY = {
-        USDM:         '0x765DE816845861e75A25fCA122bb6898B8B1282a',
+        CUSD:         '0x765DE816845861e75A25fCA122bb6898B8B1282a',
+        // USDT / USDC need Celo fee-currency adapter addresses in MiniPay.
         USDT_ADAPTER: '0x0E2A3e05bc9A16F5292A6170456A710cb89C6f72',
         USDC_ADAPTER: '0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B',
     };
+
+    function _miniPayFeeCurrenciesByBalance(options) {
+        const opts = options || {};
+        const balances = [
+            { key: 'cusd', value: Number(opts.cusdBalance ?? cusdBal ?? 0), feeCurrency: opts.cusd || MINIPAY_FEE_CURRENCY.CUSD },
+            { key: 'usdt', value: Number(opts.usdtBalance ?? usdtBal ?? 0), feeCurrency: opts.usdt_adapter || MINIPAY_FEE_CURRENCY.USDT_ADAPTER },
+            { key: 'usdc', value: Number(opts.usdcBalance ?? 0), feeCurrency: opts.usdc_adapter || MINIPAY_FEE_CURRENCY.USDC_ADAPTER },
+        ];
+        const seen = new Set();
+        const ordered = [];
+
+        // MiniPay accepts multiple stablecoin fee currencies. Prefer the token
+        // the user actually holds so a USDT-only user does not get blocked by
+        // an initial cUSD fee-currency attempt.
+        balances
+            .filter(item => item.value > 0 && item.feeCurrency)
+            .sort((a, b) => b.value - a.value)
+            .forEach(item => {
+                if (!seen.has(item.feeCurrency)) {
+                    seen.add(item.feeCurrency);
+                    ordered.push(item.feeCurrency);
+                }
+            });
+
+        balances.forEach(item => {
+            if (item.feeCurrency && !seen.has(item.feeCurrency)) {
+                seen.add(item.feeCurrency);
+                ordered.push(item.feeCurrency);
+            }
+        });
+
+        if (opts.includePlain !== false) ordered.push(null);
+        return ordered;
+    }
 
     async function _miniPayWaitForReceipt(ep, txHash, maxAttempts = 60) {
         for (let i = 0; i < maxAttempts; i++) {
@@ -3028,42 +3062,12 @@
         status.className = 'export-status' + (message ? ' show' : '') + (type ? ' ' + type : '');
     }
 
-    function getPrivyExportableEmbeddedWallet() {
-        if (!IS_PRIVY_LOGIN) return null;
-        const wallets = Array.isArray(window.GMPrivyWallets) ? window.GMPrivyWallets : [];
-        return wallets.find(w =>
-            (w.address || '').toLowerCase() === WALLET.toLowerCase()
-            && (w.walletClientType || '').toLowerCase() === 'privy'
-        ) || null;
-    }
-
-    function canShowPrivateKeyExport() {
-        if (!IS_PRIVY_LOGIN || typeof window.GMPrivyExportWallet !== 'function') return false;
-        const matchingWallet = getPrivyExportableEmbeddedWallet();
-        if (matchingWallet) return true;
-        const wallets = Array.isArray(window.GMPrivyWallets) ? window.GMPrivyWallets : [];
-        if (wallets.length > 0) return false;
-        return (SERVER_PRIVY_WALLET_CLIENT_TYPE || '').toLowerCase() === 'privy';
-    }
-
-    function refreshPrivateKeyExportVisibility() {
-        const card = document.getElementById('privateKeyExportCard');
-        if (!card) return;
-        const visible = canShowPrivateKeyExport();
-        card.style.display = visible ? '' : 'none';
-        if (!visible) {
-            setPrivateKeyExportStatus('', '');
-        }
-        refreshPrivateKeyExportState();
-    }
-
     function refreshPrivateKeyExportState() {
         const input = document.getElementById('privateKeyConfirmInput');
         const btn = document.getElementById('privateKeyExportBtn');
         if (!input || !btn) return;
         const confirmed = input.value.trim() === PRIVATE_KEY_EXPORT_CONFIRMATION;
-        const exportable = canShowPrivateKeyExport();
-        btn.disabled = !exportable || !confirmed;
+        btn.disabled = !confirmed;
         btn.textContent = confirmed ? 'Reveal Private Key in Privy' : 'Type the warning exactly to continue';
     }
 
@@ -3076,9 +3080,6 @@
         }
 
         try {
-            if (!canShowPrivateKeyExport()) {
-                throw new Error('Private key export is only available for your GoodMarket Privy embedded wallet. Connected wallets and WalletConnect sessions manage private keys in their own wallet app.');
-            }
             if (window.GMPrivyReady && !window.GMPrivyAuthenticated && typeof window.GMPrivyLogin === 'function') {
                 setPrivateKeyExportStatus('Opening Privy login before export…', 'info');
                 await window.GMPrivyLogin();
@@ -3099,8 +3100,7 @@
         const phrase = document.getElementById('privateKeyConfirmPhrase');
         if (phrase) phrase.textContent = PRIVATE_KEY_EXPORT_CONFIRMATION;
         if (input) input.addEventListener('input', refreshPrivateKeyExportState);
-        window.addEventListener('gm:privy-wallets-updated', refreshPrivateKeyExportVisibility);
-        refreshPrivateKeyExportVisibility();
+        refreshPrivateKeyExportState();
     });
 
     // ── Modal ────────────────────────────────────────────────
@@ -3108,7 +3108,6 @@
         document.getElementById(id).classList.add('open');
         document.body.style.overflow = 'hidden';
         if (id === 'settingsModal') {
-            refreshPrivateKeyExportVisibility();
             // Refresh FV status each time Settings opens so the user sees fresh data.
             loadFvStatus(true);
         }
@@ -3786,12 +3785,7 @@
                     // For MiniPay CELO sends, prefer stablecoin fee currencies first
                     // so users with low CELO but enough cUSD/USDT/USDC can still send.
                     const backendFeeHints = (txData && txData.minipay_fee_currencies) || {};
-                    const feeCurrencies = [
-                        backendFeeHints.cusd || MINIPAY_FEE_CURRENCY.USDM,
-                        backendFeeHints.usdt_adapter || MINIPAY_FEE_CURRENCY.USDT_ADAPTER,
-                        backendFeeHints.usdc_adapter || MINIPAY_FEE_CURRENCY.USDC_ADAPTER,
-                        null,
-                    ];
+                    const feeCurrencies = _miniPayFeeCurrenciesByBalance(backendFeeHints);
                     let lastErr;
                     for (const fc of feeCurrencies) {
                         const params = { ...txParams };
@@ -5637,11 +5631,7 @@
                         gasHex = '0x7A120';
                     }
 
-                    const feeCurrencies = [
-                        MINIPAY_FEE_CURRENCY.USDM,
-                        MINIPAY_FEE_CURRENCY.USDT_ADAPTER,
-                        MINIPAY_FEE_CURRENCY.USDC_ADAPTER,
-                    ];
+                    const feeCurrencies = _miniPayFeeCurrenciesByBalance({ includePlain: false });
                     let lastErr;
                     for (const fc of feeCurrencies) {
                         const txParams = { from, to: UBI_CONTRACT, data: CLAIM_DATA, value: '0x0', gas: gasHex };
