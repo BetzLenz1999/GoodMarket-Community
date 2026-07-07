@@ -1624,6 +1624,7 @@ def verify_identity():
         # signer, and downstream wallet pages rely on this value.
         if session.get('verified') and session.get('wallet') == wallet_address:
             session['login_method'] = login_method
+            session['privy_wallet_client_type'] = privy_wallet_client_type if login_method == 'privy' else ''
             logger.info(f"✅ User {wallet_address} already verified in session")
             return jsonify({
                 'success': True,
@@ -1705,6 +1706,7 @@ def verify_identity():
         # WalletConnect expiry guard from firing for MetaMask / MiniPay / Trust
         # Wallet users that omit the field.
         session['login_method'] = login_method
+        session['privy_wallet_client_type'] = privy_wallet_client_type if login_method == 'privy' else ''
 
         # Record unverified visit or log face-verified status for attribution
         try:
