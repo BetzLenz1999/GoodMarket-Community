@@ -7373,9 +7373,9 @@ def ubi_pool_balance():
 @routes.route("/api/wallet/balances", methods=["GET"])
 @auth_required
 def wallet_balances():
-    """Get G$, CELO, cUSD, and USDT balances for the current user.
+    """Get G$, CELO, cUSD, USDT, and USDC balances for the current user.
 
-    Fetches all four balances and the GD/USD price in parallel via a
+    Fetches all balances and the GD/USD price in parallel via a
     ThreadPoolExecutor to keep the critical path bounded by the slowest
     single fetch instead of the sum of all four. Web3.py is sync but
     releases the GIL during HTTP I/O, so threading gives a real speedup
@@ -7390,25 +7390,28 @@ def wallet_balances():
             get_celo_balance,
             get_cusd_balance,
             get_usdt_balance,
+            get_usdc_balance,
             _get_gd_usd_price,
             enrich_gd_balance_with_price,
         )
         from concurrent.futures import ThreadPoolExecutor
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=6) as executor:
             gd_future = executor.submit(get_gooddollar_balance, wallet, False)
             celo_future = executor.submit(get_celo_balance, wallet)
             cusd_future = executor.submit(get_cusd_balance, wallet)
             usdt_future = executor.submit(get_usdt_balance, wallet)
+            usdc_future = executor.submit(get_usdc_balance, wallet)
             price_future = executor.submit(_get_gd_usd_price)
             gd = gd_future.result()
             celo = celo_future.result()
             cusd = cusd_future.result()
             usdt = usdt_future.result()
+            usdc = usdc_future.result()
             gd_price = price_future.result()
 
         gd = enrich_gd_balance_with_price(gd, gd_price)
-        return jsonify({"success": True, "gd": gd, "celo": celo, "cusd": cusd, "usdt": usdt})
+        return jsonify({"success": True, "gd": gd, "celo": celo, "cusd": cusd, "usdt": usdt, "usdc": usdc})
     except Exception as e:
         logger.error(f"wallet_balances error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
