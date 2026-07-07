@@ -174,6 +174,59 @@ window.P2PWallet = (function () {
         } catch (_) {}
     }
 
+
+    function _isPrivyEmbeddedProvider(ep, from) {
+        if (!ep || !ep.__gmPrivyProvider || !from) return false;
+        var wallets = Array.isArray(window.GMPrivyWallets) ? window.GMPrivyWallets : [];
+        return wallets.some(function (w) {
+            return w
+                && w.walletClientType === "privy"
+                && (w.address || "").toLowerCase() === String(from).toLowerCase();
+        });
+    }
+
+    function _privyActionLabel(fn) {
+        switch (fn) {
+            case "approve": return "Approve G$ spending";
+            case "createListing": return "Create P2P sell ad";
+            case "openOrder": return "Open P2P order";
+            case "cancelListing": return "Cancel P2P sell ad";
+            case "cancelOrder": return "Cancel P2P order";
+            case "releaseOrder": return "Release escrowed G$";
+            case "raiseDispute": return "Raise P2P dispute";
+            default: return "Confirm P2P transaction";
+        }
+    }
+
+    async function _privySendTx(to, data, valueHex, from, fn) {
+        if (typeof window.GMPrivySendTransaction !== "function") {
+            throw new Error("Privy transaction signing is not ready. Please refresh and try again.");
+        }
+        var label = _privyActionLabel(fn);
+        var receipt = await window.GMPrivySendTransaction(
+            {
+                to: to,
+                data: data,
+                value: valueHex || "0x0",
+                chainId: cfg.chainId,
+            },
+            {
+                address: from,
+                uiOptions: {
+                    description: label + " on GoodMarket P2P. Review the details before signing.",
+                    buttonText: label,
+                    transactionInfo: {
+                        title: "GoodMarket P2P",
+                        action: label,
+                    },
+                },
+            }
+        );
+        var txHash = (receipt && (receipt.hash || receipt.transactionHash)) || (typeof receipt === "string" ? receipt : null);
+        if (!txHash) throw new Error("Privy did not return a transaction hash.");
+        return txHash;
+    }
+
     async function _miniPayTx(ep, to, data, valueHex) {
         var value = valueHex || "0x0";
         var accounts = await ep.request({ method: "eth_requestAccounts" });
@@ -222,6 +275,11 @@ window.P2PWallet = (function () {
         var data = iface.encodeFunctionData(fn, args);
 
         await _ensureCelo(ep);
+        if (_isPrivyEmbeddedProvider(ep, from)) {
+            var privyTxHash = await _privySendTx(to, data, valueHex, from, fn);
+            await _waitReceipt(ep, privyTxHash);
+            return privyTxHash;
+        }
         if (isMiniPay()) return await _miniPayTx(ep, to, data, valueHex);
 
         var gasHex;
