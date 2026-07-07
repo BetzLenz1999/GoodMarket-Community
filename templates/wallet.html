@@ -1792,7 +1792,7 @@
                 <div style="font-family:monospace;font-size:0.8rem;color:var(--text-dim);background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:0.75rem;word-break:break-all;line-height:1.6;">{{ wallet }}</div>
             </div>
 
-            <div class="private-key-export-card" id="privateKeyExportCard">
+            <div class="private-key-export-card" id="privateKeyExportCard" style="display:none;">
                 <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Private Key Export</div>
                 <div class="warning-title">⚠️ Security warning</div>
                 <div class="warning-copy">
@@ -2114,6 +2114,7 @@
     const WALLET = "{{ wallet }}";
     var LOGIN_METHOD = '{{ login_method }}';
     const IS_PRIVY_LOGIN = (LOGIN_METHOD || '').toLowerCase() === 'privy';
+    const SERVER_PRIVY_WALLET_CLIENT_TYPE = {{ privy_wallet_client_type|default('', true)|tojson }};
 
     // Configure the shared WalletConnect bridge so users that logged in via
     // WalletConnect (no `window.ethereum`) can still claim / send / sign with
@@ -2442,7 +2443,7 @@
     }
 
     // ── Token state ──────────────────────────────────────────
-    let gdBal = 0, celoBal = 0, cusdBal = 0, usdtBal = 0;
+    let gdBal = 0, celoBal = 0, cusdBal = 0, usdtBal = 0, usdcBal = 0;
     let xdcBal = 0, xdcGdBal = 0;
     let fuseBal = 0, fuseGdBal = 0;
     let gdUsdPrice = 0;
@@ -2949,7 +2950,7 @@
         const balances = [
             { key: 'cusd', value: Number(opts.cusdBalance ?? cusdBal ?? 0), feeCurrency: opts.cusd || MINIPAY_FEE_CURRENCY.CUSD },
             { key: 'usdt', value: Number(opts.usdtBalance ?? usdtBal ?? 0), feeCurrency: opts.usdt_adapter || MINIPAY_FEE_CURRENCY.USDT_ADAPTER },
-            { key: 'usdc', value: Number(opts.usdcBalance ?? 0), feeCurrency: opts.usdc_adapter || MINIPAY_FEE_CURRENCY.USDC_ADAPTER },
+            { key: 'usdc', value: Number(opts.usdcBalance ?? usdcBal ?? 0), feeCurrency: opts.usdc_adapter || MINIPAY_FEE_CURRENCY.USDC_ADAPTER },
         ];
         const seen = new Set();
         const ordered = [];
@@ -3006,7 +3007,7 @@
         // Calculate total balance in USD across all networks (Celo, Fuse, XDC)
         // cUSD and USDT are treated as ~1 USD; CELO uses a rough USD estimate.
         const celoUsdEstimate = (celoBal || 0) * 0.75;
-        const stableUsdTotal = (cusdBal || 0) + (usdtBal || 0);
+        const stableUsdTotal = (cusdBal || 0) + (usdtBal || 0) + (usdcBal || 0);
         
         // Convert G$ balances from all networks to USD using live G$/USD price
         const gdOnCeloUsd = (gdBal || 0) * (gdUsdPrice || 0);
@@ -3062,12 +3063,42 @@
         status.className = 'export-status' + (message ? ' show' : '') + (type ? ' ' + type : '');
     }
 
+    function getPrivyExportableEmbeddedWallet() {
+        if (!IS_PRIVY_LOGIN) return null;
+        const wallets = Array.isArray(window.GMPrivyWallets) ? window.GMPrivyWallets : [];
+        return wallets.find(w =>
+            (w.address || '').toLowerCase() === WALLET.toLowerCase()
+            && (w.walletClientType || '').toLowerCase() === 'privy'
+        ) || null;
+    }
+
+    function canShowPrivateKeyExport() {
+        if (!IS_PRIVY_LOGIN || typeof window.GMPrivyExportWallet !== 'function') return false;
+        const matchingWallet = getPrivyExportableEmbeddedWallet();
+        if (matchingWallet) return true;
+        const wallets = Array.isArray(window.GMPrivyWallets) ? window.GMPrivyWallets : [];
+        if (wallets.length > 0) return false;
+        return (SERVER_PRIVY_WALLET_CLIENT_TYPE || '').toLowerCase() === 'privy';
+    }
+
+    function refreshPrivateKeyExportVisibility() {
+        const card = document.getElementById('privateKeyExportCard');
+        if (!card) return;
+        const visible = canShowPrivateKeyExport();
+        card.style.display = visible ? '' : 'none';
+        if (!visible) {
+            setPrivateKeyExportStatus('', '');
+        }
+        refreshPrivateKeyExportState();
+    }
+
     function refreshPrivateKeyExportState() {
         const input = document.getElementById('privateKeyConfirmInput');
         const btn = document.getElementById('privateKeyExportBtn');
         if (!input || !btn) return;
         const confirmed = input.value.trim() === PRIVATE_KEY_EXPORT_CONFIRMATION;
-        btn.disabled = !confirmed;
+        const exportable = canShowPrivateKeyExport();
+        btn.disabled = !exportable || !confirmed;
         btn.textContent = confirmed ? 'Reveal Private Key in Privy' : 'Type the warning exactly to continue';
     }
 
@@ -3080,6 +3111,9 @@
         }
 
         try {
+            if (!canShowPrivateKeyExport()) {
+                throw new Error('Private key export is only available for your GoodMarket Privy embedded wallet. Connected wallets and WalletConnect sessions manage private keys in their own wallet app.');
+            }
             if (window.GMPrivyReady && !window.GMPrivyAuthenticated && typeof window.GMPrivyLogin === 'function') {
                 setPrivateKeyExportStatus('Opening Privy login before export…', 'info');
                 await window.GMPrivyLogin();
@@ -3100,7 +3134,8 @@
         const phrase = document.getElementById('privateKeyConfirmPhrase');
         if (phrase) phrase.textContent = PRIVATE_KEY_EXPORT_CONFIRMATION;
         if (input) input.addEventListener('input', refreshPrivateKeyExportState);
-        refreshPrivateKeyExportState();
+        window.addEventListener('gm:privy-wallets-updated', refreshPrivateKeyExportVisibility);
+        refreshPrivateKeyExportVisibility();
     });
 
     // ── Modal ────────────────────────────────────────────────
@@ -3108,6 +3143,7 @@
         document.getElementById(id).classList.add('open');
         document.body.style.overflow = 'hidden';
         if (id === 'settingsModal') {
+            refreshPrivateKeyExportVisibility();
             // Refresh FV status each time Settings opens so the user sees fresh data.
             loadFvStatus(true);
         }
@@ -3361,6 +3397,11 @@
         } else {
             document.getElementById('usdtBal').textContent = '0 USDT';
         }
+
+        // USDC is not displayed as a main wallet tile yet, but MiniPay can use
+        // it as a CIP-64 gas fee currency. Keep it in memory so send/claim
+        // attempts prioritize the stablecoin balances the user actually has.
+        usdcBal = (data.usdc && data.usdc.success) ? (data.usdc.balance || 0) : 0;
 
         updateTotalBalanceInGd();
     }
