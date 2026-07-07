@@ -204,21 +204,23 @@
         };
     }
 
-    function hasStablecoinGasBalance(balances) {
+    function _stablecoinUsdTotal(balances) {
         const perToken = _stablecoinBalancesUsd(balances);
-        return perToken.cusd >= STABLECOIN_GAS_MIN_USD
-            || perToken.usdt >= STABLECOIN_GAS_MIN_USD
-            || perToken.usdc >= STABLECOIN_GAS_MIN_USD;
+        return perToken.cusd + perToken.usdt + perToken.usdc;
     }
 
-    // GoodDapp-style check: does the user have ANY stablecoin at all
-    // (above dust)? If yes, MiniPay can attempt the tx directly — Celo's
-    // fee abstraction only needs a tiny amount for a single claim() call.
+    function hasStablecoinGasBalance(balances) {
+        return _stablecoinUsdTotal(balances) >= STABLECOIN_GAS_MIN_USD;
+    }
+
+    // GoodDapp-style check: does the user have enough combined stablecoin
+    // balance for a direct attempt? MiniPay accepts cUSD / USDT / USDC as gas
+    // currencies, so the pre-flight should not block wallets whose usable gas
+    // budget is split across stablecoins. The actual transaction still passes
+    // one feeCurrency hint at a time because MiniPay's RPC API does not expose
+    // a multi-token feeCurrency field.
     function hasAnyStablecoinForDirectClaim(balances) {
-        const perToken = _stablecoinBalancesUsd(balances);
-        return perToken.cusd >= STABLECOIN_DIRECT_CLAIM_MIN_USD
-            || perToken.usdt >= STABLECOIN_DIRECT_CLAIM_MIN_USD
-            || perToken.usdc >= STABLECOIN_DIRECT_CLAIM_MIN_USD;
+        return _stablecoinUsdTotal(balances) >= STABLECOIN_DIRECT_CLAIM_MIN_USD;
     }
 
     function getAutoSwapAmountWei(balances) {
@@ -751,6 +753,7 @@
             startedWithoutStableGas,
             belowCeloFaucetFloor,
             hasStablecoinGas: !startedWithoutStableGas,
+            stablecoinUsdTotal: _stablecoinUsdTotal(balances),
             celoForSwap: getAutoSwapAmountWei(balances)?.toString()
         });
         
@@ -759,8 +762,8 @@
         let cooldownSeconds = 0;
 
         // Only run the gas top-up flow when the user actually lacks stablecoin
-        // gas. If the wallet already holds ≥ STABLECOIN_GAS_MIN_USD of cUSD /
-        // USDT / USDC, MiniPay can pay gas with it directly — there is no
+        // gas. If the wallet already holds ≥ STABLECOIN_GAS_MIN_USD combined
+        // across cUSD / USDT / USDC, MiniPay can pay gas with it directly — there is no
         // reason to call the GoodDollar CELO faucet or the cUSD faucet, and
         // the autoswap prompt is unnecessary for those wallets.
         if (startedWithoutStableGas) {
@@ -863,7 +866,7 @@
         // for any transaction. Block proceeding to wallet approval.
         if (!hasStablecoinGasBalance(balances) && amountWei <= 0n) {
             const msg = '⚠️ Insufficient gas for MiniPay\n\n'
-                + 'Your wallet has less than 0.015 in each stablecoin gas token (cUSD/USDT/USDC) AND less than 0.09 CELO (nothing to swap).\n\n'
+                + 'Your wallet has less than 0.015 total across stablecoin gas tokens (cUSD/USDT/USDC) AND less than 0.09 CELO (nothing to swap).\n\n'
                 + 'MiniPay pays transaction fees in stablecoins (cUSD/USDT/USDC). '
                 + 'Please add some cUSD, USDT, or USDC to your wallet, or wait for the gas faucet cooldown to expire and retry.';
             if (typeof global.alert === 'function') global.alert(msg);
@@ -1023,6 +1026,7 @@
         getBalances: getBalances,
         needsTopUpFromBalances: needsTopUpFromBalances,
         hasStablecoinGasBalance: hasStablecoinGasBalance,
+        stablecoinUsdTotal: _stablecoinUsdTotal,
         hasAnyStablecoinForDirectClaim: hasAnyStablecoinForDirectClaim,
         isBelowCeloFaucetFloor: isBelowCeloFaucetFloor,
         ensureToppedUp: ensureToppedUp,
