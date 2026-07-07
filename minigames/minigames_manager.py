@@ -685,14 +685,28 @@ class MinigamesManager:
                 if hasattr(self, '_cache') and cache_key in self._cache:
                     del self._cache[cache_key]
 
-                # Log the withdrawal
-                self.supabase.table('minigame_withdrawals_log').insert({
+                # Log the withdrawal only after confirmed on-chain success.
+                # Include status when the database has the column; fall back to
+                # the legacy shape so a missing migration cannot block payouts.
+                withdrawal_log = {
                     'wallet_address': wallet_address,
                     'amount': available_balance,
                     'tx_hash': normalize_tx_hash(disburse_result['tx_hash']),
                     'session_id': session_id,
+                    'status': 'completed',
                     'withdrawal_date': date.today().isoformat()
-                }).execute()
+                }
+                try:
+                    self.supabase.table('minigame_withdrawals_log').insert(withdrawal_log).execute()
+                except Exception as log_error:
+                    if 'status' not in str(log_error).lower():
+                        raise
+                    logger.warning(
+                        "⚠️ minigame_withdrawals_log.status missing; "
+                        "falling back to legacy withdrawal log insert"
+                    )
+                    withdrawal_log.pop('status', None)
+                    self.supabase.table('minigame_withdrawals_log').insert(withdrawal_log).execute()
 
                 logger.info(f"✅ Balance withdrawn successfully: {available_balance} G$")
 
@@ -708,8 +722,15 @@ class MinigamesManager:
                 logger.error(f"❌ Blockchain withdrawal failed: {disburse_result.get('error')}")
                 
                 # Check if it's a gas/system error
-                if disburse_result.get('error_type') == 'insufficient_gas':
-                    error_message = "Withdrawal system is being refunded. Please try again in a few minutes. Your balance is safe."
+                error_type = disburse_result.get('error_type')
+                if error_type == 'insufficient_gas':
+                    error_message = "Withdrawal signer needs gas refill. Please try again in a few minutes. Your balance is safe."
+                elif error_type == 'insufficient_contract_balance':
+                    error_message = "Withdrawal vault has insufficient G$ right now. Please try again later. Your balance is safe."
+                elif error_type == 'contract_preflight_failed':
+                    error_message = "Withdrawal failed contract preflight, so no transaction was sent. Please try again later. Your balance is safe."
+                elif error_type == 'onchain_reverted':
+                    error_message = "Withdrawal transaction reverted on-chain, so it was not completed. Your balance is safe."
                 else:
                     error_message = f"Withdrawal failed: {disburse_result.get('error', 'Unknown error')}. Your balance is safe."
 
@@ -718,7 +739,9 @@ class MinigamesManager:
                     'error': error_message,
                     'balance_safe': True,
                     'available_balance': available_balance,
-                    'retry_available': True
+                    'retry_available': True,
+                    'status': 'failed',
+                    'error_type': error_type or 'withdrawal_failed'
                 }
 
         except Exception as e:
