@@ -20,6 +20,7 @@ GOODDOLLAR_CONTRACTS = {
 
 CUSD_CONTRACT = os.getenv("CUSD_CONTRACT", "0x765DE816845861e75A25fCA122bb6898B8B1282a")
 USDT_CONTRACT = os.getenv("USDT_CONTRACT", "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e")
+USDC_CONTRACT = os.getenv("USDC_CONTRACT", "0xcebA9300f2b948710d2653dD7B07f33A8B32118C")
 
 IDENTITY_ABI = [
     {
@@ -1092,6 +1093,41 @@ def get_usdt_balance(wallet_address: str) -> dict:
         return result
     except Exception as e:
         logger.error(f"USDT balance error for {wallet_address}: {e}")
+        return {"success": False, "error": str(e), "balance": 0, "balance_formatted": "Error"}
+
+
+def get_usdc_balance(wallet_address: str) -> dict:
+    """Get USDC (Circle USDC on Celo) ERC-20 balance for a wallet address (cached 2 minutes)."""
+    import time
+    key = wallet_address.lower()
+    with _balance_cache_lock:
+        entry = _balance_cache.get(key)
+        if entry and entry.get("usdc") and entry["expires_at"] > time.time():
+            logger.debug(f"💵 USDC balance cache HIT for {wallet_address[:8]}...")
+            return entry["usdc"]
+    try:
+        from web3 import Web3
+        w3 = _get_w3()
+        contract = w3.eth.contract(
+            address=Web3.to_checksum_address(USDC_CONTRACT),
+            abi=_GD_ERC20_ABI
+        )
+        wallet_checksum = Web3.to_checksum_address(wallet_address)
+        balance_raw = contract.functions.balanceOf(wallet_checksum).call()
+        balance_usdc = balance_raw / (10 ** 6)
+        result = {
+            "success": True,
+            "balance": float(balance_usdc),
+            "balance_formatted": f"{balance_usdc:.6f} USDC",
+            "wallet": wallet_address,
+            "contract": USDC_CONTRACT,
+        }
+        with _balance_cache_lock:
+            existing = _balance_cache.get(key, {})
+            _balance_cache[key] = {**existing, "usdc": result, "expires_at": time.time() + BALANCE_CACHE_TTL}
+        return result
+    except Exception as e:
+        logger.error(f"USDC balance error for {wallet_address}: {e}")
         return {"success": False, "error": str(e), "balance": 0, "balance_formatted": "Error"}
 
 
