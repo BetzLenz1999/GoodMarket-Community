@@ -1516,6 +1516,62 @@
             display: block;
         }
 
+        .wallet-progress-toast {
+            position: fixed;
+            left: 50%;
+            bottom: 1.25rem;
+            transform: translateX(-50%) translateY(24px);
+            z-index: 1400;
+            width: min(calc(100% - 2rem), 420px);
+            padding: 0.95rem 1rem;
+            border-radius: 18px;
+            background: rgba(17, 24, 39, 0.96);
+            color: #fff;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.32);
+            display: none;
+            align-items: center;
+            gap: 0.85rem;
+            opacity: 0;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        .wallet-progress-toast.visible {
+            display: flex;
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .wallet-progress-spinner {
+            width: 30px;
+            height: 30px;
+            border-radius: 999px;
+            border: 3px solid rgba(255, 255, 255, 0.28);
+            border-top-color: #34d399;
+            flex: 0 0 auto;
+            animation: walletProgressSpin 0.8s linear infinite;
+        }
+
+        .wallet-progress-copy {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+            line-height: 1.35;
+        }
+
+        .wallet-progress-title {
+            font-weight: 800;
+            font-size: 0.92rem;
+        }
+
+        .wallet-progress-detail {
+            color: rgba(255, 255, 255, 0.74);
+            font-size: 0.78rem;
+        }
+
+        @keyframes walletProgressSpin {
+            to { transform: rotate(360deg); }
+        }
+
         /* Responsive Styles for Section Titles and Descriptions */
         h2 {
             text-align: center;
@@ -2355,6 +2411,14 @@
         </div>
     </div>
 
+    <div id="walletProgressToast" class="wallet-progress-toast" role="status" aria-live="polite" aria-atomic="true">
+        <div class="wallet-progress-spinner" aria-hidden="true"></div>
+        <div class="wallet-progress-copy">
+            <div id="walletProgressTitle" class="wallet-progress-title">Connecting your wallet…</div>
+            <div id="walletProgressDetail" class="wallet-progress-detail">Please keep this page open while GoodMarket finishes login.</div>
+        </div>
+    </div>
+
     <script>
         window.GM_PRIVY_CONFIG = {
             appId: {{ privy_app_id|default('', true)|tojson }},
@@ -2417,6 +2481,7 @@
                         if (loginResult && typeof loginResult.catch === 'function') {
                             loginResult.catch((err) => {
                                 window.GMPrivyAutoOpenRequested = true;
+                                window.hideWalletProgress?.();
                                 window.restoreWalletModalAfterPrivy?.();
                                 const msg = err && err.message ? err.message : 'Privy did not open automatically.';
                                 window.showWalletStatus?.('walletConnectStatus', '⚠️ ' + msg + ' Please tap Open Privy Login.', 'warning');
@@ -2427,9 +2492,11 @@
                         // GoodMarket modal after a real user-triggered login so it
                         // cannot sit above Privy's UI; a watchdog restores it with a
                         // retry CTA if Privy was blocked or failed to render.
+                        window.showWalletProgress?.('Opening Privy…', 'Approve login in the Privy popup, then GoodMarket will connect your wallet.');
                         window.schedulePrivyRetry?.();
                     } catch (err) {
                         window.GMPrivyAutoOpenRequested = true;
+                        window.hideWalletProgress?.();
                         window.restoreWalletModalAfterPrivy?.();
                         window.showWalletStatus?.('walletConnectStatus', '⚠️ Privy did not open automatically. Please tap Open Privy Login.', 'warning');
                         window.showPrivyRetry?.();
@@ -2450,6 +2517,7 @@
                     if (!window.GMPrivyLoginStarted) return;
                     clearTimeout(window.GMPrivyOpenWatchTimer);
                     if (!wallets || wallets.length === 0) {
+                        window.showWalletProgress?.('Creating your wallet…', 'Privy login succeeded. Waiting for an EVM wallet address.');
                         window.showWalletStatus?.('walletConnectStatus', '⏳ Creating your Privy wallet…', 'info');
                         if (!walletWaitTimerRef.current) {
                             walletWaitTimerRef.current = setTimeout(() => {
@@ -2477,6 +2545,7 @@
                         const wallet = privyEmbeddedWallet || wallets[0];
                         const address = wallet && wallet.address;
                         if (!address) throw new Error('Privy did not return an EVM wallet address.');
+                        window.showWalletProgress?.('Connecting your wallet…', 'Wallet found. Preparing the GoodMarket sign-in message.');
                         window.showWalletStatus?.('walletConnectStatus', '✍️ Sign the GoodMarket login message in Privy…', 'info');
                         const provider = await wallet.getEthereumProvider();
                         window.GMPrivyProvider = provider;
@@ -2502,6 +2571,7 @@
                             signature = await provider.request({ method: 'personal_sign', params: [messageHex, address] });
                         }
                         if (!signature) throw new Error('Privy did not return a login signature.');
+                        window.showWalletProgress?.('Verifying your wallet…', 'Signature received. Finishing secure login now.');
                         const verifyData = await window.postVerifyIdentity(
                             address,
                             signature,
@@ -2517,6 +2587,7 @@
                             ? ('✅ Privy login verified. ⚠️ ' + verifyData.referral_warning + ' Redirecting…')
                             : '✅ Privy login verified. Redirecting…';
                         window.showWalletStatus?.('walletConnectStatus', okMsg, verifyData && verifyData.referral_warning ? 'warning' : 'success');
+                        window.showWalletProgress?.('Wallet connected ✅', 'Redirecting to your GoodMarket wallet…', 1800);
                         const redirectTo = (verifyData && verifyData.redirect_to) || '/wallet';
                         try { sessionStorage.setItem('verified', 'true'); } catch (_) {}
                         window.GMPrivyLoginStarted = false;
@@ -2525,6 +2596,7 @@
                         processingRef.current = false;
                         const msg = err && err.message ? err.message : 'Privy login failed';
                         const rejected = /reject|denied|cancel/i.test(msg);
+                        window.hideWalletProgress?.();
                         window.restoreWalletModalAfterPrivy?.();
                         window.showWalletStatus?.('walletConnectStatus', (rejected ? '❌ Signature or login was cancelled. ' : '❌ ') + msg, rejected ? 'warning' : 'error');
                         if (rejected) window.showPrivyRetry?.();
@@ -2765,6 +2837,29 @@
                 }
             }
         }
+
+        function showWalletProgress(title = 'Connecting your wallet…', detail = 'Please keep this page open while GoodMarket finishes login.', autoHideMs) {
+            const toast = document.getElementById('walletProgressToast');
+            const titleEl = document.getElementById('walletProgressTitle');
+            const detailEl = document.getElementById('walletProgressDetail');
+            if (!toast) return;
+            clearTimeout(window.GMWalletProgressTimer);
+            if (titleEl) titleEl.textContent = title;
+            if (detailEl) detailEl.textContent = detail;
+            toast.classList.add('visible');
+            if (autoHideMs) {
+                window.GMWalletProgressTimer = setTimeout(() => hideWalletProgress(), autoHideMs);
+            }
+        }
+
+        function hideWalletProgress() {
+            const toast = document.getElementById('walletProgressToast');
+            clearTimeout(window.GMWalletProgressTimer);
+            if (toast) toast.classList.remove('visible');
+        }
+
+        window.showWalletProgress = showWalletProgress;
+        window.hideWalletProgress = hideWalletProgress;
 
         // EIP-6963 provider discovery — Trust Wallet (mobile dApp browser +
         // extension), Rabby, Coinbase Wallet, and current MetaMask builds all
