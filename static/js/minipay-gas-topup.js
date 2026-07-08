@@ -710,13 +710,14 @@
         opts = opts || {};
         
         // Debug logging to trace MiniPay detection and flow
-        const isMiniPayResult = _isMiniPay();
+        const isMiniPayResult = _isMiniPay() || !!opts.forceMiniPayContext;
         console.log('[v0][MPGasTopUp] ensureToppedUp called:', {
             walletAddr: walletAddr,
             isMiniPay: isMiniPayResult,
             cachedMiniPay: _miniPayDetectedCache,
             hasEthereum: typeof global.ethereum !== 'undefined',
             ethereumIsMiniPay: global.ethereum?.isMiniPay,
+            forceMiniPayContext: !!opts.forceMiniPayContext,
             userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A'
         });
         
