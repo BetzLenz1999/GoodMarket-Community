@@ -236,7 +236,9 @@ window.P2PWallet = (function () {
             var est = await ep.request({ method: "eth_estimateGas", params: [{ from: from, to: to, data: data, value: value }] });
             gasHex = "0x" + (BigInt(est) * 140n / 100n).toString(16);
         } catch (_) { gasHex = "0x7A120"; }
-        var attempts = [MINIPAY_FEE_CURRENCY.USDM, MINIPAY_FEE_CURRENCY.USDT_ADAPTER, MINIPAY_FEE_CURRENCY.USDC_ADAPTER, null];
+        var attempts = (window.GMMinipayFeeCurrencies && window.GMMinipayFeeCurrencies.orderByBalances)
+            ? await window.GMMinipayFeeCurrencies.orderByBalances(ep, from, { includePlain: true })
+            : [MINIPAY_FEE_CURRENCY.USDM, MINIPAY_FEE_CURRENCY.USDT_ADAPTER, MINIPAY_FEE_CURRENCY.USDC_ADAPTER, null];
         var lastErr;
         for (var k = 0; k < attempts.length; k++) {
             var p = { from: from, to: to, data: data, value: value, gas: gasHex };
