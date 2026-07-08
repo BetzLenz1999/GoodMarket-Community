@@ -72,6 +72,16 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _is_privy_login_enabled() -> bool:
+    """Feature flag for showing the Privy login option.
+
+    Privy remains in the codebase for future re-enablement, but new login entry
+    points are hidden by default so injected wallets (MiniPay, Trust Wallet,
+    MetaMask) are the primary path.
+    """
+    return _env_bool("ENABLE_PRIVY_LOGIN", False)
+
+
 def _env_float(name: str, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
     raw = os.getenv(name)
     try:
@@ -1535,8 +1545,9 @@ def index():
     if session.get("verified") and session.get("wallet"):
         return redirect("/wallet")
     wc_project_id = os.environ.get("WALLETCONNECT_PROJECT_ID", "")
-    privy_app_id = os.environ.get("PRIVY_APP_ID", "")
-    privy_client_id = os.environ.get("PRIVY_CLIENT_ID", "")
+    enable_privy_login = _is_privy_login_enabled()
+    privy_app_id = os.environ.get("PRIVY_APP_ID", "") if enable_privy_login else ""
+    privy_client_id = os.environ.get("PRIVY_CLIENT_ID", "") if enable_privy_login else ""
     try:
         homepage_stats = analytics.get_homepage_public_stats()
     except Exception as e:
@@ -1552,6 +1563,7 @@ def index():
         "homepage.html",
         walletconnect_project_id=wc_project_id,
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
+        enable_privy_login=enable_privy_login,
         privy_app_id=privy_app_id,
         privy_client_id=privy_client_id,
         homepage_stats=homepage_stats,
