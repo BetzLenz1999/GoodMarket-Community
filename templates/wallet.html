@@ -5757,10 +5757,28 @@
                 // the UI stuck at "Checking wallet gas…" for WalletConnect users.
                 let gasCheckedByBackend = false;
 
-                if (isMiniPayClaim) {
-                    // GoodDapp-style: No pre-flight balance check.
-                    // Proceed directly. If claim fails due to insufficient gas,
-                    // the catch block will handle the faucet fallback with proper UX messages.
+                if (isMiniPayContext) {
+                    // MiniPay and Privy Connect Wallet inside MiniPay both pay Celo
+                    // gas from stablecoins (cUSD/USDT/USDC). Run the shared stablecoin
+                    // pre-flight for any MiniPay context, including Privy providers that
+                    // do not expose provider.isMiniPay. Wallets with >= 0.015 total
+                    // stablecoin skip the faucet; wallets below that request GoodMarket
+                    // cUSD before claim approval.
+                    if (window.MPGasTopUp && window.MPGasTopUp.ensureToppedUp) {
+                        const r = await window.MPGasTopUp.ensureToppedUp(WALLET, {
+                            provider: provider,
+                            forceMiniPayContext: true,
+                            stableGasOnly: true,
+                        });
+                        if (!r || !r.proceed) {
+                            if (r && r.cooldown) {
+                                const human = r.cooldownSeconds ? Math.ceil(r.cooldownSeconds / 3600) + ' hours' : 'some time';
+                                throw new Error('⏳ The GoodMarket cUSD faucet is on cooldown. Please wait ~' + human + ' or add cUSD / USDT / USDC manually.');
+                            }
+                            if (r && r.cancelled) throw new Error('❌ Gas top-up was cancelled. Please try again.');
+                            throw new Error('❌ MiniPay stablecoin gas top-up did not complete. ' + (r && r.error ? r.error : 'Please try again.'));
+                        }
+                    }
                     setClaimGasUiState('gas_ready');
                 } else if (usingWcBridge) {
                     // WalletConnect bridge: skip the wallet-side balance
@@ -5954,7 +5972,7 @@
                                 // - CELO faucet from GoodDollar
                                 // - cUSD faucet from GoodMarket
                                 // - CELO → cUSD swap
-                                const r = await window.MPGasTopUp.ensureToppedUp(WALLET, { provider: provider });
+                                const r = await window.MPGasTopUp.ensureToppedUp(WALLET, { provider: provider, forceMiniPayContext: true });
 
                                 if (!r || !r.proceed) {
                                     // Handle faucet failure scenarios
