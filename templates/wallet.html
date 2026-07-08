@@ -3571,13 +3571,19 @@
         } catch (_) { /* quota exceeded or localStorage disabled */ }
     }
 
-    async function loadBalances() {
+    async function loadBalances(force = false) {
         // Stale-while-revalidate: render last-known balances immediately so the
-        // user sees numbers without waiting for the network round-trip.
-        _renderBalancesFromCache();
+        // user sees numbers without waiting for the network round-trip. After a
+        // known balance-changing tx, skip browser cache and ask the backend to
+        // bypass its short-lived on-chain cache too.
+        if (force) {
+            try { localStorage.removeItem(WALLET_BALANCE_CACHE_KEY); } catch (_) {}
+        } else {
+            _renderBalancesFromCache();
+        }
 
         try {
-            const res = await fetch('/api/wallet/balances');
+            const res = await fetch('/api/wallet/balances' + (force ? '?force=1' : ''));
             if (!res.ok) return;
             const data = await res.json();
             if (!data.success) return;
@@ -4013,7 +4019,7 @@
             setTimeout(() => {
                 if (isXdcToken) loadXdcBalances();
                 else if (isFuseToken) loadFuseBalances();
-                else loadBalances();
+                else loadBalances(true);
             }, 3000);
 
         } catch (err) {
@@ -4899,7 +4905,7 @@
                         setStatus('Success! G$ sent to your wallet.', 'var(--green)');
                         logGoodMarketClaim(txHash, 'celo', 'confirmed');
                         startCountdown();
-                        setTimeout(() => { loadBalances(); fetchEntitlement(); }, 4000);
+                        setTimeout(() => { loadBalances(true); fetchEntitlement(); }, 4000);
                         try { window.showClaimCelebration && window.showClaimCelebration({ networks: ['celo'] }); } catch (_) {}
                     } else {
                         btn.disabled = false; label.textContent = 'Claim G$'; icon.textContent = '🪙';
