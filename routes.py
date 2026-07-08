@@ -8196,7 +8196,7 @@ def admin_get_voucher():
 @routes.route("/api/admin/voucher/delete", methods=["POST"])
 @admin_required
 def admin_delete_voucher():
-    """Admin: completely delete today's voucher so it no longer shows on any dashboard."""
+    """Admin: completely delete today's voucher so it no longer shows on the wallet page."""
     try:
         wallet = session.get("wallet")
         today = _get_today_pht()
