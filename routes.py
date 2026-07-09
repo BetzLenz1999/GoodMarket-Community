@@ -12,6 +12,7 @@ import threading
 import time
 import urllib.request
 import urllib.error
+import base64
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from datetime import datetime, timedelta, timezone
@@ -7469,6 +7470,109 @@ def wallet_transaction_history():
         logger.error(f"wallet_transaction_history error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
+
+
+
+@routes.route("/api/cashout/transfi/create-order", methods=["POST"])
+@auth_required
+def cashout_transfi_create_order():
+    """Create a TransFi offramp order and return the dynamic deposit address.
+
+    TransFi's offramp flow returns a per-order walletAddress; the frontend must
+    transfer the user's stablecoin there instead of relying on a static address.
+    """
+    try:
+        data = request.get_json() or {}
+        checksum_wallet, error_response, status = _validate_and_authorize_wallet(data)
+        if error_response:
+            return error_response, status
+
+        try:
+            amount = Decimal(str(data.get("amount", "0"))).quantize(Decimal("0.01"))
+        except (InvalidOperation, ValueError):
+            return jsonify({"success": False, "error": "Invalid amount"}), 400
+        if amount <= 0:
+            return jsonify({"success": False, "error": "Amount must be greater than zero"}), 400
+
+        api_key = (os.getenv("TRANSFI_API_KEY") or "").strip()
+        mid = (os.getenv("TRANSFI_MID") or "").strip()
+        if not api_key or not mid:
+            return jsonify({
+                "success": False,
+                "error": "TransFi is not configured. Set TRANSFI_API_KEY and TRANSFI_MID."
+            }), 503
+
+        base_url = (os.getenv("TRANSFI_API_BASE_URL") or "https://sandbox-api.transfi.com").rstrip("/")
+        fiat_currency = (data.get("fiatCurrency") or os.getenv("TRANSFI_OFFRAMP_FIAT_CURRENCY") or "PHP").strip().upper()
+        payment_code = (data.get("paymentCode") or os.getenv("TRANSFI_OFFRAMP_PAYMENT_CODE") or "gcash").strip().lower()
+        crypto_ticker = (os.getenv("TRANSFI_OFFRAMP_CRYPTO_TICKER") or "CUSD").strip().upper()
+        purpose_code = (os.getenv("TRANSFI_OFFRAMP_PURPOSE_CODE") or "fee_payments").strip()
+        email = (data.get("email") or os.getenv("TRANSFI_OFFRAMP_FALLBACK_EMAIL") or "cashout@goodmarket.live").strip()
+        phone = (data.get("phone") or "").strip()
+        first_name = (data.get("firstName") or "GoodMarket").strip()
+
+        payload = {
+            "additionalDetails": {
+                "firstName": first_name,
+            },
+            "purposeCode": purpose_code,
+            "amount": float(amount),
+            "email": email,
+            "currency": fiat_currency,
+            "depositDetails": {
+                "cryptoTicker": crypto_ticker,
+                "sendersWalletAddress": checksum_wallet,
+            },
+            "paymentCode": payment_code,
+        }
+        if phone:
+            payload["additionalDetails"]["phone"] = phone
+        ip_addr = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+        user_agent = request.headers.get("User-Agent", "")
+        if ip_addr or user_agent:
+            payload["deviceDetails"] = {
+                "ipInfo": {"ip": ip_addr} if ip_addr else {},
+                "userAgent": user_agent,
+            }
+
+        auth_value = "Basic " + base64.b64encode(f"{api_key}:".encode("utf-8")).decode("ascii")
+        req = urllib.request.Request(
+            f"{base_url}/v2/payout/orders",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "accept": "application/json",
+                "authorization": auth_value,
+                "MID": mid,
+                "content-type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                result = json.loads(resp.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            logger.warning(f"TransFi create-order failed ({exc.code}): {body[:500]}")
+            return jsonify({"success": False, "error": "TransFi rejected the cashout order.", "details": body}), 502
+
+        deposit_address = (result.get("walletAddress") or "").strip()
+        if not deposit_address.startswith("0x") or len(deposit_address) != 42:
+            logger.warning(f"TransFi create-order response missing walletAddress: {result}")
+            return jsonify({"success": False, "error": "TransFi did not return a valid deposit wallet address."}), 502
+
+        return jsonify({
+            "success": True,
+            "orderId": result.get("orderId"),
+            "cryptoAmount": result.get("cryptoAmount", float(amount)),
+            "walletAddress": deposit_address,
+            "cryptoTicker": crypto_ticker,
+            "fiatCurrency": fiat_currency,
+            "paymentCode": payment_code,
+            "raw": result,
+        })
+    except Exception as e:
+        logger.error(f"cashout_transfi_create_order error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @routes.route("/api/wallet/prepare-send", methods=["POST"])
 @auth_required
