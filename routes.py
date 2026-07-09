@@ -6916,6 +6916,8 @@ def wallet_page():
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
         privy_client_id=os.environ.get("PRIVY_CLIENT_ID", ""),
+        gd_token_address=GOODDOLLAR_CONTRACTS.get("GOODDOLLAR_TOKEN", ""),
+        raffle_contract_address=os.environ.get("GOODMARKET_RAFFLE_CONTRACT_ADDRESS", ""),
         buy_eth_visible=buy_eth_visible,
     )
 
