@@ -174,6 +174,179 @@
         .private-key-export-card .export-status.error { color: #ff8a8a; }
         .private-key-export-card .export-status.info { color: #93c5fd; }
 
+        .raffle-card {
+            margin: 0 1.25rem 1.25rem;
+            padding: 1rem;
+            border-radius: 18px;
+            border: 1px solid rgba(250,204,21,0.28);
+            background:
+                radial-gradient(90% 120% at 0% 0%, rgba(250,204,21,0.16), transparent 52%),
+                linear-gradient(135deg, rgba(124,58,237,0.16), rgba(15,23,42,0.88));
+            box-shadow: 0 12px 34px rgba(0,0,0,0.24);
+        }
+        .raffle-card-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.8rem;
+            align-items: flex-start;
+            margin-bottom: 0.85rem;
+        }
+        .raffle-kicker {
+            font-size: 0.64rem;
+            color: #fde68a;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 0.18rem;
+        }
+        .raffle-title {
+            color: #fff;
+            font-size: 1.05rem;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+        }
+        .raffle-status-pill {
+            white-space: nowrap;
+            border-radius: 999px;
+            padding: 0.28rem 0.58rem;
+            background: rgba(34,197,94,0.14);
+            border: 1px solid rgba(34,197,94,0.28);
+            color: #86efac;
+            font-size: 0.68rem;
+            font-weight: 800;
+        }
+        .raffle-copy {
+            color: rgba(255,255,255,0.72);
+            font-size: 0.78rem;
+            line-height: 1.5;
+            margin-bottom: 0.9rem;
+        }
+        .raffle-stats {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.5rem;
+            margin-bottom: 0.85rem;
+        }
+        .raffle-stat {
+            border-radius: 12px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+            padding: 0.55rem;
+        }
+        .raffle-stat-label {
+            color: rgba(255,255,255,0.42);
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 800;
+            margin-bottom: 0.25rem;
+        }
+        .raffle-stat-value {
+            color: #fff;
+            font-size: 0.82rem;
+            font-weight: 900;
+        }
+        .raffle-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr 0.8fr;
+            gap: 0.6rem;
+        }
+        .raffle-btn {
+            border: 0;
+            border-radius: 13px;
+            padding: 0.78rem 0.75rem;
+            color: #fff;
+            font-family: inherit;
+            font-size: 0.8rem;
+            font-weight: 900;
+            cursor: pointer;
+            background: linear-gradient(135deg,#f59e0b,#d97706);
+        }
+        .raffle-btn.secondary {
+            background: linear-gradient(135deg,#10b981,#059669);
+        }
+        .raffle-btn.info {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.14);
+        }
+        .raffle-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.58;
+            filter: grayscale(0.25);
+        }
+        .raffle-alert {
+            display: none;
+            margin-top: 0.75rem;
+            border-radius: 12px;
+            padding: 0.65rem 0.75rem;
+            font-size: 0.74rem;
+            line-height: 1.45;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.06);
+        }
+        .raffle-alert.show { display: block; }
+        .raffle-alert.error { color: #fecaca; border-color: rgba(248,113,113,0.32); background: rgba(127,29,29,0.2); }
+        .raffle-alert.success { color: #bbf7d0; border-color: rgba(34,197,94,0.32); background: rgba(20,83,45,0.2); }
+        .raffle-alert.info { color: #bfdbfe; border-color: rgba(96,165,250,0.32); background: rgba(30,64,175,0.2); }
+        .raffle-how-to {
+            margin: 0.8rem 0 0.9rem;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(0,0,0,0.14);
+            padding: 0.75rem 0.85rem;
+        }
+        .raffle-how-to-title {
+            color: #fff;
+            font-size: 0.78rem;
+            font-weight: 900;
+            margin-bottom: 0.45rem;
+        }
+        .raffle-how-to-list {
+            margin: 0;
+            padding-left: 1rem;
+            color: rgba(255,255,255,0.7);
+            font-size: 0.72rem;
+            line-height: 1.55;
+        }
+        .raffle-how-to-list li + li {
+            margin-top: 0.22rem;
+        }
+        .raffle-explainer {
+            display: none;
+            margin-top: 0.8rem;
+            border-radius: 16px;
+            border: 1px solid rgba(96,165,250,0.24);
+            background:
+                radial-gradient(80% 100% at 100% 0%, rgba(96,165,250,0.14), transparent 55%),
+                rgba(15,23,42,0.7);
+            padding: 0.85rem;
+        }
+        .raffle-explainer.show {
+            display: block;
+        }
+        .raffle-explainer-title {
+            color: #bfdbfe;
+            font-size: 0.82rem;
+            font-weight: 900;
+            margin-bottom: 0.45rem;
+        }
+        .raffle-explainer-copy {
+            color: rgba(255,255,255,0.74);
+            font-size: 0.72rem;
+            line-height: 1.55;
+            margin-bottom: 0.55rem;
+        }
+        .raffle-explainer-list {
+            margin: 0;
+            padding-left: 1rem;
+            color: rgba(255,255,255,0.72);
+            font-size: 0.72rem;
+            line-height: 1.55;
+        }
+        .raffle-explainer-list li + li {
+            margin-top: 0.28rem;
+        }
+
         /* ── Portfolio Card (credit-card style) ── */
         .balance-card {
             margin: 0.5rem 1.25rem 1.25rem;
@@ -1349,6 +1522,12 @@
             .claim-box-amount {
                 font-size: 0.7rem;
             }
+            .raffle-stats {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .raffle-actions {
+                grid-template-columns: 1fr;
+            }
         }
 
         @media (min-width: 481px) {
@@ -1568,6 +1747,65 @@
             </div>
         </div>
     </div>
+
+    <section class="raffle-card" aria-label="GoodMarket G$ Raffle">
+        <div class="raffle-card-header">
+            <div>
+                <div class="raffle-kicker">400-wallet community pool</div>
+                <div class="raffle-title">G$ Raffle</div>
+            </div>
+            <div class="raffle-status-pill" id="raffleStatusPill">Loading</div>
+        </div>
+        <p class="raffle-copy">
+            Join with 250 G$. When the round reaches 400 participants, 10 random winners can each withdraw 10,000 G$ from the contract.
+        </p>
+        <div class="raffle-how-to">
+            <div class="raffle-how-to-title">How to win</div>
+            <ol class="raffle-how-to-list">
+                <li>Join the open round by signing a 250 G$ participation transaction.</li>
+                <li>Only 400 wallets can join each round; after that, the contract blocks new entries.</li>
+                <li>When the round is full, the automated raffle keeper submits a randomness seed and the contract picks 10 unique winners from the 400 participants.</li>
+                <li>If your wallet wins, use <strong>Withdraw Reward</strong> to claim 10,000 G$ from the contract.</li>
+            </ol>
+        </div>
+        <div class="raffle-stats">
+            <div class="raffle-stat">
+                <div class="raffle-stat-label">Round</div>
+                <div class="raffle-stat-value" id="raffleRound">—</div>
+            </div>
+            <div class="raffle-stat">
+                <div class="raffle-stat-label">Participants</div>
+                <div class="raffle-stat-value" id="raffleParticipants">— / 400</div>
+            </div>
+            <div class="raffle-stat">
+                <div class="raffle-stat-label">Entry</div>
+                <div class="raffle-stat-value">250 G$</div>
+            </div>
+            <div class="raffle-stat">
+                <div class="raffle-stat-label">Prize</div>
+                <div class="raffle-stat-value">10 × 10,000 G$</div>
+            </div>
+        </div>
+        <div class="raffle-actions">
+            <button class="raffle-btn" id="joinRaffleBtn" type="button" onclick="joinGdRaffle()">Join G$ Raffle - 250 G$</button>
+            <button class="raffle-btn secondary" id="withdrawRaffleBtn" type="button" onclick="withdrawGdRaffleReward()">Withdraw Reward</button>
+            <button class="raffle-btn info" id="raffleHowItWorksBtn" type="button" onclick="toggleRaffleHowItWorks()">How it works</button>
+        </div>
+        <div class="raffle-explainer" id="raffleHowItWorksPanel">
+            <div class="raffle-explainer-title">How winners are selected</div>
+            <p class="raffle-explainer-copy">
+                The raffle is handled by the smart contract, not Supabase. The contract stores the 400 participant wallets, blocks extra entries once full, and only then allows winner selection.
+            </p>
+            <ol class="raffle-explainer-list">
+                <li>Every 250 G$ participation adds one wallet address to the current round.</li>
+                <li>When the 400th wallet joins, the contract changes the round to drawing mode and stops accepting more deposits.</li>
+                <li>The automated raffle keeper submits a fresh randomness seed to the contract.</li>
+                <li>The contract uses that seed to choose 10 unique wallet addresses from the 400 participants.</li>
+                <li>Each winning wallet gets a 10,000 G$ claimable reward and must tap <strong>Withdraw Reward</strong> to receive it.</li>
+            </ol>
+        </div>
+        <div class="raffle-alert info" id="raffleAlert"></div>
+    </section>
 
     <div class="wallet-layout">
         <!-- Action Buttons -->
@@ -2271,6 +2509,223 @@
             assetVersion: "{{ ASSET_VERSION }}",
         });
     }
+
+    const GD_TOKEN_ADDRESS = {{ gd_token_address|default('', true)|tojson }};
+    const GOODMARKET_RAFFLE_ADDRESS = {{ raffle_contract_address|default('', true)|tojson }};
+    const GOODMARKET_RAFFLE_ABI = [
+        "function currentRoundId() view returns (uint256)",
+        "function ENTRY_FEE() view returns (uint256)",
+        "function MAX_PARTICIPANTS() view returns (uint16)",
+        "function PRIZE_PER_WINNER() view returns (uint256)",
+        "function getRound(uint256 roundId) view returns (uint8 status,uint256 participantCount,uint256 winnerCount,bytes32 randomnessSeed,uint256 openedAt,uint256 completedAt)",
+        "function hasJoined(uint256 roundId,address user) view returns (bool)",
+        "function claimableReward(uint256 roundId,address user) view returns (uint256)",
+        "function rewardClaimed(uint256 roundId,address user) view returns (bool)",
+        "function joinRaffle() returns (bool)",
+        "function withdrawReward(uint256 roundId) returns (bool)"
+    ];
+    const GD_RAFFLE_TOKEN_ABI = [
+        "function allowance(address owner,address spender) view returns (uint256)",
+        "function approve(address spender,uint256 amount) returns (bool)"
+    ];
+    let gdRaffleState = { roundId: null, previousRoundId: null, entryFee: null, status: null, participantCount: 0 };
+
+    function setRaffleAlert(type, message) {
+        const box = document.getElementById('raffleAlert');
+        if (!box) return;
+        box.className = 'raffle-alert show ' + (type || 'info');
+        box.innerHTML = message || '';
+    }
+
+    function setRaffleButtons(joinDisabled, withdrawDisabled, joinText, withdrawText) {
+        const joinBtn = document.getElementById('joinRaffleBtn');
+        const withdrawBtn = document.getElementById('withdrawRaffleBtn');
+        if (joinBtn) {
+            joinBtn.disabled = !!joinDisabled;
+            if (joinText) joinBtn.textContent = joinText;
+        }
+        if (withdrawBtn) {
+            withdrawBtn.disabled = !!withdrawDisabled;
+            if (withdrawText) withdrawBtn.textContent = withdrawText;
+        }
+    }
+
+    function toggleRaffleHowItWorks() {
+        const panel = document.getElementById('raffleHowItWorksPanel');
+        const btn = document.getElementById('raffleHowItWorksBtn');
+        if (!panel) return;
+        const isOpen = panel.classList.toggle('show');
+        if (btn) btn.textContent = isOpen ? 'Hide details' : 'How it works';
+    }
+
+    async function getRaffleProvider() {
+        for (let i = 0; i < 30 && !window.ethers; i++) {
+            await new Promise(resolve => setTimeout(resolve, 150));
+        }
+        if (!window.ethers) throw new Error('Wallet library is still loading. Please try again in a moment.');
+        return new ethers.JsonRpcProvider('https://forno.celo.org');
+    }
+
+    async function getRaffleSignerProvider() {
+        const ep = await _vAwaitEthProvider();
+        if (!ep) throw new Error('No Web3 wallet detected. Open this page in MiniPay, Privy, or WalletConnect.');
+        const chainHex = await ep.request({ method: 'eth_chainId' });
+        if (parseInt(chainHex, 16) !== 42220) {
+            try {
+                await ep.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0xa4ec' }] });
+            } catch (switchErr) {
+                await ep.request({
+                    method: 'wallet_addEthereumChain',
+                    params: [{
+                        chainId: '0xa4ec',
+                        chainName: 'Celo Mainnet',
+                        nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+                        rpcUrls: ['https://forno.celo.org'],
+                        blockExplorerUrls: ['https://celoscan.io']
+                    }]
+                });
+            }
+        }
+        const browserProvider = new ethers.BrowserProvider(ep);
+        const signer = await browserProvider.getSigner();
+        const signerAddress = await signer.getAddress();
+        if (signerAddress.toLowerCase() !== WALLET.toLowerCase()) {
+            throw new Error('Wrong wallet connected. Please use your GoodMarket wallet.');
+        }
+        return { provider: browserProvider, signer };
+    }
+
+    function raffleStatusText(status) {
+        if (status === 0) return 'Open';
+        if (status === 1) return 'Drawing';
+        if (status === 2) return 'Completed';
+        return 'Unknown';
+    }
+
+    async function refreshGdRaffle() {
+        const pill = document.getElementById('raffleStatusPill');
+        if (!GOODMARKET_RAFFLE_ADDRESS) {
+            if (pill) pill.textContent = 'Coming soon';
+            setRaffleButtons(true, true, 'Raffle not deployed yet', 'Withdraw Reward');
+            setRaffleAlert('info', 'G$ Raffle UI is ready. Set <code>GOODMARKET_RAFFLE_CONTRACT_ADDRESS</code> after deploying the contract to enable live participation.');
+            return;
+        }
+        try {
+            const provider = await getRaffleProvider();
+            const raffle = new ethers.Contract(GOODMARKET_RAFFLE_ADDRESS, GOODMARKET_RAFFLE_ABI, provider);
+            const roundId = await raffle.currentRoundId();
+            const round = await raffle.getRound(roundId);
+            const entryFee = await raffle.ENTRY_FEE();
+            const hasJoined = await raffle.hasJoined(roundId, WALLET);
+            const previousRoundId = roundId > 1n ? roundId - 1n : 0n;
+            let previousReward = 0n;
+            let previousClaimed = false;
+            let claimRoundId = 0n;
+            const scanLimit = previousRoundId > 20n ? previousRoundId - 20n : 0n;
+            for (let scanRoundId = previousRoundId; scanRoundId > scanLimit; scanRoundId--) {
+                const reward = await raffle.claimableReward(scanRoundId, WALLET);
+                const claimed = await raffle.rewardClaimed(scanRoundId, WALLET);
+                if (reward > 0n && !claimed) {
+                    previousReward = reward;
+                    previousClaimed = claimed;
+                    claimRoundId = scanRoundId;
+                    break;
+                }
+            }
+
+            gdRaffleState = {
+                roundId,
+                previousRoundId,
+                claimRoundId,
+                entryFee,
+                status: Number(round.status),
+                participantCount: Number(round.participantCount),
+                previousReward,
+                previousClaimed
+            };
+
+            document.getElementById('raffleRound').textContent = '#' + roundId.toString();
+            document.getElementById('raffleParticipants').textContent = Number(round.participantCount).toLocaleString() + ' / 400';
+            if (pill) pill.textContent = raffleStatusText(Number(round.status));
+
+            const isOpen = Number(round.status) === 0;
+            const isFull = Number(round.participantCount) >= 400;
+            const canWithdraw = previousReward > 0n && !previousClaimed;
+            setRaffleButtons(
+                !isOpen || isFull || hasJoined,
+                !canWithdraw,
+                hasJoined ? 'Already Joined' : (isFull ? 'Round Full' : 'Join G$ Raffle - 250 G$'),
+                canWithdraw ? 'Withdraw ' + ethers.formatEther(previousReward) + ' G$' : 'Withdraw Reward'
+            );
+            if (canWithdraw) {
+                setRaffleAlert('success', '🎉 Congratulations! You have an unclaimed raffle reward from round #' + claimRoundId.toString() + '.');
+            } else if (hasJoined) {
+                setRaffleAlert('info', '✅ You already joined round #' + roundId.toString() + '. Please wait until the round reaches 400 participants.');
+            } else if (isOpen && !isFull) {
+                setRaffleAlert('info', 'Round is open. Approve 250 G$ and sign Join Raffle to participate.');
+            } else {
+                setRaffleAlert('info', 'Current round is not accepting entries while the automated raffle keeper finalizes winners.');
+            }
+        } catch (err) {
+            console.error('[G$ Raffle] refresh error', err);
+            setRaffleButtons(true, true, 'Join G$ Raffle - 250 G$', 'Withdraw Reward');
+            setRaffleAlert('error', 'Could not load raffle contract status: ' + (err && err.message ? err.message : err));
+        }
+    }
+
+    async function joinGdRaffle() {
+        const btn = document.getElementById('joinRaffleBtn');
+        try {
+            if (!GOODMARKET_RAFFLE_ADDRESS) throw new Error('Raffle contract is not deployed/configured yet.');
+            if (btn) { btn.disabled = true; btn.textContent = 'Preparing...'; }
+            const { provider, signer } = await getRaffleSignerProvider();
+            const raffle = new ethers.Contract(GOODMARKET_RAFFLE_ADDRESS, GOODMARKET_RAFFLE_ABI, signer);
+            const token = new ethers.Contract(GD_TOKEN_ADDRESS, GD_RAFFLE_TOKEN_ABI, signer);
+            const entryFee = gdRaffleState.entryFee || await raffle.ENTRY_FEE();
+            const allowance = await token.allowance(WALLET, GOODMARKET_RAFFLE_ADDRESS);
+            if (allowance < entryFee) {
+                setRaffleAlert('info', 'Step 1/2 — approve 250 G$ in your wallet.');
+                if (btn) btn.textContent = 'Approve 250 G$...';
+                const approveTx = await token.approve(GOODMARKET_RAFFLE_ADDRESS, entryFee);
+                await approveTx.wait();
+            }
+            setRaffleAlert('info', 'Step 2/2 — confirm raffle participation in your wallet.');
+            if (btn) btn.textContent = 'Joining...';
+            const tx = await raffle.joinRaffle();
+            await tx.wait();
+            setRaffleAlert('success', '✅ Joined the G$ Raffle successfully.');
+            await refreshGdRaffle();
+        } catch (err) {
+            console.error('[G$ Raffle] join error', err);
+            setRaffleAlert('error', '❌ ' + (window.GMTxError ? GMTxError.toFriendlyMessage(err) : (err && err.message ? err.message : err)));
+            await refreshGdRaffle();
+        }
+    }
+
+    async function withdrawGdRaffleReward() {
+        const btn = document.getElementById('withdrawRaffleBtn');
+        try {
+            if (!GOODMARKET_RAFFLE_ADDRESS) throw new Error('Raffle contract is not deployed/configured yet.');
+            const roundId = gdRaffleState.claimRoundId;
+            if (!roundId || roundId === 0n) throw new Error('No completed round reward found for this wallet.');
+            if (btn) { btn.disabled = true; btn.textContent = 'Withdrawing...'; }
+            const { signer } = await getRaffleSignerProvider();
+            const raffle = new ethers.Contract(GOODMARKET_RAFFLE_ADDRESS, GOODMARKET_RAFFLE_ABI, signer);
+            setRaffleAlert('info', 'Confirm reward withdrawal in your wallet.');
+            const tx = await raffle.withdrawReward(roundId);
+            await tx.wait();
+            setRaffleAlert('success', '✅ Raffle reward withdrawn successfully.');
+            await refreshGdRaffle();
+        } catch (err) {
+            console.error('[G$ Raffle] withdraw error', err);
+            setRaffleAlert('error', '❌ ' + (window.GMTxError ? GMTxError.toFriendlyMessage(err) : (err && err.message ? err.message : err)));
+            await refreshGdRaffle();
+        }
+    }
+
+    window.addEventListener('load', function() {
+        setTimeout(refreshGdRaffle, 800);
+    });
 
     // Robust WalletConnect detection (hoisted so the early provider/signer
     // helpers below can use it). LOGIN_METHOD is primary, but sessions created
