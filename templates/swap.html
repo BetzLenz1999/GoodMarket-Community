@@ -1922,23 +1922,30 @@
             return false;
         }
 
-        // Check if MiniPay user has stablecoin balance for gas.
-        // Returns true if user has any stablecoin (cUSD/USDT/USDC) above dust threshold.
+        // Check if MiniPay user has enough combined stablecoin balance for gas.
+        // MiniPay can pay gas from cUSD / USDT / USDC, so do not block users
+        // just because the token being swapped (for example cUSD) is low when
+        // another supported stablecoin (for example USDT) has the gas budget.
         async function checkMiniPayStablecoinBalance() {
             if (!window.MPGasTopUp || !window.MPGasTopUp.isMiniPay()) return true;
             if (!window.MPGasTopUp.getBalances) return true; // Safety fallback
-            
+
             try {
                 const balances = await window.MPGasTopUp.getBalances(WALLET_ADDRESS);
                 if (!balances) return true;
-                
-                // Check if user has any stablecoin above the gas minimum
-                const STABLECOIN_GAS_MIN_WEI = BigInt('15000000000000000'); // 0.015 cUSD in wei
-                const hasCUSD = (balances.cusd || 0n) >= STABLECOIN_GAS_MIN_WEI;
-                const hasUSDT = (balances.usdt || 0n) >= 15000000n; // 0.015 USDT (6 decimals)
-                const hasUSDC = (balances.usdc || 0n) >= 15000000n; // 0.015 USDC (6 decimals)
-                
-                return hasCUSD || hasUSDT || hasUSDC;
+
+                if (typeof window.MPGasTopUp.hasStablecoinGasBalance === 'function') {
+                    return window.MPGasTopUp.hasStablecoinGasBalance(balances);
+                }
+
+                // Fallback kept in sync with static/js/minipay-gas-topup.js.
+                // USDT/USDC have 6 decimals, so 0.015 is 15,000 units (not 15,000,000).
+                const STABLECOIN_GAS_MIN_USD = 0.015;
+                const cusdUsd = Number(balances.cusd || 0n) / 1e18;
+                const usdtUsd = Number(balances.usdt || 0n) / 1e6;
+                const usdcUsd = Number(balances.usdc || 0n) / 1e6;
+
+                return (cusdUsd + usdtUsd + usdcUsd) >= STABLECOIN_GAS_MIN_USD;
             } catch (e) {
                 console.warn('[swap] checkMiniPayStablecoinBalance error:', e);
                 return true; // Safety fallback - allow swap to proceed
@@ -2011,16 +2018,39 @@
         //   2) If MiniPay returns a fee-related error (not user-rejected,
         //      not on-chain revert), fall back to explicit CIP-64 adapters
         //      so older MiniPay builds and edge cases still work.
-        async function _miniPaySendWithFeeRetry(ep, baseParams, opName) {
-            const errorLog = [];
-
-            // Auto-select first, then explicit fallbacks.
-            const attempts = [
+        async function _miniPayFeeCurrencyAttempts(ep, from) {
+            const defaults = [
                 null,
                 MINIPAY_FEE_CURRENCY.USDT_ADAPTER,
                 MINIPAY_FEE_CURRENCY.USDC_ADAPTER,
                 MINIPAY_FEE_CURRENCY.CUSD,
             ];
+
+            if (!window.MPGasTopUp || !window.MPGasTopUp.getBalances || !from) {
+                return defaults;
+            }
+
+            try {
+                const balances = await window.MPGasTopUp.getBalances(from, ep);
+                const ranked = [
+                    { fc: MINIPAY_FEE_CURRENCY.USDT_ADAPTER, amount: Number(balances?.usdt || 0n) / 1e6 },
+                    { fc: MINIPAY_FEE_CURRENCY.USDC_ADAPTER, amount: Number(balances?.usdc || 0n) / 1e6 },
+                    { fc: MINIPAY_FEE_CURRENCY.CUSD, amount: Number(balances?.cusd || 0n) / 1e18 },
+                ].sort((a, b) => b.amount - a.amount).map(x => x.fc);
+
+                // Keep MiniPay auto-selection first, but make explicit fallbacks follow
+                // the user's actual stablecoin balances. This fixes cases where the
+                // wallet is spending nearly all cUSD but has USDT/USDC available for gas.
+                return [null, ...ranked];
+            } catch (e) {
+                console.warn('[MiniPay] fee currency balance ranking failed; using defaults:', e);
+                return defaults;
+            }
+        }
+
+        async function _miniPaySendWithFeeRetry(ep, baseParams, opName) {
+            const errorLog = [];
+            const attempts = await _miniPayFeeCurrencyAttempts(ep, baseParams && baseParams.from);
 
             for (const fc of attempts) {
                 const txParams = { ...baseParams };
