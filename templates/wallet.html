@@ -6353,7 +6353,12 @@
                         gasHex = '0x7A120';
                     }
 
-                    const feeCurrencies = _miniPayFeeCurrenciesByBalance({ includePlain: false });
+                    // Use the shared MiniPay fee-currency helper here too, not only
+                    // the generic send flow. It reads live cUSD/USDT/USDC balances
+                    // from the active provider and orders explicit feeCurrency
+                    // fallbacks by what the wallet actually has while keeping the
+                    // native CELO fallback disabled for MiniPay claims.
+                    const feeCurrencies = await _miniPayStableFeeCurrenciesForSend(provider, from);
                     let lastErr;
                     for (const fc of feeCurrencies) {
                         const txParams = { from, to: UBI_CONTRACT, data: CLAIM_DATA, value: '0x0', gas: gasHex };
