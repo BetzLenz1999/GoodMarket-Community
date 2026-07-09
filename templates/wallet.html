@@ -1953,16 +1953,24 @@
 
             <div id="cashoutStateReady" style="display:none;">
                 <div class="cashout-notice info">
-Cashout is available for <strong>cUSD on Celo</strong>. GoodMarket will ask your wallet to sign the cUSD transfer to the configured cashout partner address, then open the partner flow for KYC/payout details. GoodMarket does not store ID documents.
+Cashout is available through <strong>TransFi offramp</strong>. GoodMarket creates a TransFi order first, then asks your wallet to send stablecoin to the order-specific TransFi deposit address. GoodMarket does not store ID documents.
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Amount to cash out (cUSD)</label>
+                    <label class="form-label">Payout method</label>
+                    <select class="form-input" id="cashoutPaymentCode">
+                        <option value="gcash">GCash</option>
+                        <option value="paymaya">PayMaya / Maya</option>
+                        <option value="grabpay">GrabPay</option>
+                        <option value="qrph">QRPH</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Payout amount (PHP)</label>
                     <div class="amount-row">
                         <input class="form-input" id="cashoutAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00">
-                        <button class="max-btn" type="button" onclick="setMaxCashout()">MAX</button>
                     </div>
                 </div>
-                <button class="btn-primary" id="cashoutContinueBtn" onclick="continueCashout()">Sign & Continue to Cash Out</button>
+                <button class="btn-primary" id="cashoutContinueBtn" onclick="continueCashout()">Create TransFi Order & Sign</button>
             </div>
 
             <div id="cashoutStateSwap" style="display:none;">
@@ -3653,15 +3661,31 @@ Cashout is available for <strong>cUSD on Celo</strong>. GoodMarket will ask your
         return provider;
     }
 
-    async function _cashoutSignCusdTransfer(amount) {
-        if (!CASHOUT_CUSD_RECIPIENT_ADDRESS || !CASHOUT_CUSD_RECIPIENT_ADDRESS.startsWith('0x') || CASHOUT_CUSD_RECIPIENT_ADDRESS.length !== 42) {
-            throw new Error('Cashout recipient address is not configured. Set CASHOUT_CUSD_RECIPIENT_ADDRESS to the TransFi/deposit wallet address.');
+    async function _cashoutCreateTransFiOrder(amount) {
+        const paymentCode = (document.getElementById('cashoutPaymentCode') || {}).value || 'gcash';
+        const res = await fetch('/api/cashout/transfi/create-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: WALLET, amount: amount.toFixed(2), fiatCurrency: 'PHP', paymentCode })
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to create TransFi cashout order.');
+        if (!data.walletAddress || !data.walletAddress.startsWith('0x') || data.walletAddress.length !== 42) {
+            throw new Error('TransFi did not return a valid deposit wallet address.');
+        }
+        return data;
+    }
+
+    async function _cashoutSignCusdTransfer(order) {
+        const transferAmount = Number(order.cryptoAmount || 0);
+        if (!Number.isFinite(transferAmount) || transferAmount <= 0) {
+            throw new Error('TransFi did not return a valid crypto transfer amount.');
         }
 
         const prepRes = await fetch('/api/wallet/prepare-send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: 'CUSD', to: CASHOUT_CUSD_RECIPIENT_ADDRESS, amount: amount.toFixed(2) })
+            body: JSON.stringify({ token: 'CUSD', to: order.walletAddress, amount: transferAmount.toFixed(6) })
         });
         const txData = await prepRes.json();
         if (!txData.success) throw new Error(txData.error || 'Failed to prepare cUSD transfer.');
@@ -3751,15 +3775,7 @@ Cashout is available for <strong>cUSD on Celo</strong>. GoodMarket will ask your
         const amount = Number((document.getElementById('cashoutAmount') || {}).value || 0);
         const min = _cashoutMin();
         if (!Number.isFinite(amount) || amount <= 0) {
-            showAlert('cashoutAlert', 'alert-error', 'Enter a valid cUSD amount.');
-            return;
-        }
-        if (amount < min) {
-            showAlert('cashoutAlert', 'alert-error', `Minimum cashout is ${fmt(min, 2)} cUSD.`);
-            return;
-        }
-        if (amount > Number(cusdBal || 0)) {
-            showAlert('cashoutAlert', 'alert-error', 'Amount is higher than your cUSD balance.');
+            showAlert('cashoutAlert', 'alert-error', 'Enter a valid payout amount.');
             return;
         }
         const btn = document.getElementById('cashoutContinueBtn');
@@ -3768,16 +3784,20 @@ Cashout is available for <strong>cUSD on Celo</strong>. GoodMarket will ask your
             btn.innerHTML = '<span class="spinner"></span> Confirm cUSD transfer…';
         }
         try {
-            showAlert('cashoutAlert', 'alert-info', 'Please sign the cUSD transfer in your wallet. Injected users sign in their injected wallet; WalletConnect users sign through WalletConnect.');
-            const txHash = await _cashoutSignCusdTransfer(amount);
+            showAlert('cashoutAlert', 'alert-info', 'Creating TransFi cashout order…');
+            const order = await _cashoutCreateTransFiOrder(amount);
+            const cryptoAmount = Number(order.cryptoAmount || amount);
+            if (cryptoAmount > Number(cusdBal || 0)) {
+                throw new Error(`TransFi requires ${fmt(cryptoAmount, 6)} cUSD for this order, but your wallet has ${fmt(Number(cusdBal || 0), 6)} cUSD.`);
+            }
+            showAlert('cashoutAlert', 'alert-info', `TransFi order ${order.orderId || ''} is ready. Please sign the ${fmt(cryptoAmount, 6)} cUSD transfer to TransFi's deposit address.`);
+            const txHash = await _cashoutSignCusdTransfer(order);
             const txLink = `https://explorer.celo.org/mainnet/tx/${txHash}`;
             const providerUrl = _cashoutProviderUrl(amount, txHash);
-            showAlert('cashoutAlert', 'alert-success', `✅ cUSD sent to cashout partner. <a style="color:var(--blue);" href="${txLink}" target="_blank" rel="noopener">View tx ↗</a>`);
+            showAlert('cashoutAlert', 'alert-success', `✅ cUSD sent to TransFi for order ${order.orderId || ''}. <a style="color:var(--blue);" href="${txLink}" target="_blank" rel="noopener">View tx ↗</a>`);
             await loadBalances(true);
             if (providerUrl) {
-                setTimeout(() => { window.location.href = providerUrl; }, 900);
-            } else {
-                showAlert('cashoutAlert', 'alert-success', `✅ cUSD sent. Configure CASHOUT_PROVIDER_URL to open the TransFi/KYC payout flow automatically. <a style="color:var(--blue);" href="${txLink}" target="_blank" rel="noopener">View tx ↗</a>`);
+                setTimeout(() => { window.location.href = providerUrl.replaceAll('{orderId}', encodeURIComponent(order.orderId || '')); }, 900);
             }
         } catch (err) {
             const msg = (window.GMTxError && GMTxError.format) ? GMTxError.format(err) : (err.message || 'Cashout transfer failed');
@@ -3785,7 +3805,7 @@ Cashout is available for <strong>cUSD on Celo</strong>. GoodMarket will ask your
         } finally {
             if (btn) {
                 btn.disabled = false;
-                btn.textContent = 'Sign & Continue to Cash Out';
+                btn.textContent = 'Create TransFi Order & Sign';
             }
         }
     }
