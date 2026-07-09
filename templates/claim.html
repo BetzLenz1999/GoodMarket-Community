@@ -109,6 +109,7 @@
     -->
     <script src="/static/js/gas-coverage-banner.js?v={{ ASSET_VERSION }}"></script>
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+    <script src="{{ url_for('static', filename='js/minipay-fee-currency.js', v=ASSET_VERSION) }}"></script>
     <script>
         const LOGIN_METHOD = "{{ login_method | default('walletconnect') }}";
         const SESSION_WALLET = "{{ wallet | default('') }}";
@@ -439,6 +440,73 @@
             return false;((LOGIN_METHOD || '').toLowerCase());
         }
 
+        function _isMiniPayProvider(provider) {
+            return !!(provider && (provider.isMiniPay || provider.isMiniPayWallet || provider.isOperaMiniPay));
+        }
+
+        function _isMiniPayContext(provider) {
+            if (_isMiniPayProvider(provider)) return true;
+            if (_isMiniPayProvider(window.ethereum)) return true;
+            if (window.ethereum && Array.isArray(window.ethereum.providers)
+                && window.ethereum.providers.some(p => _isMiniPayProvider(p))) return true;
+            return typeof navigator !== "undefined" && /minipay|OPR.*Mini|Opera.*Mini/i.test(navigator.userAgent || "");
+        }
+
+        async function _waitForMiniPayReceipt(provider, txHash, maxAttempts = 60) {
+            for (let i = 0; i < maxAttempts; i++) {
+                const receipt = await provider.request({
+                    method: "eth_getTransactionReceipt",
+                    params: [txHash],
+                });
+                if (receipt) {
+                    if (receipt.status === "0x0") throw new Error("Transaction reverted on-chain.");
+                    return receipt;
+                }
+                await new Promise(r => setTimeout(r, 2000));
+            }
+            return null;
+        }
+
+        async function _sendMiniPayClaimLinkTx(provider, from, data) {
+            let gasHex;
+            try {
+                const est = await provider.request({
+                    method: "eth_estimateGas",
+                    params: [{ from, to: OTP_ADDRESS, data, value: "0x0" }],
+                });
+                const estimated = typeof est === "string" ? BigInt(est) : BigInt(Number(est));
+                gasHex = "0x" + (estimated * 140n / 100n).toString(16);
+            } catch (_) {
+                gasHex = "0x7A120";
+            }
+
+            const feeCurrencies = (window.GMMinipayFeeCurrencies && window.GMMinipayFeeCurrencies.orderByBalances)
+                ? await window.GMMinipayFeeCurrencies.orderByBalances(provider, from, { includePlain: false })
+                : [
+                    "0x765DE816845861e75A25fCA122bb6898B8B1282a",
+                    "0x0E2A3e05bc9A16F5292A6170456A710cb89C6f72",
+                    "0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B",
+                ];
+
+            let lastErr;
+            for (const fc of feeCurrencies) {
+                const txParams = { from, to: OTP_ADDRESS, data, value: "0x0", gas: gasHex, feeCurrency: fc };
+                try {
+                    const txHash = await provider.request({ method: "eth_sendTransaction", params: [txParams] });
+                    await _waitForMiniPayReceipt(provider, txHash);
+                    return txHash;
+                } catch (err) {
+                    lastErr = err;
+                    const code = err && err.code;
+                    const msg = String((err && (err.message || err.data && err.data.message)) || "").toLowerCase();
+                    if (code === 4001 || /reject|denied by user|user denied/.test(msg)) throw err;
+                    if (/revert/.test(msg) && !/insufficient|funds|balance|fee/.test(msg)) throw err;
+                    console.warn("[MiniPay] claim-link tx attempt failed with feeCurrency=" + fc + ":", msg || err);
+                }
+            }
+            throw lastErr || new Error("MiniPay claim transaction failed. Please keep enough cUSD/USDT/USDC for gas and try again.");
+        }
+
         async function claimPayment() {
             if (!paymentWallet || !paymentAmount) return;
             clearAlert();
@@ -529,13 +597,18 @@
                     // Call withdraw
                     btn.innerHTML = '<span class="spinner-inline"></span> Confirm in wallet...';
                     showAlert("alert-info", '<span class="spinner-inline"></span> Confirm the claim transaction in your wallet.');
-                    const otpSigner = new ethers.Contract(OTP_ADDRESS, OTP_ABI, signer);
-                    const tx = await otpSigner.withdraw(paymentWallet.address, signature);
+                    const withdrawData = iface.encodeFunctionData("withdraw", [paymentWallet.address, signature]);
+                    if (_isMiniPayContext(injectedProvider)) {
+                        txHash = await _sendMiniPayClaimLinkTx(injectedProvider, receiverAddr, withdrawData);
+                    } else {
+                        const otpSigner = new ethers.Contract(OTP_ADDRESS, OTP_ABI, signer);
+                        const tx = await otpSigner.withdraw(paymentWallet.address, signature);
 
-                    btn.innerHTML = '<span class="spinner-inline"></span> Waiting for confirmation...';
-                    showAlert("alert-info", '<span class="spinner-inline"></span> Transaction submitted. Waiting for confirmation on Celo...');
-                    const receipt = await tx.wait();
-                    txHash = receipt.hash;
+                        btn.innerHTML = '<span class="spinner-inline"></span> Waiting for confirmation...';
+                        showAlert("alert-info", '<span class="spinner-inline"></span> Transaction submitted. Waiting for confirmation on Celo...');
+                        const receipt = await tx.wait();
+                        txHash = receipt.hash;
+                    }
                 }
 
                 const humanAmount = parseFloat(ethers.formatUnits(paymentAmount, GD_DECIMALS)).toFixed(GD_DISPLAY_DECIMALS);
