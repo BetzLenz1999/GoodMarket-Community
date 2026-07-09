@@ -8915,7 +8915,6 @@ def _get_minipay_stablecoin_balances(w3, checksum_wallet: str) -> dict:
     }
     balances = {}
     total_usd = Decimal("0")
-    stable_ready = False
     for symbol, (token_addr, decimals) in tokens.items():
         try:
             contract = w3.eth.contract(
@@ -8937,8 +8936,12 @@ def _get_minipay_stablecoin_balances(w3, checksum_wallet: str) -> dict:
             "contract": token_addr,
         }
         total_usd += amount
-        if amount >= MINIPAY_STABLECOIN_MIN_USD:
-            stable_ready = True
+
+    # MiniPay can use cUSD, USDT, or USDC as stablecoin fee currencies, so the
+    # faucet readiness gate must match the frontend shared helper and look at
+    # the combined gas budget. Example: 0.005 cUSD + 0.005 USDT + 0.005 USDC
+    # satisfies the 0.015 USD threshold and must not trigger another faucet.
+    stable_ready = total_usd >= MINIPAY_STABLECOIN_MIN_USD
     return {
         "balances": balances,
         "total_usd": float(total_usd),
