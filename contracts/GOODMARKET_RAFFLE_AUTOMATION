@@ -1,0 +1,43 @@
+# GoodMarket G$ Raffle Automation
+
+The raffle contract automatically **closes deposits** when the 400th wallet joins,
+but a blockchain contract cannot start a new transaction by itself. Winner
+selection becomes automatic for users by running a small keeper/cron job that
+calls `drawWinners(bytes32)` as the configured randomness provider.
+
+## Required environment variables
+
+```bash
+export CELO_RPC_URL=https://forno.celo.org
+export GOODMARKET_RAFFLE_CONTRACT_ADDRESS=0xYourRaffleContract
+export GOODMARKET_RAFFLE_RANDOMNESS_KEY=0xPrivateKeyForRandomnessProvider
+```
+
+`GOODMARKET_RAFFLE_RANDOMNESS_KEY` must belong to the same wallet address that
+was passed as `trustedRandomnessProvider` when `GoodMarketRaffle` was deployed.
+
+## Run manually
+
+```bash
+uv run python contracts/draw_goodmarket_raffle.py
+```
+
+If the current round has fewer than 400 participants, the script exits without
+sending a transaction. If the round is full and in `Drawing` status, it submits a
+fresh 32-byte seed and finalizes the 10 winners on-chain.
+
+## Run automatically
+
+Run the script every few minutes from cron, a worker, or a keeper service:
+
+```cron
+*/5 * * * * cd /path/to/Development-Progress && uv run python contracts/draw_goodmarket_raffle.py >> /var/log/goodmarket-raffle.log 2>&1
+```
+
+From a participant perspective, the flow is:
+
+1. Wallets join until the round reaches 400 participants.
+2. The contract blocks further entries and marks the round as ready for drawing.
+3. The keeper sees the full round and calls `drawWinners(bytes32)`.
+4. The contract selects 10 unique winners and opens the next round.
+5. Winners use **Withdraw Reward** in `wallet.html` to claim 10,000 G$.
