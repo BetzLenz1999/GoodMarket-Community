@@ -4192,7 +4192,15 @@
                     bridgeDir = "celo_to_xdc";
                 }
 
-                if (!target && !goodswapPane && !bridgeDir) return;
+                const swapFromRaw = (params.get("from") || params.get("fromToken") || "").toUpperCase();
+                const swapToRaw = (params.get("to") || params.get("toToken") || "").toUpperCase();
+                const swapAmountRaw = params.get("amount") || "";
+                const swapIntent = (params.get("intent") || "").toLowerCase();
+                const hasSwapPair = !!(swapFromRaw || swapToRaw || swapAmountRaw || swapIntent);
+
+                if (!target && !goodswapPane && !bridgeDir && !hasSwapPair) return;
+                if (hasSwapPair && !target) target = "goodswap";
+                if (hasSwapPair && !goodswapPane) goodswapPane = "dex";
 
                 // "Focused mode": when the user arrived via an explicit
                 // ?tab= / ?pane= / ?dir= URL (e.g. clicked a wallet
@@ -4220,6 +4228,23 @@
                         setGoodSwapSubTab(goodswapPane);
                     }
                     if (bridgeDir && typeof setBridgeSubTab === "function") setBridgeSubTab(bridgeDir);
+                    if (hasSwapPair && typeof TOKENS !== "undefined") {
+                        const fromKey = TOKENS[swapFromRaw] ? swapFromRaw : null;
+                        const toKey = TOKENS[swapToRaw] ? swapToRaw : null;
+                        if (fromKey) fromToken = fromKey;
+                        if (toKey && toKey !== fromToken) toToken = toKey;
+                        if (typeof updateUI === "function") updateUI();
+                        if (swapAmountRaw) {
+                            const amountEl = document.getElementById("amountIn");
+                            if (amountEl) {
+                                amountEl.value = swapAmountRaw;
+                                if (typeof onAmountChange === "function") onAmountChange();
+                            }
+                        }
+                        if (swapIntent === "cashout" && typeof showAlert === "function") {
+                            showAlert("alert-info", "Swap G$ to cUSD first. After the swap succeeds, return to Wallet → Cash Out to withdraw cUSD to bank/e-wallet.");
+                        }
+                    }
 
                     if (focusBridge || focusGoodSwap || focusBuyEth) {
                         const switcher = document.getElementById("swapTabSwitcher");
