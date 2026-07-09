@@ -3628,6 +3628,27 @@
         return ordered;
     }
 
+    async function _miniPayStableFeeCurrenciesForSend(provider, wallet, options) {
+        const opts = options || {};
+        if (window.GMMinipayFeeCurrencies && window.GMMinipayFeeCurrencies.orderByBalances) {
+            try {
+                const ordered = await window.GMMinipayFeeCurrencies.orderByBalances(provider, wallet, {
+                    ...opts,
+                    // Injected MiniPay requires stablecoin fee currencies for
+                    // CIP-64. Do not append the plain/native fallback here:
+                    // that fallback asks MiniPay to pay gas with native CELO
+                    // and surfaces "insufficient CELO for gas" even when the
+                    // user has USDT/cUSD/USDC available.
+                    includePlain: false,
+                });
+                if (ordered && ordered.length) return ordered;
+            } catch (err) {
+                console.warn('[MiniPay] unable to read stablecoin fee balances; using local fee-currency order:', err);
+            }
+        }
+        return _miniPayFeeCurrenciesByBalance({ ...opts, includePlain: false });
+    }
+
     async function _miniPayWaitForReceipt(ep, txHash, maxAttempts = 60) {
         for (let i = 0; i < maxAttempts; i++) {
             try {
@@ -4478,15 +4499,17 @@
                         }
                     }
 
-                    // For MiniPay CELO sends, prefer stablecoin fee currencies first
-                    // so users with low CELO but enough cUSD/USDT/USDC can still send.
+                    // MiniPay sends must use stablecoin fee currencies (CIP-64).
+                    // Read live cUSD/USDT/USDC balances from the injected provider
+                    // so USDT-only users are prioritized correctly, and avoid the
+                    // native CELO fallback that causes "insufficient CELO for gas"
+                    // errors inside MiniPay.
                     const backendFeeHints = (txData && txData.minipay_fee_currencies) || {};
-                    const feeCurrencies = _miniPayFeeCurrenciesByBalance(backendFeeHints);
+                    const feeCurrencies = await _miniPayStableFeeCurrenciesForSend(provider, from, backendFeeHints);
                     let lastErr;
                     for (const fc of feeCurrencies) {
                         const params = { ...txParams };
-                        if (fc) params.feeCurrency = fc;
-                        else delete params.feeCurrency;
+                        params.feeCurrency = fc;
                         try {
                             txHash = await provider.request({
                                 method: 'eth_sendTransaction',
@@ -4509,7 +4532,10 @@
                         if (/permission denied/.test(msg)) {
                             throw new Error('MiniPay denied the transaction. Please ensure you have enough cUSD/USDT/USDC for gas and try again.');
                         }
-                        throw lastErr || new Error('MiniPay transaction failed.');
+                        if (/insufficient.*celo|celo.*gas|insufficient.*gas/.test(msg)) {
+                            throw new Error('MiniPay needs stablecoin gas fees. Please keep at least ~0.015 cUSD, USDT, or USDC and try again.');
+                        }
+                        throw lastErr || new Error('MiniPay transaction failed. Please ensure you have enough cUSD/USDT/USDC for gas and try again.');
                     }
                 } else {
                     txHash = await provider.request({
