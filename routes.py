@@ -7497,9 +7497,31 @@ def cashout_transfi_create_order():
         api_key = (os.getenv("TRANSFI_API_KEY") or "").strip()
         mid = (os.getenv("TRANSFI_MID") or "").strip()
         if not api_key or not mid:
+            fallback_recipient = (os.getenv("CASHOUT_CUSD_RECIPIENT_ADDRESS") or "").strip()
+            if fallback_recipient:
+                try:
+                    fallback_recipient = Web3.to_checksum_address(fallback_recipient)
+                except Exception:
+                    logger.warning("Cashout fallback recipient is invalid; cannot create fallback order")
+                    fallback_recipient = ""
+
+            if fallback_recipient:
+                logger.info("TransFi credentials are not configured; using CASHOUT_CUSD_RECIPIENT_ADDRESS fallback")
+                return jsonify({
+                    "success": True,
+                    "provider": "manual",
+                    "orderId": f"manual-{int(time.time())}",
+                    "cryptoAmount": float(amount),
+                    "walletAddress": fallback_recipient,
+                    "cryptoTicker": "CUSD",
+                    "fiatCurrency": (data.get("fiatCurrency") or os.getenv("TRANSFI_OFFRAMP_FIAT_CURRENCY") or "PHP").strip().upper(),
+                    "paymentCode": (data.get("paymentCode") or os.getenv("TRANSFI_OFFRAMP_PAYMENT_CODE") or "gcash").strip().lower(),
+                    "raw": {"fallback": True},
+                })
+
             return jsonify({
                 "success": False,
-                "error": "TransFi is not configured. Set TRANSFI_API_KEY and TRANSFI_MID."
+                "error": "Cashout is not configured. Set TRANSFI_API_KEY and TRANSFI_MID, or set CASHOUT_CUSD_RECIPIENT_ADDRESS for manual cUSD cashout signing."
             }), 503
 
         base_url = (os.getenv("TRANSFI_API_BASE_URL") or "https://sandbox-api.transfi.com").rstrip("/")
