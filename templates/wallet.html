@@ -3064,6 +3064,7 @@
     let xdcBal = 0, xdcGdBal = 0;
     let fuseBal = 0, fuseGdBal = 0;
     let gdUsdPrice = 0;
+    let celoUsdValue = 0, cusdUsdValue = 0, usdtUsdValue = 0, usdcUsdValue = 0;
     let selectedToken = 'GD';
 
     // ── Helpers ──────────────────────────────────────────────
@@ -3642,17 +3643,12 @@
         const totalBalanceEl = document.getElementById('totalBalanceUSD');
         if (!totalBalanceEl) return;
 
-        // Calculate total balance in USD across supported networks (Celo and XDC)
-        // cUSD and USDT are treated as ~1 USD; CELO uses a rough USD estimate.
-        const celoUsdEstimate = (celoBal || 0) * 0.75;
-        const stableUsdTotal = (cusdBal || 0) + (usdtBal || 0) + (usdcBal || 0);
-        
-        // Convert G$ balances from all networks to USD using live G$/USD price
+        // Calculate total balance in USD across supported networks. CELO/cUSD/USDT/USDC
+        // USD values come from the backend market-price enrichment; only G$ uses GD_USD_PRICE.
+        const marketUsdTotal = (celoUsdValue || 0) + (cusdUsdValue || 0) + (usdtUsdValue || 0) + (usdcUsdValue || 0);
         const gdOnCeloUsd = (gdBal || 0) * (gdUsdPrice || 0);
         const gdOnXdcUsd = (xdcGdBal || 0) * (gdUsdPrice || 0);
-        
-        // Calculate total USD value across all networks
-        const totalUsd = celoUsdEstimate + stableUsdTotal + gdOnCeloUsd + gdOnXdcUsd;
+        const totalUsd = marketUsdTotal + gdOnCeloUsd + gdOnXdcUsd;
 
         totalBalanceEl.textContent = '$' + fmt(totalUsd, 2);
     }
@@ -4014,31 +4010,38 @@
 
         if (data.celo && data.celo.success) {
             celoBal = data.celo.balance || 0;
+            celoUsdValue = Number(data.celo.usd_value) || 0;
             document.getElementById('celoBal').textContent = fmt(celoBal, 4) + ' CELO';
         } else {
             document.getElementById('celoBal').textContent = '0 CELO';
+            celoUsdValue = 0;
         }
 
         if (data.cusd && data.cusd.success) {
             cusdBal = data.cusd.balance || 0;
+            cusdUsdValue = Number(data.cusd.usd_value) || 0;
             document.getElementById('cusdBal').textContent = fmt(cusdBal, 4) + ' cUSD';
-            document.getElementById('cusdBalUSD').textContent = '$' + fmt(cusdBal, 2);
+            document.getElementById('cusdBalUSD').textContent = '$' + fmt(cusdUsdValue, 2);
         } else {
             document.getElementById('cusdBal').textContent = '0 cUSD';
+            cusdUsdValue = 0;
         }
 
         if (data.usdt && data.usdt.success) {
             usdtBal = data.usdt.balance || 0;
+            usdtUsdValue = Number(data.usdt.usd_value) || 0;
             document.getElementById('usdtBal').textContent = fmt(usdtBal, 4) + ' USDT';
-            document.getElementById('usdtBalUSD').textContent = '$' + fmt(usdtBal, 2);
+            document.getElementById('usdtBalUSD').textContent = '$' + fmt(usdtUsdValue, 2);
         } else {
             document.getElementById('usdtBal').textContent = '0 USDT';
+            usdtUsdValue = 0;
         }
 
         // USDC is not displayed as a main wallet tile yet, but MiniPay can use
         // it as a CIP-64 gas fee currency. Keep it in memory so send/claim
         // attempts prioritize the stablecoin balances the user actually has.
         usdcBal = (data.usdc && data.usdc.success) ? (data.usdc.balance || 0) : 0;
+        usdcUsdValue = (data.usdc && data.usdc.success) ? (Number(data.usdc.usd_value) || 0) : 0;
 
         updateTotalBalanceInGd();
     }
