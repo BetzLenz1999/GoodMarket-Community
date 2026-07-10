@@ -6973,85 +6973,6 @@ def swap_page():
     fuse_wfuse_contract = os.getenv("FUSE_WFUSE_TOKEN", "0x0BE9e53fd7EDaC9F859882AfdDa116645287C629")
     voltage_router_contract = os.getenv("VOLTAGE_ROUTER", "0xE3F85aAd0c8DD7337427B9dF5d0fB741d65EEEB5")
 
-    # Squid Router Celo -> Base ETH widget configuration for the Buy Crypto
-    # (cross-chain swap) pane.  These values have production-safe defaults so
-    # Vercel does NOT need any Squid env vars just to render and use the
-    # widget.
-    #
-    # integratorId: Squid's API rejects an unregistered/empty integratorId
-    # with `401 "Integrator ID is invalid"` (the SquidProvider also throws
-    # and renders blank when it is empty), which is what previously broke the
-    # widget.  Rather than require contacting Squid support, we default to
-    # Squid's own public widget integrator id ("squid-swap-widget"), which
-    # authenticates against the Squid API and returns live routes with no
-    # registration.  Operators who later obtain their own integrator id can
-    # override it with the optional SQUID_INTEGRATOR_ID env var — but it is
-    # NOT required for the widget to work.
-    squid_integrator_id = os.getenv("SQUID_INTEGRATOR_ID", "squid-swap-widget")
-    squid_api_url = os.getenv("SQUID_API_URL", "https://v2.api.squidrouter.com").rstrip("/")
-    squid_from_chain_id = get_env_int("SQUID_FROM_CHAIN_ID", celo_chain_id)
-    squid_to_chain_id = get_env_int("SQUID_TO_CHAIN_ID", 8453)
-    squid_to_token = os.getenv("SQUID_TO_TOKEN", "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE")
-    squid_source_tokens = [
-        {
-            "symbol": "CELO",
-            "name": "Celo",
-            "address": os.getenv("SQUID_CELO_TOKEN", "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-            "note": "Native gas token on Celo",
-        },
-        {
-            "symbol": "cUSD",
-            "name": "Celo Dollar",
-            "address": os.getenv("SQUID_CUSD_TOKEN", "0x765DE816845861e75A25fCA122bb6898B8B1282a"),
-            "note": "Celo-native stablecoin",
-        },
-        {
-            "symbol": "USDC",
-            "name": "USD Coin",
-            "address": os.getenv("SQUID_USDC_TOKEN", "0xcebA9300f2b948710d2653dD7B07f33A8B32118C"),
-            "note": "Native Circle USDC on Celo",
-        },
-        {
-            "symbol": "USDT",
-            "name": "Tether USD",
-            "address": os.getenv("SQUID_USDT_TOKEN", "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e"),
-            "note": "Tether on Celo",
-        },
-    ]
-    squid_source_chain_id = int(squid_from_chain_id)
-    squid_destination_chain_id = int(squid_to_chain_id)
-    squid_widget_config = {
-        "integratorId": squid_integrator_id,
-        "apiUrl": squid_api_url,
-        "themeType": "dark",
-        "initialAssets": {
-            "from": {
-                "address": squid_source_tokens[0]["address"],
-                "chainId": squid_source_chain_id,
-            },
-            "to": {
-                "address": squid_to_token,
-                "chainId": squid_destination_chain_id,
-            },
-        },
-        "defaultTokensPerChain": [
-            {"address": token["address"], "chainId": squid_source_chain_id}
-            for token in squid_source_tokens
-        ] + [{"address": squid_to_token, "chainId": squid_destination_chain_id}],
-        "availableChains": {
-            "source": [squid_source_chain_id],
-            "destination": [squid_destination_chain_id],
-        },
-        "availableTokens": {
-            "source": {
-                str(squid_source_chain_id): [token["address"] for token in squid_source_tokens],
-            },
-            "destination": {
-                str(squid_destination_chain_id): [squid_to_token],
-            },
-        },
-    }
-
     return render_template(
         "swap.html",
         wallet=wallet,
@@ -7073,13 +6994,6 @@ def swap_page():
         fuse_gd_decimals=fuse_gd_decimals,
         fuse_wfuse_contract=fuse_wfuse_contract,
         voltage_router_contract=voltage_router_contract,
-        squid_integrator_id=squid_integrator_id,
-        squid_api_url=squid_api_url,
-        squid_from_chain_id=squid_from_chain_id,
-        squid_to_chain_id=squid_to_chain_id,
-        squid_to_token=squid_to_token,
-        squid_source_tokens=squid_source_tokens,
-        squid_widget_config=squid_widget_config,
     )
 
 
