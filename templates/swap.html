@@ -2815,8 +2815,11 @@
             }
         };
 
-        // Uniswap V3 on Celo
-        const UNISWAP_ROUTER   = "0x5615CDAb10dc425a742d643d949a7F474C01abc4";
+        // Uniswap V3 on Celo (official, verified deployments).
+        // Use the current V3 UniversalRouter and Permit2 flow instead of
+        // legacy SwapRouter02. QuoterV2 remains the read-only quote source.
+        const UNISWAP_ROUTER   = "0x643770E279d5D0733F21d6DC03A8efbABf3255B4";
+        const UNISWAP_PERMIT2  = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
         const UNISWAP_QUOTER   = "0x82825d0554fA07f7FC52Ab63c961F330fdEFa8E8";
         const FEE_TIERS        = [10000, 3000, 500]; // G$/CELO pool is 1% (10000), try it first
 
@@ -2842,9 +2845,13 @@
             "function quoteExactInput(bytes path, uint256 amountIn) returns (uint256 amountOut, uint160[] sqrtPriceX96AfterList, uint32[] initializedTicksCrossedList, uint256 gasEstimate)"
         ];
 
-        const ROUTER_ABI = [
-            "function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)",
-            "function exactInput((bytes path, address recipient, uint256 amountIn, uint256 amountOutMinimum) params) payable returns (uint256 amountOut)"
+        const UNIVERSAL_ROUTER_ABI = [
+            "function execute(bytes commands, bytes[] inputs, uint256 deadline) payable"
+        ];
+
+        const PERMIT2_ABI = [
+            "function allowance(address owner, address token, address spender) view returns (uint160 amount, uint48 expiration, uint48 nonce)",
+            "function approve(address token, address spender, uint160 amount, uint48 expiration)"
         ];
 
         const VOLTAGE_ROUTER_ABI = [
@@ -2860,6 +2867,154 @@
                 encoded += tokenAddresses[i + 1].toLowerCase().replace('0x', '');
             }
             return '0x' + encoded;
+        }
+
+        const PERMIT2_MAX_AMOUNT = (1n << 160n) - 1n;
+        const PERMIT2_MAX_EXPIRATION = (1n << 48n) - 1n;
+        const UNIVERSAL_ROUTER_V3_SWAP_EXACT_IN = "0x00";
+        const UNIVERSAL_ROUTER_DEADLINE_SECONDS = 20 * 60;
+
+        function buildUniversalRouterV3Swap(quote, recipient, amountIn, amountOutMin) {
+            const from = TOKENS[quote.fromToken];
+            const to = TOKENS[quote.toToken];
+            const path = quote.isMulti && quote.path
+                ? quote.path
+                : encodePath([from.address, to.address], [quote.fee]);
+            const input = ethers.AbiCoder.defaultAbiCoder().encode(
+                ["address", "uint256", "uint256", "bytes", "bool"],
+                [recipient, amountIn, amountOutMin, path, true]
+            );
+            return {
+                commands: UNIVERSAL_ROUTER_V3_SWAP_EXACT_IN,
+                inputs: [input],
+                deadline: BigInt(Math.floor(Date.now() / 1000) + UNIVERSAL_ROUTER_DEADLINE_SECONDS)
+            };
+        }
+
+        function encodeUniversalRouterV3SwapData(quote, recipient, amountIn, amountOutMin) {
+            const { commands, inputs, deadline } = buildUniversalRouterV3Swap(quote, recipient, amountIn, amountOutMin);
+            return new ethers.Interface(UNIVERSAL_ROUTER_ABI).encodeFunctionData("execute", [commands, inputs, deadline]);
+        }
+
+        function permit2StillValid(allowance, amountIn) {
+            const now = Math.floor(Date.now() / 1000);
+            return allowance && allowance.amount >= amountIn && Number(allowance.expiration) > now + UNIVERSAL_ROUTER_DEADLINE_SECONDS;
+        }
+
+        async function postServerSignedTx(to, data, label) {
+            const res = await fetch('/api/server/sign-tx', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ to, data, value: '0x0', chain_id: CELO_CHAIN_ID, wait_receipt: true })
+            });
+            const result = await res.json();
+            if (!result.success) {
+                const errMsg = result.error || `${label} failed`;
+                const txLink = result.tx_hash
+                    ? ` <a href="https://celoscan.io/tx/${result.tx_hash}" target="_blank" rel="noopener" style="color:#f87171;text-decoration:underline;">View on CeloScan ↗</a>`
+                    : '';
+                throw new Error(`${label} reverted: ${errMsg}${txLink}`);
+            }
+            return result;
+        }
+
+        async function ensureServerPermit2Allowance(token, amountIn) {
+            const provider = new ethers.JsonRpcProvider(CELO_RPC);
+            const erc20 = new ethers.Contract(token.address, ERC20_ABI, provider);
+            const permit2 = new ethers.Contract(UNISWAP_PERMIT2, PERMIT2_ABI, provider);
+            const [erc20Allowance, permit2Allowance] = await Promise.all([
+                erc20.allowance(WALLET_ADDRESS, UNISWAP_PERMIT2),
+                permit2.allowance(WALLET_ADDRESS, token.address, UNISWAP_ROUTER)
+            ]);
+            if (erc20Allowance < amountIn) {
+                const approveData = new ethers.Interface(ERC20_ABI).encodeFunctionData("approve", [UNISWAP_PERMIT2, ethers.MaxUint256]);
+                await postServerSignedTx(token.address, approveData, 'ERC-20 Permit2 approval');
+            }
+            if (!permit2StillValid(permit2Allowance, amountIn)) {
+                const permit2Data = new ethers.Interface(PERMIT2_ABI).encodeFunctionData("approve", [token.address, UNISWAP_ROUTER, PERMIT2_MAX_AMOUNT, PERMIT2_MAX_EXPIRATION]);
+                await postServerSignedTx(UNISWAP_PERMIT2, permit2Data, 'Permit2 router approval');
+            }
+        }
+
+        async function ensureMiniPayPermit2Allowance(token, amountIn, provider) {
+            const erc20 = new ethers.Contract(token.address, ERC20_ABI, provider);
+            const permit2 = new ethers.Contract(UNISWAP_PERMIT2, PERMIT2_ABI, provider);
+            const [erc20Allowance, permit2Allowance] = await Promise.all([
+                erc20.allowance(WALLET_ADDRESS, UNISWAP_PERMIT2),
+                permit2.allowance(WALLET_ADDRESS, token.address, UNISWAP_ROUTER)
+            ]);
+            if (erc20Allowance < amountIn) {
+                await _miniPayTx(token.address,
+                    "function approve(address spender, uint256 amount) returns (bool)",
+                    [UNISWAP_PERMIT2, ethers.MaxUint256]);
+            }
+            if (!permit2StillValid(permit2Allowance, amountIn)) {
+                await _miniPayTx(UNISWAP_PERMIT2,
+                    "function approve(address token, address spender, uint160 amount, uint48 expiration)",
+                    [token.address, UNISWAP_ROUTER, PERMIT2_MAX_AMOUNT, PERMIT2_MAX_EXPIRATION]);
+            }
+        }
+
+        async function ensureWalletPermit2Allowance(token, amountIn, signer, stepIndicators) {
+            const provider = signer.provider;
+            const tokenContract = new ethers.Contract(token.address, ERC20_ABI, signer);
+            const tokenRead = new ethers.Contract(token.address, ERC20_ABI, provider);
+            const permit2Read = new ethers.Contract(UNISWAP_PERMIT2, PERMIT2_ABI, provider);
+            const [erc20Allowance, permit2Allowance] = await Promise.all([
+                tokenRead.allowance(WALLET_ADDRESS, UNISWAP_PERMIT2),
+                permit2Read.allowance(WALLET_ADDRESS, token.address, UNISWAP_ROUTER)
+            ]);
+            if (erc20Allowance < amountIn) {
+                try {
+                    await GMTxPreview.confirm({
+                        action: 'approve',
+                        token: token.symbol,
+                        amount: ethers.formatUnits(amountIn, token.decimals),
+                        to: UNISWAP_PERMIT2,
+                        toLabel: 'Uniswap Permit2 (Celo)',
+                        network: 'Celo',
+                        note: 'Lets Permit2 manage this token for the UniversalRouter swap.',
+                    });
+                } catch (err) {
+                    if (GMTxPreview.isCancelled(err)) {
+                        setSwapBtnState("ready");
+                        stepIndicators.className = "step-indicators";
+                        showAlert("alert-info", "Swap cancelled.");
+                        const cancel = new Error("Swap cancelled.");
+                        cancel._gmCancelled = true;
+                        throw cancel;
+                    }
+                    throw err;
+                }
+                const approveTx = await tokenContract.approve(UNISWAP_PERMIT2, ethers.MaxUint256);
+                await approveTx.wait();
+            }
+            if (!permit2StillValid(permit2Allowance, amountIn)) {
+                const permit2 = new ethers.Contract(UNISWAP_PERMIT2, PERMIT2_ABI, signer);
+                try {
+                    await GMTxPreview.confirm({
+                        action: 'approve',
+                        token: token.symbol,
+                        amount: ethers.formatUnits(amountIn, token.decimals),
+                        to: UNISWAP_ROUTER,
+                        toLabel: 'Uniswap UniversalRouter (Celo)',
+                        network: 'Celo',
+                        note: 'Authorizes the verified UniversalRouter to pull this token via Permit2 for swaps.',
+                    });
+                } catch (err) {
+                    if (GMTxPreview.isCancelled(err)) {
+                        setSwapBtnState("ready");
+                        stepIndicators.className = "step-indicators";
+                        showAlert("alert-info", "Swap cancelled.");
+                        const cancel = new Error("Swap cancelled.");
+                        cancel._gmCancelled = true;
+                        throw cancel;
+                    }
+                    throw err;
+                }
+                const permitTx = await permit2.approve(token.address, UNISWAP_ROUTER, PERMIT2_MAX_AMOUNT, PERMIT2_MAX_EXPIRATION);
+                await permitTx.wait();
+            }
         }
 
         // ─── State ────────────────────────────────────────────────────────────────
@@ -3513,20 +3668,7 @@
                     const modeLabel = 'secure server-side';
                     showAlert("alert-info", `<span class="spinner-inline"></span> Step 1/2 — Approving ${from.symbol} for Uniswap (${modeLabel})…`);
 
-                    const approveIface = new ethers.Interface(ERC20_ABI);
-                    const approveData = approveIface.encodeFunctionData("approve", [UNISWAP_ROUTER, amountIn * 2n]);
-                    const approveRes = await fetch('/api/server/sign-tx', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ to: from.address, data: approveData, value: '0x0', chain_id: CELO_CHAIN_ID, wait_receipt: true })
-                    });
-                    const approveData2 = await approveRes.json();
-                    if (!approveData2.success) {
-                        const approveErrMsg = approveData2.error || 'Approval failed';
-                        const approveTxLink = approveData2.tx_hash
-                            ? ` <a href="https://celoscan.io/tx/${approveData2.tx_hash}" target="_blank" rel="noopener" style="color:#f87171;text-decoration:underline;">View on CeloScan ↗</a>`
-                            : '';
-                        throw new Error(`Approval reverted: ${approveErrMsg}${approveTxLink}`);
-                    }
+                    await ensureServerPermit2Allowance(from, amountIn);
                     step1.className = "step done";
 
                     // ── Re-fetch quote after approval to get a fresh amountOutMin ──
@@ -3559,16 +3701,16 @@
                     // ── Verify on-chain allowance + balance before swap ────────────
                     const diagProvider = new ethers.JsonRpcProvider(CELO_RPC);
                     const diagToken = new ethers.Contract(from.address, [
-                        "function allowance(address,address) view returns (uint256)",
                         "function balanceOf(address) view returns (uint256)"
                     ], diagProvider);
-                    const [onChainAllowance, onChainBalance] = await Promise.all([
-                        diagToken.allowance(WALLET_ADDRESS, UNISWAP_ROUTER),
+                    const diagPermit2 = new ethers.Contract(UNISWAP_PERMIT2, PERMIT2_ABI, diagProvider);
+                    const [permit2Allowance, onChainBalance] = await Promise.all([
+                        diagPermit2.allowance(WALLET_ADDRESS, from.address, UNISWAP_ROUTER),
                         diagToken.balanceOf(WALLET_ADDRESS)
                     ]);
-                    console.log(`[swap] wallet=${WALLET_ADDRESS} balance=${onChainBalance} allowance=${onChainAllowance} amountIn=${amountIn} amountOutMin=${amountOutMin}`);
-                    if (onChainAllowance < amountIn) {
-                        throw new Error(`Allowance too low: ${onChainAllowance} < ${amountIn}. Approval may not have been confirmed yet.`);
+                    console.log(`[swap] wallet=${WALLET_ADDRESS} balance=${onChainBalance} permit2Allowance=${permit2Allowance.amount} amountIn=${amountIn} amountOutMin=${amountOutMin}`);
+                    if (permit2Allowance.amount < amountIn) {
+                        throw new Error(`Permit2 allowance too low: ${permit2Allowance.amount} < ${amountIn}. Approval may not have been confirmed yet.`);
                     }
                     if (onChainBalance < amountIn) {
                         const balHuman  = parseFloat(ethers.formatUnits(onChainBalance, from.decimals)).toFixed(from.displayDecimals);
@@ -3582,26 +3724,7 @@
                     setSwapBtnState("loading", "Executing swap...");
                     showAlert("alert-info", `<span class="spinner-inline"></span> Step 2/2 — Executing swap (${modeLabel})…`);
 
-                    const routerIface = new ethers.Interface(ROUTER_ABI);
-                    let swapData;
-                    if (currentQuote.isMulti && currentQuote.path) {
-                        swapData = routerIface.encodeFunctionData("exactInput", [{
-                            path: currentQuote.path,
-                            recipient: WALLET_ADDRESS,
-                            amountIn: amountIn,
-                            amountOutMinimum: amountOutMin
-                        }]);
-                    } else {
-                        swapData = routerIface.encodeFunctionData("exactInputSingle", [{
-                            tokenIn: from.address,
-                            tokenOut: to.address,
-                            fee: currentQuote.fee,
-                            recipient: WALLET_ADDRESS,
-                            amountIn: amountIn,
-                            amountOutMinimum: amountOutMin,
-                            sqrtPriceLimitX96: 0n
-                        }]);
-                    }
+                    const swapData = encodeUniversalRouterV3SwapData(currentQuote, WALLET_ADDRESS, amountIn, amountOutMin);
                     const swapRes = await fetch('/api/server/sign-tx', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ to: UNISWAP_ROUTER, data: swapData, value: '0x0', chain_id: CELO_CHAIN_ID, wait_receipt: true })
@@ -3665,17 +3788,11 @@
                     setSwapBtnState("loading", "Approving token...");
                     showAlert("alert-info", `<span class="spinner-inline"></span> Step 1/2 — Approve ${from.symbol} in MiniPay…`);
 
-                    // Check allowance first. If insufficient, request a MaxUint256
-                    // approval so the user only ever sees ONE approve prompt for
-                    // this token+router pair (industry standard for Uniswap V3).
+                    // UniversalRouter pulls swap input through Permit2. MiniPay
+                    // therefore needs ERC-20 → Permit2 approval plus Permit2 →
+                    // UniversalRouter allowance before execute(...).
                     const rpcProvider = new ethers.JsonRpcProvider(CELO_RPC);
-                    const tokenRead = new ethers.Contract(from.address, ERC20_ABI, rpcProvider);
-                    const allowance = await tokenRead.allowance(WALLET_ADDRESS, UNISWAP_ROUTER);
-                    if (allowance < amountIn) {
-                        await _miniPayTx(from.address,
-                            "function approve(address spender, uint256 amount) returns (bool)",
-                            [UNISWAP_ROUTER, ethers.MaxUint256]);
-                    }
+                    await ensureMiniPayPermit2Allowance(from, amountIn, rpcProvider);
                     step1.className = "step done";
 
                     // Re-quote for fresh price
@@ -3705,26 +3822,7 @@
                     setSwapBtnState("loading", "Executing swap...");
                     showAlert("alert-info", `<span class="spinner-inline"></span> Step 2/2 — Confirm swap in MiniPay…`);
 
-                    const routerIface = new ethers.Interface(ROUTER_ABI);
-                    let swapData;
-                    if (currentQuote.isMulti && currentQuote.path) {
-                        swapData = routerIface.encodeFunctionData("exactInput", [{
-                            path: currentQuote.path,
-                            recipient: WALLET_ADDRESS,
-                            amountIn: amountIn,
-                            amountOutMinimum: amountOutMin
-                        }]);
-                    } else {
-                        swapData = routerIface.encodeFunctionData("exactInputSingle", [{
-                            tokenIn: from.address,
-                            tokenOut: to.address,
-                            fee: currentQuote.fee,
-                            recipient: WALLET_ADDRESS,
-                            amountIn: amountIn,
-                            amountOutMinimum: amountOutMin,
-                            sqrtPriceLimitX96: 0n
-                        }]);
-                    }
+                    const swapData = encodeUniversalRouterV3SwapData(currentQuote, WALLET_ADDRESS, amountIn, amountOutMin);
 
                     const txHash = await _miniPayRawTx(UNISWAP_ROUTER, swapData, '0x0', 'uniswap.exactInput');
                     step2.className = "step done";
@@ -3788,31 +3886,7 @@
                 setSwapBtnState("loading", "Approving token...");
                 showAlert("alert-info", `<span class="spinner-inline"></span> Step 1/2 — Approving ${from.symbol} in your wallet…`);
 
-                const tokenContract = new ethers.Contract(from.address, ERC20_ABI, signer);
-                const allowance = await tokenContract.allowance(WALLET_ADDRESS, UNISWAP_ROUTER);
-                if (allowance < amountIn) {
-                    try {
-                        await GMTxPreview.confirm({
-                            action: 'approve',
-                            token: from.symbol,
-                            amount: ethers.formatUnits(amountIn * 2n, from.decimals),
-                            to: UNISWAP_ROUTER,
-                            toLabel: 'Uniswap V3 Router (Celo)',
-                            network: 'Celo',
-                            note: 'Lets the Uniswap router pull this amount for the swap. Slightly higher than your input to absorb price slippage.',
-                        });
-                    } catch (err) {
-                        if (GMTxPreview.isCancelled(err)) {
-                            setSwapBtnState("ready");
-                            stepIndicators.className = "step-indicators";
-                            showAlert("alert-info", "Swap cancelled.");
-                            return;
-                        }
-                        throw err;
-                    }
-                    const approveTx = await tokenContract.approve(UNISWAP_ROUTER, amountIn * 2n);
-                    await approveTx.wait();
-                }
+                await ensureWalletPermit2Allowance(from, amountIn, signer, stepIndicators);
                 step1.className = "step done";
 
                 let freshAmountOut = currentQuote.amountOut;
@@ -3841,23 +3915,9 @@
                 setSwapBtnState("loading", "Executing swap...");
                 showAlert("alert-info", `<span class="spinner-inline"></span> Step 2/2 — Confirm swap in your wallet…`);
 
-                const router = new ethers.Contract(UNISWAP_ROUTER, ROUTER_ABI, signer);
-                const swapTx = currentQuote.isMulti && currentQuote.path
-                    ? await router.exactInput({
-                        path: currentQuote.path,
-                        recipient: WALLET_ADDRESS,
-                        amountIn: amountIn,
-                        amountOutMinimum: amountOutMin
-                    })
-                    : await router.exactInputSingle({
-                        tokenIn: from.address,
-                        tokenOut: to.address,
-                        fee: currentQuote.fee,
-                        recipient: WALLET_ADDRESS,
-                        amountIn: amountIn,
-                        amountOutMinimum: amountOutMin,
-                        sqrtPriceLimitX96: 0n
-                    });
+                const router = new ethers.Contract(UNISWAP_ROUTER, UNIVERSAL_ROUTER_ABI, signer);
+                const { commands, inputs, deadline } = buildUniversalRouterV3Swap(currentQuote, WALLET_ADDRESS, amountIn, amountOutMin);
+                const swapTx = await router.execute(commands, inputs, deadline);
                 await swapTx.wait();
                 step2.className = "step done";
 
@@ -3876,8 +3936,12 @@
                 await loadBalances();
             } catch (err) {
                 stepIndicators.className = "step-indicators";
-                const friendly = (window.GMTxError && GMTxError.format) ? GMTxError.format(err) : (err?.shortMessage || err?.message || "Unknown error");
-                showAlert("alert-error", `❌ Swap failed: ${friendly}`);
+                if (err && err._gmCancelled) {
+                    showAlert("alert-info", "Swap cancelled.");
+                } else {
+                    const friendly = (window.GMTxError && GMTxError.format) ? GMTxError.format(err) : (err?.shortMessage || err?.message || "Unknown error");
+                    showAlert("alert-error", `❌ Swap failed: ${friendly}`);
+                }
                 if (currentQuote) setSwapBtnState("ready");
                 else setSwapBtnState("enter");
             }
