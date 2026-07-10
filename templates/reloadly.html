@@ -2752,10 +2752,85 @@ function handleTabHash() {
     }
 }
 
+
+async function openAiReloadlyActionFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const actionId = params.get('ai_action');
+    if (!actionId) return;
+    try {
+        const res = await fetch('/api/ai-agent/actions/' + encodeURIComponent(actionId));
+        const data = await res.json();
+        if (!data.success || !data.action || data.action.action_type !== 'mobile_load') return;
+        await handleTabHash();
+        await applyAiMobileLoad(data.action);
+        params.delete('ai_action');
+        const nextUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + window.location.hash;
+        window.history.replaceState({}, '', nextUrl);
+    } catch (err) {
+        console.warn('[GoodMarketAI] failed to open mobile load action:', err);
+        showToast('AI mobile load setup failed. Please review the top-up form manually.', 'error');
+    }
+}
+
+async function applyAiMobileLoad(action) {
+    const payload = action.payload || {};
+    let phone = String(payload.phone || '').replace(/\D/g, '');
+    const fiatAmount = String(payload.fiat_amount || '').replace(/,/g, '').trim();
+    const countries = await ensureCountriesLoaded();
+    const iso = phone.startsWith('63') || phone.startsWith('09') || phone.startsWith('9') ? 'PH' : 'PH';
+    const country = countries.find(c => c.isoName === iso) || countries.find(c => c.isoName === 'PH');
+    if (!country) throw new Error('Country list is unavailable.');
+    _selectedCountry = country;
+    applyTopupCountry(country);
+    const dialDigits = getDialCode(country).replace(/\D/g, '');
+    if (phone.startsWith(dialDigits)) phone = phone.slice(dialDigits.length);
+    while (phone.startsWith('0')) phone = phone.slice(1);
+    const findPhone = document.getElementById('tuPhone');
+    if (findPhone) findPhone.value = phone;
+    await loadOperators();
+    const recipient = document.getElementById('tuRecipient');
+    if (recipient) recipient.value = phone;
+
+    if (selectedOperator && fiatAmount) {
+        const wanted = Number(fiatAmount);
+        let selected = false;
+        document.querySelectorAll('#tuAmountSection .chip, #tuAmountSection .bundle-chip').forEach(chip => {
+            if (selected) return;
+            const usd = Number(chip.dataset.usd || (chip.getAttribute('onclick') || '').match(/selectFixedAmt\(([^,]+)/)?.[1]);
+            const local = Number(chip.dataset.local || 0);
+            if (Math.abs(usd - wanted) < 0.001 || (local && Math.abs(local - wanted) < 0.001)) {
+                chip.click();
+                selected = true;
+            }
+        });
+        const custom = document.getElementById('tuCustomAmt');
+        if (!selected && custom) {
+            custom.value = fiatAmount;
+            custom.dispatchEvent(new Event('input', { bubbles: true }));
+            selected = true;
+        }
+        showToast('AI mobile load details loaded. Opening G$ payment signing flow…', 'success');
+        setTimeout(function() {
+            try {
+                initiateTopup();
+                setTimeout(function() {
+                    const payBtn = document.getElementById('dappPayBtn');
+                    if (payBtn && !payBtn.disabled && payBtn.offsetParent !== null) payBtn.click();
+                }, 1200);
+            } catch (err) {
+                console.warn('[GoodMarketAI] auto top-up payment failed:', err);
+            }
+        }, 250);
+    } else {
+        showToast('AI loaded your phone. Please select operator/amount, then sign payment.', 'success');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     applyStoreVisibility();
     loadOrders();
     handleTabHash();
+    openAiReloadlyActionFromUrl();
 });
 window.addEventListener('hashchange', handleTabHash);
 </script>
