@@ -7303,9 +7303,9 @@ def ubi_pool_balance():
 def wallet_balances():
     """Get G$, CELO, cUSD, USDT, and USDC balances for the current user.
 
-    Fetches all balances and the GD/USD price in parallel via a
-    ThreadPoolExecutor to keep the critical path bounded by the slowest
-    single fetch instead of the sum of all four. Web3.py is sync but
+    Fetches all balances, the configured GD/USD price, and live non-G$ market
+    prices in parallel via a ThreadPoolExecutor to keep the critical path
+    bounded by the slowest single fetch instead of the sum of all calls. Web3.py is sync but
     releases the GIL during HTTP I/O, so threading gives a real speedup
     on Celo-RPC roundtrips.
     """
@@ -7320,7 +7320,9 @@ def wallet_balances():
             get_usdt_balance,
             get_usdc_balance,
             _get_gd_usd_price,
+            _get_market_usd_prices,
             enrich_gd_balance_with_price,
+            enrich_token_balance_with_price,
             invalidate_balance_cache,
         )
         from concurrent.futures import ThreadPoolExecutor
@@ -7335,16 +7337,30 @@ def wallet_balances():
             cusd_future = executor.submit(get_cusd_balance, wallet)
             usdt_future = executor.submit(get_usdt_balance, wallet)
             usdc_future = executor.submit(get_usdc_balance, wallet)
-            price_future = executor.submit(_get_gd_usd_price)
+            gd_price_future = executor.submit(_get_gd_usd_price)
+            market_prices_future = executor.submit(_get_market_usd_prices)
             gd = gd_future.result()
             celo = celo_future.result()
             cusd = cusd_future.result()
             usdt = usdt_future.result()
             usdc = usdc_future.result()
-            gd_price = price_future.result()
+            gd_price = gd_price_future.result()
+            market_prices = market_prices_future.result()
 
         gd = enrich_gd_balance_with_price(gd, gd_price)
-        return jsonify({"success": True, "gd": gd, "celo": celo, "cusd": cusd, "usdt": usdt, "usdc": usdc})
+        celo = enrich_token_balance_with_price(celo, market_prices.get("celo", 0))
+        cusd = enrich_token_balance_with_price(cusd, market_prices.get("cusd", 0))
+        usdt = enrich_token_balance_with_price(usdt, market_prices.get("usdt", 0))
+        usdc = enrich_token_balance_with_price(usdc, market_prices.get("usdc", 0))
+        return jsonify({
+            "success": True,
+            "gd": gd,
+            "celo": celo,
+            "cusd": cusd,
+            "usdt": usdt,
+            "usdc": usdc,
+            "prices": {"gd": gd_price, **market_prices},
+        })
     except Exception as e:
         logger.error(f"wallet_balances error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
