@@ -13,6 +13,20 @@
     messages.scrollTop = messages.scrollHeight;
   }
 
+  async function continueWalletFlow(action, actionId) {
+    if (!action) return false;
+    if (window.GoodMarketAI && typeof window.GoodMarketAI.handleConfirmedAction === 'function') {
+      return window.GoodMarketAI.handleConfirmedAction(action);
+    }
+    if (action.action_type === 'send_gd') {
+      const target = new URL('/wallet', window.location.origin);
+      if (actionId) target.searchParams.set('ai_action', actionId);
+      window.location.href = target.toString();
+      return true;
+    }
+    return false;
+  }
+
   function renderActionCard(action) {
     const card = el('div', 'gm-ai-card');
     const title = el('strong', '', 'Review before signing');
@@ -38,8 +52,16 @@
       try {
         const res = await fetch('/api/ai-agent/actions/' + encodeURIComponent(action.id) + '/confirm', { method: 'POST' });
         const data = await res.json();
-        button.textContent = data.success ? 'Confirmed — continue in wallet flow' : (data.error || 'Confirm failed');
+        if (data.success) {
+          button.textContent = 'Confirmed — opening wallet flow…';
+          const handled = await continueWalletFlow(data.action || action, action.id);
+          if (!handled) button.textContent = data.message || 'Confirmed — continue in wallet flow';
+        } else {
+          button.disabled = false;
+          button.textContent = data.error || 'Confirm failed';
+        }
       } catch (err) {
+        button.disabled = false;
         button.textContent = 'Confirm failed';
       }
     });
