@@ -15,6 +15,7 @@ import requests
 
 from reloadly import init_reloadly
 from savings import init_savings
+from ai_agent import init_ai_agent
 
 
 from functools import wraps
@@ -509,6 +510,9 @@ if not initialize_blockchain():
 # This must be before any catch-all routes
 app.register_blueprint(routes)
 logger.info("✅ Routes blueprint registered with API endpoints")
+
+init_ai_agent(app)
+logger.info("✅ AI agent blueprint registered")
 
 
 # Context processor: inject feature visibility into all templates (server-side, no flicker)
@@ -1277,7 +1281,7 @@ def get_unified_transaction_history():
                         'label': 'Play & Earn Withdrawal',
                         'amount': float(tx.get('amount', 0)),
                         'timestamp': tx.get('withdrawal_date', '') or tx.get('created_at', ''),
-                        'status': 'completed',
+                        'status': tx.get('status') or 'completed',
                         'tx_hash': tx.get('tx_hash')
                     })
         except Exception as e:
