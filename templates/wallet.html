@@ -1589,7 +1589,7 @@
     {% include "_security_banner.html" %}
     {% include "_claim_celebration.html" %}
     <div id="walletReminderBanner" class="wallet-reminder-banner hidden">
-        ✅ GoodMarket now checks Celo, Fuse, and XDC availability and recommends the next compatible unclaimed network. MiniPay remains Celo-only; Fuse/XDC are for MetaMask or compatible WalletConnect users.
+        ✅ GoodMarket now checks Celo and XDC availability and recommends the next compatible unclaimed network. MiniPay remains Celo-only; XDC is for MetaMask or compatible WalletConnect users.
     </div>
     <div id="walletDashboardFVMsg" class="alert alert-info" style="display:none;margin:0.9rem 1rem 0;padding:0.75rem 0.9rem;text-align:center;border-radius:12px;">
         Please click <strong>Claim G$</strong> button to start your face verification to start G$ daily claiming and using GoodMarket full features.
@@ -2020,36 +2020,6 @@
             </div>
         </div>
 
-        <!-- Fuse Network Section -->
-        <div class="section-label" style="margin-top:1rem;">Supported Tokens · Fuse Network</div>
-        <div class="token-list">
-            <div class="token-item">
-                <div class="token-icon" style="background:rgba(127,140,255,0.14);">
-                    <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="22" fill="#151f49"/><text x="22" y="28" text-anchor="middle" font-size="12" fill="#b9c4ff" font-weight="900" font-family="Inter,sans-serif">G$</text></svg>
-                </div>
-                <div class="token-meta">
-                    <div class="token-symbol">Fuse G$</div>
-                    <div class="token-name">GoodDollar on Fuse</div>
-                </div>
-                <div class="token-balance">
-                    <div class="token-amount" id="fuseGdBal">—</div>
-                    <div class="token-usd" id="fuseGdBalSub">Loading...</div>
-                </div>
-            </div>
-            <div class="token-item">
-                <div class="token-icon" style="background:rgba(250,204,21,0.12);">
-                    <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="22" fill="#221a05"/><text x="22" y="28" text-anchor="middle" font-size="10" fill="#facc15" font-weight="900" font-family="Inter,sans-serif">FUSE</text></svg>
-                </div>
-                <div class="token-meta">
-                    <div class="token-symbol">FUSE</div>
-                    <div class="token-name">Fuse Network</div>
-                </div>
-                <div class="token-balance">
-                    <div class="token-amount" id="fuseBal">—</div>
-                    <div class="token-usd" id="fuseBalSub">For gas fees</div>
-                </div>
-            </div>
-        </div>
             </div>
 
             <!-- Activity Tab -->
@@ -2092,7 +2062,7 @@
                     <div class="claim-network-status">Loading</div>
                 </div>
             </div>
-            <div class="claim-wallet-note" id="claimWalletNote">MiniPay is Celo-only. Fuse/XDC are shown only for MetaMask or compatible WalletConnect users.</div>
+            <div class="claim-wallet-note" id="claimWalletNote">MiniPay is Celo-only. XDC is shown only for MetaMask or compatible WalletConnect users.</div>
 
             <button id="ubiClaimBtn" onclick="doUbiClaim()" class="btn-primary">
                 <span id="ubiClaimIcon">⏳</span>
@@ -2150,8 +2120,6 @@
                 <button class="token-chip" onclick="selectToken('CELO', this)">CELO</button>
                 <button class="token-chip" onclick="selectToken('XDC_GD', this)">XDC G$</button>
                 <button class="token-chip" onclick="selectToken('XDC', this)">XDC</button>
-                <button class="token-chip" onclick="selectToken('FUSE_GD', this)">Fuse G$</button>
-                <button class="token-chip" onclick="selectToken('FUSE', this)">FUSE</button>
             </div>
             <div id="networkSendNote" style="display:none;font-size:0.75rem;color:rgba(22,158,214,0.8);background:rgba(22,158,214,0.08);border:1px solid rgba(22,158,214,0.2);border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.5rem;">
                 🔷 Sending on a supported network
@@ -2483,7 +2451,7 @@
             }
         };
 
-        const GM_PRIVY_SUPPORTED_CHAINS = [CELO_PRIVY_CHAIN, FUSE_PRIVY_CHAIN, XDC_PRIVY_CHAIN, BASE_PRIVY_CHAIN];
+        const GM_PRIVY_SUPPORTED_CHAINS = [CELO_PRIVY_CHAIN, XDC_PRIVY_CHAIN, BASE_PRIVY_CHAIN];
 
         const privyConfig = {
             appId: {{ privy_app_id|default('', true)|tojson }},
@@ -3674,7 +3642,7 @@
         const totalBalanceEl = document.getElementById('totalBalanceUSD');
         if (!totalBalanceEl) return;
 
-        // Calculate total balance in USD across all networks (Celo, Fuse, XDC)
+        // Calculate total balance in USD across supported networks (Celo and XDC)
         // cUSD and USDT are treated as ~1 USD; CELO uses a rough USD estimate.
         const celoUsdEstimate = (celoBal || 0) * 0.75;
         const stableUsdTotal = (cusdBal || 0) + (usdtBal || 0) + (usdcBal || 0);
@@ -3682,10 +3650,9 @@
         // Convert G$ balances from all networks to USD using live G$/USD price
         const gdOnCeloUsd = (gdBal || 0) * (gdUsdPrice || 0);
         const gdOnXdcUsd = (xdcGdBal || 0) * (gdUsdPrice || 0);
-        const gdOnFuseUsd = (fuseGdBal || 0) * (gdUsdPrice || 0);
         
         // Calculate total USD value across all networks
-        const totalUsd = celoUsdEstimate + stableUsdTotal + gdOnCeloUsd + gdOnXdcUsd + gdOnFuseUsd;
+        const totalUsd = celoUsdEstimate + stableUsdTotal + gdOnCeloUsd + gdOnXdcUsd;
 
         totalBalanceEl.textContent = '$' + fmt(totalUsd, 2);
     }
@@ -4162,31 +4129,9 @@
     }
 
     async function loadFuseBalances() {
-        try {
-            const res = await fetch('/api/fuse/balances');
-            const data = await res.json();
-
-            if (data.success && data.fuse && data.fuse.success) {
-                fuseBal = data.fuse.balance || 0;
-                document.getElementById('fuseBal').textContent = fmt(fuseBal, 4) + ' FUSE';
-                document.getElementById('fuseBalSub').textContent = 'For gas fees';
-            } else {
-                document.getElementById('fuseBal').textContent = '0 FUSE';
-            }
-
-            if (data.success && data.gd_balance && data.gd_balance.success) {
-                fuseGdBal = data.gd_balance.balance || 0;
-                document.getElementById('fuseGdBal').textContent = fmt(fuseGdBal, 4) + ' G$';
-                document.getElementById('fuseGdBalSub').textContent = 'GoodDollar on Fuse';
-            } else {
-                document.getElementById('fuseGdBal').textContent = '0 G$';
-                document.getElementById('fuseGdBalSub').textContent = 'GoodDollar on Fuse';
-            }
-            updateTotalBalanceInGd();
-        } catch (e) {
-            document.getElementById('fuseBal').textContent = '—';
-            document.getElementById('fuseGdBal').textContent = '—';
-        }
+        // Fuse Network is no longer displayed as a supported wallet token.
+        fuseBal = 0;
+        fuseGdBal = 0;
     }
 
     // ── Load History ─────────────────────────────────────────
@@ -4283,8 +4228,6 @@
             CELO:    { label: 'CELO',    network: 'celo', chainId: 42220, explorer: 'https://explorer.celo.org/mainnet/tx/' },
             XDC_GD:  { label: 'XDC G$',  network: 'xdc',  chainId: 50,    explorer: 'https://xdcscan.io/tx/' },
             XDC:     { label: 'XDC',     network: 'xdc',  chainId: 50,    explorer: 'https://xdcscan.io/tx/' },
-            FUSE_GD: { label: 'Fuse G$', network: 'fuse', chainId: 122,   explorer: 'https://explorer.fuse.io/tx/' },
-            FUSE:    { label: 'FUSE',    network: 'fuse', chainId: 122,   explorer: 'https://explorer.fuse.io/tx/' },
         };
         return map[token] || map.GD;
     }
@@ -5101,20 +5044,18 @@
             const isMetaMask = !!(provider && provider.isMetaMask) || !!(window.ethereum && window.ethereum.isMetaMask);
             const isTrustWallet = _isTrustWalletMobileContext && _isTrustWalletMobileContext();
             const hasInjected = !!provider || !!window.ethereum;
-            const supportsFuse = !isMiniPay && !isTrustWallet && (isMetaMask || isWalletConnect || hasInjected);
             const supportsXdc = !isMiniPay && !isTrustWallet && (isMetaMask || isWalletConnect || hasInjected);
-            return { isMiniPay, isWalletConnect, isMetaMask, isTrustWallet, hasInjected, supportsFuse, supportsXdc };
+            return { isMiniPay, isWalletConnect, isMetaMask, isTrustWallet, hasInjected, supportsFuse: false, supportsXdc };
         }
 
         function claimNetworkStatusHtml(network, info, caps) {
             const meta = {
                 celo: { icon: '🟢', name: 'Celo', hint: 'Works for MiniPay, MetaMask, WalletConnect and most injected wallets.' },
-                fuse: { icon: '🔥', name: 'Fuse', hint: 'Shown for MetaMask/injected and compatible WalletConnect users only.' },
                 xdc:  { icon: '💠', name: 'XDC',  hint: 'Advanced route; best with wallets that reliably support XDC network prompts.' },
             }[network];
             const isAvailable = !(info && info.is_available === false);
             const canClaim = isAvailable && !!(info && info.can_claim);
-            const supported = isAvailable && (network === 'celo' || (network === 'fuse' ? caps.supportsFuse : caps.supportsXdc));
+            const supported = isAvailable && (network === 'celo' || (network === 'xdc' && caps.supportsXdc));
             const amount = info && (info.claimable_formatted || info.entitlement_formatted || (info.claimable ? Number(info.claimable).toFixed(2) : '0.00'));
             let statusText = 'Claimed';
             let statusClass = 'claimed';
@@ -5164,12 +5105,12 @@
             if (!list || !claimAvailability) return;
             const caps = getClaimWalletCapabilities();
             const claims = claimAvailability.claims || {};
-            list.innerHTML = ['celo', 'fuse', 'xdc'].map(n => claimNetworkStatusHtml(n, claims[n] || {}, caps)).join('');
+            list.innerHTML = ['celo', 'xdc'].map(n => claimNetworkStatusHtml(n, claims[n] || {}, caps)).join('');
             if (note) {
                 if (caps.isMiniPay) {
-                    note.textContent = 'MiniPay is Celo-only. Fuse and XDC claims require MetaMask or a compatible WalletConnect wallet.';
+                    note.textContent = 'MiniPay is Celo-only. XDC claims require MetaMask or a compatible WalletConnect wallet.';
                 } else if (caps.isTrustWallet) {
-                    note.textContent = 'Trust Wallet network prompts can be unreliable for Fuse/XDC. Use MetaMask or compatible WalletConnect for those networks.';
+                    note.textContent = 'Trust Wallet network prompts can be unreliable for XDC. Use MetaMask or compatible WalletConnect for XDC.';
                 } else {
                     note.textContent = 'GoodMarket recommends the first unclaimed network your wallet can safely claim.';
                 }
@@ -5180,7 +5121,6 @@
             const caps = getClaimWalletCapabilities();
             const claims = (claimAvailability && claimAvailability.claims) || {};
             if (claims.celo && claims.celo.can_claim) return 'celo';
-            if (!caps.isMiniPay && caps.supportsFuse && claims.fuse && claims.fuse.is_available !== false && claims.fuse.can_claim) return 'fuse';
             if (!caps.isMiniPay && caps.supportsXdc && claims.xdc && claims.xdc.can_claim) return 'xdc';
             return caps.isMiniPay ? 'celo' : null;
         }
@@ -5214,14 +5154,6 @@
                     const xdcAmt = parseFloat(claims.xdc.claimable) || parseFloat(claims.xdc.entitlement) || 0;
                     totalClaimable += xdcAmt;
                     claimableNetworks.push('XDC');
-                }
-            }
-            
-            if (claims.fuse && claims.fuse.can_claim && claims.fuse.is_available !== false) {
-                if (!caps.isMiniPay && caps.supportsFuse) {
-                    const fuseAmt = parseFloat(claims.fuse.claimable) || parseFloat(claims.fuse.entitlement) || 0;
-                    totalClaimable += fuseAmt;
-                    claimableNetworks.push('Fuse');
                 }
             }
             
@@ -5299,7 +5231,7 @@
                 btn.disabled = false;
                 setStatus('XDC claim is available for this wallet. Approve the XDC network prompt to continue.', 'var(--green)');
             } else if (!recommendedClaimNetwork) {
-                const hasUnsupported = ['fuse', 'xdc'].some(n => claims[n] && claims[n].can_claim);
+                const hasUnsupported = ['xdc'].some(n => claims[n] && claims[n].can_claim);
                 const celoNeedsFaceVerification =
                     claims.celo && (claims.celo.reason === 'not_verified' || claims.celo.reason === 're_verification_needed' || claims.celo.is_verified === false);
                 if (celoNeedsFaceVerification) {
@@ -6708,7 +6640,7 @@
                 logGoodMarketClaim(txHash, 'celo', 'submitted');
                 pollReceipt(txHash, 20);
 
-                appendStatusLine('ℹ️ Other network claims will appear here after Celo confirms — no automatic Fuse/XDC prompt.', 'var(--text-dim)');
+                appendStatusLine('ℹ️ Other network claims will appear here after Celo confirms — no automatic XDC prompt.', 'var(--text-dim)');
             } catch (err) {
                 console.error('[claim] Celo claim error:', err);
                 
@@ -6746,13 +6678,13 @@
                 }
 
                 // Show the CELO failure reason without auto-prompting another network;
-                // the network cards above expose any remaining Fuse/XDC claim manually.
+                // the network cards above expose any remaining XDC claim manually.
                 appendStatusLine('❌ Celo claim failed: ' + msg, 'var(--red)');
 
                 btn.disabled = false;
                 label.textContent = 'Claim G$';
                 icon.textContent = '🪙';
-                appendStatusLine('ℹ️ Check the network cards above for any remaining Fuse/XDC claim.', 'var(--text-dim)');
+                appendStatusLine('ℹ️ Check the network cards above for any remaining XDC claim.', 'var(--text-dim)');
             }
         }
 
