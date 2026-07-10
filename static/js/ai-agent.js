@@ -24,6 +24,13 @@
       window.location.href = target.toString();
       return true;
     }
+    if (action.action_type === 'mobile_load') {
+      const target = new URL('/reloadly/', window.location.origin);
+      if (actionId) target.searchParams.set('ai_action', actionId);
+      target.hash = 'topup';
+      window.location.href = target.toString();
+      return true;
+    }
     return false;
   }
 
