@@ -36,7 +36,7 @@
       ['Action', action.action_type],
       ['Amount', payload.amount || payload.fiat_amount],
       ['Token', payload.token || payload.from_token],
-      ['To', payload.recipient || payload.to_token || payload.phone],
+      ['To', payload.recipient_username ? ('@' + payload.recipient_username + ' (' + payload.recipient + ')') : (payload.recipient || payload.to_token || payload.phone)],
       ['Status', action.status]
     ].filter(function (row) { return row[1]; });
     rows.forEach(function (row) {
