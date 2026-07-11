@@ -4496,6 +4496,13 @@
             const explorerUrl = `${meta.explorer}${txHash}`;
             showAlert('sendAlert', 'alert-success',
                 `✅ Transaction sent! <a style="color:var(--blue);" href="${explorerUrl}" target="_blank" rel="noopener">View ↗</a>`);
+            window.dispatchEvent(new CustomEvent('goodmarket:ai-tx-success', {
+                detail: {
+                    txHash,
+                    explorerUrl,
+                    message: `✅ Send successful. Tx hash: ${txHash.slice(0, 10)}…${txHash.slice(-6)}`
+                }
+            }));
             document.getElementById('sendTo').value = '';
             document.getElementById('sendAmount').value = '';
             setTimeout(() => {
