@@ -1666,6 +1666,13 @@ async function dappSendPayment() {
         if (!txHash) throw new Error('No transaction hash returned by wallet');
 
         setDappStatus('success', '✅ Transaction submitted! Hash: ' + txHash.slice(0, 16) + '...');
+        window.dispatchEvent(new CustomEvent('goodmarket:ai-tx-success', {
+            detail: {
+                txHash,
+                explorerUrl: 'https://celoscan.io/tx/' + txHash,
+                message: '✅ Reloadly payment sent. Tx hash: ' + txHash.slice(0, 10) + '…' + txHash.slice(-6)
+            }
+        }));
         await processConfirmation(txHash);
 
     } catch (err) {
