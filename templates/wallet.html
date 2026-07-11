@@ -4514,6 +4514,12 @@
         } catch (err) {
             const msg = (window.GMTxError && GMTxError.format) ? GMTxError.format(err) : (err.message || 'Transaction failed');
             showAlert('sendAlert', 'alert-error', '❌ ' + msg);
+            window.dispatchEvent(new CustomEvent('goodmarket:ai-tx-failed', {
+                detail: {
+                    error: msg,
+                    message: `❌ Send failed: ${msg}`
+                }
+            }));
         } finally {
             btn.disabled = false;
             btn.textContent = `Send ${getSelectedTokenMeta().label}`;
