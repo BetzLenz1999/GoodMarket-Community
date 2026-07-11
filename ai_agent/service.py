@@ -191,7 +191,7 @@ def _parse_with_openai(message: str) -> dict[str, Any] | None:
 
     prompt = (
         "You classify GoodMarket wallet chat commands. Return only schema-valid JSON. "
-        "Never invent recipients, usernames, phone numbers, or amounts. For send_gd, accept either an EVM wallet address or a GoodMarket username as the recipient. Value-moving actions require confirmation and signature. "
+        "Never invent recipients, usernames, phone numbers, or amounts. For send_gd, accept either an EVM wallet address or a GoodMarket username as the recipient and preserve supported token symbols G$, GD, cUSD, or USDT. Value-moving actions require confirmation and signature. "
         "Supported actions: check_balance, send_gd, mobile_load, swap, claim, transaction_history, help, unknown.\n\n"
         f"User message: {message}"
     )
@@ -248,7 +248,7 @@ def _parse_with_rules(message: str) -> dict[str, Any]:
         return intent
     if any(word in lower for word in ["swap", "palit", "exchange"]):
         amount = _first_amount(message)
-        tokens = re.findall(r"\b(g\$|gd|celo|cusd|xdc)\b", lower)
+        tokens = re.findall(r"(?<!\w)(g\$|gd|celo|cusd|usdt|xdc)(?!\w)", lower)
         intent.update(
             action="swap",
             summary="Prepare a token swap preview.",
@@ -269,7 +269,7 @@ def _parse_with_rules(message: str) -> dict[str, Any]:
             phone=phone or "",
             fiat_amount=amount or "",
             fiat_currency="PHP",
-            token="G$",
+            token=_send_token_candidate(message) or "G$",
             requires_confirmation=True,
             requires_signature=True,
             confidence=0.82,
@@ -283,7 +283,7 @@ def _parse_with_rules(message: str) -> dict[str, Any]:
             summary="Prepare a G$ transfer preview.",
             recipient=address or _send_recipient_candidate(message) or "",
             amount=amount or "",
-            token="G$",
+            token=_send_token_candidate(message) or "G$",
             requires_confirmation=True,
             requires_signature=True,
             confidence=0.82,
@@ -328,6 +328,9 @@ def _supplement_intent_from_message(intent: dict[str, Any], message: str) -> Non
         amount = _first_amount(message)
         if amount and not intent.get("amount"):
             intent["amount"] = amount
+        token = _send_token_candidate(message)
+        if token:
+            intent["token"] = token
 
 
 def _apply_safety_policy(intent: dict[str, Any], wallet: str | None) -> None:
@@ -335,11 +338,11 @@ def _apply_safety_policy(intent: dict[str, Any], wallet: str | None) -> None:
     intent["missing_fields"] = list(dict.fromkeys(intent.get("missing_fields", [])))
 
     if action == "send_gd":
-        intent["token"] = intent["token"] or "G$"
+        intent["token"] = _normalise_send_token(intent.get("token")) or "G$"
         if not _valid_decimal(intent["amount"]):
             intent["missing_fields"].append("amount")
         elif Decimal(intent["amount"]) > _MAX_SEND_GD:
-            intent["missing_fields"].append(f"amount_at_or_below_{_MAX_SEND_GD}_G$")
+            intent["missing_fields"].append(f"amount_at_or_below_{_MAX_SEND_GD}_{intent['token']}")
         _resolve_send_recipient(intent)
         if not intent["recipient"] or not Web3.is_address(intent["recipient"]):
             intent["missing_fields"].append("valid_recipient_username_or_wallet")
@@ -429,9 +432,30 @@ def _read_only_reply(intent: dict[str, Any], wallet: str | None) -> str:
     if action == "transaction_history":
         return "I can help show recent activity. This MVP can route you to the wallet transaction history without signing."
     if action == "help":
-        return "You can ask me to prepare G$ sends, mobile load purchases, swaps, claims, balance checks, or transaction history. Value-moving actions always require confirmation and wallet signing."
-    return "I am not sure yet. Try: 'send 10 G$ to @username', 'load 09123456789 20', or 'check balance'."
+        return _welcome_help_reply()
+    return _welcome_help_reply()
 
+
+
+def _welcome_help_reply() -> str:
+    return (
+        "Hello, welcome to GoodMarket! I can help with commands like:\n"
+        "• check balance\n"
+        "• send 10 G$ to bebet\n"
+        "• send 1 cUSD to bebet\n"
+        "• send 1 USDT to bebet\n"
+        "• load 09653870395 20\n"
+        "Value-moving actions stay in chat for review first, then require your confirmation and wallet signature."
+    )
+
+def _normalise_send_token(value: str | None) -> str | None:
+    token = (value or "").strip().lower().replace(" ", "")
+    aliases = {"g$": "G$", "gd": "G$", "gooddollar": "G$", "cusd": "cUSD", "celo-dollar": "cUSD", "usdt": "USDT", "tether": "USDT"}
+    return aliases.get(token)
+
+def _send_token_candidate(text: str) -> str | None:
+    match = re.search(r"(?<!\w)(g\$|gd|gooddollar|cusd|celo-dollar|usdt|tether)(?!\w)", text, re.IGNORECASE)
+    return _normalise_send_token(match.group(1)) if match else None
 
 def _balance_reply(wallet: str | None) -> str:
     if not wallet:
