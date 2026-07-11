@@ -6448,12 +6448,12 @@
                     // pre-flight for any MiniPay context, including Privy providers that
                     // do not expose provider.isMiniPay. Wallets with >= 0.015 total
                     // stablecoin skip the faucet; wallets below that request GoodMarket
-                    // cUSD before claim approval.
+                    // cUSD before claim approval, then still offer the CELO -> cUSD
+                    // auto-swap prompt when the wallet has spendable CELO.
                     if (window.MPGasTopUp && window.MPGasTopUp.ensureToppedUp) {
                         const r = await window.MPGasTopUp.ensureToppedUp(WALLET, {
                             provider: provider,
                             forceMiniPayContext: true,
-                            stableGasOnly: true,
                         });
                         if (!r || !r.proceed) {
                             if (r && r.cooldown) {
