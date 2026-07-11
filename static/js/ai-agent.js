@@ -25,11 +25,7 @@
       return true;
     }
     if (action.action_type === 'mobile_load') {
-      const target = new URL('/reloadly/', window.location.origin);
-      if (actionId) target.searchParams.set('ai_action', actionId);
-      target.hash = 'topup';
-      window.location.href = target.toString();
-      return true;
+      return false;
     }
     return false;
   }
@@ -60,9 +56,20 @@
         const res = await fetch('/api/ai-agent/actions/' + encodeURIComponent(action.id) + '/confirm', { method: 'POST' });
         const data = await res.json();
         if (data.success) {
-          button.textContent = 'Confirmed — opening wallet flow…';
-          const handled = await continueWalletFlow(data.action || action, action.id);
-          if (!handled) button.textContent = data.message || 'Confirmed — continue in wallet flow';
+          const confirmedAction = data.action || action;
+          const handled = await continueWalletFlow(confirmedAction, action.id);
+          if (handled) {
+            button.textContent = 'Confirmed — signing in wallet…';
+          } else if (confirmedAction.action_type === 'mobile_load') {
+            button.textContent = 'Confirmed — kept in chat';
+            const payload = confirmedAction.payload || {};
+            const phone = payload.phone || 'the phone number';
+            const amount = payload.fiat_amount || 'the selected amount';
+            const note = el('p', '', 'Mobile load preview confirmed for ' + phone + ' (' + amount + ' ' + (payload.fiat_currency || 'PHP') + '). Please continue here in GoodMarket Agent; no Reloadly redirect was opened.');
+            card.appendChild(note);
+          } else {
+            button.textContent = data.message || 'Confirmed — continue in wallet flow';
+          }
         } else {
           button.disabled = false;
           button.textContent = data.error || 'Confirm failed';
