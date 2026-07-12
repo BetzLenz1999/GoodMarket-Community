@@ -282,7 +282,7 @@
     <!-- Header -->
     <div class="page-header">
         <h1 class="page-title">🏦 Savings</h1>
-        <p class="page-subtitle">Lock G$, CELO, cUSD, or USDT on Weekly or Monthly terms — reward estimates update live as you type. Top-ups inherit the slot's original unlock date.</p>
+        <p class="page-subtitle">Lock G$, CELO, cUSD, or USDT for any custom duration from 1 to 360 days — reward estimates update live as you type. Top-ups inherit the slot's original unlock date.</p>
     </div>
 
     <!-- Contract Stats -->
@@ -356,11 +356,11 @@
             <!-- Step 1: Choose lock period -->
             <div class="form-group">
                 <label>2 · Choose Lock Period</label>
-                <div class="dur-grid" id="periodGrid" style="grid-template-columns:repeat(2,1fr);">
-                    <div class="dur-btn"          data-period="weekly"  onclick="selectPeriod(this)">Weekly<div class="dur-label">7 days</div></div>
-                    <div class="dur-btn selected" data-period="monthly" onclick="selectPeriod(this)">Monthly<div class="dur-label">30 days</div></div>
+                <div class="input-wrap">
+                    <input type="number" id="lockDaysInput" value="30" min="1" max="360" step="1" inputmode="numeric" oninput="onLockDaysChange()">
+                    <span class="input-suffix">days</span>
                 </div>
-                <div class="hint" id="periodHint">Choose Weekly or Monthly. Reward estimates update as you type an amount.</div>
+                <div class="hint" id="periodHint">Enter any whole-number lock duration from 1 to 360 days. Reward estimates update as you type.</div>
             </div>
 
             <!-- Step 2: Amount -->
@@ -377,7 +377,7 @@
             <div class="bonus-box" id="topupNotice" style="display:none; margin-bottom:1rem; background:rgba(56,189,248,.07); border-color:rgba(56,189,248,.25);">
                 <div class="bonus-icon">🔄</div>
                 <div class="bonus-text" id="topupNoticeText">
-                    You already have an active slot for this token + period. <strong>This deposit will be added to that slot.</strong> The unlock date stays the same — top-ups never extend it.
+                    You already have an active slot for this token + lock duration. <strong>This deposit will be added to that slot.</strong> The unlock date stays the same — top-ups never extend it.
                 </div>
             </div>
 
@@ -401,7 +401,7 @@
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.6rem;">
                     <span style="font-size:.82rem; color:rgba(255,255,255,.4);">Lock Period</span>
-                    <span id="summaryDuration" style="font-weight:700; color:#e2e8f0;">Monthly (30 days)</span>
+                    <span id="summaryDuration" style="font-weight:700; color:#e2e8f0;">30 days</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span style="font-size:.82rem; color:rgba(255,255,255,.4);">Unlocks On</span>
@@ -415,7 +415,7 @@
                     <i class="fas fa-check-circle"></i> <span id="approveBtnLabel">Step 1 — Approve G$ Spending</span>
                 </button>
                 <button class="btn btn-primary" onclick="doSave()" id="saveBtn" disabled>
-                    <i class="fas fa-lock"></i> <span id="saveBtnLabel">Step 2 — Lock Monthly G$</span>
+                    <i class="fas fa-lock"></i> <span id="saveBtnLabel">Step 2 — Lock 30 days G$</span>
                 </button>
             </div>
 
@@ -516,7 +516,7 @@
             <div class="bonus-box" style="margin-bottom:1.25rem;">
                 <div class="bonus-icon">🤝</div>
                 <div class="bonus-text">
-                    As a <strong>sponsor</strong>, your G$ goes directly into the community reward pool — used to pay weekly/monthly bonuses (<strong>30 G$</strong> for the monthly tiers you see in the preview, with weekly rewards derived from the monthly amount). Your contribution is permanently recorded on-chain.
+                    As a <strong>sponsor</strong>, your G$ goes directly into the community reward pool — used to pay custom-duration bonuses shown in the saver preview. Your contribution is permanently recorded on-chain.
                 </div>
             </div>
 
@@ -564,11 +564,11 @@
             <ul class="steps">
                 <li class="step">
                     <div class="step-n">1</div>
-                    <div class="step-t"><strong>Choose Weekly or Monthly</strong> for your lock period. Your tokens go directly into a smart contract on Celo Mainnet — no custom day input, just the plan that fits you.</div>
+                    <div class="step-t"><strong>Choose your lock duration</strong> by entering any whole number from 1 to 360 days. Your tokens go directly into a smart contract on Celo Mainnet.</div>
                 </li>
                 <li class="step">
                     <div class="step-n">2</div>
-                    <div class="step-t"><strong>Each (token · period) is a slot.</strong> If you top up the same token + period later, the new amount is added to the existing slot — the unlock date does <strong>not</strong> change. Weekly and Monthly saves open separate slots.</div>
+                    <div class="step-t"><strong>Each (token · lock days) is a slot.</strong> If you top up the same token + duration later, the new amount is added to the existing slot — the unlock date does <strong>not</strong> change. Different day counts open separate slots.</div>
                 </li>
                 <li class="step">
                     <div class="step-n">3</div>
@@ -580,15 +580,15 @@
                 </li>
                 <li class="step">
                     <div class="step-n">★</div>
-                    <div class="step-t"><strong>Monthly tier preview:</strong> Reward estimates update live as you type. Monthly tiers are based on your deposit size, and weekly rewards are derived from the monthly tier.</div>
+                    <div class="step-t"><strong>Custom-duration preview:</strong> Reward estimates update live as you type the amount and lock days.</div>
                 </li>
                 <li class="step">
                     <div class="step-n">★</div>
-                    <div class="step-t"><strong>Monthly reward tiers:</strong> 1,000–4,999 G$ → 50 G$; 5,000–9,999 G$ → 250 G$; 10,000–49,999 G$ → 500 G$; 50,000–99,999 G$ → 2,500 G$; 100,000–1,000,000 G$ → 10,000 G$.</div>
+                    <div class="step-t"><strong>Custom-duration bonuses:</strong> 1–29 days can qualify for 30 G$ at the per-token minimum. 30–360 days can qualify for <code>lock days × 500 / 30</code> G$ at the 100k G$ equivalent tier.</div>
                 </li>
                 <li class="step">
                     <div class="step-n">★</div>
-                    <div class="step-t"><strong>Weekly reward preview:</strong> Weekly rewards are derived from the monthly tier so the UI stays simple. The reward pool still funds payouts best-effort, and withdrawals remain available even when the pool is low.</div>
+                    <div class="step-t"><strong>Loyalty bonus:</strong> Locks of at least 300 days can qualify for a flat 20,000 G$ loyalty bonus at the 1M G$ equivalent tier. The reward pool funds payouts best-effort, and withdrawals remain available even when the pool is low.</div>
                 </li>
             </ul>
         </div>
@@ -596,15 +596,15 @@
         <div class="card">
             <div class="card-title">Tokens, Limits &amp; Bonuses</div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:.6rem; font-size:.85rem;">
-                <div style="color:rgba(255,255,255,.4);">Lock periods</div><div style="font-weight:600; color:#c4b5fd;">Weekly (7 days) or Monthly (30 days)</div>
+                <div style="color:rgba(255,255,255,.4);">Lock periods</div><div style="font-weight:600; color:#c4b5fd;">Any whole-number day from 1 to 360</div>
                 <div style="color:rgba(255,255,255,.4);">G$ deposit range</div><div style="font-weight:600; color:#c4b5fd;">1,000 – 10,000,000 G$</div>
                 <div style="color:rgba(255,255,255,.4);">CELO deposit range</div><div style="font-weight:600; color:#c4b5fd;">1 – 100,000 CELO</div>
                 <div style="color:rgba(255,255,255,.4);">cUSD deposit range</div><div style="font-weight:600; color:#c4b5fd;">1 – 1,000,000 cUSD</div>
                 <div style="color:rgba(255,255,255,.4);">USDT deposit range</div><div style="font-weight:600; color:#c4b5fd;">1 – 1,000,000 USDT <span style="opacity:.55; font-weight:400;">(6-decimal)</span></div>
                 <div style="color:rgba(255,255,255,.4);">Bonus currency</div><div style="font-weight:600; color:#c4b5fd;">Always paid in G$</div>
-                <div style="color:rgba(255,255,255,.4);">Monthly tier 1,000–4,999 G$</div><div style="font-weight:600; color:#34d399;">50 G$</div>
-                <div style="color:rgba(255,255,255,.4);">Monthly tier 5,000–9,999 G$</div><div style="font-weight:600; color:#34d399;">250 G$</div>
-                <div style="color:rgba(255,255,255,.4);">Monthly tier 10,000–49,999 G$</div><div style="font-weight:600; color:#34d399;">500 G$</div>
+                <div style="color:rgba(255,255,255,.4);">1–29 day bonus</div><div style="font-weight:600; color:#34d399;">30 G$ at per-token minimum</div>
+                <div style="color:rgba(255,255,255,.4);">30–360 day bonus</div><div style="font-weight:600; color:#34d399;">Days × 500 / 30 G$ at 100k G$ equivalent</div>
+                <div style="color:rgba(255,255,255,.4);">300+ day loyalty bonus</div><div style="font-weight:600; color:#34d399;">20,000 G$ at 1M G$ equivalent</div>
                 <div style="color:rgba(255,255,255,.4);">100k G$ equivalent</div><div style="font-weight:600; color:#c4b5fd;">G$ 100,000 / CELO 100 / cUSD 100 / USDT 100</div>
                 <div style="color:rgba(255,255,255,.4);">1M G$ equivalent</div><div style="font-weight:600; color:#c4b5fd;">G$ 1,000,000 / CELO 1,000 / cUSD 1,000 / USDT 1,000</div>
                 <div style="color:rgba(255,255,255,.4);">Early withdrawal</div><div style="font-weight:600; color:#f87171;">Not allowed</div>
@@ -685,7 +685,7 @@
         throw new Error('Server signing is disabled. Please use your injected wallet / WalletConnect.');
     }
 
-    // ── v5 multi-token slot model (USDT-aware, period-based lock UI) ──
+    // ── v5 multi-token slot model (USDT-aware, custom-duration lock UI) ──
     const SAVINGS_ABI = [
         "function depositSavings(address token, uint256 amount, uint256 lockDays) external",
         "function withdraw(address token, uint256 lockDays) external",
@@ -723,7 +723,7 @@
         usdt: { key:'usdt', symbol:'USDT', address: USDT_CONTRACT, decimals: 6,  min: 1,    max: 1_000_000  },
     };
 
-    // Default lock period is Monthly.
+    // Default lock duration is 30 days, but users can enter any whole number from 1 to 360.
     let selectedToken = TOKENS.gd;
 
     // Cache of user's existing slots, keyed by `${tokenKey}|${lockDays}`.
@@ -940,30 +940,29 @@
         checkExistingSlot();
     }
 
-    // ── Lock period picker (weekly / monthly) ──
-    const PERIODS = {
-        weekly:  { key: 'weekly',  label: 'Weekly',  days: 7 },
-        monthly: { key: 'monthly', label: 'Monthly', days: 30 },
-    };
+    // ── Custom lock duration picker ──
+    let selectedDays = 30;
 
-    let selectedPeriodKey = 'monthly';
-    let selectedDays = PERIODS[selectedPeriodKey].days;
+    function _clampLockDays(value) {
+        const parsed = Math.floor(Number(value));
+        if (!Number.isFinite(parsed)) return selectedDays;
+        return Math.min(MAX_LOCK_DAYS, Math.max(MIN_LOCK_DAYS, parsed));
+    }
 
     function _selectedPeriod() {
-        return PERIODS[selectedPeriodKey] || PERIODS.monthly;
+        return {
+            key: `custom-${selectedDays}`,
+            label: `${selectedDays} day${selectedDays === 1 ? '' : 's'}`,
+            days: selectedDays,
+        };
     }
 
-    function _syncPeriodButtons() {
-        const chips = document.querySelectorAll('#periodGrid .dur-btn');
-        chips.forEach(c => {
-            c.classList.toggle('selected', c.dataset.period === selectedPeriodKey);
-        });
-    }
-
-    function selectPeriod(el) {
-        selectedPeriodKey = el.dataset.period === 'weekly' ? 'weekly' : 'monthly';
-        selectedDays = PERIODS[selectedPeriodKey].days;
-        _syncPeriodButtons();
+    function onLockDaysChange() {
+        const input = document.getElementById('lockDaysInput');
+        selectedDays = _clampLockDays(input.value);
+        if (input.value && String(input.value) !== String(selectedDays)) {
+            input.value = selectedDays;
+        }
         updateSummary();
         updateRewardPreview();
         checkExistingSlot();
@@ -973,23 +972,18 @@
         return selectedToken.key === 'gd' ? amount : amount * 1000;
     }
 
-    function _monthlyRewardForAmount(amount) {
-        const eq = _amountEquivalentInGd(amount);
-        if (eq < 1000) return 0;
-        if (eq <= 4_999) return 50;
-        if (eq <= 9_999) return 250;
-        if (eq <= 49_999) return 500;
-        if (eq <= 99_999) return 2_500;
-        if (eq <= 1_000_000) return 10_000;
-        return 0;
+    function _meetsLongLockTier(amount, thresholdGdEquivalent) {
+        return _amountEquivalentInGd(amount) >= thresholdGdEquivalent;
     }
 
     function _periodRewardForAmount(amount) {
-        const monthlyReward = _monthlyRewardForAmount(amount);
-        if (selectedPeriodKey === 'weekly') {
-            return Math.floor(monthlyReward / 4);
+        if (!amount || amount < selectedToken.min) return 0;
+        if (selectedDays >= 300 && _meetsLongLockTier(amount, 1_000_000)) return 20_000;
+        if (selectedDays >= 30 && _meetsLongLockTier(amount, 100_000)) {
+            return Math.floor(selectedDays * 500 / 30);
         }
-        return monthlyReward;
+        if (selectedDays >= 1 && selectedDays <= 29) return 30;
+        return 0;
     }
 
     function updateSummary() {
@@ -998,8 +992,7 @@
         document.getElementById('summaryToken').textContent    = selectedToken.symbol;
         document.getElementById('summaryAmount').textContent   =
             amt > 0 ? `${amt.toLocaleString()} ${selectedToken.symbol}` : `—`;
-        document.getElementById('summaryDuration').textContent =
-            `${period.label} (${period.days} days)`;
+        document.getElementById('summaryDuration').textContent = period.label;
 
         const slot = __mySlotsByKey[`${selectedToken.key}|${selectedDays}`];
         if (slot) {
@@ -1178,7 +1171,6 @@
         const notice = document.getElementById('bonusNotice');
         const noticeText = document.getElementById('bonusNoticeText');
         const period = _selectedPeriod();
-        const monthlyReward = _monthlyRewardForAmount(amt);
         const reward = _periodRewardForAmount(amt);
 
         if (!amt || amt < selectedToken.min) {
@@ -1186,19 +1178,25 @@
             return;
         }
 
-        if (!monthlyReward) {
+        if (!reward) {
+            const needed = selectedDays >= 30 ? '100k G$ equivalent' : 'the per-token minimum';
             noticeText.innerHTML =
-                `No reward tier yet for <strong>${amt.toLocaleString()} ${selectedToken.symbol}</strong> on the ${period.label.toLowerCase()} plan. ` +
-                `Enter a tier-qualifying amount to preview rewards.`;
+                `No reward tier yet for <strong>${amt.toLocaleString()} ${selectedToken.symbol}</strong> locked for ${period.label}. ` +
+                `This duration needs ${needed} to preview rewards.`;
             notice.style.display = 'flex';
             return;
         }
 
+        let tierNote = 'per-token minimum tier';
+        if (selectedDays >= 300 && _meetsLongLockTier(amt, 1_000_000)) {
+            tierNote = '300+ day loyalty tier';
+        } else if (selectedDays >= 30) {
+            tierNote = '100k G$ equivalent custom-duration tier';
+        }
+
         noticeText.innerHTML =
-            `<strong>${period.label} preview:</strong> Estimated reward is <strong>${reward.toLocaleString()} G$</strong>` +
-            (selectedPeriodKey === 'weekly'
-                ? `, derived from a <strong>${monthlyReward.toLocaleString()} G$</strong> monthly reward.`
-                : ` for this amount.`);
+            `<strong>${period.label} preview:</strong> Estimated reward is <strong>${reward.toLocaleString()} G$</strong> ` +
+            `from the ${tierNote}.`;
         notice.style.display = 'flex';
     }
     // ── Wallet helpers ──
