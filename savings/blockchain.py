@@ -51,10 +51,18 @@ CELO_RPC_URLS = tuple(
     if url.strip()
 )
 CHAIN_ID = get_env_int('CHAIN_ID', 42220)
-SAVINGS_CONTRACT_ADDRESS = os.getenv('SAVINGS_CONTRACT_ADDRESS', '')
-LEGACY_V5_CONTRACT_ADDRESS = os.getenv('LEGACY_V5_CONTRACT_ADDRESS', '')
-V5_DEPLOYMENT_BLOCK = get_env_int('V5_DEPLOYMENT_BLOCK', 1)  # Start from block 1 if not set
-SAVINGS_DEPLOYMENT_BLOCK = get_env_int('SAVINGS_DEPLOYMENT_BLOCK', 1)
+DEFAULT_SAVINGS_CONTRACT_ADDRESS = '0x56Ae711E89389F324237a307132b2F397f5868Fd'
+DEFAULT_LEGACY_SAVINGS_CONTRACT_ADDRESS = '0x772feE25Fe03B1B18b7A916fEE237333Ec2f217e'
+SAVINGS_CONTRACT_ADDRESS = (
+    os.getenv('SAVINGS_CONTRACT_ADDRESS')
+    or DEFAULT_SAVINGS_CONTRACT_ADDRESS
+)
+LEGACY_V5_CONTRACT_ADDRESS = (
+    os.getenv('LEGACY_V5_CONTRACT_ADDRESS')
+    or DEFAULT_LEGACY_SAVINGS_CONTRACT_ADDRESS
+)
+V5_DEPLOYMENT_BLOCK = get_env_int('V5_DEPLOYMENT_BLOCK', 69895720)
+SAVINGS_DEPLOYMENT_BLOCK = get_env_int('SAVINGS_DEPLOYMENT_BLOCK', 65917286)
 GD_TOKEN_ADDRESS = os.getenv('GOODDOLLAR_CONTRACT_ADDRESS', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
 CELO_TOKEN_ADDRESS = os.getenv('CELO_TOKEN_ADDRESS', '0x471EcE3750Da237f93B8E339c536989b8978a438')
 CUSD_TOKEN_ADDRESS = os.getenv('CUSD_TOKEN_ADDRESS', '0x765DE816845861e75A25fCA122bb6898B8B1282a')
@@ -507,7 +515,7 @@ def get_user_deposits_at(wallet_address, contract_address, w3=None):
 
 
 def get_user_legacy_v5_deposits(wallet_address):
-    """Return active slots from the frozen v5 contract."""
+    """Return active slots from the legacy savings contract."""
     return get_user_deposits_at(wallet_address, LEGACY_V5_CONTRACT_ADDRESS)
 
 
@@ -530,7 +538,7 @@ def _get_history_at(wallet_address, contract_address, from_block, w3=None):
 
 
 def get_user_legacy_v5_history(wallet_address):
-    """Return active + withdrawn savings cycles from the frozen v5 contract."""
+    """Return active + withdrawn savings cycles from the legacy savings contract."""
     if not wallet_address:
         return []
     return _get_history_at(wallet_address, LEGACY_V5_CONTRACT_ADDRESS, V5_DEPLOYMENT_BLOCK)
