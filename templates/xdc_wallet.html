@@ -1181,10 +1181,20 @@
                 throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
             }
             const txParams = { from, to, data, value: valueHex, chainId: XDC_CHAIN_ID_HEX };
+            // The WalletConnect bridge answers read-only RPC (including
+            // eth_estimateGas) off Celo RPC, so estimating an XDC transaction
+            // through it is meaningless — the target contract does not exist on
+            // Celo, which made XDC swaps fail. Use the caller's gas limit here.
+            const _isWcBridgeProvider = !!(ep && (ep.isGoodMarketWcBridge || ep.isWalletConnect));
+            if (_isWcBridgeProvider && fallbackGasLimit) {
+                txParams.gas = ethers.toBeHex(BigInt(fallbackGasLimit));
+            }
             try {
-                const gasEstimate = await ep.request({ method: 'eth_estimateGas', params: [txParams] });
-                const boostedGas = _increaseGasLimitHex(gasEstimate, 20);
-                if (boostedGas) txParams.gas = boostedGas;
+                if (!txParams.gas) {
+                    const gasEstimate = await ep.request({ method: 'eth_estimateGas', params: [txParams] });
+                    const boostedGas = _increaseGasLimitHex(gasEstimate, 20);
+                    if (boostedGas) txParams.gas = boostedGas;
+                }
             } catch (estimateErr) {
                 const msg = (estimateErr?.message || '').toLowerCase();
                 if (msg.includes('insufficient funds')) {
@@ -1334,7 +1344,7 @@
                 if (xswapDirection === 'XDC_TO_GD') {
                     btn.innerHTML = '<span class="spinner-inline"></span> Confirm swap...';
                     const data = routerIface.encodeFunctionData('swapExactETHForTokens', [xswapQuoteData.minOutWei, xswapQuoteData.path, toAddr, deadline]);
-                    txHash = await _sendXswapTx({ to: XSWAP_V2_ROUTER, data, valueHex: ethers.toBeHex(xswapQuoteData.amountInWei) });
+                    txHash = await _sendXswapTx({ to: XSWAP_V2_ROUTER, data, valueHex: ethers.toBeHex(xswapQuoteData.amountInWei), fallbackGasLimit: 300000 });
                 } else {
                     btn.innerHTML = '<span class="spinner-inline"></span> Checking allowance...';
                     const readProvider = await _xswapReadProvider();
@@ -1368,7 +1378,7 @@
                         // the user re-approves on every swap, but a frontend or
                         // dependency compromise can't drain a future allowance.
                         const approveData = erc20Iface.encodeFunctionData('approve', [XSWAP_V2_ROUTER, xswapQuoteData.amountInWei]);
-                        await _sendXswapTx({ to: XDC_GD_TOKEN, data: approveData });
+                        await _sendXswapTx({ to: XDC_GD_TOKEN, data: approveData, fallbackGasLimit: 100000 });
                     }
 
                     btn.innerHTML = '<span class="spinner-inline"></span> Confirm swap...';
@@ -1379,7 +1389,7 @@
                         toAddr,
                         deadline
                     ]);
-                    txHash = await _sendXswapTx({ to: XSWAP_V2_ROUTER, data });
+                    txHash = await _sendXswapTx({ to: XSWAP_V2_ROUTER, data, fallbackGasLimit: 300000 });
                 }
 
                 xswapQuoteReady = false;
