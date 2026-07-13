@@ -1122,7 +1122,6 @@
             <div id="bridgeSubTabSwitcher" class="bridge-sub-tabs" role="tablist" aria-label="Bridge direction">
                 <button type="button" id="bridgeSubBtnCeloToXdc" class="bridge-sub-tab-btn active" role="tab" aria-selected="true" onclick="setBridgeSubTab('celo_to_xdc')">Celo → XDC</button>
                 <button type="button" id="bridgeSubBtnXdcToCelo" class="bridge-sub-tab-btn" role="tab" aria-selected="false" onclick="setBridgeSubTab('xdc_to_celo')">XDC → Celo</button>
-                <button type="button" id="bridgeSubBtnFuseRoutes" class="bridge-sub-tab-btn" role="tab" aria-selected="false" onclick="setBridgeSubTab('fuse_routes')">Fuse Routes</button>
             </div>
 
             <!-- Celo → XDC sub-pane (existing, unchanged content) -->
@@ -1328,98 +1327,6 @@
                 <a class="info-link" href="https://layerzeroscan.com/" target="_blank" rel="noopener">layerzeroscan.com ↗</a>.
             </div>
             </div><!-- /#bridgeSubPaneXdcToCelo -->
-
-
-            <!-- Fuse bridge routes: completes the GoodDocs Celo/XDC/Fuse matrix. -->
-            <div id="bridgeSubPaneFuseRoutes" class="bridge-sub-pane hidden-tab">
-            <div class="swap-card" style="border:1px solid rgba(14,165,233,0.35); background: linear-gradient(135deg, rgba(14,165,233,0.12), rgba(124,58,237,0.06));">
-                <div class="network-badge">
-                    <span class="network-dot"></span>
-                    🌉 Celo · XDC · Fuse · LayerZero Bridge
-                </div>
-
-                <div class="info-box-bridge" style="margin-bottom:0.9rem; padding:0.75rem 0.85rem; border-radius:10px; background:rgba(14,165,233,0.08); border:1px solid rgba(14,165,233,0.25); color:rgba(255,255,255,0.78); font-size:0.84rem; line-height:1.55;">
-                    Fuse routes use the official GoodDollar <strong>MessagePassingBridge</strong>. Choose any route that includes Fuse:
-                    <strong>Celo → Fuse</strong>, <strong>XDC → Fuse</strong>, <strong>Fuse → Celo</strong>, or <strong>Fuse → XDC</strong>.
-                    Routes involving Fuse/XDC use <strong>LayerZero</strong>.
-                </div>
-
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.65rem; margin-bottom:0.65rem;">
-                    <div class="token-box" style="margin:0;">
-                        <div class="token-box-label">From network</div>
-                        <select id="fuseBridgeSource" class="amount-input" style="font-size:1rem;" onchange="onFuseBridgeRouteChange()">
-                            <option value="celo">Celo</option>
-                            <option value="xdc">XDC</option>
-                            <option value="fuse">Fuse</option>
-                        </select>
-                    </div>
-                    <div class="token-box" style="margin:0;">
-                        <div class="token-box-label">To network</div>
-                        <select id="fuseBridgeTarget" class="amount-input" style="font-size:1rem;" onchange="onFuseBridgeRouteChange()">
-                            <option value="fuse">Fuse</option>
-                            <option value="celo">Celo</option>
-                            <option value="xdc">XDC</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="token-box">
-                    <div class="token-box-label">You bridge (<span id="fuseBridgeSourceTokenLabel">G$ on Celo</span>)</div>
-                    <div class="token-row">
-                        <div class="token-selector" style="cursor:default;">
-                            <div class="token-icon gd">G$</div>
-                            <span>G$</span>
-                            <span class="token-chevron" style="opacity:0;">▾</span>
-                        </div>
-                        <input type="number" class="amount-input" id="fuseBridgeAmount" placeholder="2000" min="0" step="any" oninput="updateFuseBridgeSummary(); scheduleFuseBridgeFeeEstimate();">
-                    </div>
-                    <div class="token-balance">
-                        <span>Balance: <span id="fuseBridgeGdBalance">—</span></span>
-                        <button class="max-btn" onclick="setFuseBridgeMax()">MAX</button>
-                    </div>
-                </div>
-
-                <div class="token-box" style="margin-top:0.65rem;">
-                    <div class="token-box-label">Bridge fee (<span id="fuseBridgeNativeFeeLabel">CELO</span>, paid as msg.value)</div>
-                    <div class="token-row">
-                        <div class="token-selector" style="cursor:default;">
-                            <div class="token-icon fuse" id="fuseBridgeNativeIcon">CE</div>
-                            <span id="fuseBridgeNativeSymbol">CELO</span>
-                            <span class="token-chevron" style="opacity:0;">▾</span>
-                        </div>
-                        <input type="number" class="amount-input" id="fuseBridgeFee" placeholder="0.1" min="0" step="any" oninput="markFuseBridgeFeeManual(); updateFuseBridgeSummary();">
-                    </div>
-                    <div class="token-balance">
-                        <span>Balance: <span id="fuseBridgeNativeBalance">—</span></span>
-                        <span style="font-size:0.75rem; color:rgba(255,255,255,0.55);">Source: <span id="fuseBridgeFeeSource" style="color:#bfdbfe;">manual</span></span>
-                    </div>
-                </div>
-
-                <div class="info-box-bridge" style="margin-top:0.9rem; padding:0.75rem 0.85rem; border-radius:10px; background:rgba(15,23,42,0.5); border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.85); font-size:0.83rem; line-height:1.6;">
-                    Destination wallet: <code id="fuseBridgeDestinationWallet" style="color:#c4b5fd;">{{ wallet }}</code><br>
-                    Destination chain: <strong id="fuseBridgeDestinationChain">Fuse Network (Chain ID {{ fuse_chain_id }})</strong><br>
-                    <div style="font-size:0.74rem; color:rgba(255,255,255,0.6); text-transform:uppercase; letter-spacing:0.05em; margin-top:0.55rem; margin-bottom:0.35rem;">Bridge Summary</div>
-                    <div style="color:rgba(255,255,255,0.65);">Route: <strong id="fuseBridgeRouteSummary" style="color:#e2e8f0;">Celo → Fuse</strong></div>
-                    <div style="color:rgba(255,255,255,0.65);">Gross amount: <strong id="fuseBridgeGross" style="color:#e2e8f0;">0.000000 G$</strong></div>
-                    <div style="color:rgba(255,255,255,0.65);">Estimated destination receive: <strong id="fuseBridgeNet" style="color:#4ade80;">0.000000 G$</strong></div>
-                    <div style="color:rgba(255,255,255,0.65);">LayerZero fee: <strong id="fuseBridgeFeeDisplay" style="color:#bfdbfe;">0.000000 CELO</strong></div>
-                </div>
-
-                <div style="display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:0.9rem;">
-                    <button class="swap-btn" id="btnFuseBridgeEstimateFee" onclick="estimateFuseBridgeFee(true)" style="flex:1 1 150px; margin-top:0; background:rgba(59,130,246,0.22); border:1px solid rgba(59,130,246,0.35);">Estimate Fee</button>
-                    <button class="swap-btn" id="btnFuseBridge" onclick="bridgeFuseRoute()" style="flex:1 1 220px; margin-top:0;">Bridge to Fuse</button>
-                </div>
-
-                <div class="alert" id="fuseBridgeAlert"></div>
-            </div>
-
-            <div class="info-card" style="margin-top:1rem;">
-                <div class="info-card-title">About Fuse bridge routes</div>
-                GoodDocs lists GoodDollar deployments on Celo, XDC, and Fuse, all using the same
-                <a class="info-link" href="https://docs.gooddollar.org/user-guides/bridge-gooddollars" target="_blank" rel="noopener">MessagePassingBridge ↗</a>
-                contract address. This panel adds the four Fuse combinations missing from GoodMarket.
-            </div>
-            </div><!-- /#bridgeSubPaneFuseRoutes -->
 
         </div><!-- /.pane-bridge -->
 
@@ -4173,18 +4080,14 @@
         // moment the user clicks the Bridge button, matching today's
         // behavior on both /swap and /xdc-wallet.
         function setBridgeSubTab(name) {
-            const activeName  = name === "xdc_to_celo" ? "xdc_to_celo" : (name === "fuse_routes" ? "fuse_routes" : "celo_to_xdc");
+            const activeName  = name === "xdc_to_celo" ? "xdc_to_celo" : "celo_to_xdc";
             const isXdcToCelo = activeName === "xdc_to_celo";
-            const isFuseRoutes = activeName === "fuse_routes";
             const celoPane    = document.getElementById("bridgeSubPaneCeloToXdc");
             const xdcPane     = document.getElementById("bridgeSubPaneXdcToCelo");
-            const fusePane    = document.getElementById("bridgeSubPaneFuseRoutes");
             const celoBtn     = document.getElementById("bridgeSubBtnCeloToXdc");
             const xdcBtn      = document.getElementById("bridgeSubBtnXdcToCelo");
-            const fuseBtn     = document.getElementById("bridgeSubBtnFuseRoutes");
             if (celoPane) celoPane.classList.toggle("hidden-tab",  activeName !== "celo_to_xdc");
             if (xdcPane)  xdcPane.classList.toggle("hidden-tab",   activeName !== "xdc_to_celo");
-            if (fusePane) fusePane.classList.toggle("hidden-tab",  activeName !== "fuse_routes");
             if (celoBtn) {
                 celoBtn.classList.toggle("active", activeName === "celo_to_xdc");
                 celoBtn.setAttribute("aria-selected", String(activeName === "celo_to_xdc"));
@@ -4193,10 +4096,6 @@
                 xdcBtn.classList.toggle("active", isXdcToCelo);
                 xdcBtn.setAttribute("aria-selected", String(isXdcToCelo));
             }
-            if (fuseBtn) {
-                fuseBtn.classList.toggle("active", isFuseRoutes);
-                fuseBtn.setAttribute("aria-selected", String(isFuseRoutes));
-            }
             if (isXdcToCelo) {
                 if (typeof loadXdcGdBalance === "function") loadXdcGdBalance();
                 if (typeof loadXdcNativeBalance === "function") loadXdcNativeBalance();
@@ -4204,9 +4103,6 @@
                 if (typeof _warmUpXdcWalletProvider === "function") {
                     _warmUpXdcWalletProvider().catch(function() {});
                 }
-            } else if (isFuseRoutes) {
-                if (typeof refreshFuseBridgeBalances === "function") refreshFuseBridgeBalances();
-                if (typeof estimateFuseBridgeFee === "function") estimateFuseBridgeFee(false);
             } else {
                 if (typeof updateCeloBridgeBalanceDisplay === "function") updateCeloBridgeBalanceDisplay();
             }
@@ -6145,293 +6041,6 @@
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = 'Bridge to Celo';
-            }
-        }
-
-
-        // ─── Generic Fuse bridge routes (Celo/XDC/Fuse) ───────────────────────
-        const GOODDOLLAR_BRIDGE_CONTRACT = "{{ bridge_contract|default('0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5', true) }}";
-        const FUSE_BRIDGE_SERVICE_LAYERZERO = 1;
-        const FUSE_BRIDGE_ABI = [
-            "function bridgeTo(address target, uint256 targetChainId, uint256 amount, uint8 bridge) payable",
-            "function canBridge(address account, uint256 amount) view returns (bool)",
-            "function bridgeFees() view returns (uint256 minFee,uint256 maxFee,uint256 feeBPS)"
-        ];
-        const FUSE_BRIDGE_NETWORKS = {
-            celo: {
-                key: 'celo', name: 'Celo Mainnet', shortName: 'Celo', chainId: CELO_CHAIN_ID,
-                token: TOKENS.GD.address, decimals: 18, nativeSymbol: 'CELO', nativeIcon: 'CE',
-                explorerTx: 'https://celoscan.io/tx/', getGdBalance: () => gdBalanceNum || 0,
-                getNativeBalance: () => celoBalanceNum || 0
-            },
-            xdc: {
-                key: 'xdc', name: 'XDC Network', shortName: 'XDC', chainId: XDC_CHAIN_ID,
-                token: XDC_GD_TOKEN, decimals: 18, nativeSymbol: 'XDC', nativeIcon: 'XD',
-                explorerTx: 'https://xdcscan.com/tx/', getGdBalance: () => xdcGdBalanceVal || 0,
-                getNativeBalance: () => xdcNativeBalanceVal || 0
-            },
-            fuse: {
-                key: 'fuse', name: 'Fuse Network', shortName: 'Fuse', chainId: FUSE_CHAIN_ID,
-                token: FUSE_GD_TOKEN, decimals: fuseGdDecimals || 2, nativeSymbol: 'FUSE', nativeIcon: 'FU',
-                explorerTx: 'https://explorer.fuse.io/tx/', getGdBalance: () => fuseGdBalanceNum || 0,
-                getNativeBalance: () => fuseBalanceNum || 0
-            }
-        };
-        let fuseBridgeFeeEstimateDebounce = null;
-        let fuseBridgeFeeSourceState = 'manual';
-        let fuseBridgeRecommendedFeeWei = null;
-        let fuseBridgeFeeManual = false;
-
-        function getFuseBridgeRoute() {
-            const sourceKey = document.getElementById('fuseBridgeSource')?.value || 'celo';
-            let targetKey = document.getElementById('fuseBridgeTarget')?.value || 'fuse';
-            if (sourceKey === targetKey) targetKey = sourceKey === 'fuse' ? 'celo' : 'fuse';
-            return { sourceKey, targetKey, source: FUSE_BRIDGE_NETWORKS[sourceKey], target: FUSE_BRIDGE_NETWORKS[targetKey] };
-        }
-
-        function _fmtFuseBridgeAmount(v, digits = 6) {
-            const n = Number(v || 0);
-            return `${n.toLocaleString(undefined, { maximumFractionDigits: digits })} G$`;
-        }
-        function _fmtFuseBridgeNative(v, symbol) {
-            const n = Number(v || 0);
-            return `${n.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${symbol}`;
-        }
-        function showFuseBridgeAlert(cls, html) {
-            const el = document.getElementById('fuseBridgeAlert');
-            if (!el) return;
-            el.className = `alert ${cls} show`;
-            el.innerHTML = html;
-        }
-        function clearFuseBridgeAlert() {
-            const el = document.getElementById('fuseBridgeAlert');
-            if (!el) return;
-            el.className = 'alert';
-            el.innerHTML = '';
-        }
-        function setFuseBridgeButton(text) {
-            const { target } = getFuseBridgeRoute();
-            const btn = document.getElementById('btnFuseBridge');
-            if (btn) btn.innerHTML = text || `Bridge to ${target.shortName}`;
-        }
-
-        function onFuseBridgeRouteChange() {
-            const sourceEl = document.getElementById('fuseBridgeSource');
-            const targetEl = document.getElementById('fuseBridgeTarget');
-            if (sourceEl && targetEl && sourceEl.value === targetEl.value) {
-                targetEl.value = sourceEl.value === 'fuse' ? 'celo' : 'fuse';
-            }
-            const { sourceKey, targetKey } = getFuseBridgeRoute();
-            // This compact panel is only for the four routes involving Fuse;
-            // keep the dedicated Celo↔XDC panes as the primary path for that pair.
-            if (sourceKey !== 'fuse' && targetKey !== 'fuse') {
-                targetEl.value = 'fuse';
-            }
-            fuseBridgeFeeManual = false;
-            fuseBridgeRecommendedFeeWei = null;
-            refreshFuseBridgeBalances();
-            updateFuseBridgeSummary();
-            scheduleFuseBridgeFeeEstimate();
-        }
-
-        function refreshFuseBridgeBalances() {
-            try { if (typeof loadBalances === 'function') loadBalances(); } catch (_) {}
-            try { if (typeof loadXdcGdBalance === 'function') loadXdcGdBalance(); } catch (_) {}
-            try { if (typeof loadXdcNativeBalance === 'function') loadXdcNativeBalance(); } catch (_) {}
-            try { if (typeof loadFuseSwapBalances === 'function') loadFuseSwapBalances(); } catch (_) {}
-            setTimeout(updateFuseBridgeSummary, 300);
-        }
-
-        function updateFuseBridgeSummary() {
-            const { source, target } = getFuseBridgeRoute();
-            if (!source || !target) return;
-            const sourceLabel = document.getElementById('fuseBridgeSourceTokenLabel');
-            const nativeFeeLabel = document.getElementById('fuseBridgeNativeFeeLabel');
-            const nativeSymbol = document.getElementById('fuseBridgeNativeSymbol');
-            const nativeIcon = document.getElementById('fuseBridgeNativeIcon');
-            const gdBalEl = document.getElementById('fuseBridgeGdBalance');
-            const nativeBalEl = document.getElementById('fuseBridgeNativeBalance');
-            const destChainEl = document.getElementById('fuseBridgeDestinationChain');
-            const routeEl = document.getElementById('fuseBridgeRouteSummary');
-            const grossEl = document.getElementById('fuseBridgeGross');
-            const netEl = document.getElementById('fuseBridgeNet');
-            const feeEl = document.getElementById('fuseBridgeFeeDisplay');
-            const amount = parseFloat(document.getElementById('fuseBridgeAmount')?.value || '0') || 0;
-            const fee = parseFloat(document.getElementById('fuseBridgeFee')?.value || '0') || 0;
-            if (sourceLabel) sourceLabel.textContent = `G$ on ${source.shortName}`;
-            if (nativeFeeLabel) nativeFeeLabel.textContent = source.nativeSymbol;
-            if (nativeSymbol) nativeSymbol.textContent = source.nativeSymbol;
-            if (nativeIcon) nativeIcon.textContent = source.nativeIcon;
-            if (gdBalEl) gdBalEl.textContent = _fmtFuseBridgeAmount(source.getGdBalance(), 2);
-            if (nativeBalEl) nativeBalEl.textContent = _fmtFuseBridgeNative(source.getNativeBalance(), source.nativeSymbol);
-            if (destChainEl) destChainEl.textContent = `${target.name} (Chain ID ${target.chainId})`;
-            if (routeEl) routeEl.textContent = `${source.shortName} → ${target.shortName}`;
-            if (grossEl) grossEl.textContent = _fmtFuseBridgeAmount(amount);
-            if (netEl) netEl.textContent = _fmtFuseBridgeAmount(amount);
-            if (feeEl) feeEl.textContent = _fmtFuseBridgeNative(fee, source.nativeSymbol);
-            setFuseBridgeButton();
-        }
-
-        function markFuseBridgeFeeManual() {
-            fuseBridgeFeeManual = true;
-            fuseBridgeRecommendedFeeWei = null;
-            const feeSourceEl = document.getElementById('fuseBridgeFeeSource');
-            if (feeSourceEl) feeSourceEl.textContent = 'manual';
-        }
-        function scheduleFuseBridgeFeeEstimate() {
-            if (fuseBridgeFeeEstimateDebounce) clearTimeout(fuseBridgeFeeEstimateDebounce);
-            fuseBridgeFeeEstimateDebounce = setTimeout(() => estimateFuseBridgeFee(false), 450);
-        }
-        function setFuseBridgeMax() {
-            const { source } = getFuseBridgeRoute();
-            const input = document.getElementById('fuseBridgeAmount');
-            if (input) input.value = Math.max(0, source.getGdBalance() || 0).toFixed(6);
-            updateFuseBridgeSummary();
-            scheduleFuseBridgeFeeEstimate();
-        }
-
-        async function estimateFuseBridgeFee(showSuccessAlert = true) {
-            const { source, target } = getFuseBridgeRoute();
-            const amountStr = (document.getElementById('fuseBridgeAmount')?.value || '').trim() || '1';
-            const btn = document.getElementById('btnFuseBridgeEstimateFee');
-            const feeInput = document.getElementById('fuseBridgeFee');
-            const feeSourceEl = document.getElementById('fuseBridgeFeeSource');
-            if (!source || !target || !feeInput) return;
-            if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-inline"></span> Estimating...'; }
-            try {
-                const qs = new URLSearchParams({
-                    sourceChainId: String(source.chainId),
-                    targetChainId: String(target.chainId),
-                    amount: amountStr
-                });
-                const res = await fetch(`/api/xdc/bridge/estimate-fee?${qs.toString()}`);
-                const data = await res.json();
-                if (!res.ok || !data.success) throw new Error(data.error || 'Fee estimation failed');
-                const recommendedWei = data.recommended_bridge_fee_wei || data.bridge_fee_wei || null;
-                if (recommendedWei) {
-                    fuseBridgeRecommendedFeeWei = recommendedWei;
-                    feeInput.dataset.autofilledWei = recommendedWei;
-                    feeInput.value = ethers.formatUnits(BigInt(recommendedWei), 18);
-                } else {
-                    const feeNum = parseFloat(data.recommended_bridge_fee_xdc ?? data.bridge_fee_xdc ?? '0');
-                    if (Number.isFinite(feeNum) && feeNum > 0) feeInput.value = String(feeNum);
-                }
-                fuseBridgeFeeManual = false;
-                fuseBridgeFeeSourceState = data.source || 'manual';
-                if (feeSourceEl) feeSourceEl.textContent = data.source === 'goodserver_estimatefees' ? 'goodserver estimatefees (+ safety buffer)' : 'fallback default';
-                updateFuseBridgeSummary();
-                if (showSuccessAlert) showFuseBridgeAlert('alert-success', `✅ Estimated bridge fee: ${feeInput.value} ${source.nativeSymbol}`);
-            } catch (err) {
-                if (feeSourceEl) feeSourceEl.textContent = 'manual';
-                fuseBridgeFeeSourceState = 'manual';
-                updateFuseBridgeSummary();
-                if (showSuccessAlert) showFuseBridgeAlert('alert-error', '❌ Could not estimate fee automatically. You may still enter fee manually from GoodServer/GoodDocs.');
-            } finally {
-                if (btn) { btn.disabled = false; btn.innerHTML = 'Estimate Fee'; }
-            }
-        }
-
-        async function _getFuseBridgeReadProvider(sourceKey) {
-            if (sourceKey === 'xdc') return await _xdcReadProvider();
-            if (sourceKey === 'fuse') return new ethers.JsonRpcProvider(FUSE_RPC);
-            return new ethers.JsonRpcProvider(CELO_RPC);
-        }
-
-        async function _sendFuseBridgeSourceTx(sourceKey, tx) {
-            if (sourceKey === 'xdc') {
-                return await _sendXdcBridgeTx(tx);
-            }
-            const signer = sourceKey === 'fuse' ? await getConnectedFuseSigner() : await getConnectedSwapSigner();
-            const sent = await signer.sendTransaction({
-                to: tx.to,
-                data: tx.data,
-                value: BigInt(tx.valueHex || '0x0')
-            });
-            const receipt = await sent.wait();
-            return (receipt && receipt.hash) ? receipt.hash : sent.hash;
-        }
-
-        async function bridgeFuseRoute() {
-            const { sourceKey, targetKey, source, target } = getFuseBridgeRoute();
-            const amountStr = (document.getElementById('fuseBridgeAmount')?.value || '').trim();
-            const feeStr = (document.getElementById('fuseBridgeFee')?.value || '').trim();
-            const btn = document.getElementById('btnFuseBridge');
-            try {
-                clearFuseBridgeAlert();
-                if (!source || !target || sourceKey === targetKey) throw new Error('Choose two different networks.');
-                if (sourceKey !== 'fuse' && targetKey !== 'fuse') throw new Error('Use the dedicated Celo ↔ XDC tabs for that route.');
-                const amountNum = parseFloat(amountStr || '0');
-                const feeNum = parseFloat(feeStr || '0');
-                if (!Number.isFinite(amountNum) || amountNum <= 0) throw new Error('Enter a valid G$ amount.');
-                if (!Number.isFinite(feeNum) || feeNum <= 0) throw new Error(`Enter a valid ${source.nativeSymbol} bridge fee or click Estimate Fee.`);
-                if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-inline"></span> Preparing bridge...'; }
-                const amountWei = ethers.parseUnits(amountStr, source.decimals);
-                let feeWei = fuseBridgeRecommendedFeeWei && !fuseBridgeFeeManual
-                    ? BigInt(fuseBridgeRecommendedFeeWei)
-                    : ethers.parseUnits(feeStr, 18);
-                const readProvider = await _getFuseBridgeReadProvider(sourceKey);
-                const token = new ethers.Contract(source.token, ERC20_ABI, readProvider);
-                const bridgeRead = new ethers.Contract(GOODDOLLAR_BRIDGE_CONTRACT, FUSE_BRIDGE_ABI, readProvider);
-                const signerAddress = WALLET_ADDRESS;
-
-                if (btn) btn.innerHTML = '<span class="spinner-inline"></span> Checking balances...';
-                const [gdBalWei, nativeBalWei] = await Promise.all([
-                    token.balanceOf(signerAddress),
-                    readProvider.getBalance(signerAddress)
-                ]);
-                if (gdBalWei < amountWei) throw new Error(`Not enough G$ on ${source.shortName}.`);
-                if (nativeBalWei < feeWei) throw new Error(`Not enough ${source.nativeSymbol} for the LayerZero bridge fee.`);
-                try {
-                    const canBridge = await bridgeRead.canBridge(signerAddress, amountWei);
-                    if (!canBridge) throw new Error('Bridge preflight failed (canBridge=false). Lower the amount or retry later.');
-                } catch (limitErr) {
-                    if (/canBridge=false/i.test(limitErr?.message || '')) throw limitErr;
-                    console.warn('[fuse-bridge] canBridge check skipped:', limitErr);
-                }
-
-                const erc20Iface = new ethers.Interface(ERC20_ABI);
-                const bridgeIface = new ethers.Interface(FUSE_BRIDGE_ABI);
-                const allowance = await token.allowance(signerAddress, GOODDOLLAR_BRIDGE_CONTRACT);
-                if (allowance < amountWei) {
-                    if (btn) btn.innerHTML = '<span class="spinner-inline"></span> Approving G$...';
-                    if (window.GMTxPreview && GMTxPreview.confirm) {
-                        await GMTxPreview.confirm({
-                            action: 'approve', token: `G$ (${source.shortName})`, amount: ethers.formatUnits(amountWei, source.decimals),
-                            to: GOODDOLLAR_BRIDGE_CONTRACT, toLabel: 'GoodDollar MessagePassingBridge', network: source.shortName,
-                            note: `Lets the bridge pull this G$ amount for ${source.shortName} → ${target.shortName}.`
-                        });
-                    }
-                    const approveData = erc20Iface.encodeFunctionData('approve', [GOODDOLLAR_BRIDGE_CONTRACT, amountWei]);
-                    const approveTx = await _sendFuseBridgeSourceTx(sourceKey, { to: source.token, data: approveData, fallbackGasLimit: 120000 });
-                    showFuseBridgeAlert('alert-success', `✅ Approve submitted.<br><a class="tx-link" href="${source.explorerTx}${approveTx}" target="_blank" rel="noopener">View approve tx ↗ ${approveTx.substring(0,10)}...${approveTx.slice(-8)}</a>`);
-                }
-
-                if (btn) btn.innerHTML = `<span class="spinner-inline"></span> Bridging to ${target.shortName}...`;
-                const bridgeData = bridgeIface.encodeFunctionData('bridgeTo', [
-                    WALLET_ADDRESS, target.chainId, amountWei, FUSE_BRIDGE_SERVICE_LAYERZERO
-                ]);
-                const bridgeTx = await _sendFuseBridgeSourceTx(sourceKey, {
-                    to: GOODDOLLAR_BRIDGE_CONTRACT,
-                    data: bridgeData,
-                    valueHex: ethers.toBeHex(feeWei),
-                    fallbackGasLimit: 350000
-                });
-                showFuseBridgeAlert('alert-success', `✅ Bridge submitted to ${target.shortName}!<br>
-                    <div style="margin:0.45rem 0 0.35rem; padding:0.45rem 0.55rem; border-radius:8px; border:1px solid rgba(255,255,255,0.14); background:rgba(15,23,42,0.4); color:rgba(255,255,255,0.86); font-size:0.79rem; line-height:1.5;">
-                        <strong>From:</strong> G$ (${source.name})<br>
-                        <strong>To:</strong> G$ (${target.name})<br>
-                        <strong>Amount:</strong> ${_fmtFuseBridgeAmount(amountNum)}<br>
-                        <strong>LayerZero fee:</strong> ${ethers.formatUnits(feeWei, 18)} ${source.nativeSymbol}
-                    </div>
-                    <a class="tx-link" href="${source.explorerTx}${bridgeTx}" target="_blank" rel="noopener">View tx ↗ ${bridgeTx.substring(0,10)}...${bridgeTx.slice(-8)}</a><br>
-                    <span style="color:rgba(255,255,255,0.7);font-size:0.8rem;">Final mint on ${target.shortName} may take a few minutes.</span>`);
-                setTimeout(refreshFuseBridgeBalances, 4000);
-            } catch (err) {
-                let msg = err.message || 'Bridge failed';
-                if (err.code === 4001) msg = 'Bridge transaction rejected by user.';
-                showFuseBridgeAlert('alert-error', '❌ ' + msg);
-            } finally {
-                if (btn) { btn.disabled = false; setFuseBridgeButton(); }
             }
         }
 
