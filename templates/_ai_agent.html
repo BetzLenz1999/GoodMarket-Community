@@ -12,7 +12,20 @@
       <button type="button" class="gm-ai-close" aria-label="Close GoodMarket Agent">×</button>
     </header>
     <div class="gm-ai-messages" role="log" aria-live="polite">
-      <div class="gm-ai-msg gm-ai-msg-bot">Hi! Try “send 10 G$ to @username”, “load 09123456789 20”, or “check balance”.</div>
+      <div class="gm-ai-msg gm-ai-msg-bot">
+        <div>Hi! Tap a command below or type your own message. Username at wallet address, parehong pwede for send/stream.</div>
+        <div class="gm-ai-command-grid" aria-label="GoodMarket Agent command examples">
+        <button type="button" class="gm-ai-command" data-gm-ai-command="What is GoodMarket?">What is GoodMarket?</button>
+        <button type="button" class="gm-ai-command" data-gm-ai-command="What is GoodDollar?">What is GoodDollar?</button>
+        <button type="button" class="gm-ai-command" data-gm-ai-command="What is GoodMarket Savings?">What is GoodMarket Savings?</button>
+        <button type="button" class="gm-ai-command" data-gm-ai-command="What is P2P trading?">What is P2P trading?</button>
+        <button type="button" class="gm-ai-command" data-gm-ai-command="What is G$ stream?">What is G$ stream?</button>
+        <button type="button" class="gm-ai-command" data-gm-ai-command="What is Play & Earn?">What is Play & Earn?</button>
+        <button type="button" class="gm-ai-command" data-gm-ai-command="Who is developer?">Who is developer?</button>
+        <button type="button" class="gm-ai-command" data-gm-ai-command="Check Balance">Check Balance</button>
+        </div>
+        <div class="gm-ai-manual-example">Manual example only: “how to send G$ token”</div>
+      </div>
     </div>
     <form class="gm-ai-form">
       <input class="gm-ai-input" name="message" type="text" autocomplete="off" placeholder="Ask GoodMarket Agent…" />
