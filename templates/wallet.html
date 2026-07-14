@@ -4670,6 +4670,32 @@
             return false;
         }
 
+        if (action.action_type === 'stream_gd') {
+            const recipient = payload.recipient || '';
+            const amount = payload.flow_rate_per_day || payload.amount || '';
+            if (typeof openModal === 'function') openModal('streamModal');
+            setTimeout(async function() {
+                const receiverInput = document.getElementById('streamReceiver');
+                const amountInput = document.getElementById('streamAmount');
+                const result = document.getElementById('streamResult');
+                if (receiverInput) {
+                    receiverInput.value = recipient;
+                    receiverInput.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                if (amountInput) {
+                    amountInput.value = amount;
+                    amountInput.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                if (result) {
+                    result.innerHTML = '<div style="color:#00e676;">✅ GoodMarket Agent prepared this G$ stream. Review the wallet prompt before signing.</div>';
+                    result.style.display = 'block';
+                }
+                if (typeof calculateStreamBuffer === 'function') await calculateStreamBuffer();
+                if (typeof handleStartStream === 'function') await handleStartStream();
+            }, 150);
+            return true;
+        }
+
         if (action.action_type !== 'send_gd') return false;
         const recipient = payload.recipient || '';
         const amount = payload.amount || '';
@@ -7849,6 +7875,13 @@
                 <div style="color:#00e676;margin-bottom:0.5rem;">✅ Stream created!</div>
                 <div style="color:var(--text-dim);font-size:0.75rem;">TX: ${txHash.slice(0, 10)}...</div>
             `;
+            window.dispatchEvent(new CustomEvent('goodmarket:ai-tx-success', {
+                detail: {
+                    txHash: txHash,
+                    explorerUrl: `https://celoscan.io/tx/${txHash}`,
+                    message: `✅ G$ stream created successfully. Tx hash: ${txHash.slice(0, 10)}…${txHash.slice(-6)}`
+                }
+            }));
             result.style.display = 'block';
             
             setTimeout(() => {
@@ -7859,6 +7892,12 @@
             const errorMsg = err.message || 'Transaction failed';
             result.innerHTML = `<div style="color:#ff7070;">❌ ${errorMsg}</div>`;
             result.style.display = 'block';
+            window.dispatchEvent(new CustomEvent('goodmarket:ai-tx-failed', {
+                detail: {
+                    error: errorMsg,
+                    message: `❌ Stream failed: ${errorMsg}`
+                }
+            }));
         } finally {
             loading.style.display = 'none';
         }
