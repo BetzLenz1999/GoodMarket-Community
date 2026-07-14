@@ -634,45 +634,51 @@ class AnalyticsService:
             breakdown = {}
 
             # 1. Learn & Earn disbursements (learnearn_log) - ALL RECORDS (includes old and new)
-            learn_earn_result = supabase.table('learnearn_log')\
-                .select('amount_g$, status')\
-                .execute()
-
-            logger.debug(f"📊 Learn & Earn Query: Found {len(learn_earn_result.data) if learn_earn_result.data else 0} records")
-            if learn_earn_result.data:
-                logger.debug(f"   Sample records: {learn_earn_result.data[:3]}")
-
-            # Sum ALL records - convert to float safely, handle None values
             learn_earn_total = 0
-            if learn_earn_result.data:
-                for record in learn_earn_result.data:
-                    amount = record.get('amount_g$', 0)
-                    if amount is not None and amount != '':
-                        try:
-                            learn_earn_total += float(amount)
-                        except (ValueError, TypeError):
-                            logger.warning(f"⚠️ Invalid amount in learnearn_log: {amount}")
+            try:
+                learn_earn_result = supabase.table('learnearn_log')\
+                    .select('amount_g$, status')\
+                    .execute()
+
+                logger.debug(f"📊 Learn & Earn Query: Found {len(learn_earn_result.data) if learn_earn_result.data else 0} records")
+                if learn_earn_result.data:
+                    logger.debug(f"   Sample records: {learn_earn_result.data[:3]}")
+
+                # Sum ALL records - convert to float safely, handle None values
+                if learn_earn_result.data:
+                    for record in learn_earn_result.data:
+                        amount = record.get('amount_g$', 0)
+                        if amount is not None and amount != '':
+                            try:
+                                learn_earn_total += float(amount)
+                            except (ValueError, TypeError):
+                                logger.warning(f"⚠️ Invalid amount in learnearn_log: {amount}")
+            except Exception as e:
+                logger.warning(f"⚠️ Learn & Earn table query failed: {e}")
 
             breakdown['learn_earn'] = learn_earn_total
             total_disbursements += learn_earn_total
             logger.debug(f"   Total: {learn_earn_total} G$")
 
             # 2. Forum rewards disbursements (forum_reward_transactions) - ALL RECORDS
-            forum_disbursed_result = supabase.table('forum_reward_transactions')\
-                .select('amount_disbursed, status')\
-                .execute()
-
-            logger.debug(f"📊 Forum Rewards Query: Found {len(forum_disbursed_result.data) if forum_disbursed_result.data else 0} records")
-
             forum_disbursed_total = 0
-            if forum_disbursed_result.data:
-                for record in forum_disbursed_result.data:
-                    amount = record.get('amount_disbursed', 0)
-                    if amount is not None and amount != '':
-                        try:
-                            forum_disbursed_total += float(amount)
-                        except (ValueError, TypeError):
-                            logger.warning(f"⚠️ Invalid amount in forum_reward_transactions: {amount}")
+            try:
+                forum_disbursed_result = supabase.table('forum_reward_transactions')\
+                    .select('amount_disbursed, status')\
+                    .execute()
+
+                logger.debug(f"📊 Forum Rewards Query: Found {len(forum_disbursed_result.data) if forum_disbursed_result.data else 0} records")
+
+                if forum_disbursed_result.data:
+                    for record in forum_disbursed_result.data:
+                        amount = record.get('amount_disbursed', 0)
+                        if amount is not None and amount != '':
+                            try:
+                                forum_disbursed_total += float(amount)
+                            except (ValueError, TypeError):
+                                logger.warning(f"⚠️ Invalid amount in forum_reward_transactions: {amount}")
+            except Exception as e:
+                logger.warning(f"⚠️ Forum rewards table query failed: {e}")
 
             breakdown['forum_disbursed'] = forum_disbursed_total
             total_disbursements += forum_disbursed_total
