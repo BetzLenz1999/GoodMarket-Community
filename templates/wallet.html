@@ -2588,23 +2588,44 @@
                     <div id="streamReceiverError" style="color:var(--red);font-size:0.72rem;margin-top:0.25rem;display:none;"></div>
                 </div>
 
-                <div style="margin-bottom:0.85rem;">
-                    <label style="display:block;font-size:0.78rem;color:var(--text-dim);margin-bottom:0.3rem;">Amount (G$/day)</label>
-                    <input type="number" id="streamAmount" placeholder="10" min="0" step="0.01"
-                           style="width:100%;padding:0.7rem 0.85rem;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:#fff;font-size:0.88rem;outline:none;cursor:text;pointer-events:auto;-webkit-user-select:text;-moz-user-select:text;user-select:text;"
-                           oninput="calculateStreamBuffer()">
+                <div style="display:grid;grid-template-columns:minmax(120px,0.42fr) 1fr;gap:0.85rem;margin-bottom:0.85rem;align-items:end;">
+                    <div>
+                        <label style="display:block;font-size:0.78rem;color:var(--text-dim);margin-bottom:0.3rem;font-weight:600;">Super Token</label>
+                        <div style="height:44px;display:flex;align-items:center;gap:0.55rem;padding:0 0.8rem;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:#fff;font-size:0.9rem;font-weight:700;">
+                            <span style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(0,230,118,0.14);border:1px solid rgba(0,230,118,0.45);font-size:0.75rem;">G$</span>
+                            <span>G$</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label id="streamAmountLabel" style="display:block;font-size:0.78rem;color:var(--text-dim);margin-bottom:0.3rem;font-weight:600;">Flow Rate</label>
+                        <div style="display:grid;grid-template-columns:1fr minmax(112px,0.36fr);align-items:stretch;border-radius:12px;border:1px solid rgba(6,182,212,0.35);background:rgba(255,255,255,0.05);overflow:hidden;">
+                            <input type="number" id="streamAmount" placeholder="100" min="0" step="0.01"
+                                   style="width:100%;padding:0.72rem 0.85rem;border:none;border-right:1px solid rgba(255,255,255,0.12);background:transparent;color:#fff;font-size:0.95rem;outline:none;cursor:text;pointer-events:auto;-webkit-user-select:text;-moz-user-select:text;user-select:text;"
+                                   oninput="calculateStreamBuffer()">
+                            <select id="streamPeriod" aria-label="Stream amount frequency"
+                                    style="width:100%;padding:0.72rem 0.6rem;border:none;background:#111827;color:#fff;font-size:0.86rem;font-weight:700;outline:none;cursor:pointer;"
+                                    onchange="handleStreamPeriodChange()">
+                                <option value="second">/ second</option>
+                                <option value="minute">/ minute</option>
+                                <option value="day">/ day</option>
+                                <option value="week">/ week</option>
+                                <option value="month" selected>/ month</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="streamPeriodHint" style="grid-column:1 / -1;color:var(--text-muted);font-size:0.72rem;margin-top:-0.45rem;line-height:1.35;">Enter the flow rate exactly like Superfluid: amount + / second, / minute, / day, / week, or / month.</div>
                 </div>
 
                 <div id="streamBufferInfo" style="background:rgba(6,182,212,0.08);border:1px solid rgba(6,182,212,0.2);border-radius:12px;padding:0.85rem;margin-bottom:0.85rem;display:none;">
                     <div style="font-size:0.78rem;font-weight:600;color:#06b6d4;margin-bottom:0.6rem;text-transform:uppercase;letter-spacing:0.05em;">📊 Buffer Calculation</div>
                     
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;padding-bottom:0.5rem;border-bottom:1px solid rgba(255,255,255,0.05);">
-                        <span style="color:var(--text-dim);font-size:0.82rem;">💰 Stream Rate</span>
+                        <span style="color:var(--text-dim);font-size:0.82rem;">💰 Flow rate</span>
                         <span id="streamMonthlyDisplay" style="color:#fff;font-weight:600;font-size:0.88rem;">— G$/month</span>
                     </div>
                     
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;padding-bottom:0.5rem;border-bottom:1px solid rgba(255,255,255,0.05);">
-                        <span style="color:var(--text-dim);font-size:0.82rem;">⚡ Flow Rate (per sec)</span>
+                        <span style="color:var(--text-dim);font-size:0.82rem;">⚡ Amount per second</span>
                         <span id="streamFlowRateDisplay" style="color:#06b6d4;font-weight:600;font-size:0.85rem;">— G$/sec</span>
                     </div>
                     
@@ -2614,8 +2635,8 @@
                     </div>
                     
                     <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem;background:rgba(255,255,255,0.03);border-radius:8px;margin-top:0.3rem;">
-                        <span style="color:#fff;font-size:0.85rem;font-weight:600;">📦 Total Required</span>
-                        <span id="streamTotalDisplay" style="color:#fff;font-weight:800;font-size:1rem;">— G$</span>
+                        <span style="color:#fff;font-size:0.85rem;font-weight:600;">∞ End date</span>
+                        <span style="color:#00e676;font-weight:800;font-size:1rem;">Never</span>
                     </div>
                     
                     <div id="streamBalanceSection" style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid rgba(255,255,255,0.05);">
@@ -2630,9 +2651,13 @@
                     </div>
                 </div>
 
-                <div id="streamBalanceWarning" style="background:rgba(255,82,82,0.1);border:1px solid rgba(255,82,82,0.3);border-radius:10px;padding:0.7rem;margin-bottom:0.85rem;display:none;">
-                    <div style="color:#ff7070;font-size:0.8rem;font-weight:600;margin-bottom:0.3rem;">⚠️ Insufficient Balance</div>
-                    <div id="streamBalanceWarningText" style="color:#ff7070;font-size:0.75rem;"></div>
+                <div id="streamBalanceWarning" style="background:rgba(255,82,82,0.1);border-left:3px solid rgba(255,82,82,0.9);border-radius:10px;padding:0.85rem;margin-bottom:0.85rem;display:none;">
+                    <div style="color:#ffb4b4;font-size:0.82rem;font-weight:700;margin-bottom:0.55rem;">⚠️ Stream risk warning</div>
+                    <div id="streamBalanceWarningText" style="color:#ffb4b4;font-size:0.78rem;line-height:1.45;margin-bottom:0.65rem;"></div>
+                    <label style="display:flex;align-items:center;gap:0.55rem;color:#fff;font-size:0.82rem;font-weight:600;cursor:pointer;">
+                        <input id="streamRiskAck" type="checkbox" onchange="calculateStreamBuffer()" style="width:16px;height:16px;accent-color:#06b6d4;">
+                        Yes, I understand the risk.
+                    </label>
                 </div>
             </div>
 
@@ -7715,7 +7740,7 @@
                         📤 To: <span style="font-family:monospace;">${shortReceiver}</span>
                     </div>
                     <div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:0.3rem;">
-                        💰 Rate: ${item.rate || '—'} G$/day
+                        💰 Rate: ${formatStreamHistoryRate(item)}
                     </div>
                     ${streamedAmount}
                     ${actionBtns}
@@ -7737,6 +7762,9 @@
             const item = streamHistory[idx];
             document.getElementById('streamReceiver').value = item.receiver || '';
             document.getElementById('streamAmount').value = item.rate || '';
+            const periodEl = document.getElementById('streamPeriod');
+            if (periodEl) periodEl.value = item.period || 'day';
+            handleStreamPeriodChange();
             validateStreamReceiver();
             calculateStreamBuffer();
         }
@@ -7793,20 +7821,70 @@
         return true;
     }
 
-    // Calculate buffer when amount changes (always per day now)
-    async function calculateStreamBuffer() {
+    // Convert the selected stream cadence into the monthly rate expected by the API.
+    const STREAM_PERIODS = {
+        second: { label: 'second', monthlyMultiplier: 30 * 24 * 60 * 60 },
+        minute: { label: 'minute', monthlyMultiplier: 30 * 24 * 60 },
+        day: { label: 'day', monthlyMultiplier: 30 },
+        week: { label: 'week', monthlyMultiplier: 30 / 7 },
+        month: { label: 'month', monthlyMultiplier: 1 }
+    };
+
+    function getSelectedStreamPeriod() {
+        const period = document.getElementById('streamPeriod')?.value || 'month';
+        return STREAM_PERIODS[period] ? period : 'month';
+    }
+
+    function getStreamAmountDetails() {
         const amount = parseFloat(document.getElementById('streamAmount').value) || 0;
+        const period = getSelectedStreamPeriod();
+        const config = STREAM_PERIODS[period];
+        return {
+            amount,
+            period,
+            periodLabel: config.label,
+            monthlyAmount: amount * config.monthlyMultiplier,
+            dailyAmount: (amount * config.monthlyMultiplier) / 30
+        };
+    }
+
+    function handleStreamPeriodChange() {
+        const period = getSelectedStreamPeriod();
+        const label = document.getElementById('streamAmountLabel');
+        if (label) label.textContent = 'Flow Rate';
+        calculateStreamBuffer();
+    }
+
+    function formatStreamHistoryRate(item) {
+        const period = item.period || 'day';
+        const periodLabel = STREAM_PERIODS[period]?.label || period;
+        return `${item.rate || '—'} G$/${periodLabel}`;
+    }
+
+    function setStreamActionRiskState(hasRisk) {
+        const ack = document.getElementById('streamRiskAck');
+        const allow = !hasRisk || !!ack?.checked;
+        ['btnStartStream', 'btnUpdateStream'].forEach((id) => {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            btn.disabled = !allow;
+            btn.style.opacity = allow ? '1' : '0.55';
+            btn.style.cursor = allow ? 'pointer' : 'not-allowed';
+        });
+    }
+
+    // Calculate buffer when amount or cadence changes.
+    async function calculateStreamBuffer() {
+        const { amount, periodLabel, monthlyAmount } = getStreamAmountDetails();
         const bufferInfo = document.getElementById('streamBufferInfo');
         const balanceWarning = document.getElementById('streamBalanceWarning');
         
         if (amount <= 0) {
             if (bufferInfo) bufferInfo.style.display = 'none';
             if (balanceWarning) balanceWarning.style.display = 'none';
+            setStreamActionRiskState(false);
             return;
         }
-        
-        // Amount is per day, convert to monthly (30 days)
-        const monthlyAmount = amount * 30;
         
         try {
             const res = await fetch(`/api/p2p/buffer/calculate?flow_rate_per_month=${monthlyAmount}`);
@@ -7821,7 +7899,7 @@
                 const userBalanceEl = document.getElementById('streamUserBalance');
                 const remainingEl = document.getElementById('streamRemainingBalance');
                 
-                if (monthlyEl) monthlyEl.textContent = `${monthlyAmount.toFixed(2)} G$/month`;
+                if (monthlyEl) monthlyEl.textContent = `${amount.toFixed(2)} G$/${periodLabel} · ${monthlyAmount.toFixed(2)} G$/month`;
                 if (flowEl) flowEl.textContent = `${flowPerSec} G$/sec`;
                 if (bufferEl) bufferEl.textContent = `${data.required_buffer.toFixed(2)} G$`;
                 if (totalEl) totalEl.textContent = `${data.total_required.toFixed(2)} G$`;
@@ -7831,25 +7909,30 @@
                 const userBalance = typeof gdBal !== 'undefined' ? gdBal : 0;
                 if (userBalanceEl) userBalanceEl.textContent = `${userBalance.toFixed(2)} G$`;
                 
-                const remaining = userBalance - data.total_required;
+                const remaining = userBalance - data.required_buffer;
                 if (remainingEl) {
                     remainingEl.textContent = `${remaining.toFixed(2)} G$`;
                     remainingEl.style.color = remaining >= 0 ? '#00e676' : '#ff7070';
                 }
                 
                 // Check balance and show warning
-                if (userBalance < data.total_required) {
+                if (userBalance < data.required_buffer) {
                     if (balanceWarning) {
                         balanceWarning.style.display = 'block';
                         const warningText = document.getElementById('streamBalanceWarningText');
                         if (warningText) {
-                            const shortfall = (data.total_required - userBalance).toFixed(2);
-                            warningText.textContent = `You need ${shortfall} more G$ to start this stream.`;
+                            const shortfall = (data.required_buffer - userBalance).toFixed(2);
+                            warningText.textContent = `Your balance after the upfront buffer will be negative by ${shortfall} G$. If you do not cancel this stream before your balance reaches zero, you may lose the required buffer.`;
                         }
                     }
                 } else {
-                    if (balanceWarning) balanceWarning.style.display = 'none';
+                    if (balanceWarning) {
+                        balanceWarning.style.display = 'none';
+                        const ack = document.getElementById('streamRiskAck');
+                        if (ack) ack.checked = false;
+                    }
                 }
+                setStreamActionRiskState(userBalance < data.required_buffer);
             }
         } catch (err) {
             console.error('Failed to calculate buffer:', err);
@@ -7971,7 +8054,7 @@
     // Handle start stream
     async function handleStartStream() {
         const receiver = document.getElementById('streamReceiver').value.trim();
-        const amount = parseFloat(document.getElementById('streamAmount').value);
+        const { amount, period, periodLabel, monthlyAmount, dailyAmount } = getStreamAmountDetails();
         
         // Validate inputs
         if (!receiver || !/^0x[a-fA-F0-9]{40}$/.test(receiver)) {
@@ -7983,13 +8066,16 @@
         
         if (!amount || amount <= 0) {
             const result = document.getElementById('streamResult');
-            result.innerHTML = '<div style="color:#ff7070;">❌ Please enter a valid amount (G$/day)</div>';
+            result.innerHTML = '<div style="color:#ff7070;">❌ Please enter a valid stream amount</div>';
             result.style.display = 'block';
             return;
         }
-        
-        // Amount is per day, convert to monthly
-        const monthlyAmount = amount * 30;
+        if (document.getElementById('streamBalanceWarning')?.style.display !== 'none' && !document.getElementById('streamRiskAck')?.checked) {
+            const result = document.getElementById('streamResult');
+            result.innerHTML = '<div style="color:#ff7070;">❌ Please confirm the stream risk warning first.</div>';
+            result.style.display = 'block';
+            return;
+        }
         
         const loading = document.getElementById('streamLoading');
         const result = document.getElementById('streamResult');
@@ -8025,6 +8111,8 @@
             addToStreamHistory({
                 receiver: receiver,
                 rate: amount,
+                period: period,
+                dailyRate: dailyAmount,
                 status: 'active',
                 txHash: txHash
             });
@@ -8038,8 +8126,10 @@
                         wallet_address: WALLET,
                         type: 'outgoing',
                         counterparty: receiver,
-                        flow_rate_per_day: amount,
+                        flow_rate_per_day: dailyAmount,
                         flow_rate_per_month: monthlyAmount,
+                        flow_rate_period: period,
+                        flow_rate_amount: amount,
                         tx_hash: txHash
                     })
                 });
@@ -8082,7 +8172,7 @@
     // Handle update stream
     async function handleUpdateStream() {
         const receiver = document.getElementById('streamReceiver').value.trim();
-        const amount = parseFloat(document.getElementById('streamAmount').value);
+        const { amount, period, monthlyAmount, dailyAmount } = getStreamAmountDetails();
         
         // Validate inputs
         if (!receiver || !/^0x[a-fA-F0-9]{40}$/.test(receiver)) {
@@ -8098,8 +8188,12 @@
             result.style.display = 'block';
             return;
         }
-        
-        const monthlyAmount = amount * 30;
+        if (document.getElementById('streamBalanceWarning')?.style.display !== 'none' && !document.getElementById('streamRiskAck')?.checked) {
+            const result = document.getElementById('streamResult');
+            result.innerHTML = '<div style="color:#ff7070;">❌ Please confirm the stream risk warning first.</div>';
+            result.style.display = 'block';
+            return;
+        }
         
         const loading = document.getElementById('streamLoading');
         const result = document.getElementById('streamResult');
@@ -8135,6 +8229,8 @@
             addToStreamHistory({
                 receiver: receiver,
                 rate: amount,
+                period: period,
+                dailyRate: dailyAmount,
                 status: 'active',
                 txHash: txHash
             });
