@@ -1320,16 +1320,16 @@ TX_HISTORY_CACHE_TTL = 300  # 5 minutes
 
 def get_comprehensive_tx_history(wallet_address: str, limit: int = 50, force: bool = False) -> list:
     """
-    Return classified transaction history across G$, cUSD, and USDT for the last 14 days.
+    Return classified transaction history across Celo G$, cUSD, USDT, USDC and XDC G$ for the last 14 days.
 
     Each item has:
       tx_type  – 'claim' | 'swap' | 'savings_deposit' | 'savings_withdraw' |
                  'transfer_sent' | 'transfer_received'
       label    – human-readable description
-      token    – 'G$' | 'cUSD' | 'USDT'
+      token    – 'G$' | 'cUSD' | 'USDT' | 'USDC'
 
     Key improvements over the old single-token version:
-    • Fetches G$, cUSD, USDT ERC-20 transfer events (all sends & receives)
+    • Fetches Celo G$, cUSD, USDT, USDC ERC-20 transfer events (all sends & receives)
     • Uses _get_logs_full so the ENTIRE date window is scanned, not just the
       first block-chunk that happens to have activity
     • Swap detection: batch-fetches transaction details in a single round-trip
@@ -1355,6 +1355,7 @@ def get_comprehensive_tx_history(wallet_address: str, limit: int = 50, force: bo
         {"symbol": "G$",   "address": GOODDOLLAR_CONTRACTS["GOODDOLLAR_TOKEN"], "decimals": 18},
         {"symbol": "cUSD", "address": CUSD_CONTRACT,  "decimals": 18},
         {"symbol": "USDT", "address": USDT_CONTRACT,  "decimals": 6},
+        {"symbol": "USDC", "address": USDC_CONTRACT,  "decimals": 6},
     ]
     TRANSFER_SIG = UBI_EVENT_SIGNATURES["TRANSFER"]
 
@@ -1399,7 +1400,7 @@ def get_comprehensive_tx_history(wallet_address: str, limit: int = 50, force: bo
 
                 direction = "sent" if from_addr.lower() == wallet_lower else "received"
                 # Format nicely: 2 decimals for cUSD/USDT, 4 for G$
-                decimals_display = 2 if token["symbol"] in ("cUSD", "USDT") else 4
+                decimals_display = 2 if token["symbol"] in ("cUSD", "USDT", "USDC") else 4
                 # Approximate Unix timestamp from block number (Celo ~5 sec/block)
                 approx_ts = now_ts - (to_block_int - block_num) * 5
                 raw_transfers.append({
