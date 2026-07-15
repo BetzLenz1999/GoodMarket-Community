@@ -11011,7 +11011,11 @@ def p2p_buffer_calculate():
             "flow_rate": flow_rate,
             "flow_rate_per_second": flow_rate / (10 ** 18),
             "required_buffer": buffer,
-            "total_required": flow_rate_per_month + buffer,
+            # Only the Superfluid buffer is locked upfront. The stream amount
+            # continues to leave the wallet over time; it is not added to the
+            # upfront requirement. Keep total_required as an alias for older UI
+            # code that may still read it.
+            "total_required": buffer,
             "g_dollar_address": g_dollar_address
         })
     except Exception as e:
