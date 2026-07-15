@@ -7384,7 +7384,7 @@ def wallet_history():
 @auth_required
 def wallet_transaction_history():
     """
-    Comprehensive transaction history — G$ transfers classified as:
+    Comprehensive transaction history — Celo G$, cUSD, USDT, USDC and XDC G$ transfers classified as:
     claim | savings_deposit | savings_withdraw | swap | transfer_sent | transfer_received
     """
     try:
