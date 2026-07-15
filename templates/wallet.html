@@ -856,16 +856,8 @@
             white-space: normal;
         }
         .wallet-layout {
-            display: grid;
-            grid-template-columns: minmax(140px, 38%) minmax(0, 1fr);
-            gap: 0.9rem;
-            align-items: start;
+            display: block;
             padding: 0 1.25rem;
-        }
-        .sidebar-nav {
-            position: sticky;
-            top: 82px;
-            align-self: start;
         }
         .wallet-main { min-width: 0; }
 
@@ -1605,17 +1597,8 @@
             padding: 0.75rem 0 0.4rem;
         }
 
-        @media (min-width: 992px) {
-            .wallet-layout {
-                grid-template-columns: 230px minmax(0, 1fr);
-                gap: 1rem;
-            }
-        }
-
         @media (max-width: 560px) {
             .wallet-layout {
-                grid-template-columns: minmax(124px, 41%) minmax(0, 1fr);
-                gap: 0.72rem;
                 padding: 0 0.9rem;
             }
             .wallet-reminder-banner {
@@ -1667,6 +1650,247 @@
 
         @media (min-width: 481px) {
             body { border-left: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05); }
+        }
+
+        /* ── UBI Claim Hero (center) ── */
+        .ubi-hero {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 1.4rem 1rem 0.4rem;
+            margin: 0 auto 0.6rem;
+        }
+        .ubi-hero-orb {
+            position: relative;
+            width: 220px;
+            height: 220px;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            background: radial-gradient(circle at 50% 40%, rgba(var(--accent-rgb),0.45) 0%, rgba(83,42,182,0.35) 45%, rgba(83,42,182,0.08) 75%, transparent 100%);
+            border: 1px solid rgba(var(--accent-rgb),0.45);
+            box-shadow: 0 0 0 1px rgba(var(--accent-rgb),0.2), 0 0 42px rgba(var(--accent-rgb),0.4), inset 0 0 40px rgba(var(--accent-rgb),0.18);
+            animation: heroOrbPulse 3s ease-in-out infinite;
+            transition: transform 0.2s ease, box-shadow 0.25s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .ubi-hero-orb::before {
+            content: '';
+            position: absolute;
+            inset: -14px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(var(--accent-rgb),0.18) 0%, transparent 68%);
+            z-index: -1;
+            animation: heroOrbHalo 3.2s ease-out infinite;
+            pointer-events: none;
+        }
+        .ubi-hero-orb:hover {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 0 0 1px rgba(var(--accent-rgb),0.35), 0 0 55px rgba(var(--accent-rgb),0.55), inset 0 0 46px rgba(var(--accent-rgb),0.24);
+        }
+        .ubi-hero-orb:active { transform: scale(0.98); }
+        .ubi-hero-orb.is-claimed {
+            background: radial-gradient(circle at 50% 40%, rgba(0,230,118,0.35) 0%, rgba(0,180,90,0.22) 45%, transparent 78%);
+            border-color: rgba(0,230,118,0.4);
+            box-shadow: 0 0 0 1px rgba(0,230,118,0.2), 0 0 34px rgba(0,230,118,0.32), inset 0 0 34px rgba(0,230,118,0.16);
+            animation: none;
+        }
+        .ubi-hero-orb.is-disabled {
+            background: radial-gradient(circle at 50% 40%, rgba(167,139,250,0.3) 0%, rgba(83,42,182,0.18) 55%, transparent 80%);
+            border-color: rgba(167,139,250,0.4);
+            animation: none;
+        }
+        @keyframes heroOrbPulse {
+            0%, 100% { box-shadow: 0 0 0 1px rgba(var(--accent-rgb),0.2), 0 0 34px rgba(var(--accent-rgb),0.35), inset 0 0 36px rgba(var(--accent-rgb),0.16); }
+            50% { box-shadow: 0 0 0 1px rgba(var(--accent-rgb),0.34), 0 0 52px rgba(var(--accent-rgb),0.55), inset 0 0 44px rgba(var(--accent-rgb),0.24); }
+        }
+        @keyframes heroOrbHalo {
+            0% { transform: scale(0.9); opacity: 0.5; }
+            70% { transform: scale(1.12); opacity: 0.16; }
+            100% { transform: scale(1.15); opacity: 0.03; }
+        }
+        .ubi-hero-eyebrow {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: rgba(232,234,246,0.72);
+            margin-bottom: 0.15rem;
+        }
+        .ubi-hero-amount {
+            font-size: 2.05rem;
+            font-weight: 900;
+            line-height: 1.05;
+            color: #fff;
+            letter-spacing: -0.5px;
+        }
+        .ubi-hero-amount .unit {
+            font-size: 1rem;
+            font-weight: 800;
+            color: #86efac;
+            margin-left: 0.2rem;
+        }
+        .ubi-hero-orb.is-claimed .ubi-hero-amount .unit { color: #86efac; }
+        .ubi-hero-sub {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: rgba(232,234,246,0.7);
+            margin-top: 0.35rem;
+        }
+        .ubi-hero-cta {
+            margin-top: 0.9rem;
+            font-size: 0.9rem;
+            font-weight: 800;
+            color: #fff;
+            padding: 0.55rem 1.5rem;
+            border-radius: 999px;
+            background: linear-gradient(135deg, rgba(var(--accent-rgb),0.9), rgba(83,42,182,0.95));
+            border: 1px solid rgba(var(--accent-rgb),0.6);
+            box-shadow: 0 6px 22px rgba(var(--accent-rgb),0.35);
+        }
+        .ubi-hero-timer {
+            margin-top: 0.6rem;
+            font-size: 0.74rem;
+            color: rgba(232,234,246,0.55);
+        }
+
+        /* ── Bottom Navigation ── */
+        .wallet-bottom-nav {
+            position: fixed;
+            left: 50%;
+            bottom: 0;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 480px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.2rem;
+            padding: 0.5rem 0.6rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+            background: rgba(13,15,32,0.92);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border-top: 1px solid rgba(255,255,255,0.08);
+            z-index: 1200;
+        }
+        .bn-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.22rem;
+            padding: 0.4rem 0.2rem;
+            border-radius: 12px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            color: var(--text-dim);
+            font-family: inherit;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+        .bn-item:hover, .bn-item.active {
+            background: rgba(var(--accent-rgb),0.12);
+            color: #fff;
+        }
+        .bn-icon { font-size: 1.25rem; line-height: 1; }
+        .bn-label {
+            font-size: 0.63rem;
+            font-weight: 700;
+            text-align: center;
+            line-height: 1.1;
+        }
+
+        /* Bottom-sheet submenu */
+        .bn-sheet-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(4,6,16,0.6);
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+            z-index: 1300;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+        .bn-sheet-overlay.open { opacity: 1; pointer-events: auto; }
+        .bn-sheet {
+            position: fixed;
+            left: 50%;
+            bottom: 0;
+            transform: translate(-50%, 100%);
+            width: 100%;
+            max-width: 480px;
+            background: #12142b;
+            border-top-left-radius: 22px;
+            border-top-right-radius: 22px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            padding: 0.8rem 1rem calc(1.2rem + env(safe-area-inset-bottom, 0px));
+            z-index: 1310;
+            transition: transform 0.28s cubic-bezier(0.16,1,0.3,1);
+            box-shadow: 0 -12px 40px rgba(0,0,0,0.5);
+        }
+        .bn-sheet.open { transform: translate(-50%, 0); }
+        .bn-sheet-handle {
+            width: 42px; height: 4px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.2);
+            margin: 0 auto 0.7rem;
+        }
+        .bn-sheet-title {
+            font-size: 0.95rem;
+            font-weight: 800;
+            color: #fff;
+            text-align: center;
+            margin-bottom: 0.9rem;
+        }
+        .bn-sheet-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.6rem;
+        }
+        .bn-sheet-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0.4rem;
+            padding: 0.75rem 0.4rem;
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.03);
+            cursor: pointer;
+            transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
+        }
+        .bn-sheet-item:hover {
+            border-color: rgba(var(--accent-rgb),0.4);
+            background: rgba(var(--accent-rgb),0.06);
+            transform: translateY(-2px);
+        }
+        .bn-sheet-item .bn-sheet-circle {
+            width: 46px; height: 46px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.15rem;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+        }
+        .bn-sheet-item .bn-sheet-name {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--text-dim);
+            text-align: center;
+            line-height: 1.15;
+        }
+        body { padding-bottom: 84px; }
+
+        @media (max-width: 560px) {
+            .ubi-hero-orb { width: 196px; height: 196px; }
+            .ubi-hero-amount { font-size: 1.8rem; }
         }
     </style>
 </head>
@@ -1947,87 +2171,20 @@
     </section>
     </div>
 
-    <div class="wallet-layout">
-        <!-- Action Buttons -->
-        <aside class="sidebar-nav">
-            <div class="action-row">
-                <div class="action-item" id="actionGoodSwap" onclick="return navigateWithFeedback('/swap?tab=goodswap', 'Opening GoodSwap…')">
-                    <div class="action-circle">⇌</div>
-                    <span class="action-label">GoodSwap</span>
-                </div>
-                <div class="action-item" onclick="return navigateWithFeedback('/minigames', 'Opening Play & Earn…')">
-                    <div class="action-circle" style="background:linear-gradient(135deg,#f59e0b,#e11d48);color:#fff;">🎮</div>
-                    <span class="action-label">Play & Earn</span>
-                </div>
-                <div class="action-item" id="actionLearnEarn" onclick="return navigateWithFeedback('/learn-earn?from=wallet', 'Opening Learn &amp; Earn…')">
-                    <div class="action-circle" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;">📚</div>
-                    <span class="action-label">Learn &amp; Earn</span>
-                </div>
-                <div class="action-item" id="actionGdRaffle" onclick="openGdRafflePanel()">
-                    <div class="action-circle" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;">🎟️</div>
-                    <span class="action-label">G$ Raffle</span>
-                </div>
-                <div class="action-item more-ways-btn" onclick="return navigateWithFeedback('/dashboard', 'Opening Dashboard…')">
-                    <div class="action-circle" style="background:linear-gradient(135deg,#f59e0b,#e11d48);color:#fff;">💰</div>
-                    <span class="action-label">More ways to Earn G$</span>
-                </div>
-                <div class="action-item" onclick="openModal('sendModal')">
-                    <div class="action-circle">↑</div>
-                    <span class="action-label">Send</span>
-                </div>
-                <div class="claim-button-box" id="claimButtonBox" onclick="openModal('claimModal');">
-                    <div class="claim-box-left">
-                        <div class="claim-box-icon" id="claimBoxIcon">G$</div>
-                        <div class="claim-box-content">
-                            <div class="claim-box-title" id="claimBoxTitle">
-                                <span>Claim G$</span>
-                                <span class="sparkle" id="claimBoxSparkle">✨</span>
-                            </div>
-                            <div class="claim-box-amount" id="claimBoxAmount">
-                                Loading...
-                            </div>
-                        </div>
-                    </div>
-                    <div class="claim-box-right">
-                        <div class="claim-box-arrow">→</div>
-                        <div class="claim-box-timer" id="claimBoxTimer"></div>
-                    </div>
-                </div>
-                <div class="action-item" onclick="openModal('streamModal')">
-                    <div class="action-circle" style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;">💸</div>
-                    <span class="action-label">Stream G$</span>
-                </div>
-                <div class="action-item" id="actionBridge" onclick="return navigateWithFeedback('/swap?tab=bridge', 'Opening Bridge…')">
-                    <div class="action-circle" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;">🌉</div>
-                    <span class="action-label">Bridge</span>
-                </div>
-                <div class="action-item" id="actionSavings" onclick="return navigateWithFeedback('/savings', 'Opening Savings…')">
-                    <div class="action-circle">🏦</div>
-                    <span class="action-label">Savings</span>
-                </div>
-                <div class="action-item" id="actionP2P" onclick="return navigateWithFeedback('/p2p', 'Opening P2P Trading…')">
-                    <div class="action-circle" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;">🤝</div>
-                    <span class="action-label">P2P Trade</span>
-                </div>
-                <div class="action-item" onclick="handleVirtualCardAction()">
-                    <div class="action-circle">💳</div>
-                    <span class="action-label">Virtual Card</span>
-                </div>
-                <div class="action-item" id="actionMobileTopup" onclick="handleMobileTopupAction()">
-                    <div class="action-circle" style="background:linear-gradient(135deg,#f97316,#ef4444);color:#fff;">📱</div>
-                    <span class="action-label">Mobile Top-Up</span>
-                </div>
-                <div class="action-item" onclick="return navigateWithFeedback('/xdc-wallet', 'Opening X Swap…')">
-                    <div class="action-circle">💠</div>
-                    <span class="action-label">X Swap</span>
-                </div>
-                <div class="action-item" onclick="return navigateWithFeedback('/overview', 'Opening Overview…')">
-                    <div class="action-circle">🏠</div>
-                    <span class="action-label">Overview</span>
-                </div>
-            </div>
-        </aside>
+    <!-- UBI Claim Hero (center) -->
+    <div class="ubi-hero">
+        <div class="ubi-hero-orb" id="ubiClaimHero" role="button" tabindex="0"
+             onclick="openModal('claimModal');"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openModal('claimModal');}">
+            <div class="ubi-hero-eyebrow" id="heroClaimEyebrow">Claimable UBI</div>
+            <div class="ubi-hero-amount" id="heroClaimAmount">— <span class="unit">G$</span></div>
+            <div class="ubi-hero-sub" id="heroClaimSub">Loading…</div>
+            <div class="ubi-hero-timer" id="heroClaimTimer"></div>
+        </div>
+        <div class="ubi-hero-cta" id="heroClaimCta">Claim UBI G$</div>
+    </div>
 
+    <div class="wallet-layout">
         <section class="wallet-main">
             <!-- Tab Bar -->
             <div class="tab-bar">
@@ -5244,16 +5401,19 @@
         function startCountdown() {
             const box = document.getElementById('ubiCountdownBox');
             const display = document.getElementById('ubiCountdownDisplay');
-            const claimBoxTimer = document.getElementById('claimBoxTimer');
+            const heroTimer = document.getElementById('heroClaimTimer');
             box.style.display = 'block';
             if (_countdownInterval) clearInterval(_countdownInterval);
             function tick() {
                 const remaining = getNextResetMs();
                 const formatted = formatCountdown(remaining);
                 display.textContent = formatted;
-                // Also update the claim button timer if shown
-                if (claimBoxTimer && claimBoxTimer.textContent !== formatted) {
-                    claimBoxTimer.textContent = formatted;
+                // Also update the claim hero timer if the hero is in the already-claimed state
+                if (heroTimer) {
+                    const hero = document.getElementById('ubiClaimHero');
+                    if (hero && hero.classList.contains('is-claimed')) {
+                        heroTimer.textContent = 'Next claim in ' + formatted;
+                    }
                 }
                 if (remaining <= 0) {
                     clearInterval(_countdownInterval);
@@ -5364,26 +5524,26 @@
         function updateClaimButtonBox(data) {
             const claims = data.claims || {};
             const caps = getClaimWalletCapabilities();
-            
-            const claimBox = document.getElementById('claimButtonBox');
-            const claimBoxTitle = document.getElementById('claimBoxTitle');
-            const claimBoxAmount = document.getElementById('claimBoxAmount');
-            const claimBoxIcon = document.getElementById('claimBoxIcon');
-            const claimBoxSparkle = document.getElementById('claimBoxSparkle');
-            const claimBoxTimer = document.getElementById('claimBoxTimer');
-            
-            if (!claimBox) return;
-            
+
+            const hero = document.getElementById('ubiClaimHero');
+            const heroEyebrow = document.getElementById('heroClaimEyebrow');
+            const heroAmount = document.getElementById('heroClaimAmount');
+            const heroSub = document.getElementById('heroClaimSub');
+            const heroTimer = document.getElementById('heroClaimTimer');
+            const heroCta = document.getElementById('heroClaimCta');
+
+            if (!hero) return;
+
             // Calculate total claimable G$ from all available networks
             let totalClaimable = 0;
             let claimableNetworks = [];
-            
+
             if (claims.celo && claims.celo.can_claim && claims.celo.is_available !== false) {
                 const celoAmt = parseFloat(claims.celo.claimable) || parseFloat(claims.celo.entitlement) || 0;
                 totalClaimable += celoAmt;
                 claimableNetworks.push('Celo');
             }
-            
+
             if (claims.xdc && claims.xdc.can_claim && claims.xdc.is_available !== false) {
                 if (!caps.isMiniPay && caps.supportsXdc) {
                     const xdcAmt = parseFloat(claims.xdc.claimable) || parseFloat(claims.xdc.entitlement) || 0;
@@ -5391,54 +5551,47 @@
                     claimableNetworks.push('XDC');
                 }
             }
-            
+
             // Check for face verification needed
             const needsVerification = claims.celo && (
-                claims.celo.reason === 'not_verified' || 
-                claims.celo.reason === 're_verification_needed' || 
+                claims.celo.reason === 'not_verified' ||
+                claims.celo.reason === 're_verification_needed' ||
                 claims.celo.is_verified === false
             );
-            
+
             // Check if any network has claimable balance
             const hasClaimable = totalClaimable > 0 && !needsVerification;
-            
-            // Update button state
-            claimBox.classList.remove('is-disabled', 'is-claimed');
-            
+
+            // Update hero state
+            hero.classList.remove('is-disabled', 'is-claimed');
+            heroTimer.textContent = '';
+
             if (needsVerification) {
-                // Face verification needed
-                claimBoxTitle.innerHTML = '<span>Verify Face ID</span>';
-                claimBoxIcon.textContent = '🪪';
-                claimBoxIcon.classList.remove('claimed-icon');
-                claimBoxSparkle.style.display = 'none';
-                claimBoxAmount.innerHTML = 'Required to claim G$';
-                claimBox.classList.add('is-disabled');
+                heroEyebrow.textContent = 'Face verification';
+                heroAmount.innerHTML = '🪪';
+                heroSub.textContent = 'Required to claim your UBI G$';
+                heroCta.textContent = 'Verify Face ID';
+                hero.classList.add('is-disabled');
             } else if (hasClaimable) {
-                // Has claimable G$
-                const formattedAmount = totalClaimable.toFixed(2);
-                const networkLabel = claimableNetworks.length > 1 
-                    ? claimableNetworks.join(' + ') 
+                const formattedAmount = totalClaimable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+                const networkLabel = claimableNetworks.length > 1
+                    ? claimableNetworks.join(' + ')
                     : claimableNetworks[0] || 'Celo';
-                
-                claimBoxTitle.innerHTML = '<span>Claim G$</span><span class="sparkle">✨</span>';
-                claimBoxIcon.textContent = 'G$';
-                claimBoxIcon.classList.remove('claimed-icon');
-                claimBoxSparkle.style.display = 'inline';
-                claimBoxAmount.innerHTML = `<span class="amount-value">${formattedAmount} G$</span> available${claimableNetworks.length > 1 ? ` (${networkLabel})` : ''}`;
-                claimBoxTimer.textContent = '';
+                heroEyebrow.textContent = 'Claimable UBI';
+                heroAmount.innerHTML = `${formattedAmount} <span class="unit">G$</span>`;
+                heroSub.textContent = `available to claim${claimableNetworks.length ? ` on ${networkLabel}` : ''}`;
+                heroCta.textContent = 'Claim UBI G$';
             } else {
-                // Already claimed today
-                claimBoxTitle.innerHTML = '<span>Already Claimed</span>';
-                claimBoxIcon.textContent = '✅';
-                claimBoxIcon.classList.add('claimed-icon');
-                claimBoxSparkle.style.display = 'none';
-                claimBoxAmount.innerHTML = 'Next claim available soon';
-                claimBox.classList.add('is-claimed');
-                
+                heroEyebrow.textContent = 'Claimable UBI';
+                heroAmount.innerHTML = `0.00 <span class="unit">G$</span>`;
+                heroSub.textContent = 'Already claimed — come back soon';
+                heroCta.textContent = 'View claim details';
+                hero.classList.add('is-claimed');
+
                 // Show countdown if available
                 const countdown = document.getElementById('ubiCountdownDisplay');
                 if (countdown && countdown.textContent && countdown.textContent !== '--:--:--') {
-                    claimBoxTimer.textContent = countdown.textContent;
+                    heroTimer.textContent = 'Next claim in ' + countdown.textContent;
                 }
             }
         }
@@ -8713,6 +8866,120 @@
                 setTimeout(function() { loadEthers(); loadQRCode(); }, 3000);
             }
         })();
+    </script>
+
+    <!-- ── Bottom Navigation Submenu Sheets ── -->
+    <div class="bn-sheet-overlay" id="bnSheetOverlay" onclick="closeBottomSheet()"></div>
+
+    <div class="bn-sheet" id="bnSheetEarn" role="dialog" aria-label="More ways to earn G$">
+        <div class="bn-sheet-handle"></div>
+        <div class="bn-sheet-title">💰 More Ways To Earn G$</div>
+        <div class="bn-sheet-grid">
+            <div class="bn-sheet-item" onclick="bnGo(function(){ navigateWithFeedback('/minigames', 'Opening Play & Earn…'); })">
+                <div class="bn-sheet-circle" style="background:linear-gradient(135deg,#f59e0b,#e11d48);color:#fff;">🎮</div>
+                <div class="bn-sheet-name">Play &amp; Earn</div>
+            </div>
+            <div class="bn-sheet-item" onclick="bnGo(function(){ navigateWithFeedback('/learn-earn?from=wallet', 'Opening Learn &amp; Earn…'); })">
+                <div class="bn-sheet-circle" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;">📚</div>
+                <div class="bn-sheet-name">Learn &amp; Earn</div>
+            </div>
+            <div class="bn-sheet-item" onclick="bnGo(function(){ openGdRafflePanel(); })">
+                <div class="bn-sheet-circle" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;">🎟️</div>
+                <div class="bn-sheet-name">G$ Raffle</div>
+            </div>
+            <div class="bn-sheet-item" onclick="bnGo(function(){ navigateWithFeedback('/savings', 'Opening Savings…'); })">
+                <div class="bn-sheet-circle">🏦</div>
+                <div class="bn-sheet-name">Savings</div>
+            </div>
+            <div class="bn-sheet-item" onclick="bnGo(function(){ navigateWithFeedback('/p2p', 'Opening P2P Trading…'); })">
+                <div class="bn-sheet-circle" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;">🤝</div>
+                <div class="bn-sheet-name">P2P Trade</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bn-sheet" id="bnSheetWallet" role="dialog" aria-label="GoodMarket Wallet">
+        <div class="bn-sheet-handle"></div>
+        <div class="bn-sheet-title">👛 GoodMarket Wallet</div>
+        <div class="bn-sheet-grid">
+            <div class="bn-sheet-item" onclick="bnGo(function(){ openModal('sendModal'); })">
+                <div class="bn-sheet-circle">↑</div>
+                <div class="bn-sheet-name">Send</div>
+            </div>
+            <div class="bn-sheet-item" onclick="bnGo(function(){ navigateWithFeedback('/swap?tab=goodswap', 'Opening GoodSwap…'); })">
+                <div class="bn-sheet-circle">⇌</div>
+                <div class="bn-sheet-name">GoodSwap</div>
+            </div>
+            <div class="bn-sheet-item" onclick="bnGo(function(){ navigateWithFeedback('/swap?tab=bridge', 'Opening Bridge…'); })">
+                <div class="bn-sheet-circle" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;">🌉</div>
+                <div class="bn-sheet-name">Bridge</div>
+            </div>
+            <div class="bn-sheet-item" onclick="bnGo(function(){ openModal('streamModal'); })">
+                <div class="bn-sheet-circle" style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;">💸</div>
+                <div class="bn-sheet-name">Stream G$</div>
+            </div>
+            <div class="bn-sheet-item" onclick="bnGo(function(){ navigateWithFeedback('/xdc-wallet', 'Opening XSwap…'); })">
+                <div class="bn-sheet-circle">💠</div>
+                <div class="bn-sheet-name">XSwap</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bn-sheet" id="bnSheetServices" role="dialog" aria-label="Services">
+        <div class="bn-sheet-handle"></div>
+        <div class="bn-sheet-title">🛠️ Services</div>
+        <div class="bn-sheet-grid">
+            <div class="bn-sheet-item" onclick="bnGo(function(){ handleVirtualCardAction(); })">
+                <div class="bn-sheet-circle">💳</div>
+                <div class="bn-sheet-name">Virtual Card</div>
+            </div>
+            <div class="bn-sheet-item" onclick="bnGo(function(){ handleMobileTopupAction(); })">
+                <div class="bn-sheet-circle" style="background:linear-gradient(135deg,#f97316,#ef4444);color:#fff;">📱</div>
+                <div class="bn-sheet-name">Mobile Top-Up</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Bottom Navigation Bar ── -->
+    <nav class="wallet-bottom-nav" aria-label="Wallet navigation">
+        <button type="button" class="bn-item" onclick="openBottomSheet('bnSheetEarn')">
+            <span class="bn-icon">💰</span>
+            <span class="bn-label">More Ways<br>To Earn</span>
+        </button>
+        <button type="button" class="bn-item" onclick="openBottomSheet('bnSheetWallet')">
+            <span class="bn-icon">👛</span>
+            <span class="bn-label">GoodMarket<br>Wallet</span>
+        </button>
+        <button type="button" class="bn-item" onclick="openBottomSheet('bnSheetServices')">
+            <span class="bn-icon">🛠️</span>
+            <span class="bn-label">Services</span>
+        </button>
+        <button type="button" class="bn-item" onclick="navigateWithFeedback('/news', 'Opening News…')">
+            <span class="bn-icon">📰</span>
+            <span class="bn-label">News</span>
+        </button>
+    </nav>
+
+    <script>
+        function openBottomSheet(id) {
+            closeBottomSheet();
+            const sheet = document.getElementById(id);
+            const overlay = document.getElementById('bnSheetOverlay');
+            if (!sheet || !overlay) return;
+            overlay.classList.add('open');
+            sheet.classList.add('open');
+        }
+        function closeBottomSheet() {
+            document.querySelectorAll('.bn-sheet.open').forEach(function(s){ s.classList.remove('open'); });
+            const overlay = document.getElementById('bnSheetOverlay');
+            if (overlay) overlay.classList.remove('open');
+        }
+        // Close the sheet, then run the selected action.
+        function bnGo(action) {
+            closeBottomSheet();
+            if (typeof action === 'function') setTimeout(action, 180);
+        }
+        document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeBottomSheet(); });
     </script>
 
     {% include "_ai_agent.html" %}
