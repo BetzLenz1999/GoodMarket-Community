@@ -383,8 +383,16 @@
         }
 
         /* ── Portfolio Card (credit-card style) ── */
+        .wallet-hero-grid {
+            display: grid;
+            grid-template-columns: minmax(320px, 0.92fr) minmax(260px, 0.78fr);
+            align-items: center;
+            gap: 1.6rem;
+            margin: 0.65rem 1.25rem 1.35rem;
+        }
+
         .balance-card {
-            margin: 0.5rem 1.25rem 1.25rem;
+            margin: 0;
             background:
                 radial-gradient(120% 80% at 12% 10%, rgba(95,242,210,0.22) 0%, transparent 55%),
                 radial-gradient(110% 80% at 92% 92%, rgba(236,72,153,0.18) 0%, transparent 55%),
@@ -862,6 +870,27 @@
         .wallet-layout {
             display: block;
             padding: 0 1.25rem;
+        }
+
+        @media (min-width: 900px) {
+            .wallet-hero-grid {
+                margin-top: 0.8rem;
+                grid-template-columns: minmax(390px, 0.9fr) minmax(310px, 0.7fr);
+                gap: 2.4rem;
+            }
+            .wallet-hero-grid .balance-card {
+                max-width: 620px;
+                justify-self: start;
+            }
+            .wallet-hero-grid .ubi-hero {
+                justify-self: center;
+                align-self: center;
+                padding: 0;
+                margin: 0;
+            }
+            .wallet-layout {
+                padding-top: 0.15rem;
+            }
         }
         .wallet-main { min-width: 0; }
 
@@ -1626,9 +1655,14 @@
                 margin-right: 0.9rem;
                 top: 64px;
             }
-            .balance-card {
+            .wallet-hero-grid {
+                display: block;
                 margin-left: 0.9rem;
                 margin-right: 0.9rem;
+            }
+            .balance-card {
+                margin-left: 0;
+                margin-right: 0;
             }
             .top-bar {
                 padding-left: 0.9rem;
@@ -2088,6 +2122,7 @@
 
 
 
+    <section class="wallet-hero-grid" aria-label="Wallet overview">
     <!-- Portfolio Card (credit-card style) -->
     <div class="balance-card" role="group" aria-label="GoodDollar portfolio card">
         <div class="pc-top">
@@ -2205,6 +2240,7 @@
         </div>
         <div class="ubi-hero-cta" id="heroClaimCta">Claim UBI G$</div>
     </div>
+    </section>
 
     <div class="wallet-layout">
         <section class="wallet-main">
