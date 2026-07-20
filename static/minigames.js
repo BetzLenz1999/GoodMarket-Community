@@ -239,11 +239,15 @@ function runCoinClickGame(sessionId, config, duration) {
             const resultEl = document.getElementById('coinClickResult');
             resultEl.style.display = 'block';
             if (data.success) {
-                resultEl.innerHTML = `<div style="background:rgba(16,185,129,0.14); border:1px solid rgba(16,185,129,0.35); border-radius:14px; padding:1rem; color:#d1fae5;">✅ ${data.message}<br><small>Coins clicked: ${state.coinsClicked} · Bombs hit: ${state.bombsHit} · Plays left: ${data.remaining_plays}</small></div>`;
+                const remainingPlays = Number(data.remaining_plays || 0);
+                const playAgainButton = remainingPlays > 0
+                    ? `<button type="button" onclick="startCoinClick()" style="margin-top:0.85rem; background:linear-gradient(135deg,#fbbf24,#f59e0b); color:#111827; border:none; border-radius:999px; padding:0.75rem 1.35rem; font-weight:800; cursor:pointer; box-shadow:0 10px 22px rgba(251,191,36,0.25);">🔁 Play Again</button>`
+                    : `<button type="button" disabled style="margin-top:0.85rem; background:rgba(148,163,184,0.22); color:#cbd5e1; border:1px solid rgba(148,163,184,0.35); border-radius:999px; padding:0.75rem 1.35rem; font-weight:800; cursor:not-allowed;">No plays left today</button>`;
+                resultEl.innerHTML = `<div style="background:rgba(16,185,129,0.14); border:1px solid rgba(16,185,129,0.35); border-radius:14px; padding:1rem; color:#d1fae5;">✅ ${data.message}<br><small>Coins clicked: ${state.coinsClicked} · Bombs hit: ${state.bombsHit} · Plays left: ${remainingPlays}</small><div>${playAgainButton}</div></div>`;
                 showNotification(`CoinClick complete: +${Number(data.winnings || 0).toFixed(2)} G$`, 'success');
                 if (typeof loadBalance === 'function') await loadBalance();
             } else {
-                resultEl.innerHTML = `<div style="background:rgba(239,68,68,0.14); border:1px solid rgba(239,68,68,0.35); border-radius:14px; padding:1rem; color:#fecaca;">❌ ${data.error || 'Reward save failed.'}</div>`;
+                resultEl.innerHTML = `<div style="background:rgba(239,68,68,0.14); border:1px solid rgba(239,68,68,0.35); border-radius:14px; padding:1rem; color:#fecaca;">❌ ${data.error || 'Reward save failed.'}<div><button type="button" onclick="startCoinClick()" style="margin-top:0.85rem; background:rgba(239,68,68,0.18); color:#fecaca; border:1px solid rgba(239,68,68,0.35); border-radius:999px; padding:0.75rem 1.35rem; font-weight:800; cursor:pointer;">Try Again</button></div></div>`;
             }
         } catch (error) {
             console.error('CoinClick complete error:', error);
