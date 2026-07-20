@@ -51,6 +51,15 @@ class MinigamesManager:
                 'max_plays_per_day': 5,
                 'reward_per_match': 2.0,
                 'base_reward': 0,
+            },
+            'coin_click': {
+                'max_plays_per_day': 10,
+                'daily_reward_cap': 50.0,
+                'max_reward_per_play': 10.0,
+                'duration_seconds': 37,
+                'coin_values': [1, 2, 5],
+                'bomb_penalty': 2,
+                'base_reward': 0,
             }
         }
 
@@ -256,20 +265,23 @@ class MinigamesManager:
     def start_game_session(self, wallet_address: str, game_type: str, bet_amount: float = 0) -> dict:
         """Start a new game session"""
         try:
+            if game_type not in self.game_configs:
+                return {'success': False, 'error': 'Game type is not available'}
+
             # Check daily limit
             limit_check = self.check_daily_limit(wallet_address, game_type)
 
             if not limit_check['can_play']:
                 return {
                     'success': False,
-                    'error': f"Daily limit reached (20 plays). Come back tomorrow!"
+                    'error': f"Daily limit reached ({limit_check['max_plays']} plays). Come back tomorrow!"
                 }
 
-            # Crash game is now FREE - no bet deduction needed
-            if game_type == 'crash_game':
+            # Crash game and CoinClick are FREE - no bet deduction needed
+            if game_type in ['crash_game', 'coin_click']:
                 # Game is free, no balance checking or deduction
                 bet_amount = 0
-                logger.info(f"🎮 Starting FREE crash game for {wallet_address[:8]}...")
+                logger.info(f"🎮 Starting FREE {game_type} for {wallet_address[:8]}...")
 
             session_id = f"GAME-{uuid.uuid4().hex[:8].upper()}"
 
@@ -313,6 +325,51 @@ class MinigamesManager:
             session_info = session.data[0]
             wallet_address = session_info['wallet_address']
             game_type = session_info['game_type']
+
+            if session_info.get('status') == 'completed':
+                return {'success': False, 'error': 'Game session already completed'}
+
+            # CoinClick: reward clicked GoodDollar coins, enforce 10 plays/day and 50 G$/day cap.
+            if game_type == 'coin_click':
+                config = self.game_configs[game_type]
+                earned_today = self._get_earned_today(wallet_address, game_type)
+                daily_remaining = max(0.0, config['daily_reward_cap'] - earned_today)
+
+                clicked_value = float(game_data.get('clicked_value', score) if game_data else score)
+                bombs_hit = int(game_data.get('bombs_hit', 0) if game_data else 0)
+                penalty = max(0, bombs_hit) * config['bomb_penalty']
+                requested_reward = max(0.0, clicked_value - penalty)
+                winnings = min(requested_reward, config['max_reward_per_play'], daily_remaining)
+                score_int = int(max(0, clicked_value))
+
+                self.supabase.table('minigame_sessions')\
+                    .update({
+                        'score': score_int,
+                        'g_dollar_earned': winnings,
+                        'game_data': game_data or {},
+                        'status': 'completed',
+                        'completed_at': datetime.now().isoformat()
+                    })\
+                    .eq('session_id', session_id)\
+                    .execute()
+
+                self._update_daily_limits(wallet_address, game_type, winnings)
+                self._update_user_stats(wallet_address, game_type, score_int, winnings)
+                new_balance = self._add_to_available_balance(wallet_address, winnings)
+                updated_limit = self.check_daily_limit(wallet_address, game_type)
+
+                return {
+                    'success': True,
+                    'score': score_int,
+                    'winnings': winnings,
+                    'reward': winnings,
+                    'available_balance': new_balance,
+                    'daily_earned': min(config['daily_reward_cap'], earned_today + winnings),
+                    'daily_reward_cap': config['daily_reward_cap'],
+                    'remaining_plays': updated_limit.get('remaining_plays', 0),
+                    'plays_today': updated_limit.get('plays_today', 0),
+                    'message': f'Collected {winnings} G$! Daily cap: {min(config["daily_reward_cap"], earned_today + winnings):.2f}/{config["daily_reward_cap"]:.0f} G$'
+                }
 
             # For crash_game, calculate winnings using tier-based reward system
             if game_type == 'crash_game':
@@ -476,6 +533,52 @@ class MinigamesManager:
         except Exception as e:
             logger.error(f"❌ Error completing game session: {e}")
             return {'success': False, 'error': str(e)}
+
+    def _get_earned_today(self, wallet_address: str, game_type: str) -> float:
+        """Return the amount earned today for a game type."""
+        today = date.today().isoformat()
+        result = self.supabase.table('daily_game_limits')\
+            .select('earned_today')\
+            .eq('wallet_address', wallet_address)\
+            .eq('game_type', game_type)\
+            .eq('game_date', today)\
+            .execute()
+        if result.data:
+            return float(result.data[0].get('earned_today') or 0)
+        return 0.0
+
+    def _add_to_available_balance(self, wallet_address: str, amount: float) -> float:
+        """Add minigame winnings to the user's withdrawable Play & Earn balance."""
+        balance_result = self.supabase.table('minigame_balances')\
+            .select('*')\
+            .eq('wallet_address', wallet_address)\
+            .execute()
+
+        if balance_result.data:
+            current_balance = balance_result.data[0]
+            new_balance = float(current_balance.get('available_balance', 0) or 0) + amount
+            self.supabase.table('minigame_balances')\
+                .update({
+                    'available_balance': new_balance,
+                    'updated_at': datetime.now().isoformat()
+                })\
+                .eq('wallet_address', wallet_address)\
+                .execute()
+        else:
+            new_balance = amount
+            self.supabase.table('minigame_balances').insert({
+                'wallet_address': wallet_address,
+                'available_balance': new_balance,
+                'total_withdrawn': 0,
+                'created_at': datetime.now().isoformat(),
+                'updated_at': datetime.now().isoformat()
+            }).execute()
+
+        cache_key = f'minigame_balance_{wallet_address}'
+        if hasattr(self, '_cache') and cache_key in self._cache:
+            del self._cache[cache_key]
+
+        return new_balance
 
     def _calculate_reward(self, game_type: str, score: int, game_data: dict = None) -> float:
         """Calculate reward based on game type and score"""
