@@ -188,9 +188,26 @@
             return eth.request({ method: "eth_sendTransaction", params: [{ from: selectedAccount, to, data, chainId: CHAIN_ID_HEX }] });
         }
 
+        async function waitForReceipt(hash, waitingMessage) {
+            const eth = provider();
+            setStatus(waitingMessage);
+            for (let tries = 0; tries < 40; tries += 1) {
+                const receipt = await eth.request({ method: "eth_getTransactionReceipt", params: [hash] }).catch(() => null);
+                if (receipt) {
+                    if (receipt.status && receipt.status !== "0x1") throw new Error("Transaction failed on-chain.");
+                    return receipt;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+            }
+            setStatus("Transaction submitted, but confirmation is still pending. Tap Refresh status after it confirms.");
+            return null;
+        }
+
         async function approveGd(amountWei, message) {
             setStatus(message);
-            return sendTx(GD_CONTRACT, SELECTORS.approve + addressArg(FARMING_CONTRACT) + uintArg(amountWei));
+            const hash = await sendTx(GD_CONTRACT, SELECTORS.approve + addressArg(FARMING_CONTRACT) + uintArg(amountWei));
+            await waitForReceipt(hash, "Approval submitted. Waiting for approval confirmation before the next wallet prompt…");
+            return hash;
         }
 
         async function startFarm() {
@@ -199,9 +216,12 @@
             if (amount < MIN_FARM || amount % CHICKEN_PRICE !== 0) return setStatus(`Amount must be at least ${MIN_FARM} G$ and divisible by ${CHICKEN_PRICE} G$.`, "error");
             const wei = gdToWei(amount);
             await approveGd(wei, "Step 1/2: approve G$ spending in your wallet…");
-            setStatus("Step 2/2: start the farm in your wallet…");
+            setStatus("Step 2/2: now confirm Start Farm in your wallet. Chickens update after this transaction confirms.");
             const hash = await sendTx(FARMING_CONTRACT, SELECTORS.startFarm + uintArg(wei));
-            setStatus(`Farm start submitted: ${hash}`, "ok");
+            $("chickenCount").textContent = Math.floor(amount / CHICKEN_PRICE).toLocaleString();
+            await waitForReceipt(hash, "Farm start submitted. Waiting for confirmation so chickens can update…");
+            setStatus(`Farm confirmed: ${Math.floor(amount / CHICKEN_PRICE).toLocaleString()} chickens started. Refreshing farm status…`, "ok");
+            await refreshFarm();
         }
 
         async function fundRewards() {
@@ -212,7 +232,9 @@
             await approveGd(wei, "Step 1/2: approve G$ reward funding in your wallet…");
             setStatus("Step 2/2: deposit G$ into the reward pool…");
             const hash = await sendTx(FARMING_CONTRACT, SELECTORS.fundRewardPool + uintArg(wei));
-            setStatus(`Reward funding submitted: ${hash}`, "ok");
+            await waitForReceipt(hash, "Reward funding submitted. Waiting for confirmation before updating the pool…");
+            setStatus("Reward funding confirmed. Refreshing reward pool…", "ok");
+            await refreshFarm();
         }
 
         async function refreshFarm() {
@@ -236,7 +258,9 @@
             if (!FARMING_CONTRACT) return setStatus("Farming contract is not configured yet.", "error");
             setStatus(`${label}: confirm in your wallet…`);
             const hash = await sendTx(FARMING_CONTRACT, selector);
-            setStatus(`${label} submitted: ${hash}`, "ok");
+            await waitForReceipt(hash, `${label} submitted. Waiting for confirmation before refreshing status…`);
+            setStatus(`${label} confirmed. Refreshing farm status…`, "ok");
+            await refreshFarm();
         }
 
         $("farmAmount").addEventListener("input", updateChickensToBuy);
