@@ -15,6 +15,7 @@ import requests
 
 from reloadly import init_reloadly
 from savings import init_savings
+from farming import init_farming
 from ai_agent import init_ai_agent
 
 
@@ -615,6 +616,13 @@ if init_savings(app):
     logger.info("✅ G$ Savings initialized")
 else:
     logger.error("❌ G$ Savings initialization failed")
+
+# Initialize Chicken Farming
+logger.info("🐔 Initializing Chicken Farming system...")
+if init_farming(app):
+    logger.info("✅ Chicken Farming initialized")
+else:
+    logger.error("❌ Chicken Farming initialization failed")
 
 # Initialize P2P G$ Trading
 logger.info("🤝 Initializing P2P G$ Trading system...")
