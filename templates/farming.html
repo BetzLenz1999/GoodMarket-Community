@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>GoodMarket Chicken Farming</title>
+    <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png?v={{ ASSET_VERSION }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg:#070b1a; --card:rgba(255,255,255,0.06); --border:rgba(255,255,255,0.11); --text:#eef2ff; --muted:rgba(238,242,255,0.66); --gold:#facc15; --green:#4ade80; }
+        * { box-sizing:border-box; margin:0; padding:0; }
+        body { font-family:Inter,system-ui,sans-serif; min-height:100vh; color:var(--text); background:radial-gradient(circle at 15% 0%,rgba(250,204,21,0.2),transparent 34%),radial-gradient(circle at 100% 10%,rgba(74,222,128,0.13),transparent 32%),var(--bg); max-width:980px; margin:0 auto; padding:1rem; }
+        .top { display:flex; align-items:center; justify-content:space-between; gap:0.8rem; margin-bottom:1rem; }
+        .back { color:var(--text); text-decoration:none; background:rgba(255,255,255,0.08); border:1px solid var(--border); border-radius:999px; padding:0.62rem 0.9rem; font-weight:800; }
+        .hero { border:1px solid rgba(250,204,21,0.28); border-radius:28px; padding:1.25rem; background:linear-gradient(135deg,rgba(250,204,21,0.16),rgba(255,255,255,0.05)); box-shadow:0 18px 60px rgba(0,0,0,0.25); overflow:hidden; position:relative; }
+        .hero::after { content:'🐔'; position:absolute; right:1rem; top:0.5rem; font-size:5rem; opacity:0.22; }
+        .kicker { color:var(--gold); font-weight:900; letter-spacing:0.08em; text-transform:uppercase; font-size:0.72rem; }
+        h1 { font-size:clamp(2rem,7vw,4rem); line-height:0.95; margin:0.45rem 0; letter-spacing:-0.06em; }
+        .copy { color:var(--muted); line-height:1.6; max-width:680px; font-size:0.98rem; }
+        .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:0.75rem; margin-top:1rem; }
+        .stat { background:var(--card); border:1px solid var(--border); border-radius:18px; padding:0.9rem; }
+        .label { color:var(--muted); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.08em; font-weight:800; margin-bottom:0.4rem; }
+        .value { font-size:1.25rem; font-weight:900; }
+        .panel { margin-top:1rem; background:rgba(255,255,255,0.045); border:1px solid var(--border); border-radius:22px; padding:1rem; }
+        .panel h2 { font-size:1.05rem; margin-bottom:0.6rem; }
+        .steps { display:grid; gap:0.55rem; color:var(--muted); line-height:1.45; }
+        .step { display:flex; gap:0.6rem; align-items:flex-start; padding:0.75rem; border-radius:14px; background:rgba(0,0,0,0.14); }
+        .badge { width:26px; height:26px; border-radius:999px; background:rgba(250,204,21,0.18); color:var(--gold); display:flex; align-items:center; justify-content:center; font-weight:900; flex:0 0 auto; }
+        .cta-row { display:flex; gap:0.7rem; flex-wrap:wrap; margin-top:1rem; }
+        .btn { border:0; border-radius:999px; padding:0.9rem 1.1rem; font-weight:900; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:0.45rem; }
+        .primary { background:linear-gradient(135deg,#facc15,#f97316); color:#241300; }
+        .secondary { background:rgba(255,255,255,0.08); color:var(--text); border:1px solid var(--border); }
+        .notice { margin-top:0.85rem; color:var(--muted); font-size:0.82rem; line-height:1.45; }
+        code { color:#fde68a; word-break:break-all; }
+        @media (max-width:720px) { .grid { grid-template-columns:repeat(2,1fr); } }
+    </style>
+</head>
+<body>
+    <div class="top">
+        <a class="back" href="/wallet">← Wallet</a>
+        <div class="kicker">GoodMarket Farming</div>
+    </div>
+
+    <section class="hero">
+        <div class="kicker">Chicken-and-Egg Farming</div>
+        <h1>Grow 1,000 G$ into 1,100 G$</h1>
+        <p class="copy">Buy chickens with G$, let them produce eggs daily, then sell eggs for up to 10% monthly profit. After 30 days, close the farm to receive your chicken capital plus any unsold egg profit.</p>
+        <div class="grid">
+            <div class="stat"><div class="label">Minimum</div><div class="value">{{ farming_config.min_farm_gd }} G$</div></div>
+            <div class="stat"><div class="label">Chicken Price</div><div class="value">{{ farming_config.chicken_price_gd }} G$</div></div>
+            <div class="stat"><div class="label">Egg Rate</div><div class="value">1 / chicken / day</div></div>
+            <div class="stat"><div class="label">30-Day Target</div><div class="value">+{{ farming_config.monthly_profit_percent }}%</div></div>
+        </div>
+        <div class="cta-row">
+            <button class="btn primary" type="button" disabled>🐣 Contract actions coming after deployment</button>
+            <a class="btn secondary" href="/farming/api/config">View farming config</a>
+        </div>
+        <p class="notice">Contract address: <code>{{ farming_contract or 'Not deployed yet — set FARMING_CONTRACT_ADDRESS after deployment' }}</code></p>
+    </section>
+
+    <section class="panel">
+        <h2>How it works</h2>
+        <div class="steps">
+            <div class="step"><span class="badge">1</span><span>Start with at least 1,000 G$. Every 100 G$ buys 1 chicken, so the minimum farm starts with 10 chickens.</span></div>
+            <div class="step"><span class="badge">2</span><span>Each chicken produces 1 egg per day for 30 days. The egg value streams up to 100 G$ profit for a 1,000 G$ farm.</span></div>
+            <div class="step"><span class="badge">3</span><span>Sell eggs during the cycle, or wait until maturity. After 30 days, closing the farm returns principal plus remaining egg profit.</span></div>
+            <div class="step"><span class="badge">4</span><span>Minimum final withdrawal is hardcoded at {{ farming_config.min_withdraw_gd }} G$ in the smart contract.</span></div>
+        </div>
+    </section>
+</body>
+</html>
