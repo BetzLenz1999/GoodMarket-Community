@@ -38,6 +38,11 @@
         .form-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:0.7rem; margin-top:0.85rem; }
         .input { width:100%; border:1px solid var(--border); border-radius:16px; padding:0.9rem 1rem; background:rgba(255,255,255,0.08); color:var(--text); font:inherit; font-weight:800; outline:none; }
         .input:focus { border-color:rgba(250,204,21,0.7); box-shadow:0 0 0 3px rgba(250,204,21,0.14); }
+        .amount-help { color:var(--muted); font-size:0.84rem; line-height:1.45; margin-top:0.55rem; }
+        .amount-help strong { color:#fde68a; }
+        .quick-amounts { display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.6rem; }
+        .chip { border:1px solid var(--border); border-radius:999px; padding:0.5rem 0.7rem; background:rgba(255,255,255,0.07); color:var(--text); font-weight:800; cursor:pointer; }
+        .chip:hover { border-color:rgba(250,204,21,0.55); }
         .action-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:0.7rem; margin-top:0.85rem; }
         .btn:disabled { opacity:0.52; cursor:not-allowed; filter:saturate(0.7); }
         .mini-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:0.55rem; margin-top:0.85rem; }
@@ -80,6 +85,12 @@
         <div class="form-row">
             <input class="input" id="farmAmount" type="number" min="{{ farming_config.min_farm_gd }}" step="{{ farming_config.chicken_price_gd }}" value="{{ farming_config.min_farm_gd }}" inputmode="decimal" aria-label="Farm amount in G$">
             <button class="btn primary" type="button" id="startFarmBtn">🐣 Approve & start farm</button>
+        </div>
+        <p class="amount-help">Every <strong>{{ farming_config.chicken_price_gd }} G$</strong> buys <strong>1 chicken</strong>. Your current amount buys <strong id="chickensToBuy">{{ farming_config.min_chickens }}</strong> chickens.</p>
+        <div class="quick-amounts" aria-label="Quick chicken amounts">
+            <button class="chip" type="button" data-farm-amount="{{ farming_config.chicken_price_gd * 10 }}">10 chickens</button>
+            <button class="chip" type="button" data-farm-amount="{{ farming_config.chicken_price_gd * 20 }}">20 chickens</button>
+            <button class="chip" type="button" data-farm-amount="{{ farming_config.chicken_price_gd * 50 }}">50 chickens</button>
         </div>
         <div class="action-grid">
             <button class="btn secondary" type="button" id="refreshFarmBtn">🔄 Refresh status</button>
@@ -145,6 +156,11 @@
         function uintArg(value) { return pad64(value.toString(16)); }
         function gdToWei(amount) { return BigInt(Math.round(Number(amount) * 1e6)) * (UNIT / 1000000n); }
         function weiToGd(value) { return (Number(value) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 4 }); }
+        function updateChickensToBuy() {
+            const amount = Number($("farmAmount").value || 0);
+            const chickens = Math.floor(amount / CHICKEN_PRICE);
+            $("chickensToBuy").textContent = Number.isFinite(chickens) && chickens > 0 ? chickens.toLocaleString() : "0";
+        }
 
         async function getWalletAccount() {
             const eth = provider();
@@ -196,6 +212,14 @@
             setStatus(`${label} submitted: ${hash}`, "ok");
         }
 
+        $("farmAmount").addEventListener("input", updateChickensToBuy);
+        document.querySelectorAll("[data-farm-amount]").forEach((button) => {
+            button.addEventListener("click", () => {
+                $("farmAmount").value = button.dataset.farmAmount;
+                updateChickensToBuy();
+            });
+        });
+        updateChickensToBuy();
         $("startFarmBtn").addEventListener("click", () => startFarm().catch((e) => setStatus(e.message || "Unable to start farm.", "error")));
         $("refreshFarmBtn").addEventListener("click", () => refreshFarm().catch((e) => setStatus(e.message || "Unable to refresh farm.", "error")));
         $("sellEggsBtn").addEventListener("click", () => simpleAction(SELECTORS.sellEggs, "Sell eggs").catch((e) => setStatus(e.message || "Unable to sell eggs.", "error")));
