@@ -1924,6 +1924,36 @@ OR manually enter HTML content here...
                     </div>
 
                     <div id="reward-config-controls" style="display: none;">
+                        <!-- Farming Reward Pool Funding -->
+                        <div style="margin-bottom: 2rem; padding: 1.5rem; background: rgba(250, 204, 21, 0.08); border: 1px solid rgba(250, 204, 21, 0.22); border-radius: 12px;">
+                            <h3 style="margin-bottom: 1rem; color: #facc15;">
+                                <span class="menu-icon">🐔</span> Farming Reward Pool
+                            </h3>
+                            <p style="color: rgba(241,245,249,0.7); line-height: 1.6;">
+                                Fund the chicken farming contract reward pool from an admin wallet. Users can still start farms, sell eggs, and close farms from the Farming page, but reward-pool funding is controlled here.
+                            </p>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                                <div>
+                                    <strong>Reward Pool:</strong>
+                                    <p id="farming-reward-pool" style="font-size: 1.5rem; color: #10b981; margin-top: 0.5rem;">Loading...</p>
+                                    <small id="farming-contract-address" class="text-muted" style="word-break: break-all;"></small>
+                                </div>
+                                <div>
+                                    <label class="form-label">Funding Amount (G$)</label>
+                                    <input type="number" id="farming-reward-amount-input" min="1" step="1" class="form-control" placeholder="1000" value="1000">
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                                <button class="btn btn-primary" onclick="fundFarmingRewards()" style="padding: 1rem; font-size: 1.05rem; background: linear-gradient(135deg, #facc15, #f97316); color: #241300;">
+                                    🎁 Fund Farming Rewards
+                                </button>
+                                <button class="btn btn-primary" onclick="loadFarmingRewardPool()" style="padding: 1rem; font-size: 1.05rem; background: rgba(255,255,255,0.12);">
+                                    🔄 Refresh Pool
+                                </button>
+                            </div>
+                            <div id="farming-reward-status" style="margin-top: 1rem; color: rgba(241,245,249,0.7);"></div>
+                        </div>
+
                         <!-- Telegram Task Reward -->
                         <div style="margin-bottom: 2rem; padding: 1.5rem; background: rgba(255, 255, 255, 0.05); border-radius: 12px;">
                             <h3 style="margin-bottom: 1rem; color: #00acee;">
@@ -5837,6 +5867,7 @@ async function loadMinigamesMaintenance() {
 
                     statusDiv.style.display = 'none';
                     controlsDiv.style.display = 'block';
+                    await loadFarmingRewardPool();
                 } else {
                     statusDiv.innerHTML = '<p style="color: #ef4444;">Failed to load reward configuration</p>';
                 }
@@ -5897,6 +5928,127 @@ async function loadMinigamesMaintenance() {
             } catch (error) {
                 console.error('Error updating reward:', error);
                 alert('Failed to update reward configuration');
+            }
+        }
+
+
+        const FARMING_ADMIN_SELECTORS = {
+            approve: "0x095ea7b3",
+            fundRewardPool: "0x1d583e0d",
+            rewardPool: "0x66666aa9",
+        };
+        let farmingAdminConfig = null;
+        let farmingAdminAccount = "";
+
+        function farmingAdminProvider() {
+            if (!window.ethereum) return null;
+            if (Array.isArray(window.ethereum.providers)) {
+                return window.ethereum.providers.find((p) => p && p.isMiniPay) || window.ethereum.providers[0];
+            }
+            return window.ethereum;
+        }
+
+        function farmingAdminSetStatus(message, type = "") {
+            const el = document.getElementById('farming-reward-status');
+            if (!el) return;
+            const color = type === 'error' ? '#fecaca' : type === 'ok' ? '#bbf7d0' : 'rgba(241,245,249,0.7)';
+            el.style.color = color;
+            el.textContent = message;
+        }
+
+        function farmingAdminPad64(hex) { return hex.replace(/^0x/, '').padStart(64, '0'); }
+        function farmingAdminAddressArg(address) { return farmingAdminPad64(address.toLowerCase()); }
+        function farmingAdminUintArg(value) { return farmingAdminPad64(value.toString(16)); }
+        function farmingAdminGdToWei(amount) { return BigInt(Math.round(Number(amount) * 1e6)) * (10n ** 12n); }
+        function farmingAdminWeiToGd(value) { return (Number(value) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 4 }); }
+
+        async function loadFarmingAdminConfig() {
+            if (farmingAdminConfig) return farmingAdminConfig;
+            const response = await fetch('/farming/api/config');
+            const data = await response.json();
+            farmingAdminConfig = data;
+            const addressEl = document.getElementById('farming-contract-address');
+            if (addressEl) addressEl.textContent = data.contract ? `Contract: ${data.contract}` : 'Farming contract is not configured.';
+            return data;
+        }
+
+        async function getFarmingAdminWallet() {
+            const eth = farmingAdminProvider();
+            if (!eth) throw new Error('No wallet provider found. Open the admin dashboard in a Web3 wallet browser.');
+            const config = await loadFarmingAdminConfig();
+            const chainIdHex = '0x' + Number(config.chain_id || 42220).toString(16);
+            const existing = await eth.request({ method: 'eth_accounts' }).catch(() => []);
+            const accounts = existing.length ? existing : await eth.request({ method: 'eth_requestAccounts' });
+            farmingAdminAccount = accounts[0];
+            try { await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: chainIdHex }] }); } catch (_) {}
+            return eth;
+        }
+
+        async function loadFarmingRewardPool() {
+            try {
+                const config = await loadFarmingAdminConfig();
+                const poolEl = document.getElementById('farming-reward-pool');
+                if (!config.contract) {
+                    if (poolEl) poolEl.textContent = 'Not configured';
+                    farmingAdminSetStatus('Set FARMING_CONTRACT_ADDRESS before funding rewards.', 'error');
+                    return;
+                }
+                const eth = farmingAdminProvider();
+                if (!eth) {
+                    if (poolEl) poolEl.textContent = 'Wallet unavailable';
+                    farmingAdminSetStatus('Connect an admin Web3 wallet to read and fund the reward pool.');
+                    return;
+                }
+                const raw = await eth.request({ method: 'eth_call', params: [{ to: config.contract, data: FARMING_ADMIN_SELECTORS.rewardPool }, 'latest'] });
+                const pool = BigInt(raw || '0x0');
+                if (poolEl) poolEl.textContent = `${farmingAdminWeiToGd(pool)} G$`;
+                farmingAdminSetStatus('Farming reward pool loaded.', 'ok');
+            } catch (error) {
+                console.error('Error loading farming reward pool:', error);
+                farmingAdminSetStatus(error.message || 'Unable to load farming reward pool.', 'error');
+            }
+        }
+
+        async function farmingAdminSendTx(to, data) {
+            const eth = await getFarmingAdminWallet();
+            const chainIdHex = '0x' + Number((farmingAdminConfig || {}).chain_id || 42220).toString(16);
+            return eth.request({ method: 'eth_sendTransaction', params: [{ from: farmingAdminAccount, to, data, chainId: chainIdHex }] });
+        }
+
+        async function farmingAdminWaitForReceipt(hash, waitingMessage) {
+            const eth = farmingAdminProvider();
+            farmingAdminSetStatus(waitingMessage);
+            for (let tries = 0; tries < 40; tries += 1) {
+                const receipt = await eth.request({ method: 'eth_getTransactionReceipt', params: [hash] }).catch(() => null);
+                if (receipt) {
+                    if (receipt.status && receipt.status !== '0x1') throw new Error('Transaction failed on-chain.');
+                    return receipt;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+            }
+            farmingAdminSetStatus('Transaction submitted, but confirmation is still pending. Refresh the pool after it confirms.');
+            return null;
+        }
+
+        async function fundFarmingRewards() {
+            try {
+                const config = await loadFarmingAdminConfig();
+                if (!config.contract) throw new Error('Farming contract is not configured yet.');
+                const amount = Number(document.getElementById('farming-reward-amount-input').value || 0);
+                if (amount <= 0) throw new Error('Funding amount must be greater than 0 G$.');
+                if (!confirm(`Fund the farming reward pool with ${amount.toLocaleString()} G$?`)) return;
+                const wei = farmingAdminGdToWei(amount);
+                farmingAdminSetStatus('Step 1/2: approve G$ reward funding in your wallet…');
+                const approveHash = await farmingAdminSendTx(config.gd_contract, FARMING_ADMIN_SELECTORS.approve + farmingAdminAddressArg(config.contract) + farmingAdminUintArg(wei));
+                await farmingAdminWaitForReceipt(approveHash, 'Approval submitted. Waiting for approval confirmation before funding…');
+                farmingAdminSetStatus('Step 2/2: deposit G$ into the farming reward pool…');
+                const fundHash = await farmingAdminSendTx(config.contract, FARMING_ADMIN_SELECTORS.fundRewardPool + farmingAdminUintArg(wei));
+                await farmingAdminWaitForReceipt(fundHash, 'Reward funding submitted. Waiting for confirmation before updating the pool…');
+                farmingAdminSetStatus('Reward funding confirmed. Refreshing farming reward pool…', 'ok');
+                await loadFarmingRewardPool();
+            } catch (error) {
+                console.error('Error funding farming rewards:', error);
+                farmingAdminSetStatus(error.message || 'Unable to fund farming rewards.', 'error');
             }
         }
 
