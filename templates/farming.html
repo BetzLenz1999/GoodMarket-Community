@@ -43,6 +43,7 @@
         .quick-amounts { display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.6rem; }
         .chip { border:1px solid var(--border); border-radius:999px; padding:0.5rem 0.7rem; background:rgba(255,255,255,0.07); color:var(--text); font-weight:800; cursor:pointer; }
         .chip:hover { border-color:rgba(250,204,21,0.55); }
+        .fund-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:0.7rem; margin-top:0.85rem; padding-top:0.85rem; border-top:1px solid var(--border); }
         .action-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:0.7rem; margin-top:0.85rem; }
         .btn:disabled { opacity:0.52; cursor:not-allowed; filter:saturate(0.7); }
         .mini-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:0.55rem; margin-top:0.85rem; }
@@ -52,7 +53,7 @@
         .status.ok { color:#bbf7d0; background:rgba(34,197,94,0.13); }
         .status.error { color:#fecaca; background:rgba(239,68,68,0.13); }
         code { color:#fde68a; word-break:break-all; }
-        @media (max-width:720px) { .grid, .mini-stats, .action-grid, .form-row { grid-template-columns:1fr; } }
+        @media (max-width:720px) { .grid, .mini-stats, .action-grid, .form-row, .fund-row { grid-template-columns:1fr; } }
     </style>
 </head>
 <body>
@@ -92,6 +93,11 @@
             <button class="chip" type="button" data-farm-amount="{{ farming_config.chicken_price_gd * 20 }}">20 chickens</button>
             <button class="chip" type="button" data-farm-amount="{{ farming_config.chicken_price_gd * 50 }}">50 chickens</button>
         </div>
+        <div class="fund-row">
+            <input class="input" id="rewardAmount" type="number" min="1" step="1" value="100" inputmode="decimal" aria-label="Reward pool funding amount in G$">
+            <button class="btn secondary" type="button" id="fundRewardsBtn">🎁 Fund rewards</button>
+        </div>
+        <p class="amount-help">Rewards come from the contract reward pool. Anyone who wants to sponsor user egg profits can deposit G$ here.</p>
         <div class="action-grid">
             <button class="btn secondary" type="button" id="refreshFarmBtn">🔄 Refresh status</button>
             <button class="btn secondary" type="button" id="sellEggsBtn">🥚 Sell eggs</button>
@@ -102,6 +108,7 @@
             <div class="mini-stat"><span class="label">Chickens</span><strong id="chickenCount">—</strong></div>
             <div class="mini-stat"><span class="label">Eggs ready</span><strong id="eggsReady">—</strong></div>
             <div class="mini-stat"><span class="label">Egg value</span><strong id="eggValue">—</strong></div>
+            <div class="mini-stat"><span class="label">Reward pool</span><strong id="rewardPoolValue">—</strong></div>
         </div>
         <div class="status" id="farmStatus">Choose an action below. If you already have a farm, tap Refresh status.</div>
     </section>
@@ -132,6 +139,8 @@
             sellEggs: "0x3955f0fe",
             closeFarm: "0x93c45462",
             getFarm: "0x3bfc187c",
+            fundRewardPool: "0x1d583e0d",
+            rewardPool: "0x66666aa9",
         };
 
         const $ = (id) => document.getElementById(id);
@@ -179,16 +188,31 @@
             return eth.request({ method: "eth_sendTransaction", params: [{ from: selectedAccount, to, data, chainId: CHAIN_ID_HEX }] });
         }
 
+        async function approveGd(amountWei, message) {
+            setStatus(message);
+            return sendTx(GD_CONTRACT, SELECTORS.approve + addressArg(FARMING_CONTRACT) + uintArg(amountWei));
+        }
+
         async function startFarm() {
             if (!FARMING_CONTRACT) return setStatus("Farming contract is not configured yet.", "error");
             const amount = Number($("farmAmount").value || 0);
             if (amount < MIN_FARM || amount % CHICKEN_PRICE !== 0) return setStatus(`Amount must be at least ${MIN_FARM} G$ and divisible by ${CHICKEN_PRICE} G$.`, "error");
             const wei = gdToWei(amount);
-            setStatus("Step 1/2: approve G$ spending in your wallet…");
-            await sendTx(GD_CONTRACT, SELECTORS.approve + addressArg(FARMING_CONTRACT) + uintArg(wei));
+            await approveGd(wei, "Step 1/2: approve G$ spending in your wallet…");
             setStatus("Step 2/2: start the farm in your wallet…");
             const hash = await sendTx(FARMING_CONTRACT, SELECTORS.startFarm + uintArg(wei));
             setStatus(`Farm start submitted: ${hash}`, "ok");
+        }
+
+        async function fundRewards() {
+            if (!FARMING_CONTRACT) return setStatus("Farming contract is not configured yet.", "error");
+            const amount = Number($("rewardAmount").value || 0);
+            if (amount <= 0) return setStatus("Reward amount must be greater than 0 G$.", "error");
+            const wei = gdToWei(amount);
+            await approveGd(wei, "Step 1/2: approve G$ reward funding in your wallet…");
+            setStatus("Step 2/2: deposit G$ into the reward pool…");
+            const hash = await sendTx(FARMING_CONTRACT, SELECTORS.fundRewardPool + uintArg(wei));
+            setStatus(`Reward funding submitted: ${hash}`, "ok");
         }
 
         async function refreshFarm() {
@@ -202,6 +226,9 @@
             $("chickenCount").textContent = chickens.toString();
             $("eggsReady").textContent = eggs.toString();
             $("eggValue").textContent = `${weiToGd(eggValue)} G$`;
+            const poolRaw = await eth.request({ method: "eth_call", params: [{ to: FARMING_CONTRACT, data: SELECTORS.rewardPool }, "latest"] });
+            const pool = BigInt(poolRaw || "0x0");
+            $("rewardPoolValue").textContent = `${weiToGd(pool)} G$`;
             setStatus(active ? `Active farm: ${weiToGd(principal)} G$ principal. ${mature ? "Ready to close." : "Still growing."}` : "No active farm yet. Start one above.", active ? "ok" : "");
         }
 
@@ -221,6 +248,7 @@
         });
         updateChickensToBuy();
         $("startFarmBtn").addEventListener("click", () => startFarm().catch((e) => setStatus(e.message || "Unable to start farm.", "error")));
+        $("fundRewardsBtn").addEventListener("click", () => fundRewards().catch((e) => setStatus(e.message || "Unable to fund rewards.", "error")));
         $("refreshFarmBtn").addEventListener("click", () => refreshFarm().catch((e) => setStatus(e.message || "Unable to refresh farm.", "error")));
         $("sellEggsBtn").addEventListener("click", () => simpleAction(SELECTORS.sellEggs, "Sell eggs").catch((e) => setStatus(e.message || "Unable to sell eggs.", "error")));
         $("closeFarmBtn").addEventListener("click", () => simpleAction(SELECTORS.closeFarm, "Close farm").catch((e) => setStatus(e.message || "Unable to close farm.", "error")));
