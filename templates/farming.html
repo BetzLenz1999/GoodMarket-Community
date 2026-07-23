@@ -64,13 +64,13 @@
 
     <section class="hero">
         <div class="kicker">Chicken-and-Egg Farming</div>
-        <h1>Grow 1,000 G$ into 1,100 G$</h1>
-        <p class="copy">Buy chickens with G$, let them produce eggs daily, then sell eggs for up to 10% monthly profit. After 30 days, close the farm to receive your chicken capital plus any unsold egg profit.</p>
+        <h1>Start your chicken farm</h1>
+        <p class="copy">Buy chickens with G$, let them produce eggs daily, then sell eggs during the farming cycle. When the cycle matures, close the farm to receive your chicken capital plus any remaining egg rewards.</p>
         <div class="grid">
             <div class="stat"><div class="label">Minimum</div><div class="value">{{ farming_config.min_farm_gd }} G$</div></div>
             <div class="stat"><div class="label">Chicken Price</div><div class="value">{{ farming_config.chicken_price_gd }} G$</div></div>
             <div class="stat"><div class="label">Egg Rate</div><div class="value">1 / chicken / day</div></div>
-            <div class="stat"><div class="label">30-Day Target</div><div class="value">+{{ farming_config.monthly_profit_percent }}%</div></div>
+            <div class="stat"><div class="label">Cycle</div><div class="value">{{ farming_config.farm_days }} days</div></div>
         </div>
         <div class="cta-row">
             <a class="btn primary" href="#playFarm">🐣 Play farming now</a>
@@ -117,8 +117,8 @@
         <h2>How it works</h2>
         <div class="steps">
             <div class="step"><span class="badge">1</span><span>Start with at least 1,000 G$. Every 100 G$ buys 1 chicken, so the minimum farm starts with 10 chickens.</span></div>
-            <div class="step"><span class="badge">2</span><span>Each chicken produces 1 egg per day for 30 days. The egg value streams up to 100 G$ profit for a 1,000 G$ farm.</span></div>
-            <div class="step"><span class="badge">3</span><span>Sell eggs during the cycle, or wait until maturity. After 30 days, closing the farm returns principal plus remaining egg profit.</span></div>
+            <div class="step"><span class="badge">2</span><span>Each chicken produces 1 egg per day during the farming cycle. Egg reward value follows the live contract configuration.</span></div>
+            <div class="step"><span class="badge">3</span><span>Sell eggs during the cycle, or wait until maturity. Closing the farm returns principal plus any remaining egg rewards.</span></div>
             <div class="step"><span class="badge">4</span><span>Minimum final withdrawal is hardcoded at {{ farming_config.min_withdraw_gd }} G$ in the smart contract.</span></div>
         </div>
     </section>
