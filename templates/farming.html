@@ -33,8 +33,21 @@
         .primary { background:linear-gradient(135deg,#facc15,#f97316); color:#241300; }
         .secondary { background:rgba(255,255,255,0.08); color:var(--text); border:1px solid var(--border); }
         .notice { margin-top:0.85rem; color:var(--muted); font-size:0.82rem; line-height:1.45; }
+        .game-card { margin-top:1rem; background:rgba(5,10,24,0.72); border:1px solid rgba(250,204,21,0.22); border-radius:22px; padding:1rem; }
+        .game-card h2 { font-size:1.12rem; margin-bottom:0.45rem; }
+        .form-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:0.7rem; margin-top:0.85rem; }
+        .input { width:100%; border:1px solid var(--border); border-radius:16px; padding:0.9rem 1rem; background:rgba(255,255,255,0.08); color:var(--text); font:inherit; font-weight:800; outline:none; }
+        .input:focus { border-color:rgba(250,204,21,0.7); box-shadow:0 0 0 3px rgba(250,204,21,0.14); }
+        .action-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:0.7rem; margin-top:0.85rem; }
+        .btn:disabled { opacity:0.52; cursor:not-allowed; filter:saturate(0.7); }
+        .mini-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:0.55rem; margin-top:0.85rem; }
+        .mini-stat { border:1px solid var(--border); border-radius:14px; padding:0.7rem; background:rgba(255,255,255,0.045); }
+        .mini-stat strong { display:block; font-size:0.95rem; margin-top:0.25rem; }
+        .status { margin-top:0.85rem; padding:0.75rem; border-radius:14px; background:rgba(255,255,255,0.07); color:var(--muted); line-height:1.45; }
+        .status.ok { color:#bbf7d0; background:rgba(34,197,94,0.13); }
+        .status.error { color:#fecaca; background:rgba(239,68,68,0.13); }
         code { color:#fde68a; word-break:break-all; }
-        @media (max-width:720px) { .grid { grid-template-columns:repeat(2,1fr); } }
+        @media (max-width:720px) { .grid, .mini-stats, .action-grid, .form-row { grid-template-columns:1fr; } }
     </style>
 </head>
 <body>
@@ -54,10 +67,32 @@
             <div class="stat"><div class="label">30-Day Target</div><div class="value">+{{ farming_config.monthly_profit_percent }}%</div></div>
         </div>
         <div class="cta-row">
-            <button class="btn primary" type="button" disabled>🐣 Contract actions coming after deployment</button>
+            <button class="btn primary" type="button" id="connectWalletBtn">🔗 Connect wallet</button>
             <a class="btn secondary" href="/farming/api/config">View farming config</a>
         </div>
         <p class="notice">Contract address: <code>{{ farming_contract or 'Not deployed yet — set FARMING_CONTRACT_ADDRESS after deployment' }}</code></p>
+    </section>
+
+    <section class="game-card" aria-labelledby="playTitle">
+        <div class="kicker">Play Farming</div>
+        <h2 id="playTitle">Start, sell eggs, or close your farm</h2>
+        <p class="copy">Enter how many G$ you want to farm. The app will ask your wallet to approve G$ first, then start the farm contract.</p>
+        <div class="form-row">
+            <input class="input" id="farmAmount" type="number" min="{{ farming_config.min_farm_gd }}" step="{{ farming_config.chicken_price_gd }}" value="{{ farming_config.min_farm_gd }}" inputmode="decimal" aria-label="Farm amount in G$">
+            <button class="btn primary" type="button" id="startFarmBtn">🐣 Approve & start farm</button>
+        </div>
+        <div class="action-grid">
+            <button class="btn secondary" type="button" id="refreshFarmBtn">🔄 Refresh status</button>
+            <button class="btn secondary" type="button" id="sellEggsBtn">🥚 Sell eggs</button>
+            <button class="btn secondary" type="button" id="closeFarmBtn">💰 Close farm</button>
+        </div>
+        <div class="mini-stats">
+            <div class="mini-stat"><span class="label">Wallet</span><strong id="walletStatus">Not connected</strong></div>
+            <div class="mini-stat"><span class="label">Chickens</span><strong id="chickenCount">—</strong></div>
+            <div class="mini-stat"><span class="label">Eggs ready</span><strong id="eggsReady">—</strong></div>
+            <div class="mini-stat"><span class="label">Egg value</span><strong id="eggValue">—</strong></div>
+        </div>
+        <div class="status" id="farmStatus">Connect a wallet to begin. If you already have a farm, tap Refresh status.</div>
     </section>
 
     <section class="panel">
@@ -69,5 +104,102 @@
             <div class="step"><span class="badge">4</span><span>Minimum final withdrawal is hardcoded at {{ farming_config.min_withdraw_gd }} G$ in the smart contract.</span></div>
         </div>
     </section>
+
+
+    <script>
+        const FARMING_CONTRACT = "{{ farming_contract }}";
+        const GD_CONTRACT = "{{ gd_contract }}";
+        const CHAIN_ID_DEC = {{ chain_id }};
+        const CHAIN_ID_HEX = "0x" + CHAIN_ID_DEC.toString(16);
+        const MIN_FARM = {{ farming_config.min_farm_gd }};
+        const CHICKEN_PRICE = {{ farming_config.chicken_price_gd }};
+        const DECIMALS = 18n;
+        const UNIT = 10n ** DECIMALS;
+        const SELECTORS = {
+            approve: "0x095ea7b3",
+            startFarm: "0x6b9189ea",
+            sellEggs: "0x3955f0fe",
+            closeFarm: "0x93c45462",
+            getFarm: "0x3bfc187c",
+        };
+
+        const $ = (id) => document.getElementById(id);
+        let selectedAccount = "";
+
+        function provider() {
+            if (!window.ethereum) return null;
+            if (Array.isArray(window.ethereum.providers)) {
+                return window.ethereum.providers.find((p) => p && p.isMiniPay) || window.ethereum.providers[0];
+            }
+            return window.ethereum;
+        }
+
+        function setStatus(message, type = "") {
+            const el = $("farmStatus");
+            el.textContent = message;
+            el.className = `status ${type}`.trim();
+        }
+
+        function pad64(hex) { return hex.replace(/^0x/, "").padStart(64, "0"); }
+        function addressArg(address) { return pad64(address.toLowerCase()); }
+        function uintArg(value) { return pad64(value.toString(16)); }
+        function gdToWei(amount) { return BigInt(Math.round(Number(amount) * 1e6)) * (UNIT / 1000000n); }
+        function weiToGd(value) { return (Number(value) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 4 }); }
+
+        async function connectWallet() {
+            const eth = provider();
+            if (!eth) throw new Error("No wallet provider found. Open this page inside MiniPay or another Web3 wallet browser.");
+            const accounts = await eth.request({ method: "eth_requestAccounts" });
+            selectedAccount = accounts[0];
+            $("walletStatus").textContent = `${selectedAccount.slice(0, 6)}…${selectedAccount.slice(-4)}`;
+            try { await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_ID_HEX }] }); } catch (_) {}
+            return eth;
+        }
+
+        async function sendTx(to, data) {
+            const eth = provider();
+            if (!selectedAccount) await connectWallet();
+            return eth.request({ method: "eth_sendTransaction", params: [{ from: selectedAccount, to, data, chainId: CHAIN_ID_HEX }] });
+        }
+
+        async function startFarm() {
+            if (!FARMING_CONTRACT) return setStatus("Farming contract is not configured yet.", "error");
+            const amount = Number($("farmAmount").value || 0);
+            if (amount < MIN_FARM || amount % CHICKEN_PRICE !== 0) return setStatus(`Amount must be at least ${MIN_FARM} G$ and divisible by ${CHICKEN_PRICE} G$.`, "error");
+            const wei = gdToWei(amount);
+            setStatus("Step 1/2: approve G$ spending in your wallet…");
+            await sendTx(GD_CONTRACT, SELECTORS.approve + addressArg(FARMING_CONTRACT) + uintArg(wei));
+            setStatus("Step 2/2: start the farm in your wallet…");
+            const hash = await sendTx(FARMING_CONTRACT, SELECTORS.startFarm + uintArg(wei));
+            setStatus(`Farm start submitted: ${hash}`, "ok");
+        }
+
+        async function refreshFarm() {
+            if (!FARMING_CONTRACT) return setStatus("Farming contract is not configured yet.", "error");
+            const eth = provider();
+            if (!selectedAccount) await connectWallet();
+            const data = SELECTORS.getFarm + addressArg(selectedAccount);
+            const raw = await eth.request({ method: "eth_call", params: [{ to: FARMING_CONTRACT, data }, "latest"] });
+            const words = raw.replace(/^0x/, "").match(/.{1,64}/g) || [];
+            const principal = BigInt(`0x${words[0] || "0"}`), chickens = BigInt(`0x${words[1] || "0"}`), eggs = BigInt(`0x${words[8] || "0"}`), eggValue = BigInt(`0x${words[9] || "0"}`), active = BigInt(`0x${words[6] || "0"}`) === 1n, mature = BigInt(`0x${words[7] || "0"}`) === 1n;
+            $("chickenCount").textContent = chickens.toString();
+            $("eggsReady").textContent = eggs.toString();
+            $("eggValue").textContent = `${weiToGd(eggValue)} G$`;
+            setStatus(active ? `Active farm: ${weiToGd(principal)} G$ principal. ${mature ? "Ready to close." : "Still growing."}` : "No active farm yet. Start one above.", active ? "ok" : "");
+        }
+
+        async function simpleAction(selector, label) {
+            if (!FARMING_CONTRACT) return setStatus("Farming contract is not configured yet.", "error");
+            setStatus(`${label}: confirm in your wallet…`);
+            const hash = await sendTx(FARMING_CONTRACT, selector);
+            setStatus(`${label} submitted: ${hash}`, "ok");
+        }
+
+        $("connectWalletBtn").addEventListener("click", () => connectWallet().then(() => setStatus("Wallet connected. You can now start or manage your farm.", "ok")).catch((e) => setStatus(e.message, "error")));
+        $("startFarmBtn").addEventListener("click", () => startFarm().catch((e) => setStatus(e.message || "Unable to start farm.", "error")));
+        $("refreshFarmBtn").addEventListener("click", () => refreshFarm().catch((e) => setStatus(e.message || "Unable to refresh farm.", "error")));
+        $("sellEggsBtn").addEventListener("click", () => simpleAction(SELECTORS.sellEggs, "Sell eggs").catch((e) => setStatus(e.message || "Unable to sell eggs.", "error")));
+        $("closeFarmBtn").addEventListener("click", () => simpleAction(SELECTORS.closeFarm, "Close farm").catch((e) => setStatus(e.message || "Unable to close farm.", "error")));
+    </script>
 </body>
 </html>
