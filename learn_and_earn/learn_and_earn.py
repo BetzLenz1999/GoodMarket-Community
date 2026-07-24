@@ -718,10 +718,10 @@ class LearnEarnQuizManager:
         wallet_normalized = (wallet_address or '').lower()
         masked_address = self.mask_wallet_address(wallet_address or '')
         return supabase.table(LEARN_EARN_LOG_TABLE)\
-            .select('timestamp, amount_g$, transaction_hash, wallet_address')\
+            .select('timestamp, amount_g$, transaction_hash, wallet_address, status')\
             .or_(f"wallet_address.eq.{masked_address},wallet_address.eq.{wallet_normalized},wallet_address.eq.{wallet_address}")\
             .gt('amount_g$', 0)\
-            .not_('transaction_hash', 'is', 'null')\
+            .eq('status', True)\
             .order('timestamp', desc=True)\
             .limit(1)
 
@@ -732,8 +732,9 @@ class LearnEarnQuizManager:
             masked_address = self.mask_wallet_address(wallet_address)
 
             # Fetch the most recent rewarded quiz attempt for the user.
-            # Cooldown must only start after a real Learn & Earn reward is recorded
-            # in Supabase with a transaction hash; failed/unpaid attempts are ignored.
+            # Cooldown must start as soon as a successful positive reward is logged
+            # in Supabase. Some historical Telegram rows were paid but later missed
+            # transaction_hash updates, so requiring a hash here can reopen quizzes.
             result = self._rewarded_attempt_query(supabase, wallet_address).execute()
 
             if result.data:
@@ -833,10 +834,9 @@ class LearnEarnQuizManager:
                 'blocked': ubi_verification.get('blocked', False)
             }
 
-            # Cooldown checks only count positive rewards that have an on-chain
-            # transaction hash. Persist the hash in the initial insert when the
-            # caller already has it, so a later update failure cannot leave a
-            # paid Telegram quiz without cooldown protection.
+            # Persist the transaction hash in the initial insert when the caller
+            # already has it. Cooldown checks count successful positive reward
+            # logs even if a later transaction-hash update is missed.
             reward_tx_hash = (ubi_verification or {}).get('reward_tx_hash')
             if total_reward > 0 and reward_tx_hash:
                 quiz_log.update({
@@ -871,8 +871,9 @@ class LearnEarnQuizManager:
             masked_address = self.mask_wallet_address(wallet_address)
 
             # Fetch the most recent rewarded quiz attempt for the user.
-            # Cooldown must only start after a real Learn & Earn reward is recorded
-            # in Supabase with a transaction hash; failed/unpaid attempts are ignored.
+            # Cooldown must start as soon as a successful positive reward is logged
+            # in Supabase. Some historical Telegram rows were paid but later missed
+            # transaction_hash updates, so requiring a hash here can reopen quizzes.
             result = self._rewarded_attempt_query(supabase, wallet_address).execute()
 
             if result.data:
