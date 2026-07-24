@@ -130,15 +130,21 @@ def _save_wallet_session(telegram_user, chat_id, wallet: str) -> bool:
             .execute()
 
         # Best-effort user_data upsert keeps GoodMarket overview/profile counters aware
-        # of wallet-only Telegram users without requiring WalletConnect.
-        supabase.table("user_data")\
-            .upsert({
-                "wallet_address": normalized_wallet,
-                "last_login": now,
-                "ubi_verified": False,
-                "login_method": "telegram_wallet",
-            }, on_conflict="wallet_address")\
-            .execute()
+        # of wallet-only Telegram users without requiring WalletConnect. Do not
+        # fail the Telegram wallet login if this optional profile sync fails
+        # because the wallet session above is the source of truth for bot login.
+        try:
+            supabase.table("user_data")\
+                .upsert({
+                    "wallet_address": normalized_wallet,
+                    "last_login": now,
+                    "ubi_verified": False,
+                    "login_method": "telegram_wallet",
+                }, on_conflict="wallet_address")\
+                .execute()
+        except Exception as profile_error:
+            logger.warning(f"⚠️ Telegram wallet saved but user_data sync failed: {profile_error}")
+
         return True
     except Exception as e:
         logger.error(f"❌ Could not save Telegram wallet session: {e}")
