@@ -18,7 +18,7 @@ class LearnBlockchainService:
     """Learn & Earn Smart Contract Disbursement Service
     
     Uses the deployed LearnAndEarnRewards smart contract for secure G$ disbursements.
-    Falls back to direct transfer only if contract is not configured.
+    The operator private key is only used to pay gas/sign contract calls.
     """
 
     MAX_RETRIES = 3
@@ -66,9 +66,19 @@ class LearnBlockchainService:
             logger.error(f"Initialization error: {type(e).__name__}")
 
     @property
+    def has_reward_contract(self) -> bool:
+        """Return True when a Learn & Earn reward contract is configured."""
+        return self.contract is not None
+
+    @property
+    def has_operator_wallet(self) -> bool:
+        """Return True when the gas-signing operator wallet is configured."""
+        return self.owner_account is not None and bool(self._wallet_key)
+
+    @property
     def is_configured(self) -> bool:
-        """Check if the service is properly configured (without exposing private key)"""
-        return self.owner_account is not None
+        """Check if contract rewards can be submitted without exposing private key."""
+        return self.has_reward_contract and self.has_operator_wallet
 
     def _get_contract_abi(self):
         """Get minimal ABI for contract interactions"""
@@ -123,7 +133,7 @@ class LearnBlockchainService:
         """Get the G$ balance of the Learn & Earn contract"""
         try:
             if not self.contract:
-                logger.error("Contract not configured")
+                logger.error("Learn & Earn contract not configured")
                 return 0.0
 
             balance_wei = self.contract.functions.getContractBalance().call()
@@ -282,8 +292,7 @@ class LearnBlockchainService:
             return {"success": False, "error": "Reward system not configured. Please contact support.", "permanent_failure": True}
 
         if not self.contract:
-            logger.warning("Smart contract not configured — using direct ERC20 transfer fallback")
-            return await self._attempt_direct_transfer(wallet_address, amount, attempt)
+            return {"success": False, "error": "Learn & Earn contract address not configured. Please contact support.", "permanent_failure": True}
 
         try:
             is_paused = self.contract.functions.paused().call()
@@ -294,8 +303,8 @@ class LearnBlockchainService:
 
         balance = await self.get_contract_balance()
         if balance < amount:
-            logger.warning(f"Insufficient contract balance: {balance:.2f} G$ < {amount} G$ — falling back to direct ERC20 transfer")
-            return await self._attempt_direct_transfer(wallet_address, amount, attempt)
+            logger.warning(f"Insufficient contract balance: {balance:.2f} G$ < {amount} G$")
+            return {"success": False, "error": "Learn & Earn contract rewards pool is currently depleted. Please try again later.", "permanent_failure": True}
 
         try:
             already_claimed = self.contract.functions.isQuizRewardClaimed(
