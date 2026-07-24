@@ -807,6 +807,7 @@ class LearnEarnQuizManager:
 
             # Create quiz log entry with timezone-naive timestamp
             current_time = datetime.utcnow()
+            reward_tx_hash = (ubi_verification or {}).get('reward_tx_hash') or (ubi_verification or {}).get('transaction_hash')
             quiz_log = {
                 'quiz_id': quiz_id,
                 'wallet_address': self.mask_wallet_address(user_wallet),
@@ -817,8 +818,18 @@ class LearnEarnQuizManager:
                 'status': True,
                 'answers': json.dumps(answer_details),  # Store as JSON string
                 'ubi_verification': json.dumps(ubi_verification),
-                'blocked': ubi_verification.get('blocked', False)
+                'blocked': (ubi_verification or {}).get('blocked', False)
             }
+
+            # Store the reward transaction in the initial insert when available.
+            # Telegram users can immediately type /earn again after completion, so
+            # cooldown queries must not depend on a follow-up update succeeding.
+            if reward_tx_hash:
+                quiz_log.update({
+                    'transaction_hash': reward_tx_hash,
+                    'reward_status': 'sent',
+                    'sent_at': current_time.isoformat() + 'Z'
+                })
 
             # Save to Supabase
             result = supabase.table(LEARN_EARN_LOG_TABLE).insert(quiz_log).execute()
@@ -1883,6 +1894,9 @@ def submit_quiz(current_user):
                 f"ℹ️ Quiz completed with 0 reward for {current_user[:8]}...; "
                 "skipping blockchain disbursement."
             )
+
+        if tx_hash:
+            feature_info_for_log['reward_tx_hash'] = tx_hash
 
         # Save quiz attempt to database
         quiz_log = None
