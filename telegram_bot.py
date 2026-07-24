@@ -211,6 +211,55 @@ def _learn_earn_keyboard(telegram_user_id, wallet: str | None = None):
     return {"inline_keyboard": keyboard}
 
 
+def _clear_wallet_learn_earn_sessions(wallet: str, *, except_user_id=None):
+    """Remove active Telegram Learn & Earn sessions for a wallet.
+
+    This prevents a rewarded wallet from continuing/restarting an older in-memory
+    chat quiz session after Supabase cooldown eligibility says the wallet is no
+    longer allowed to earn.
+    """
+    normalized = _normalize_wallet(wallet or "")
+    if not normalized:
+        return
+    except_key = str(except_user_id) if except_user_id is not None else None
+    with _TELEGRAM_LEARN_EARN_LOCK:
+        stale_keys = [
+            session_key
+            for session_key, session_data in _TELEGRAM_LEARN_EARN_SESSIONS.items()
+            if session_key != except_key and _normalize_wallet(session_data.get("wallet") or "") == normalized
+        ]
+        for session_key in stale_keys:
+            _TELEGRAM_LEARN_EARN_SESSIONS.pop(session_key, None)
+
+
+def _ensure_wallet_can_start_learn_earn(chat_id, telegram_user_id, wallet: str) -> bool:
+    """Fail-closed Telegram gate for Learn & Earn cooldown eligibility."""
+    from learn_and_earn.learn_and_earn import quiz_manager
+
+    try:
+        eligibility = _run_async(quiz_manager.check_quiz_eligibility(wallet))
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"❌ Telegram Learn & Earn eligibility check failed for {_mask_wallet(wallet)}: {exc}")
+        send_message(
+            chat_id,
+            "⛔ <b>Learn &amp; Earn quiz cannot start yet</b>\n\n"
+            "We could not verify your Supabase reward/cooldown history right now. "
+            "For fund safety, please try again later.",
+            _learn_earn_keyboard(telegram_user_id, wallet),
+        )
+        return False
+
+    if not eligibility.get("eligible", True):
+        _clear_wallet_learn_earn_sessions(wallet, except_user_id=telegram_user_id)
+        send_message(
+            chat_id,
+            _format_learn_earn_unavailable_message(eligibility),
+            _learn_earn_keyboard(telegram_user_id, wallet),
+        )
+        return False
+    return True
+
+
 def _format_countdown(seconds_remaining: int) -> str:
     """Return a compact mm:ss countdown label for Telegram messages."""
     seconds_remaining = max(0, int(seconds_remaining))
@@ -371,20 +420,9 @@ def _start_questions_from_session(chat_id, telegram_user_id):
         _send_no_active_or_cooldown_message(chat_id, telegram_user_id)
         return
 
-    try:
-        from learn_and_earn.learn_and_earn import quiz_manager
-
-        eligibility = _run_async(quiz_manager.check_quiz_eligibility(session_data.get("wallet")))
-        if not eligibility.get("eligible", True):
-            _TELEGRAM_LEARN_EARN_SESSIONS.pop(session_key, None)
-            send_message(
-                chat_id,
-                _format_learn_earn_unavailable_message(eligibility),
-                _learn_earn_keyboard(telegram_user_id, session_data.get("wallet")),
-            )
-            return
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"⚠️ Could not re-check Telegram Learn & Earn cooldown before quiz questions: {exc}")
+    if not _ensure_wallet_can_start_learn_earn(chat_id, telegram_user_id, session_data.get("wallet")):
+        _TELEGRAM_LEARN_EARN_SESSIONS.pop(session_key, None)
+        return
 
     questions = session_data.get("questions") or []
     if not questions:
@@ -636,13 +674,7 @@ def _finish_chat_quiz(chat_id, telegram_user_id):
     reward_amount = float(quiz_result.get("reward_amount") or 0)
     tx_hash = None
 
-    pre_save_eligibility = _run_async(quiz_manager.check_quiz_eligibility(wallet))
-    if not pre_save_eligibility.get("eligible", True):
-        send_message(
-            chat_id,
-            _format_learn_earn_unavailable_message(pre_save_eligibility),
-            _learn_earn_keyboard(telegram_user_id, wallet),
-        )
+    if not _ensure_wallet_can_start_learn_earn(chat_id, telegram_user_id, wallet):
         return
 
     if reward_amount > 0:
@@ -874,21 +906,16 @@ def handle_earn(chat_id, telegram_user):
         )
         return
 
-    existing_session = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
-    if existing_session:
-        send_message(
-            chat_id,
-            "📝 <b>You already have an active Learn &amp; Earn chat quiz.</b> Please finish the current quiz before starting another one.",
-        )
-        return
-
     try:
-        eligibility = _run_async(quiz_manager.check_quiz_eligibility(saved_wallet))
-        if not eligibility.get("eligible", True):
+        if not _ensure_wallet_can_start_learn_earn(chat_id, telegram_user_id, saved_wallet):
+            _TELEGRAM_LEARN_EARN_SESSIONS.pop(str(telegram_user_id), None)
+            return
+
+        existing_session = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
+        if existing_session:
             send_message(
                 chat_id,
-                _format_learn_earn_unavailable_message(eligibility),
-                _learn_earn_keyboard(telegram_user_id, saved_wallet),
+                "📝 <b>You already have an active Learn &amp; Earn chat quiz.</b> Please finish the current quiz before starting another one.",
             )
             return
 
