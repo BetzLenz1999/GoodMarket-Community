@@ -31,7 +31,7 @@ TELEGRAM_LOGIN_TOKEN_MAX_AGE_SECONDS = int(os.getenv("TELEGRAM_LOGIN_TOKEN_MAX_A
 _WALLET_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
 _TELEGRAM_LEARN_EARN_SESSIONS = {}
 _TELEGRAM_LEARN_EARN_LOCK = threading.RLock()
-_TELEGRAM_TIMER_UPDATE_SECONDS = int(os.getenv("TELEGRAM_TIMER_UPDATE_SECONDS", "5"))
+_TELEGRAM_TIMER_UPDATE_SECONDS = int(os.getenv("TELEGRAM_TIMER_UPDATE_SECONDS", "1"))
 _TELEGRAM_MIN_LEARN_EARN_CONTRACT_BALANCE_GD = float(
     os.getenv("TELEGRAM_MIN_LEARN_EARN_CONTRACT_BALANCE_GD", "200")
 )
@@ -337,6 +337,19 @@ def _module_message_text(module, module_index, total_modules, seconds_remaining,
     )
 
 
+def _module_timer_text(module_index, total_modules, seconds_remaining, ready=False):
+    if ready:
+        return (
+            f"✅ <b>Module {module_index + 1}/{total_modules} timer complete.</b>\n\n"
+            "You can continue now. The quiz will stay locked until you tap the button below."
+        )
+    return (
+        f"⏳ <b>Live module timer</b> — Module {module_index + 1}/{total_modules}\n"
+        f"Remaining: <b>{_format_countdown(seconds_remaining)}</b>\n\n"
+        "This message updates automatically in the bot."
+    )
+
+
 def _send_current_module(chat_id, telegram_user_id):
     with _TELEGRAM_LEARN_EARN_LOCK:
         session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
@@ -351,6 +364,7 @@ def _send_current_module(chat_id, telegram_user_id):
             return
 
         _delete_session_message(session_data, chat_id, "module_message_id")
+        _delete_session_message(session_data, chat_id, "module_timer_message_id")
         module = modules[module_index]
         try:
             reading_time = max(1, int(float(module.get("reading_time_minutes") or 1)))
@@ -364,6 +378,8 @@ def _send_current_module(chat_id, telegram_user_id):
         is_last = module_index == len(modules) - 1
         response = send_message(chat_id, _module_message_text(module, module_index, len(modules), seconds), None)
         session_data["module_message_id"] = _telegram_message_id(response)
+        timer_response = send_message(chat_id, _module_timer_text(module_index, len(modules), seconds), None)
+        session_data["module_timer_message_id"] = _telegram_message_id(timer_response)
 
     threading.Thread(
         target=_run_module_countdown,
@@ -386,13 +402,18 @@ def _run_module_countdown(chat_id, session_key, module_index, timer_token, is_la
             remaining = int(session_data.get("module_ready_at", 0) - time.time())
             modules = session_data.get("modules") or []
             message_id = session_data.get("module_message_id")
+            timer_message_id = session_data.get("module_timer_message_id")
             module = modules[module_index] if module_index < len(modules) else None
         if remaining <= 0:
             if module and message_id:
-                edit_message(chat_id, message_id, _module_message_text(module, module_index, len(modules), 0, ready=True), _module_keyboard(module_index, is_last))
+                edit_message(chat_id, message_id, _module_message_text(module, module_index, len(modules), 0, ready=True), None)
+            if timer_message_id:
+                edit_message(chat_id, timer_message_id, _module_timer_text(module_index, len(modules), 0, ready=True), _module_keyboard(module_index, is_last))
             return
         if module and message_id:
             edit_message(chat_id, message_id, _module_message_text(module, module_index, len(modules), remaining), None)
+        if timer_message_id:
+            edit_message(chat_id, timer_message_id, _module_timer_text(module_index, len(modules), remaining), None)
         time.sleep(min(_TELEGRAM_TIMER_UPDATE_SECONDS, max(1, remaining)))
 
 
@@ -410,6 +431,14 @@ def _question_message_text(question, current_index, total_questions, seconds_rem
     )
 
 
+def _question_timer_text(current_index, total_questions, seconds_remaining):
+    return (
+        f"⏱️ <b>Live question timer</b> — Question {current_index + 1}/{total_questions}\n"
+        f"Remaining: <b>{_format_countdown(seconds_remaining)}</b>\n\n"
+        "This message updates automatically in the bot."
+    )
+
+
 def _send_current_question(chat_id, telegram_user_id):
     with _TELEGRAM_LEARN_EARN_LOCK:
         session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
@@ -421,6 +450,7 @@ def _send_current_question(chat_id, telegram_user_id):
             return
 
         _delete_session_message(session_data, chat_id, "question_message_id")
+        _delete_session_message(session_data, chat_id, "question_timer_message_id")
         current_index = session_data["current_index"]
         questions = session_data["questions"]
         question = questions[current_index]
@@ -430,6 +460,8 @@ def _send_current_question(chat_id, telegram_user_id):
         timer_token = session_data["question_timer_token"]
         response = send_message(chat_id, _question_message_text(question, current_index, len(questions), seconds), _question_keyboard(current_index))
         session_data["question_message_id"] = _telegram_message_id(response)
+        timer_response = send_message(chat_id, _question_timer_text(current_index, len(questions), seconds), None)
+        session_data["question_timer_message_id"] = _telegram_message_id(timer_response)
 
     threading.Thread(
         target=_run_question_countdown,
@@ -452,15 +484,19 @@ def _run_question_countdown(chat_id, session_key, question_index, timer_token):
             remaining = int(session_data.get("deadline", 0) - time.time())
             questions = session_data.get("questions") or []
             message_id = session_data.get("question_message_id")
+            timer_message_id = session_data.get("question_timer_message_id")
             question = questions[question_index] if question_index < len(questions) else None
             if remaining <= 0:
                 session_data["answers"].append(-1)
                 session_data["current_index"] += 1
                 _delete_session_message(session_data, chat_id, "question_message_id")
+                _delete_session_message(session_data, chat_id, "question_timer_message_id")
                 finished = session_data["current_index"] >= len(questions)
                 break
         if question and message_id:
             edit_message(chat_id, message_id, _question_message_text(question, question_index, len(questions), remaining), _question_keyboard(question_index))
+        if timer_message_id:
+            edit_message(chat_id, timer_message_id, _question_timer_text(question_index, len(questions), remaining), None)
         time.sleep(min(_TELEGRAM_TIMER_UPDATE_SECONDS, max(1, remaining)))
 
     send_message(chat_id, "⏱️ Time is up. The old question was removed and marked incorrect.")
@@ -535,6 +571,7 @@ def handle_learn_earn_answer(chat_id, telegram_user_id, callback_data: str):
         session_data["current_index"] += 1
         session_data["question_timer_token"] = "answered"
         _delete_session_message(session_data, chat_id, "question_message_id")
+        _delete_session_message(session_data, chat_id, "question_timer_message_id")
         finished = session_data["current_index"] >= len(session_data["questions"])
 
     if finished:
@@ -571,6 +608,7 @@ def handle_learn_earn_module_next(chat_id, telegram_user_id, callback_data: str)
         return
 
     _delete_session_message(session_data, chat_id, "module_message_id")
+    _delete_session_message(session_data, chat_id, "module_timer_message_id")
     session_data["current_module_index"] = module_index + 1
     if session_data["current_module_index"] >= len(session_data.get("modules") or []):
         _start_questions_from_session(chat_id, telegram_user_id)
