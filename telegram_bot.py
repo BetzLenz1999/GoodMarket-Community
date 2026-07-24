@@ -97,10 +97,10 @@ def _safe_text(value: str, limit: int = 700) -> str:
 
 
 def _get_admin_dashboard_questions(quiz_manager):
-    """Fetch quiz questions from the admin-managed Supabase question bank."""
-    # Existing Learn & Earn behavior selects the quiz set from the Supabase
-    # `quiz_questions` bank that admins manage in the dashboard. The questions
-    # are not AI-generated and do not come from Telegram.
+    """Fetch quiz questions using the latest admin dashboard quiz settings."""
+    # Reload on every Telegram quiz start so question count, timer, and max
+    # reward reflect the current `quiz_settings` values from the admin dashboard.
+    quiz_manager.load_quiz_settings()
     return _run_async(quiz_manager.get_random_questions(quiz_manager.questions_per_quiz))
 
 
@@ -549,6 +549,7 @@ def init_telegram_learn_earn_timer_scheduler(app=None):
         return True
 
 def _finish_chat_quiz(chat_id, telegram_user_id):
+    from learn_and_earn.blockchain import learn_blockchain_service
     from learn_and_earn.learn_and_earn import quiz_manager
 
     session_key = str(telegram_user_id)
@@ -566,23 +567,78 @@ def _finish_chat_quiz(chat_id, telegram_user_id):
         return
 
     wallet = session_data["wallet"]
-    reward_amount = quiz_result.get("reward_amount", 0)
+    reward_amount = float(quiz_result.get("reward_amount") or 0)
+    tx_hash = None
+
+    if reward_amount > 0:
+        try:
+            disbursement = _run_async(learn_blockchain_service.send_g_reward(
+                wallet,
+                reward_amount,
+                {
+                    "action": "telegram_chat_quiz",
+                    "quiz_session_id": session_data["quiz_session_id"],
+                    "score": quiz_result.get("score"),
+                    "total": quiz_result.get("total_questions"),
+                    "telegram_user_id": telegram_user_id,
+                },
+            ))
+        except Exception as disburse_error:  # noqa: BLE001
+            logger.error(f"❌ Telegram chat quiz disbursement crashed: {disburse_error}")
+            disbursement = {"success": False, "error": "Reward transfer failed. Please try again later."}
+
+        if not disbursement or not disbursement.get("success"):
+            error = html.escape(str((disbursement or {}).get("error") or "Reward transfer failed. Please try again later."))
+            send_message(
+                chat_id,
+                "⚠️ <b>Learn &amp; Earn reward was not sent</b>\n\n"
+                f"Score: <b>{quiz_result.get('score')}/{quiz_result.get('total_questions')}</b>\n"
+                f"Reward calculated: <b>{reward_amount} G$</b>\n\n"
+                f"{error}\n\n"
+                "Your quiz attempt was not recorded yet, so the cooldown will not start until the reward is successfully received.",
+            )
+            return
+
+        tx_hash = disbursement.get("tx_hash")
+        if not tx_hash:
+            logger.error("❌ Telegram chat quiz disbursement succeeded without a transaction hash")
+            send_message(
+                chat_id,
+                "⚠️ <b>Learn &amp; Earn reward status is incomplete</b>\n\n"
+                f"Score: <b>{quiz_result.get('score')}/{quiz_result.get('total_questions')}</b>\n"
+                f"Reward calculated: <b>{reward_amount} G$</b>\n\n"
+                "The reward service did not return a transaction hash, so your quiz attempt was not recorded yet. "
+                "Please contact support before trying again.",
+            )
+            return
+
     try:
-        _run_async(quiz_manager.save_quiz_attempt(
+        quiz_log = _run_async(quiz_manager.save_quiz_attempt(
             wallet,
             quiz_result.get("questions", session_data["questions"]),
             session_data["answers"],
             reward_amount,
-            {"verified": False, "source": "telegram_chat"},
+            {"verified": False, "source": "telegram_chat", "reward_tx_hash": tx_hash},
         ))
+        if quiz_log and tx_hash:
+            quiz_manager.update_quiz_log_with_transaction(quiz_log.get("quiz_id"), tx_hash)
     except Exception as save_error:
-        logger.error(f"❌ Telegram chat quiz save failed: {save_error}")
+        logger.error(f"❌ Telegram chat quiz save failed after reward: {save_error}")
+        send_message(
+            chat_id,
+            "⚠️ Reward sent, but we could not record your Learn &amp; Earn cooldown log. "
+            "Please contact support with your transaction hash: "
+            f"<code>{html.escape(str(tx_hash or 'n/a'))}</code>",
+        )
+        return
 
+    tx_line = f"Transaction hash: <code>{html.escape(str(tx_hash))}</code>\n" if tx_hash else ""
     send_message(
         chat_id,
         "✅ <b>Learn &amp; Earn chat quiz complete!</b>\n\n"
         f"Score: <b>{quiz_result.get('score')}/{quiz_result.get('total_questions')}</b>\n"
-        f"Reward earned: <b>{reward_amount} G$</b>\n\n"
+        f"Reward received: <b>{reward_amount} G$</b>\n"
+        f"{tx_line}\n"
         "Your quiz attempt was recorded for your saved wallet. Type /earn to start again when eligible.",
     )
 
@@ -718,6 +774,24 @@ def handle_earn(chat_id, telegram_user):
                 chat_id,
                 "⏳ <b>Learn &amp; Earn is not available yet</b>\n\n"
                 f"{html.escape(str(eligibility.get('message', 'Please try again later.')))}",
+                _learn_earn_keyboard(telegram_user_id, saved_wallet),
+            )
+            return
+
+        if not learn_blockchain_service.has_reward_contract:
+            send_message(
+                chat_id,
+                "⛔ <b>Learn &amp; Earn quiz cannot start yet</b>\n\n"
+                "The Learn &amp; Earn reward contract address is not configured, so Telegram rewards cannot be disbursed right now.",
+                _learn_earn_keyboard(telegram_user_id, saved_wallet),
+            )
+            return
+
+        if not learn_blockchain_service.has_operator_wallet:
+            send_message(
+                chat_id,
+                "⛔ <b>Learn &amp; Earn quiz cannot start yet</b>\n\n"
+                "The Learn &amp; Earn gas operator wallet is not configured, so Telegram rewards cannot be disbursed right now.",
                 _learn_earn_keyboard(telegram_user_id, saved_wallet),
             )
             return
