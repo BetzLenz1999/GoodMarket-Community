@@ -225,6 +225,46 @@ def _telegram_message_id(response):
     return None
 
 
+def _format_learn_earn_unavailable_message(eligibility: dict | None) -> str:
+    """Return a user-friendly Telegram message for cooldown/no-quiz states."""
+    eligibility = eligibility or {}
+    reason = str(eligibility.get("reason") or "").lower()
+    next_quiz_time = eligibility.get("next_quiz_time")
+    if "cooldown" in reason or next_quiz_time:
+        next_line = ""
+        if next_quiz_time:
+            next_line = f"\nYou can participate again after: <code>{html.escape(str(next_quiz_time))} UTC</code>"
+        return (
+            "⏳ <b>You already participated in Learn &amp; Earn.</b>\n\n"
+            "Your rewarded quiz is already logged, so your wallet is on cooldown and is not eligible for another quiz yet."
+            f"{next_line}"
+        )
+    return (
+        "⏳ <b>Learn &amp; Earn is not available yet</b>\n\n"
+        f"{html.escape(str(eligibility.get('message', 'Please try again later.')))}"
+    )
+
+
+def _send_no_active_or_cooldown_message(chat_id, telegram_user_id):
+    """Explain stale Telegram callbacks, preferring cooldown status when present."""
+    saved_wallet = _get_saved_wallet(telegram_user_id)
+    if saved_wallet:
+        try:
+            from learn_and_earn.learn_and_earn import quiz_manager
+            eligibility = _run_async(quiz_manager.check_quiz_eligibility(saved_wallet))
+            if not eligibility.get("eligible", True):
+                send_message(
+                    chat_id,
+                    _format_learn_earn_unavailable_message(eligibility),
+                    _learn_earn_keyboard(telegram_user_id, saved_wallet),
+                )
+                return
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"⚠️ Could not refresh Telegram Learn & Earn cooldown state: {exc}")
+
+    send_message(chat_id, "📚 No active Learn &amp; Earn chat quiz. Type /earn to start.")
+
+
 def delete_message(chat_id, message_id):
     """Best-effort removal of a Telegram message."""
     if not chat_id or not message_id:
@@ -325,9 +365,16 @@ def _module_keyboard(module_index: int, ready: bool = False):
 
 
 def _start_questions_from_session(chat_id, telegram_user_id):
-    session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
+    session_key = str(telegram_user_id)
+    session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(session_key)
     if not session_data:
-        send_message(chat_id, "📚 No active Learn &amp; Earn chat quiz. Type /earn to start.")
+        _send_no_active_or_cooldown_message(chat_id, telegram_user_id)
+        return
+
+    questions = session_data.get("questions") or []
+    if not questions:
+        _TELEGRAM_LEARN_EARN_SESSIONS.pop(session_key, None)
+        send_message(chat_id, "⚠️ No Learn &amp; Earn quiz questions are attached to an active session. Type /earn to start a new quiz.")
         return
 
     session_data["phase"] = "quiz"
@@ -416,7 +463,11 @@ def _send_current_question(chat_id, telegram_user_id):
 
         _delete_session_message(session_data, chat_id, "question_message_id")
         current_index = session_data["current_index"]
-        questions = session_data["questions"]
+        questions = session_data.get("questions") or []
+        if not questions or current_index >= len(questions):
+            _TELEGRAM_LEARN_EARN_SESSIONS.pop(str(telegram_user_id), None)
+            send_message(chat_id, "📚 This Learn &amp; Earn quiz session is no longer active. Type /earn to start again.")
+            return
         question = questions[current_index]
         seconds = int(session_data["time_per_question"])
         session_data["deadline"] = time.time() + seconds
@@ -669,20 +720,31 @@ def handle_learn_earn_answer(chat_id, telegram_user_id, callback_data: str):
 
     with _TELEGRAM_LEARN_EARN_LOCK:
         session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
-        if not session_data:
-            send_message(chat_id, "📚 No active Learn &amp; Earn chat quiz. Type /earn to start.")
-            return
+        if not session_data or session_data.get("phase") != "quiz" or not session_data.get("questions"):
+            needs_status_message = True
+        else:
+            needs_status_message = False
 
-        if question_index != session_data["current_index"]:
+        if not needs_status_message and question_index != session_data["current_index"]:
             send_message(chat_id, "ℹ️ That answer is for an old question. Please answer the latest question.")
             return
 
-        selected_answer = -1 if time.time() > session_data.get("deadline", 0) else answer_index
-        session_data["answers"].append(selected_answer)
-        session_data["current_index"] += 1
-        session_data["question_timer_token"] = None
-        _delete_session_message(session_data, chat_id, "question_message_id")
-        finished = session_data["current_index"] >= len(session_data["questions"])
+        if needs_status_message:
+            # Reply after leaving the session decision path with the latest cooldown
+            # state so stale module/question buttons explain that the rewarded
+            # wallet is already cooling down instead of only saying "no active quiz".
+            finished = False
+        else:
+            selected_answer = -1 if time.time() > session_data.get("deadline", 0) else answer_index
+            session_data["answers"].append(selected_answer)
+            session_data["current_index"] += 1
+            session_data["question_timer_token"] = None
+            _delete_session_message(session_data, chat_id, "question_message_id")
+            finished = session_data["current_index"] >= len(session_data["questions"])
+
+    if needs_status_message:
+        _send_no_active_or_cooldown_message(chat_id, telegram_user_id)
+        return
 
     if finished:
         _finish_chat_quiz(chat_id, telegram_user_id)
@@ -697,7 +759,7 @@ def handle_learn_earn_module_next(chat_id, telegram_user_id, callback_data: str)
 
     session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
     if not session_data:
-        send_message(chat_id, "📚 No active Learn &amp; Earn chat quiz. Type /earn to start.")
+        _send_no_active_or_cooldown_message(chat_id, telegram_user_id)
         return
     if session_data.get("phase") != "module":
         send_message(chat_id, "📝 The quiz has already started. Please answer the current question.")
@@ -785,8 +847,7 @@ def handle_earn(chat_id, telegram_user):
         if not eligibility.get("eligible", True):
             send_message(
                 chat_id,
-                "⏳ <b>Learn &amp; Earn is not available yet</b>\n\n"
-                f"{html.escape(str(eligibility.get('message', 'Please try again later.')))}",
+                _format_learn_earn_unavailable_message(eligibility),
                 _learn_earn_keyboard(telegram_user_id, saved_wallet),
             )
             return
