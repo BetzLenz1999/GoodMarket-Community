@@ -11,6 +11,7 @@ import logging
 import re
 import secrets
 import time
+import threading
 import requests
 from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit
@@ -29,6 +30,11 @@ TELEGRAM_WEBHOOK_SECRET_TOKEN = os.getenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", "")
 TELEGRAM_LOGIN_TOKEN_MAX_AGE_SECONDS = int(os.getenv("TELEGRAM_LOGIN_TOKEN_MAX_AGE_SECONDS", "900"))
 _WALLET_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
 _TELEGRAM_LEARN_EARN_SESSIONS = {}
+_TELEGRAM_LEARN_EARN_LOCK = threading.RLock()
+_TELEGRAM_TIMER_UPDATE_SECONDS = int(os.getenv("TELEGRAM_TIMER_UPDATE_SECONDS", "5"))
+_TELEGRAM_MIN_LEARN_EARN_CONTRACT_BALANCE_GD = float(
+    os.getenv("TELEGRAM_MIN_LEARN_EARN_CONTRACT_BALANCE_GD", "200")
+)
 
 
 def _run_async(coro):
@@ -201,6 +207,60 @@ def _learn_earn_keyboard(telegram_user_id, wallet: str | None = None):
     return {"inline_keyboard": keyboard}
 
 
+def _format_countdown(seconds_remaining: int) -> str:
+    """Return a compact mm:ss countdown label for Telegram messages."""
+    seconds_remaining = max(0, int(seconds_remaining))
+    minutes, seconds = divmod(seconds_remaining, 60)
+    return f"{minutes:02d}:{seconds:02d}"
+
+
+def _telegram_message_id(response):
+    """Extract a Telegram message_id from a sendMessage response."""
+    if isinstance(response, dict) and response.get("ok") and isinstance(response.get("result"), dict):
+        return response["result"].get("message_id")
+    return None
+
+
+def delete_message(chat_id, message_id):
+    """Best-effort removal of a Telegram message."""
+    if not chat_id or not message_id:
+        return False
+    try:
+        resp = requests.post(
+            f"{TELEGRAM_API}/deleteMessage",
+            json={"chat_id": chat_id, "message_id": message_id},
+            timeout=5,
+        )
+        return bool(resp.ok)
+    except Exception as e:
+        logger.debug(f"Telegram deleteMessage skipped: {e}")
+        return False
+
+
+def edit_message(chat_id, message_id, text, reply_markup=None):
+    """Best-effort edit of a Telegram message."""
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": "HTML",
+    }
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+    try:
+        resp = requests.post(f"{TELEGRAM_API}/editMessageText", json=payload, timeout=5)
+        return resp.json()
+    except Exception as e:
+        logger.debug(f"Telegram editMessageText skipped: {e}")
+        return None
+
+
+def _delete_session_message(session_data, chat_id, key):
+    message_id = session_data.pop(key, None) if session_data else None
+    if message_id:
+        delete_message(chat_id, message_id)
+
+
 def send_message(chat_id, text, reply_markup=None):
     """Send a message to a Telegram chat."""
     payload = {
@@ -256,61 +316,158 @@ def _start_questions_from_session(chat_id, telegram_user_id):
     _send_current_question(chat_id, telegram_user_id)
 
 
-def _send_current_module(chat_id, telegram_user_id):
-    session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
-    if not session_data:
-        send_message(chat_id, "📚 No active Learn &amp; Earn chat quiz. Type /earn to start.")
-        return
-
-    modules = session_data.get("modules") or []
-    module_index = session_data.get("current_module_index", 0)
-    if module_index >= len(modules):
-        _start_questions_from_session(chat_id, telegram_user_id)
-        return
-
-    module = modules[module_index]
+def _module_message_text(module, module_index, total_modules, seconds_remaining, ready=False):
     title = html.escape(str(module.get("title") or f"Module {module_index + 1}"))
     reading_time = module.get("reading_time_minutes") or 1
     body = _safe_text(module.get("content") or module.get("description") or module.get("url") or "", limit=2200)
     if not body:
         body = "No module body was provided yet, but this module is active in the admin dashboard."
-    is_last = module_index == len(modules) - 1
-    text = (
-        f"📘 <b>Module {module_index + 1}/{len(modules)}: {title}</b>\n"
-        f"Estimated reading time: <b>{reading_time} min</b>\n\n"
-        f"{html.escape(body)}\n\n"
-        "Read this module, then tap the button below."
+
+    status = (
+        "✅ Timer complete. You can continue now."
+        if ready
+        else f"⏳ Live reading countdown: <b>{_format_countdown(seconds_remaining)}</b>"
     )
-    send_message(chat_id, text, _module_keyboard(module_index, is_last))
+    return (
+        f"📘 <b>Module {module_index + 1}/{total_modules}: {title}</b>\n"
+        f"Estimated reading time: <b>{reading_time} min</b>\n"
+        f"{status}\n\n"
+        f"{html.escape(body)}\n\n"
+        + ("Tap the button below to continue." if ready else "Please read while the timer counts down. The quiz will not start until this timer finishes.")
+    )
 
 
-def _send_current_question(chat_id, telegram_user_id):
-    session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
-    if not session_data:
-        send_message(chat_id, "📚 No active Learn &amp; Earn chat quiz. Type /earn to start.")
-        return
-    if session_data.get("phase") != "quiz":
-        send_message(chat_id, "📘 Please finish the module step first, then the quiz will start.")
-        return
+def _send_current_module(chat_id, telegram_user_id):
+    with _TELEGRAM_LEARN_EARN_LOCK:
+        session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
+        if not session_data:
+            send_message(chat_id, "📚 No active Learn &amp; Earn chat quiz. Type /earn to start.")
+            return
 
-    current_index = session_data["current_index"]
-    questions = session_data["questions"]
-    question = questions[current_index]
-    seconds = int(session_data["time_per_question"])
-    session_data["deadline"] = time.time() + seconds
+        modules = session_data.get("modules") or []
+        module_index = session_data.get("current_module_index", 0)
+        if module_index >= len(modules):
+            _start_questions_from_session(chat_id, telegram_user_id)
+            return
 
+        _delete_session_message(session_data, chat_id, "module_message_id")
+        module = modules[module_index]
+        try:
+            reading_time = max(1, int(float(module.get("reading_time_minutes") or 1)))
+        except (TypeError, ValueError):
+            reading_time = 1
+        seconds = reading_time * 60
+        ready_at = time.time() + seconds
+        session_data["module_ready_at"] = ready_at
+        session_data["module_timer_token"] = secrets.token_urlsafe(8)
+        timer_token = session_data["module_timer_token"]
+        is_last = module_index == len(modules) - 1
+        response = send_message(chat_id, _module_message_text(module, module_index, len(modules), seconds), None)
+        session_data["module_message_id"] = _telegram_message_id(response)
+
+    threading.Thread(
+        target=_run_module_countdown,
+        args=(chat_id, str(telegram_user_id), module_index, timer_token, is_last),
+        daemon=True,
+    ).start()
+
+
+def _run_module_countdown(chat_id, session_key, module_index, timer_token, is_last):
+    while True:
+        with _TELEGRAM_LEARN_EARN_LOCK:
+            session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(session_key)
+            if (
+                not session_data
+                or session_data.get("phase") != "module"
+                or session_data.get("current_module_index") != module_index
+                or session_data.get("module_timer_token") != timer_token
+            ):
+                return
+            remaining = int(session_data.get("module_ready_at", 0) - time.time())
+            modules = session_data.get("modules") or []
+            message_id = session_data.get("module_message_id")
+            module = modules[module_index] if module_index < len(modules) else None
+        if remaining <= 0:
+            if module and message_id:
+                edit_message(chat_id, message_id, _module_message_text(module, module_index, len(modules), 0, ready=True), _module_keyboard(module_index, is_last))
+            return
+        if module and message_id:
+            edit_message(chat_id, message_id, _module_message_text(module, module_index, len(modules), remaining), None)
+        time.sleep(min(_TELEGRAM_TIMER_UPDATE_SECONDS, max(1, remaining)))
+
+
+def _question_message_text(question, current_index, total_questions, seconds_remaining):
     options = question.get("options", [])
     option_lines = "\n".join(
         f"{chr(65 + idx)}. {html.escape(str(option))}"
         for idx, option in enumerate(options[:4])
     )
-    text = (
-        f"⏱️ <b>Question {current_index + 1}/{len(questions)}</b> — {seconds}s timer\n\n"
+    return (
+        f"⏱️ <b>Question {current_index + 1}/{total_questions}</b> — live timer: <b>{_format_countdown(seconds_remaining)}</b>\n\n"
         f"{html.escape(str(question.get('question', '')))}\n\n"
         f"{option_lines}\n\n"
-        "Tap A, B, C, or D."
+        "Tap A, B, C, or D before the countdown ends."
     )
-    send_message(chat_id, text, _question_keyboard(current_index))
+
+
+def _send_current_question(chat_id, telegram_user_id):
+    with _TELEGRAM_LEARN_EARN_LOCK:
+        session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
+        if not session_data:
+            send_message(chat_id, "📚 No active Learn &amp; Earn chat quiz. Type /earn to start.")
+            return
+        if session_data.get("phase") != "quiz":
+            send_message(chat_id, "📘 Please finish the module step first, then the quiz will start.")
+            return
+
+        _delete_session_message(session_data, chat_id, "question_message_id")
+        current_index = session_data["current_index"]
+        questions = session_data["questions"]
+        question = questions[current_index]
+        seconds = int(session_data["time_per_question"])
+        session_data["deadline"] = time.time() + seconds
+        session_data["question_timer_token"] = secrets.token_urlsafe(8)
+        timer_token = session_data["question_timer_token"]
+        response = send_message(chat_id, _question_message_text(question, current_index, len(questions), seconds), _question_keyboard(current_index))
+        session_data["question_message_id"] = _telegram_message_id(response)
+
+    threading.Thread(
+        target=_run_question_countdown,
+        args=(chat_id, str(telegram_user_id), current_index, timer_token),
+        daemon=True,
+    ).start()
+
+
+def _run_question_countdown(chat_id, session_key, question_index, timer_token):
+    while True:
+        with _TELEGRAM_LEARN_EARN_LOCK:
+            session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(session_key)
+            if (
+                not session_data
+                or session_data.get("phase") != "quiz"
+                or session_data.get("current_index") != question_index
+                or session_data.get("question_timer_token") != timer_token
+            ):
+                return
+            remaining = int(session_data.get("deadline", 0) - time.time())
+            questions = session_data.get("questions") or []
+            message_id = session_data.get("question_message_id")
+            question = questions[question_index] if question_index < len(questions) else None
+            if remaining <= 0:
+                session_data["answers"].append(-1)
+                session_data["current_index"] += 1
+                _delete_session_message(session_data, chat_id, "question_message_id")
+                finished = session_data["current_index"] >= len(questions)
+                break
+        if question and message_id:
+            edit_message(chat_id, message_id, _question_message_text(question, question_index, len(questions), remaining), _question_keyboard(question_index))
+        time.sleep(min(_TELEGRAM_TIMER_UPDATE_SECONDS, max(1, remaining)))
+
+    send_message(chat_id, "⏱️ Time is up. The old question was removed and marked incorrect.")
+    if finished:
+        _finish_chat_quiz(chat_id, session_key)
+    else:
+        _send_current_question(chat_id, session_key)
 
 
 def _finish_chat_quiz(chat_id, telegram_user_id):
@@ -357,33 +514,30 @@ def handle_learn_earn_answer(chat_id, telegram_user_id, callback_data: str):
     if len(parts) != 3:
         return
 
-    session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
-    if not session_data:
-        send_message(chat_id, "📚 No active Learn &amp; Earn chat quiz. Type /earn to start.")
-        return
-
     try:
         question_index = int(parts[1])
         answer_index = int(parts[2])
     except ValueError:
         return
 
-    if question_index != session_data["current_index"]:
-        send_message(chat_id, "ℹ️ That answer is for an old question. Please answer the latest question.")
-        return
+    with _TELEGRAM_LEARN_EARN_LOCK:
+        session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
+        if not session_data:
+            send_message(chat_id, "📚 No active Learn &amp; Earn chat quiz. Type /earn to start.")
+            return
 
-    timed_out = time.time() > session_data.get("deadline", 0)
-    if timed_out:
-        selected_answer = -1
-        send_message(chat_id, "⏱️ Time is up for that question. Marked as incorrect.")
-    else:
-        selected_answer = answer_index
-        send_message(chat_id, f"✅ Answer {chr(65 + answer_index)} received.")
+        if question_index != session_data["current_index"]:
+            send_message(chat_id, "ℹ️ That answer is for an old question. Please answer the latest question.")
+            return
 
-    session_data["answers"].append(selected_answer)
-    session_data["current_index"] += 1
+        selected_answer = -1 if time.time() > session_data.get("deadline", 0) else answer_index
+        session_data["answers"].append(selected_answer)
+        session_data["current_index"] += 1
+        session_data["question_timer_token"] = "answered"
+        _delete_session_message(session_data, chat_id, "question_message_id")
+        finished = session_data["current_index"] >= len(session_data["questions"])
 
-    if session_data["current_index"] >= len(session_data["questions"]):
+    if finished:
         _finish_chat_quiz(chat_id, telegram_user_id)
     else:
         _send_current_question(chat_id, telegram_user_id)
@@ -411,6 +565,12 @@ def handle_learn_earn_module_next(chat_id, telegram_user_id, callback_data: str)
         send_message(chat_id, "ℹ️ That module button is old. Please use the latest module message.")
         return
 
+    if time.time() < session_data.get("module_ready_at", 0):
+        remaining = int(session_data.get("module_ready_at", 0) - time.time())
+        send_message(chat_id, f"⏳ Please wait for the live module timer to finish: <b>{_format_countdown(remaining)}</b> remaining.")
+        return
+
+    _delete_session_message(session_data, chat_id, "module_message_id")
     session_data["current_module_index"] = module_index + 1
     if session_data["current_module_index"] >= len(session_data.get("modules") or []):
         _start_questions_from_session(chat_id, telegram_user_id)
@@ -460,6 +620,7 @@ def handle_help(chat_id, telegram_user=None):
 
 def handle_earn(chat_id, telegram_user):
     """Handle /earn command — start the chat-first Learn & Earn flow when wallet is saved."""
+    from learn_and_earn.blockchain import learn_blockchain_service
     from learn_and_earn.learn_and_earn import quiz_manager
 
     telegram_user_id = telegram_user.get("id")
@@ -478,6 +639,19 @@ def handle_earn(chat_id, telegram_user):
                 chat_id,
                 "⏳ <b>Learn &amp; Earn is not available yet</b>\n\n"
                 f"{html.escape(str(eligibility.get('message', 'Please try again later.')))}",
+                _learn_earn_keyboard(telegram_user_id, saved_wallet),
+            )
+            return
+
+        contract_balance = _run_async(learn_blockchain_service.get_contract_balance())
+        if contract_balance < _TELEGRAM_MIN_LEARN_EARN_CONTRACT_BALANCE_GD:
+            send_message(
+                chat_id,
+                "⛔ <b>Learn &amp; Earn quiz cannot start yet</b>\n\n"
+                "The reward contract needs at least "
+                f"<b>{_TELEGRAM_MIN_LEARN_EARN_CONTRACT_BALANCE_GD:.0f} G$</b> before a Telegram quiz can start.\n"
+                f"Current contract balance: <b>{contract_balance:.2f} G$</b>.\n\n"
+                "Please try again after the rewards pool is refilled.",
                 _learn_earn_keyboard(telegram_user_id, saved_wallet),
             )
             return
