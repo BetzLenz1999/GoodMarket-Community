@@ -71,6 +71,13 @@ def _normalize_base_url(url: str) -> str:
 APP_URL = _normalize_base_url(os.getenv("TELEGRAM_WEB_APP_URL", "") or PRODUCTION_DOMAIN)
 
 
+def _celo_tx_url(tx_hash: str) -> str:
+    tx = (tx_hash or "").strip()
+    if not tx or tx.startswith("queued:"):
+        return ""
+    return f"https://celoscan.io/tx/{tx}"
+
+
 def _normalize_wallet(wallet: str) -> str:
     """Return a normalized lowercase wallet address, or an empty string."""
     candidate = (wallet or "").strip()
@@ -471,7 +478,7 @@ def _tick_question_timer(chat_id, session_key, session_data):
     timer_token = session_data.get("question_timer_token")
     questions = session_data.get("questions") or []
     question = questions[question_index] if question_index < len(questions) else None
-    if not question or not timer_token:
+    if not question or not timer_token or timer_token in {"answered", "timeout"}:
         return
 
     remaining = math.ceil(session_data.get("deadline", 0) - time.time())
@@ -491,10 +498,16 @@ def _tick_question_timer(chat_id, session_key, session_data):
     _delete_session_message(session_data, chat_id, "question_message_id")
     finished = session_data["current_index"] >= len(questions)
 
-    send_message(chat_id, "⏱️ Time is up. The old question was removed and marked incorrect.")
     if finished:
+        send_message(chat_id, "⏱️ Time is up. The old question was removed and marked incorrect. Finishing your quiz now…")
         _finish_chat_quiz(chat_id, session_key)
     else:
+        next_number = session_data["current_index"] + 1
+        send_message(
+            chat_id,
+            "⏱️ Time is up. The old question was removed and marked incorrect. "
+            f"Loading question {next_number}/{len(questions)} now…",
+        )
         _send_current_question(chat_id, session_key)
 
 
@@ -640,7 +653,12 @@ def _finish_chat_quiz(chat_id, telegram_user_id):
             wallet[:8],
         )
 
-    tx_line = f"Transaction hash: <code>{html.escape(str(tx_hash))}</code>\n" if tx_hash else ""
+    explorer_url = _celo_tx_url(str(tx_hash or ""))
+    tx_line = (
+        f'Transaction: <a href="{html.escape(explorer_url)}">{html.escape(str(tx_hash))}</a>\n'
+        if explorer_url
+        else (f"Transaction hash: <code>{html.escape(str(tx_hash))}</code>\n" if tx_hash else "")
+    )
     cooldown_line = (
         "Your quiz attempt was recorded for your saved wallet. Type /earn to start again when eligible."
         if quiz_log
