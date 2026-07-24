@@ -32,10 +32,13 @@ TELEGRAM_LOGIN_TOKEN_MAX_AGE_SECONDS = int(os.getenv("TELEGRAM_LOGIN_TOKEN_MAX_A
 _WALLET_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
 _TELEGRAM_LEARN_EARN_SESSIONS = {}
 _TELEGRAM_LEARN_EARN_LOCK = threading.RLock()
-_TELEGRAM_TIMER_UPDATE_SECONDS = int(os.getenv("TELEGRAM_TIMER_UPDATE_SECONDS", "1"))
+_TELEGRAM_TIMER_UPDATE_SECONDS = int(os.getenv("TELEGRAM_TIMER_UPDATE_SECONDS", "10"))
 _TELEGRAM_MIN_LEARN_EARN_CONTRACT_BALANCE_GD = float(
     os.getenv("TELEGRAM_MIN_LEARN_EARN_CONTRACT_BALANCE_GD", "200")
 )
+_TELEGRAM_LEARN_EARN_SCHEDULER_STOP = threading.Event()
+_TELEGRAM_LEARN_EARN_SCHEDULER_THREAD = None
+_TELEGRAM_LEARN_EARN_SCHEDULER_LOCK = threading.Lock()
 
 
 def _run_async(coro):
@@ -312,6 +315,15 @@ def _question_keyboard(question_number: int):
     }
 
 
+def _module_keyboard(module_index: int, ready: bool = False):
+    return {
+        "inline_keyboard": [[{
+            "text": "✅ Continue now" if ready else "🔄 Check timer",
+            "callback_data": f"le_mod_next:{module_index}",
+        }]]
+    }
+
+
 def _start_questions_from_session(chat_id, telegram_user_id):
     session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
     if not session_data:
@@ -373,76 +385,9 @@ def _send_current_module(chat_id, telegram_user_id):
         session_data["module_ready_at"] = ready_at
         session_data["module_timer_token"] = secrets.token_urlsafe(8)
         timer_token = session_data["module_timer_token"]
-        response = send_message(chat_id, _module_message_text(module, module_index, len(modules), seconds), None)
+        response = send_message(chat_id, _module_message_text(module, module_index, len(modules), seconds), _module_keyboard(module_index))
         session_data["module_message_id"] = _telegram_message_id(response)
 
-    threading.Thread(
-        target=_run_module_countdown,
-        args=(chat_id, str(telegram_user_id), module_index, timer_token),
-        daemon=True,
-    ).start()
-
-
-def _run_module_countdown(chat_id, session_key, module_index, timer_token):
-    while True:
-        with _TELEGRAM_LEARN_EARN_LOCK:
-            session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(session_key)
-            if (
-                not session_data
-                or session_data.get("phase") != "module"
-                or session_data.get("current_module_index") != module_index
-                or session_data.get("module_timer_token") != timer_token
-            ):
-                return
-            remaining = math.ceil(session_data.get("module_ready_at", 0) - time.time())
-            modules = session_data.get("modules") or []
-            module = modules[module_index] if module_index < len(modules) else None
-        if remaining <= 0:
-            should_start_quiz = False
-            should_send_next_module = False
-            with _TELEGRAM_LEARN_EARN_LOCK:
-                current_session = _TELEGRAM_LEARN_EARN_SESSIONS.get(session_key)
-                if (
-                    current_session
-                    and module
-                    and current_session.get("phase") == "module"
-                    and current_session.get("current_module_index") == module_index
-                    and current_session.get("module_timer_token") == timer_token
-                ):
-                    _edit_or_replace_session_message(
-                        current_session,
-                        chat_id,
-                        "module_message_id",
-                        _module_message_text(module, module_index, len(modules), 0, ready=True),
-                        None,
-                    )
-                    time.sleep(1)
-                    _delete_session_message(current_session, chat_id, "module_message_id")
-                    current_session["current_module_index"] = module_index + 1
-                    should_start_quiz = current_session["current_module_index"] >= len(modules)
-                    should_send_next_module = not should_start_quiz
-            if should_start_quiz:
-                _start_questions_from_session(chat_id, session_key)
-            elif should_send_next_module:
-                _send_current_module(chat_id, session_key)
-            return
-        with _TELEGRAM_LEARN_EARN_LOCK:
-            current_session = _TELEGRAM_LEARN_EARN_SESSIONS.get(session_key)
-            if (
-                current_session
-                and module
-                and current_session.get("phase") == "module"
-                and current_session.get("current_module_index") == module_index
-                and current_session.get("module_timer_token") == timer_token
-            ):
-                _edit_or_replace_session_message(
-                    current_session,
-                    chat_id,
-                    "module_message_id",
-                    _module_message_text(module, module_index, len(modules), remaining),
-                    None,
-                )
-        time.sleep(min(_TELEGRAM_TIMER_UPDATE_SECONDS, max(1, remaining)))
 
 
 def _question_message_text(question, current_index, total_questions, seconds_remaining):
@@ -480,50 +425,71 @@ def _send_current_question(chat_id, telegram_user_id):
         response = send_message(chat_id, _question_message_text(question, current_index, len(questions), seconds), _question_keyboard(current_index))
         session_data["question_message_id"] = _telegram_message_id(response)
 
-    threading.Thread(
-        target=_run_question_countdown,
-        args=(chat_id, str(telegram_user_id), current_index, timer_token),
-        daemon=True,
-    ).start()
+
+def _tick_module_timer(chat_id, session_key, session_data):
+    module_index = session_data.get("current_module_index", 0)
+    timer_token = session_data.get("module_timer_token")
+    modules = session_data.get("modules") or []
+    module = modules[module_index] if module_index < len(modules) else None
+    if not module or not timer_token:
+        return
+
+    remaining = math.ceil(session_data.get("module_ready_at", 0) - time.time())
+    if remaining > 0:
+        _edit_or_replace_session_message(
+            session_data,
+            chat_id,
+            "module_message_id",
+            _module_message_text(module, module_index, len(modules), remaining),
+            _module_keyboard(module_index),
+        )
+        return
+
+    _edit_or_replace_session_message(
+        session_data,
+        chat_id,
+        "module_message_id",
+        _module_message_text(module, module_index, len(modules), 0, ready=True),
+        _module_keyboard(module_index, ready=True),
+    )
+    message_id_to_delete = session_data.get("module_message_id")
+    session_data["module_timer_token"] = "completed"
+    session_data["current_module_index"] = module_index + 1
+    should_start_quiz = session_data["current_module_index"] >= len(modules)
+
+    if message_id_to_delete:
+        delete_message(chat_id, message_id_to_delete)
+        session_data.pop("module_message_id", None)
+    if should_start_quiz:
+        _start_questions_from_session(chat_id, session_key)
+    else:
+        _send_current_module(chat_id, session_key)
 
 
-def _run_question_countdown(chat_id, session_key, question_index, timer_token):
-    while True:
-        with _TELEGRAM_LEARN_EARN_LOCK:
-            session_data = _TELEGRAM_LEARN_EARN_SESSIONS.get(session_key)
-            if (
-                not session_data
-                or session_data.get("phase") != "quiz"
-                or session_data.get("current_index") != question_index
-                or session_data.get("question_timer_token") != timer_token
-            ):
-                return
-            remaining = math.ceil(session_data.get("deadline", 0) - time.time())
-            questions = session_data.get("questions") or []
-            question = questions[question_index] if question_index < len(questions) else None
-            if remaining <= 0:
-                session_data["answers"].append(-1)
-                session_data["current_index"] += 1
-                _delete_session_message(session_data, chat_id, "question_message_id")
-                finished = session_data["current_index"] >= len(questions)
-                break
-        with _TELEGRAM_LEARN_EARN_LOCK:
-            current_session = _TELEGRAM_LEARN_EARN_SESSIONS.get(session_key)
-            if (
-                current_session
-                and question
-                and current_session.get("phase") == "quiz"
-                and current_session.get("current_index") == question_index
-                and current_session.get("question_timer_token") == timer_token
-            ):
-                _edit_or_replace_session_message(
-                    current_session,
-                    chat_id,
-                    "question_message_id",
-                    _question_message_text(question, question_index, len(questions), remaining),
-                    _question_keyboard(question_index),
-                )
-        time.sleep(min(_TELEGRAM_TIMER_UPDATE_SECONDS, max(1, remaining)))
+def _tick_question_timer(chat_id, session_key, session_data):
+    question_index = session_data.get("current_index", 0)
+    timer_token = session_data.get("question_timer_token")
+    questions = session_data.get("questions") or []
+    question = questions[question_index] if question_index < len(questions) else None
+    if not question or not timer_token:
+        return
+
+    remaining = math.ceil(session_data.get("deadline", 0) - time.time())
+    if remaining > 0:
+        _edit_or_replace_session_message(
+            session_data,
+            chat_id,
+            "question_message_id",
+            _question_message_text(question, question_index, len(questions), remaining),
+            _question_keyboard(question_index),
+        )
+        return
+
+    session_data["answers"].append(-1)
+    session_data["current_index"] += 1
+    session_data["question_timer_token"] = "timeout"
+    _delete_session_message(session_data, chat_id, "question_message_id")
+    finished = session_data["current_index"] >= len(questions)
 
     send_message(chat_id, "⏱️ Time is up. The old question was removed and marked incorrect.")
     if finished:
@@ -531,6 +497,56 @@ def _run_question_countdown(chat_id, session_key, question_index, timer_token):
     else:
         _send_current_question(chat_id, session_key)
 
+
+def _process_learn_earn_timers_once():
+    with _TELEGRAM_LEARN_EARN_LOCK:
+        session_items = [
+            (session_key, dict(session_data))
+            for session_key, session_data in _TELEGRAM_LEARN_EARN_SESSIONS.items()
+        ]
+
+    for session_key, snapshot in session_items:
+        chat_id = snapshot.get("chat_id")
+        if not chat_id:
+            continue
+        with _TELEGRAM_LEARN_EARN_LOCK:
+            live_session = _TELEGRAM_LEARN_EARN_SESSIONS.get(session_key)
+            if not live_session:
+                continue
+            phase = live_session.get("phase")
+            if phase == "module":
+                _tick_module_timer(chat_id, session_key, live_session)
+            elif phase == "quiz":
+                _tick_question_timer(chat_id, session_key, live_session)
+
+
+def _learn_earn_timer_scheduler_loop():
+    while not _TELEGRAM_LEARN_EARN_SCHEDULER_STOP.is_set():
+        try:
+            _process_learn_earn_timers_once()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Telegram Learn & Earn timer scheduler crashed: %s", exc)
+        _TELEGRAM_LEARN_EARN_SCHEDULER_STOP.wait(max(1, _TELEGRAM_TIMER_UPDATE_SECONDS))
+
+
+def init_telegram_learn_earn_timer_scheduler(app=None):
+    """Start the app-level Telegram Learn & Earn timer scheduler."""
+    global _TELEGRAM_LEARN_EARN_SCHEDULER_THREAD
+    if not TELEGRAM_BOT_TOKEN:
+        logger.info("Telegram Learn & Earn timer scheduler disabled: TELEGRAM_BOT_TOKEN not set")
+        return False
+    with _TELEGRAM_LEARN_EARN_SCHEDULER_LOCK:
+        if _TELEGRAM_LEARN_EARN_SCHEDULER_THREAD and _TELEGRAM_LEARN_EARN_SCHEDULER_THREAD.is_alive():
+            return True
+        _TELEGRAM_LEARN_EARN_SCHEDULER_STOP.clear()
+        _TELEGRAM_LEARN_EARN_SCHEDULER_THREAD = threading.Thread(
+            target=_learn_earn_timer_scheduler_loop,
+            name="telegram-learn-earn-timer-scheduler",
+            daemon=True,
+        )
+        _TELEGRAM_LEARN_EARN_SCHEDULER_THREAD.start()
+        logger.info("Telegram Learn & Earn timer scheduler started poll=%ss", _TELEGRAM_TIMER_UPDATE_SECONDS)
+        return True
 
 def _finish_chat_quiz(chat_id, telegram_user_id):
     from learn_and_earn.learn_and_earn import quiz_manager
@@ -727,6 +743,7 @@ def handle_earn(chat_id, telegram_user):
 
         quiz_session = quiz_manager.create_quiz_session(saved_wallet, questions)
         _TELEGRAM_LEARN_EARN_SESSIONS[str(telegram_user_id)] = {
+            "chat_id": chat_id,
             "wallet": saved_wallet,
             "quiz_session_id": quiz_session["session_id"],
             "modules": modules,
