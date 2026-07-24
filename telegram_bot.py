@@ -249,10 +249,30 @@ def edit_message(chat_id, message_id, text, reply_markup=None):
         payload["reply_markup"] = json.dumps(reply_markup)
     try:
         resp = requests.post(f"{TELEGRAM_API}/editMessageText", json=payload, timeout=5)
-        return resp.json()
+        result = resp.json()
+        if not result.get("ok"):
+            logger.warning(f"Telegram editMessageText failed: {result}")
+        return result
     except Exception as e:
-        logger.debug(f"Telegram editMessageText skipped: {e}")
+        logger.warning(f"Telegram editMessageText error: {e}")
         return None
+
+
+def _edit_or_replace_session_message(session_data, chat_id, key, text, reply_markup=None):
+    """Edit a tracked message; if Telegram rejects the edit, replace it with a new one."""
+    message_id = session_data.get(key) if session_data else None
+    if message_id:
+        result = edit_message(chat_id, message_id, text, reply_markup)
+        if isinstance(result, dict) and result.get("ok"):
+            return message_id
+
+    response = send_message(chat_id, text, reply_markup)
+    replacement_id = _telegram_message_id(response)
+    if replacement_id:
+        if message_id and message_id != replacement_id:
+            delete_message(chat_id, message_id)
+        session_data[key] = replacement_id
+    return replacement_id
 
 
 def _delete_session_message(session_data, chat_id, key):
@@ -405,15 +425,53 @@ def _run_module_countdown(chat_id, session_key, module_index, timer_token, is_la
             timer_message_id = session_data.get("module_timer_message_id")
             module = modules[module_index] if module_index < len(modules) else None
         if remaining <= 0:
-            if module and message_id:
-                edit_message(chat_id, message_id, _module_message_text(module, module_index, len(modules), 0, ready=True), None)
-            if timer_message_id:
-                edit_message(chat_id, timer_message_id, _module_timer_text(module_index, len(modules), 0, ready=True), _module_keyboard(module_index, is_last))
+            with _TELEGRAM_LEARN_EARN_LOCK:
+                current_session = _TELEGRAM_LEARN_EARN_SESSIONS.get(session_key)
+                if (
+                    current_session
+                    and module
+                    and current_session.get("phase") == "module"
+                    and current_session.get("current_module_index") == module_index
+                    and current_session.get("module_timer_token") == timer_token
+                ):
+                    _edit_or_replace_session_message(
+                        current_session,
+                        chat_id,
+                        "module_message_id",
+                        _module_message_text(module, module_index, len(modules), 0, ready=True),
+                        None,
+                    )
+                    _edit_or_replace_session_message(
+                        current_session,
+                        chat_id,
+                        "module_timer_message_id",
+                        _module_timer_text(module_index, len(modules), 0, ready=True),
+                        _module_keyboard(module_index, is_last),
+                    )
             return
-        if module and message_id:
-            edit_message(chat_id, message_id, _module_message_text(module, module_index, len(modules), remaining), None)
-        if timer_message_id:
-            edit_message(chat_id, timer_message_id, _module_timer_text(module_index, len(modules), remaining), None)
+        with _TELEGRAM_LEARN_EARN_LOCK:
+            current_session = _TELEGRAM_LEARN_EARN_SESSIONS.get(session_key)
+            if (
+                current_session
+                and module
+                and current_session.get("phase") == "module"
+                and current_session.get("current_module_index") == module_index
+                and current_session.get("module_timer_token") == timer_token
+            ):
+                _edit_or_replace_session_message(
+                    current_session,
+                    chat_id,
+                    "module_message_id",
+                    _module_message_text(module, module_index, len(modules), remaining),
+                    None,
+                )
+                _edit_or_replace_session_message(
+                    current_session,
+                    chat_id,
+                    "module_timer_message_id",
+                    _module_timer_text(module_index, len(modules), remaining),
+                    None,
+                )
         time.sleep(min(_TELEGRAM_TIMER_UPDATE_SECONDS, max(1, remaining)))
 
 
@@ -493,10 +551,29 @@ def _run_question_countdown(chat_id, session_key, question_index, timer_token):
                 _delete_session_message(session_data, chat_id, "question_timer_message_id")
                 finished = session_data["current_index"] >= len(questions)
                 break
-        if question and message_id:
-            edit_message(chat_id, message_id, _question_message_text(question, question_index, len(questions), remaining), _question_keyboard(question_index))
-        if timer_message_id:
-            edit_message(chat_id, timer_message_id, _question_timer_text(question_index, len(questions), remaining), None)
+        with _TELEGRAM_LEARN_EARN_LOCK:
+            current_session = _TELEGRAM_LEARN_EARN_SESSIONS.get(session_key)
+            if (
+                current_session
+                and question
+                and current_session.get("phase") == "quiz"
+                and current_session.get("current_index") == question_index
+                and current_session.get("question_timer_token") == timer_token
+            ):
+                _edit_or_replace_session_message(
+                    current_session,
+                    chat_id,
+                    "question_message_id",
+                    _question_message_text(question, question_index, len(questions), remaining),
+                    _question_keyboard(question_index),
+                )
+                _edit_or_replace_session_message(
+                    current_session,
+                    chat_id,
+                    "question_timer_message_id",
+                    _question_timer_text(question_index, len(questions), remaining),
+                    None,
+                )
         time.sleep(min(_TELEGRAM_TIMER_UPDATE_SECONDS, max(1, remaining)))
 
     send_message(chat_id, "⏱️ Time is up. The old question was removed and marked incorrect.")
