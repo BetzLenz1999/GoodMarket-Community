@@ -605,10 +605,17 @@ else:
     logger.error("❌ Minigames initialization failed")
 
 
-# Register Telegram bot blueprint
-from telegram_bot import telegram_bot
+# Register Telegram bot blueprint and app-level Learn & Earn timer scheduler.
+from telegram_bot import telegram_bot, init_telegram_learn_earn_timer_scheduler
 app.register_blueprint(telegram_bot)
 logger.info("✅ Telegram bot blueprint registered")
+try:
+    if init_telegram_learn_earn_timer_scheduler(app):
+        logger.info("✅ Telegram Learn & Earn timer scheduler started")
+    else:
+        logger.info("ℹ️ Telegram Learn & Earn timer scheduler not started")
+except Exception as e:
+    logger.error(f"❌ Telegram Learn & Earn timer scheduler initialization failed: {e}")
 
 # Initialize G$ Savings
 logger.info("💰 Initializing G$ Savings system...")
