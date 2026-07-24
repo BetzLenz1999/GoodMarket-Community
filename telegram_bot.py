@@ -371,6 +371,21 @@ def _start_questions_from_session(chat_id, telegram_user_id):
         _send_no_active_or_cooldown_message(chat_id, telegram_user_id)
         return
 
+    try:
+        from learn_and_earn.learn_and_earn import quiz_manager
+
+        eligibility = _run_async(quiz_manager.check_quiz_eligibility(session_data.get("wallet")))
+        if not eligibility.get("eligible", True):
+            _TELEGRAM_LEARN_EARN_SESSIONS.pop(session_key, None)
+            send_message(
+                chat_id,
+                _format_learn_earn_unavailable_message(eligibility),
+                _learn_earn_keyboard(telegram_user_id, session_data.get("wallet")),
+            )
+            return
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"⚠️ Could not re-check Telegram Learn & Earn cooldown before quiz questions: {exc}")
+
     questions = session_data.get("questions") or []
     if not questions:
         _TELEGRAM_LEARN_EARN_SESSIONS.pop(session_key, None)
@@ -621,6 +636,15 @@ def _finish_chat_quiz(chat_id, telegram_user_id):
     reward_amount = float(quiz_result.get("reward_amount") or 0)
     tx_hash = None
 
+    pre_save_eligibility = _run_async(quiz_manager.check_quiz_eligibility(wallet))
+    if not pre_save_eligibility.get("eligible", True):
+        send_message(
+            chat_id,
+            _format_learn_earn_unavailable_message(pre_save_eligibility),
+            _learn_earn_keyboard(telegram_user_id, wallet),
+        )
+        return
+
     if reward_amount > 0:
         try:
             disbursement = _run_async(learn_blockchain_service.send_g_reward(
@@ -693,10 +717,18 @@ def _finish_chat_quiz(chat_id, telegram_user_id):
 
     tx_line = f"Transaction hash: <code>{html.escape(str(tx_hash))}</code>\n" if tx_hash else ""
     cooldown_line = (
-        "Your quiz attempt was recorded for your saved wallet. Type /earn to start again when eligible."
+        "You are now on cooldown. You already received your rewards, so this wallet cannot start another Learn &amp; Earn quiz until the cooldown ends."
         if quiz_log
         else "No Learn &amp; Earn cooldown was started because no positive on-chain reward was recorded."
     )
+    if quiz_log:
+        try:
+            cooldown_status = _run_async(quiz_manager.check_quiz_eligibility(wallet))
+            next_quiz_time = cooldown_status.get("next_quiz_time")
+            if next_quiz_time:
+                cooldown_line += f"\nYou can participate again after: <code>{html.escape(str(next_quiz_time))} UTC</code>"
+        except Exception as cooldown_error:  # noqa: BLE001
+            logger.warning(f"⚠️ Could not fetch Telegram Learn & Earn cooldown after reward: {cooldown_error}")
     send_message(
         chat_id,
         "✅ <b>Learn &amp; Earn chat quiz complete!</b>\n\n"
@@ -839,6 +871,14 @@ def handle_earn(chat_id, telegram_user):
         send_message(
             chat_id,
             "📚 <b>Learn &amp; Earn</b>\n\nPlease send your wallet address first so we can save your Learn &amp; Earn login.",
+        )
+        return
+
+    existing_session = _TELEGRAM_LEARN_EARN_SESSIONS.get(str(telegram_user_id))
+    if existing_session:
+        send_message(
+            chat_id,
+            "📝 <b>You already have an active Learn &amp; Earn chat quiz.</b> Please finish the current quiz before starting another one.",
         )
         return
 
