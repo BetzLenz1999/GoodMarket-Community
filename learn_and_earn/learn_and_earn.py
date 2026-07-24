@@ -705,6 +705,26 @@ class LearnEarnQuizManager:
             return wallet_address
         return wallet_address[:6] + "..." + wallet_address[-4:]
 
+
+    def _rewarded_attempt_query(self, supabase, wallet_address: str):
+        """Build the canonical cooldown query for rewarded Learn & Earn logs.
+
+        Telegram and web quiz rewards may be stored with either the masked
+        display wallet or the normalized full wallet address depending on the
+        caller/version that created the row. Cooldown checks must read all
+        known wallet forms so a paid reward logged in ``learnearn_log`` always
+        makes the wallet ineligible until the configured cooldown expires.
+        """
+        wallet_normalized = (wallet_address or '').lower()
+        masked_address = self.mask_wallet_address(wallet_address or '')
+        return supabase.table(LEARN_EARN_LOG_TABLE)\
+            .select('timestamp, amount_g$, transaction_hash, wallet_address')\
+            .or_(f"wallet_address.eq.{masked_address},wallet_address.eq.{wallet_normalized},wallet_address.eq.{wallet_address}")\
+            .gt('amount_g$', 0)\
+            .not_('transaction_hash', 'is', 'null')\
+            .order('timestamp', desc=True)\
+            .limit(1)
+
     async def get_next_quiz_time(self, wallet_address: str) -> Dict[str, Any]:
         """Get the timestamp of the last quiz attempt for a user"""
         try:
@@ -714,14 +734,7 @@ class LearnEarnQuizManager:
             # Fetch the most recent rewarded quiz attempt for the user.
             # Cooldown must only start after a real Learn & Earn reward is recorded
             # in Supabase with a transaction hash; failed/unpaid attempts are ignored.
-            result = supabase.table(LEARN_EARN_LOG_TABLE)\
-                .select('timestamp, amount_g$, transaction_hash')\
-                .eq('wallet_address', masked_address)\
-                .gt('amount_g$', 0)\
-                .not_('transaction_hash', 'is', 'null')\
-                .order('timestamp', desc=True)\
-                .limit(1)\
-                .execute()
+            result = self._rewarded_attempt_query(supabase, wallet_address).execute()
 
             if result.data:
                 last_attempt_str = result.data[0]['timestamp']
@@ -860,14 +873,7 @@ class LearnEarnQuizManager:
             # Fetch the most recent rewarded quiz attempt for the user.
             # Cooldown must only start after a real Learn & Earn reward is recorded
             # in Supabase with a transaction hash; failed/unpaid attempts are ignored.
-            result = supabase.table(LEARN_EARN_LOG_TABLE)\
-                .select('timestamp, amount_g$, transaction_hash')\
-                .eq('wallet_address', masked_address)\
-                .gt('amount_g$', 0)\
-                .not_('transaction_hash', 'is', 'null')\
-                .order('timestamp', desc=True)\
-                .limit(1)\
-                .execute()
+            result = self._rewarded_attempt_query(supabase, wallet_address).execute()
 
             if result.data:
                 last_attempt_str = result.data[0]['timestamp']
