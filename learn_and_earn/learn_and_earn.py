@@ -401,6 +401,11 @@ def _get_memory_nft_job(job_id, buyer_wallet):
 
 streaming_service = LearnEarnStreamingService()
 
+# Existing Supabase production table name for Learn & Earn quiz logs.
+# Keep this as ``learnearn_log`` (no underscore between learn/earn) unless the
+# database migration and all analytics references are renamed together.
+LEARN_EARN_LOG_TABLE = 'learnearn_log'
+
 class LearnEarnQuizManager:
     def __init__(self):
         self.questions_per_quiz = 10
@@ -706,10 +711,14 @@ class LearnEarnQuizManager:
             supabase = get_supabase_client()
             masked_address = self.mask_wallet_address(wallet_address)
 
-            # Fetch the most recent quiz attempt for the user
-            result = supabase.table('learnearn_log')\
-                .select('timestamp')\
+            # Fetch the most recent rewarded quiz attempt for the user.
+            # Cooldown must only start after a real Learn & Earn reward is recorded
+            # in Supabase with a transaction hash; failed/unpaid attempts are ignored.
+            result = supabase.table(LEARN_EARN_LOG_TABLE)\
+                .select('timestamp, amount_g$, transaction_hash')\
                 .eq('wallet_address', masked_address)\
+                .gt('amount_g$', 0)\
+                .not_('transaction_hash', 'is', 'null')\
                 .order('timestamp', desc=True)\
                 .limit(1)\
                 .execute()
@@ -812,7 +821,7 @@ class LearnEarnQuizManager:
             }
 
             # Save to Supabase
-            result = supabase.table('learnearn_log').insert(quiz_log).execute()
+            result = supabase.table(LEARN_EARN_LOG_TABLE).insert(quiz_log).execute()
 
             logger.info(f"✅ Quiz attempt saved: {quiz_id} - Score: {correct_answers}/{len(questions)} - Timestamp: {current_time.isoformat()}")
             return quiz_log
@@ -836,10 +845,14 @@ class LearnEarnQuizManager:
             supabase = get_supabase_client()
             masked_address = self.mask_wallet_address(wallet_address)
 
-            # Fetch the most recent quiz attempt for the user
-            result = supabase.table('learnearn_log')\
-                .select('timestamp')\
+            # Fetch the most recent rewarded quiz attempt for the user.
+            # Cooldown must only start after a real Learn & Earn reward is recorded
+            # in Supabase with a transaction hash; failed/unpaid attempts are ignored.
+            result = supabase.table(LEARN_EARN_LOG_TABLE)\
+                .select('timestamp, amount_g$, transaction_hash')\
                 .eq('wallet_address', masked_address)\
+                .gt('amount_g$', 0)\
+                .not_('transaction_hash', 'is', 'null')\
                 .order('timestamp', desc=True)\
                 .limit(1)\
                 .execute()
@@ -982,7 +995,7 @@ class LearnEarnQuizManager:
 
             logger.info(f"🔍 Optimized quiz history fetch for: {wallet_address[:10]}...")
 
-            result = supabase.table('learnearn_log')\
+            result = supabase.table(LEARN_EARN_LOG_TABLE)\
                 .select('*')\
                 .or_(f"wallet_address.eq.{masked_address},wallet_address.eq.{wallet_normalized},wallet_address.eq.{wallet_address}")\
                 .order('timestamp', desc=True)\
@@ -1208,7 +1221,7 @@ class LearnEarnQuizManager:
                 'session_id': quiz_session_id # Link to the session
             }
 
-            result = supabase.table('learnearn_log').insert(quiz_log_data).execute()
+            result = supabase.table(LEARN_EARN_LOG_TABLE).insert(quiz_log_data).execute()
             logger.info(f"✅ Quiz attempt logged: {log_id} for {user_wallet}")
             return {'success': True, 'log_id': log_id}
 
@@ -1220,7 +1233,7 @@ class LearnEarnQuizManager:
         """Updates the quiz log with transaction details."""
         try:
             supabase = get_supabase_client()
-            update_result = supabase.table('learnearn_log')\
+            update_result = supabase.table(LEARN_EARN_LOG_TABLE)\
                 .update({
                     'transaction_hash': transaction_hash,
                     'reward_status': 'sent',
@@ -1399,7 +1412,7 @@ class LearnEarnQuizManager:
 
             logger.info(f"📊 Getting daily ranking for {wallet_address[:8]}... on {quiz_date}")
 
-            result = supabase.table('learnearn_log')\
+            result = supabase.table(LEARN_EARN_LOG_TABLE)\
                 .select('wallet_address, timestamp, quiz_id')\
                 .gte('timestamp', start_datetime)\
                 .lte('timestamp', end_datetime)\
@@ -1976,7 +1989,7 @@ def get_daily_ranking(current_user):
         start_datetime = f"{quiz_date}T00:00:00Z"
         end_datetime = f"{quiz_date}T23:59:59Z"
 
-        result = supabase.table('learnearn_log')\
+        result = supabase.table(LEARN_EARN_LOG_TABLE)\
             .select('wallet_address, timestamp, quiz_id, score, total_questions')\
             .gte('timestamp', start_datetime)\
             .lte('timestamp', end_datetime)\
@@ -3400,7 +3413,7 @@ def mint_achievement_nft(current_user):
 
         # Eligibility cutoff — only quizzes taken on or after Feb 11, 2026 can be minted
         MINT_ELIGIBLE_FROM = datetime(2026, 2, 11, 0, 0, 0)
-        quiz_log_row = supabase.table('learnearn_log')\
+        quiz_log_row = supabase.table(LEARN_EARN_LOG_TABLE)\
             .select('timestamp')\
             .eq('quiz_id', quiz_id)\
             .eq('wallet_address', current_user)\
@@ -3507,7 +3520,7 @@ def check_nft_minted(current_user):
 
         # Also verify eligibility via DB timestamp if not supplied
         if not quiz_timestamp:
-            quiz_log_row = supabase.table('learnearn_log')\
+            quiz_log_row = supabase.table(LEARN_EARN_LOG_TABLE)\
                 .select('timestamp')\
                 .eq('quiz_id', quiz_id)\
                 .eq('wallet_address', current_user)\
