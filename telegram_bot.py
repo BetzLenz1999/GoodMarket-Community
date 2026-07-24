@@ -612,34 +612,47 @@ def _finish_chat_quiz(chat_id, telegram_user_id):
             )
             return
 
-    try:
-        quiz_log = _run_async(quiz_manager.save_quiz_attempt(
-            wallet,
-            quiz_result.get("questions", session_data["questions"]),
-            session_data["answers"],
-            reward_amount,
-            {"verified": False, "source": "telegram_chat", "reward_tx_hash": tx_hash},
-        ))
-        if quiz_log and tx_hash:
-            quiz_manager.update_quiz_log_with_transaction(quiz_log.get("quiz_id"), tx_hash)
-    except Exception as save_error:
-        logger.error(f"❌ Telegram chat quiz save failed after reward: {save_error}")
-        send_message(
-            chat_id,
-            "⚠️ Reward sent, but we could not record your Learn &amp; Earn cooldown log. "
-            "Please contact support with your transaction hash: "
-            f"<code>{html.escape(str(tx_hash or 'n/a'))}</code>",
+    quiz_log = None
+    if reward_amount > 0 and tx_hash:
+        try:
+            quiz_log = _run_async(quiz_manager.save_quiz_attempt(
+                wallet,
+                quiz_result.get("questions", session_data["questions"]),
+                session_data["answers"],
+                reward_amount,
+                {"verified": False, "source": "telegram_chat", "reward_tx_hash": tx_hash},
+            ))
+            if quiz_log:
+                quiz_manager.update_quiz_log_with_transaction(quiz_log.get("quiz_id"), tx_hash)
+        except Exception as save_error:
+            logger.error(f"❌ Telegram chat quiz save failed after reward: {save_error}")
+            send_message(
+                chat_id,
+                "⚠️ Reward sent, but we could not record your Learn &amp; Earn cooldown log. "
+                "Please contact support with your transaction hash: "
+                f"<code>{html.escape(str(tx_hash or 'n/a'))}</code>",
+            )
+            return
+    else:
+        logger.info(
+            "ℹ️ Telegram chat quiz earned no positive reward; skipping learnearn_log "
+            "so no cooldown starts for wallet %s",
+            wallet[:8],
         )
-        return
 
     tx_line = f"Transaction hash: <code>{html.escape(str(tx_hash))}</code>\n" if tx_hash else ""
+    cooldown_line = (
+        "Your quiz attempt was recorded for your saved wallet. Type /earn to start again when eligible."
+        if quiz_log
+        else "No Learn &amp; Earn cooldown was started because no positive on-chain reward was recorded."
+    )
     send_message(
         chat_id,
         "✅ <b>Learn &amp; Earn chat quiz complete!</b>\n\n"
         f"Score: <b>{quiz_result.get('score')}/{quiz_result.get('total_questions')}</b>\n"
         f"Reward received: <b>{reward_amount} G$</b>\n"
         f"{tx_line}\n"
-        "Your quiz attempt was recorded for your saved wallet. Type /earn to start again when eligible.",
+        f"{cooldown_line}",
     )
 
 
